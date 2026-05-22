@@ -960,3 +960,72 @@ without --force, clean-logs previews only
 running logs are never deleted unless --include-running is used
 without --all/--state, only completed/dead/orphan states are eligible
 ```
+
+
+## Log cleanup audit fields
+
+When `queue clean-logs --force` removes a log belonging to a known job, the job record is appended with:
+
+```bash
+LOG_CLEANED=1
+LOG_CLEANED_AT=...
+LOG_CLEANED_PATH=...
+LOG_CLEANED_BYTES=...
+```
+
+A `log_cleaned` event is also appended to `events.jsonl`.
+
+
+## Dependency edge-case tests
+
+Run:
+
+```bash
+QUEUEBASH_ALLOW_NONINTERACTIVE=1 tests/dependency_edge_cases.sh
+```
+
+This covers:
+
+```text
+retroactive satisfaction
+failed parent blocking
+duplicate-name dependency semantics
+strict QID dependency semantics
+circular safe-pending behaviour
+fan-in dependencies
+```
+
+This is a diagnostic edge-case test, not part of the fast regression suite, because it deliberately creates blocked/cyclic pending jobs.
+
+See:
+
+```text
+docs/DEPENDENCY_EDGE_CASES.md
+```
+
+
+## Health and integrity
+
+Run:
+
+```bash
+queue health
+queue health --fix
+queue health --deep
+```
+
+`queue health` checks queue directories, writability, events logging, free disk/inodes, helper commands, malformed job files, stale running jobs, and dependency status.
+
+`queue health --fix` only performs safe repairs:
+
+```text
+create missing directories
+remove dead worker pid files
+move definitely stale running jobs to interrupted/
+```
+
+See:
+
+```text
+docs/HEALTH.md
+```

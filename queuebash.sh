@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.7.2"
+QUEUEBASH_VERSION="0.7.5"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1693,6 +1693,42 @@ Options:
 EOF
 }
 
+_queue_log_job_file_for_id() {
+    local id="$1"
+    local root="$(_queue_root)"
+    local state
+    for state in pending running paused done failed interrupted cancelled deleted; do
+        if [[ -f "$root/$state/$id.job" ]]; then
+            printf '%s\n' "$root/$state/$id.job"
+            return 0
+        fi
+    done
+    return 1
+}
+
+_queue_mark_log_cleaned() {
+    local id="$1"
+    local path="$2"
+    local bytes="$3"
+    local state="$4"
+    local job
+    local ts
+
+    ts="$(date -Is)"
+    job="$(_queue_log_job_file_for_id "$id" 2>/dev/null || true)"
+
+    if [[ -n "$job" && -f "$job" ]]; then
+        {
+            printf 'LOG_CLEANED=%q\n' "1"
+            printf 'LOG_CLEANED_AT=%q\n' "$ts"
+            printf 'LOG_CLEANED_PATH=%q\n' "$path"
+            printf 'LOG_CLEANED_BYTES=%q\n' "$bytes"
+        } >> "$job"
+    fi
+
+    _queue_log_event "log_cleaned" "$id" "$(_queue_log_job_name_for_id "$id")" "$state" "path=$path bytes=$bytes"
+}
+
 _queue_clean_logs() {
     local root="$(_queue_root)"
     local logs="$root/logs"
@@ -1795,6 +1831,7 @@ _queue_clean_logs() {
             printf 'WOULD_REMOVE %10s  %-12s %-18s %s\n' "$size" "$state" "$name" "$path"
         else
             printf 'REMOVE       %10s  %-12s %-18s %s\n' "$size" "$state" "$name" "$path"
+            _queue_mark_log_cleaned "$id" "$path" "$size" "$state"
             rm -f -- "$path"
             removed=$((removed + 1))
         fi
@@ -1806,6 +1843,400 @@ _queue_clean_logs() {
     echo "Matched bytes: $bytes"
     echo "Removed logs: $removed"
     echo "Skipped logs: $skipped"
+}
+
+# -------------------------------------------------------------------
+# Health / integrity helpers
+# -------------------------------------------------------------------
+
+_queue_health_state_dirs() {
+    printf '%s\n' pending running paused done failed interrupted cancelled deleted logs workers
+}
+
+_queue_health_has_command() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+_queue_health_df_space() {
+    local root="$1"
+    df -Pk "$root" 2>/dev/null | awk 'NR==2 { print $4 }'
+}
+
+_queue_health_df_inodes() {
+    local root="$1"
+    df -Pi "$root" 2>/dev/null | awk 'NR==2 { print $4 }'
+}
+
+_queue_health_job_files() {
+    local root="$(_queue_root)"
+    find "$root"/pending "$root"/running "$root"/paused "$root"/done "$root"/failed "$root"/interrupted "$root"/cancelled "$root"/deleted \
+        -type f -name '*.job' 2>/dev/null
+}
+
+_queue_health_job_value() {
+    local f="$1"
+    local key="$2"
+    grep "^${key}=" "$f" 2>/dev/null | tail -1 | cut -d= -f2- | sed "s/^'//; s/'$//"
+}
+
+_queue_health_validate_job_file() {
+    local f="$1"
+    local errors=0
+    local id name prio
+
+    id="$(_queue_health_job_value "$f" JOB_ID)"
+    name="$(_queue_health_job_value "$f" JOB_NAME)"
+    prio="$(_queue_health_job_value "$f" PRIORITY)"
+
+    if [[ -z "$id" ]]; then
+        echo "BAD missing JOB_ID: $f"
+        errors=$((errors + 1))
+    fi
+    if [[ -z "$name" ]]; then
+        echo "BAD missing JOB_NAME: $f"
+        errors=$((errors + 1))
+    fi
+    if [[ -z "$prio" ]]; then
+        echo "BAD missing PRIORITY: $f"
+        errors=$((errors + 1))
+    elif [[ ! "$prio" =~ ^-?[0-9]+$ ]]; then
+        echo "BAD non-integer PRIORITY=$prio: $f"
+        errors=$((errors + 1))
+    fi
+    if ! grep -q '^COMMAND=(' "$f" 2>/dev/null; then
+        echo "BAD missing COMMAND array: $f"
+        errors=$((errors + 1))
+    fi
+
+    return "$errors"
+}
+
+_queue_health_running_is_stale2() {
+    local f="$1"
+    local unit run_pid
+    unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+
+    if [[ -n "$unit" ]] && command -v systemctl >/dev/null 2>&1; then
+        if systemctl --user is-active --quiet "$unit" 2>/dev/null; then
+            return 1
+        fi
+    fi
+
+    run_pid="$(_queue_health_job_value "$f" RUN_PID)"
+    [[ -z "$run_pid" ]] && return 0
+    kill -0 "$run_pid" 2>/dev/null && return 1
+    return 0
+}
+
+_queue_health_mark_interrupted() {
+    local f="$1"
+    local root="$(_queue_root)"
+    local id name dest
+    id="$(basename "$f" .job)"
+    name="$(_queue_job_name "$f" 2>/dev/null || echo "-")"
+    dest="$root/interrupted/$id.job"
+
+    {
+        printf 'INTERRUPTED_AT=%q\n' "$(date -Is)"
+        printf 'INTERRUPTED_REASON=%q\n' "stale-running-detected-by-health"
+        printf 'INTERRUPTED_FROM=%q\n' "running"
+    } >> "$f"
+
+    mv "$f" "$dest"
+    _queue_log_event "interrupted" "$id" "$name" "interrupted" "reason=stale-running-detected-by-health"
+}
+
+_queue_health_clean_dead_workers() {
+    local root="$(_queue_root)"
+    local dir="$root/workers"
+    local f pid
+
+    [[ -d "$dir" ]] || return 0
+
+    for f in "$dir"/*.pid; do
+        [[ -e "$f" ]] || continue
+        pid="$(cat "$f" 2>/dev/null || true)"
+        if [[ -z "$pid" || ! "$pid" =~ ^[0-9]+$ || ! -d "/proc/$pid" ]]; then
+            rm -f -- "$f"
+            echo "FIX removed dead worker pid file: $f"
+        fi
+    done
+
+    return 0
+}
+
+_queue_health_dependency_tokens_for_file() {
+    local f="$1"
+    _queue_job_dependency_tokens "$f" 2>/dev/null || true
+}
+
+_queue_health_dependency_exists_any_state() {
+    local token="$1"
+    local root="$(_queue_root)"
+    local state f
+
+    [[ -z "$token" ]] && return 1
+
+    for state in pending running paused done failed interrupted cancelled deleted; do
+        [[ -f "$root/$state/$token.job" ]] && return 0
+        for f in "$root/$state"/*.job; do
+            [[ -e "$f" ]] || continue
+            [[ "$(_queue_job_name "$f" 2>/dev/null || true)" == "$token" ]] && return 0
+        done
+    done
+
+    return 1
+}
+
+_queue_health_pending_dependency_warnings() {
+    local root="$(_queue_root)"
+    local f dep deps name any=0
+
+    for f in "$root/pending"/*.job; do
+        [[ -e "$f" ]] || continue
+        name="$(_queue_job_name "$f" 2>/dev/null || echo "-")"
+        deps="$(_queue_health_dependency_tokens_for_file "$f")"
+        [[ -z "$deps" ]] && continue
+
+        for dep in $deps; do
+            if _queue_dep_token_done "$dep"; then
+                continue
+            elif _queue_dep_token_failed_or_cancelled "$dep"; then
+                echo "WARN dependency blocked: $(basename "$f" .job) ($name) waits on failed/cancelled/interrupted/deleted $dep"
+                any=1
+            elif ! _queue_health_dependency_exists_any_state "$dep"; then
+                echo "WARN dependency missing: $(basename "$f" .job) ($name) waits on unknown $dep"
+                any=1
+            else
+                echo "INFO dependency waiting: $(basename "$f" .job) ($name) waits on $dep"
+                any=1
+            fi
+        done
+    done
+
+    [[ "$any" -eq 0 ]] && echo "OK no pending dependency warnings"
+    return 0
+}
+
+_queue_health_pending_cycle_warnings() {
+    local root="$(_queue_root)"
+    local f name deps dep depfile depdeps dep2 any=0
+
+    for f in "$root/pending"/*.job; do
+        [[ -e "$f" ]] || continue
+        name="$(_queue_job_name "$f" 2>/dev/null || echo "")"
+        deps="$(_queue_health_dependency_tokens_for_file "$f")"
+        [[ -z "$deps" ]] && continue
+
+        for dep in $deps; do
+            if [[ "$dep" == "$name" || "$dep" == "$(basename "$f" .job)" ]]; then
+                echo "WARN dependency self-cycle: $(basename "$f" .job) ($name) waits on $dep"
+                any=1
+                continue
+            fi
+
+            depfile=""
+            if [[ -f "$root/pending/$dep.job" ]]; then
+                depfile="$root/pending/$dep.job"
+            else
+                for depfile in "$root/pending"/*.job; do
+                    [[ -e "$depfile" ]] || { depfile=""; break; }
+                    if [[ "$(_queue_job_name "$depfile" 2>/dev/null || true)" == "$dep" ]]; then
+                        break
+                    fi
+                    depfile=""
+                done
+            fi
+
+            [[ -z "$depfile" || ! -f "$depfile" ]] && continue
+            depdeps="$(_queue_health_dependency_tokens_for_file "$depfile")"
+
+            for dep2 in $depdeps; do
+                if [[ "$dep2" == "$name" || "$dep2" == "$(basename "$f" .job)" ]]; then
+                    echo "WARN dependency 2-node cycle: $(basename "$f" .job) ($name) <-> $(basename "$depfile" .job) ($(_queue_job_name "$depfile" 2>/dev/null || echo "-"))"
+                    any=1
+                fi
+            done
+        done
+    done
+
+    [[ "$any" -eq 0 ]] && echo "OK no simple dependency cycles detected"
+    return 0
+}
+
+_queue_health_report() {
+    local fix=0
+    local deep=0
+    local root="$(_queue_root)"
+    local errors=0 warnings=0
+    local d space_k inodes f stale_count=0 bad_count=0
+
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --fix) fix=1; shift ;;
+            --deep) deep=1; shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage:
+  queue health [--fix] [--deep] [--deep]
+
+Checks:
+  queue root and state directories
+  logs and events.jsonl writability
+  free disk space and inodes
+  required/supporting commands: gzip, setsid, systemd-run
+  malformed job files
+  stale running jobs
+  dead worker pid files
+  blocked/missing dependencies
+  basic dependency cycles with --deep
+
+Safe fixes:
+  create missing state/log/worker directories
+  remove dead worker pid files
+  move definitely stale running jobs to interrupted
+EOF
+                return 0
+                ;;
+            *)
+                echo "queue health: unknown option: $1" >&2
+                return 2
+                ;;
+        esac
+    done
+
+    echo "=== queuebash health ==="
+    echo "root: $root"
+    echo
+
+    if [[ ! -d "$root" ]]; then
+        echo "BAD root missing: $root"
+        errors=$((errors + 1))
+        if [[ "$fix" -eq 1 ]]; then
+            mkdir -p "$root"
+            echo "FIX created root: $root"
+            errors=$((errors - 1))
+        fi
+    fi
+
+    if [[ -d "$root" && ! -w "$root" ]]; then
+        echo "BAD root not writable: $root"
+        errors=$((errors + 1))
+    else
+        echo "OK root writable"
+    fi
+
+    for d in $(_queue_health_state_dirs); do
+        if [[ ! -d "$root/$d" ]]; then
+            echo "BAD missing directory: $root/$d"
+            errors=$((errors + 1))
+            if [[ "$fix" -eq 1 ]]; then
+                mkdir -p "$root/$d"
+                echo "FIX created directory: $root/$d"
+                errors=$((errors - 1))
+            fi
+        else
+            echo "OK directory: $d"
+        fi
+    done
+
+    echo
+
+    if [[ -d "$root" ]]; then
+        if touch "$root/.health_write_test" 2>/dev/null; then
+            rm -f "$root/.health_write_test"
+            echo "OK root write test"
+        else
+            echo "BAD root write test failed"
+            errors=$((errors + 1))
+        fi
+
+        if [[ -e "$root/events.jsonl" && ! -w "$root/events.jsonl" ]]; then
+            echo "BAD events.jsonl not writable"
+            errors=$((errors + 1))
+        else
+            if touch "$root/events.jsonl" 2>/dev/null; then
+                echo "OK events.jsonl writable"
+            else
+                echo "BAD cannot touch events.jsonl"
+                errors=$((errors + 1))
+            fi
+        fi
+
+        space_k="$(_queue_health_df_space "$root")"
+        inodes="$(_queue_health_df_inodes "$root")"
+        echo "INFO free disk KB: ${space_k:-unknown}"
+        echo "INFO free inodes: ${inodes:-unknown}"
+
+        if [[ "$space_k" =~ ^[0-9]+$ && "$space_k" -lt 102400 ]]; then
+            echo "WARN low disk space under queue root: ${space_k}KB"
+            warnings=$((warnings + 1))
+        fi
+        if [[ "$inodes" =~ ^[0-9]+$ && "$inodes" -lt 1000 && "$inodes" -ne 0 ]]; then
+            echo "WARN low free inodes under queue root: $inodes"
+            warnings=$((warnings + 1))
+        fi
+    fi
+
+    echo
+    _queue_health_has_command gzip && echo "OK gzip available" || { echo "WARN gzip not available; log compression disabled"; warnings=$((warnings + 1)); }
+    _queue_health_has_command setsid && echo "OK setsid available" || { echo "WARN setsid not available; direct runner process-group isolation reduced"; warnings=$((warnings + 1)); }
+    _queue_health_has_command systemd-run && echo "OK systemd-run available" || echo "INFO systemd-run not available; direct runner only"
+
+    echo
+    echo "=== job metadata ==="
+    while IFS= read -r f; do
+        if ! _queue_health_validate_job_file "$f"; then
+            bad_count=$((bad_count + 1))
+        fi
+    done < <(_queue_health_job_files)
+    if [[ "$bad_count" -eq 0 ]]; then
+        echo "OK no malformed job files found"
+    else
+        echo "BAD malformed job files: $bad_count"
+        errors=$((errors + bad_count))
+    fi
+
+    echo
+    echo "=== running jobs ==="
+    for f in "$root/running"/*.job; do
+        [[ -e "$f" ]] || continue
+        if _queue_health_running_is_stale2 "$f"; then
+            echo "BAD stale running job: $f"
+            stale_count=$((stale_count + 1))
+            if [[ "$fix" -eq 1 ]]; then
+                _queue_health_mark_interrupted "$f"
+                echo "FIX moved stale running job to interrupted: $(basename "$f")"
+                stale_count=$((stale_count - 1))
+            fi
+        fi
+    done
+    if [[ "$stale_count" -eq 0 ]]; then
+        echo "OK no stale running jobs"
+    else
+        errors=$((errors + stale_count))
+    fi
+
+    if [[ "$fix" -eq 1 ]]; then
+        echo
+        echo "=== worker pid cleanup ==="
+        _queue_health_clean_dead_workers || true
+    fi
+
+    echo
+    echo "=== dependency status ==="
+    _queue_health_pending_dependency_warnings || true
+
+    if [[ "$deep" -eq 1 ]]; then
+        echo
+        echo "=== deep dependency cycle hints ==="
+        _queue_health_pending_cycle_warnings || true
+    fi
+
+    echo
+    echo "Health summary: errors=$errors warnings=$warnings fix=$fix deep=$deep"
+
+    [[ "$errors" -eq 0 ]]
 }
 
 _queue_help() {
@@ -1846,7 +2277,7 @@ Usage:
   queue rm       <qid|exact-job-name> [--force] [--dryrun]
   queue undelete <qid|exact-job-name> [pending|done|failed] [--force] [--dryrun]
 
-  queue health [--fix]
+  queue health [--fix] [--deep]
   queue compress-logs
   queue clean-logs [--dryrun] [--older-than AGE] [--state STATE] [--force]
   queue stats [--name exact-job-name] [--today]
@@ -2588,120 +3019,8 @@ queue() {
 
 
         health)
-            local fix=0
-            while [[ "$#" -gt 0 ]]; do
-                case "$1" in
-                    --fix) fix=1; shift ;;
-                    *) shift ;;
-                esac
-            done
-
-            local issues=0
-            local fixed=0
-            local state dir f id jid pri log run_status pidfile pid
-
-            echo "=== queuebash health ==="
-            echo "root: $root"
-            echo "mode: $([[ "$fix" -eq 1 ]] && echo fix || echo report)"
-            echo
-
-            for state in pending running paused done failed interrupted cancelled deleted logs workers; do
-                dir="$root/$state"
-                if [[ ! -d "$dir" ]]; then
-                    issues=$((issues + 1))
-                    _queue_health_print_issue "MISSING" "directory: $dir"
-                    if [[ "$fix" -eq 1 ]]; then
-                        mkdir -p "$dir"
-                        fixed=$((fixed + 1))
-                        echo "FIXED: created $dir"
-                    fi
-                fi
-            done
-
-            if [[ ! -w "$root" ]]; then
-                issues=$((issues + 1))
-                _queue_health_print_issue "ERROR" "queue root is not writable: $root"
-            fi
-
-            touch "$root/events.jsonl" 2>/dev/null || {
-                issues=$((issues + 1))
-                _queue_health_print_issue "ERROR" "events.jsonl is not writable: $root/events.jsonl"
-            }
-
-            for state in pending running paused done failed interrupted cancelled deleted; do
-                for f in "$root/$state"/*.job; do
-                    [[ -e "$f" ]] || continue
-
-                    id="$(basename "$f" .job)"
-                    jid="$(_queue_job_id_from_file "$f")"
-                    pri="$(_queue_job_pri "$f")"
-
-                    if [[ -z "$jid" ]]; then
-                        issues=$((issues + 1))
-                        _queue_health_print_issue "BADJOB" "$f missing JOB_ID"
-                    elif [[ "$jid" != "$id" ]]; then
-                        issues=$((issues + 1))
-                        _queue_health_print_issue "BADJOB" "$f JOB_ID=$jid does not match filename $id"
-                    fi
-
-                    if ! [[ "$pri" =~ ^-?[0-9]+$ ]]; then
-                        issues=$((issues + 1))
-                        _queue_health_print_issue "BADJOB" "$f invalid PRIORITY=$pri"
-                    fi
-
-                    if [[ "$state" != "pending" && "$state" != "paused" ]]; then
-                        log="$root/logs/$id.log"
-                        if [[ ! -f "$log" ]]; then
-                            issues=$((issues + 1))
-                            _queue_health_print_issue "WARN" "$id state=$state has no log file"
-                        fi
-                    fi
-                done
-            done
-
-            for f in "$root/running"/*.job; do
-                [[ -e "$f" ]] || continue
-                id="$(basename "$f" .job)"
-                _queue_health_running_is_stale "$f"
-                run_status="$?"
-                if [[ "$run_status" -eq 0 ]]; then
-                    issues=$((issues + 1))
-                    _queue_health_print_issue "STALE" "$id is running but RUN_PID is dead"
-                    if [[ "$fix" -eq 1 ]]; then
-                        _queue_mark_interrupted "$f" "stale_running_pid"
-                        fixed=$((fixed + 1))
-                    fi
-                elif [[ "$run_status" -eq 2 ]]; then
-                    issues=$((issues + 1))
-                    _queue_health_print_issue "WARN" "$id is running but has no RUN_PID"
-                fi
-            done
-
-            for pidfile in "$root/workers"/*.pid; do
-                [[ -e "$pidfile" ]] || continue
-                pid="$(cat "$pidfile" 2>/dev/null)"
-                if [[ -z "$pid" || ! -d "/proc/$pid" ]]; then
-                    issues=$((issues + 1))
-                    _queue_health_print_issue "STALE" "dead worker pid file: $pidfile pid=$pid"
-                    if [[ "$fix" -eq 1 ]]; then
-                        rm -f "$pidfile"
-                        fixed=$((fixed + 1))
-                        echo "FIXED: removed $pidfile"
-                    fi
-                fi
-            done
-
-            echo
-            echo "issues: $issues"
-            echo "fixed:  $fixed"
-
-            if [[ "$fix" -eq 1 && "$fixed" -gt 0 ]]; then
-                _queue_log_event "health_fix" "" "" "health" "issues=$issues fixed=$fixed"
-            fi
-
-            [[ "$issues" -eq 0 || "$fix" -eq 1 ]]
+            _queue_health_report "$@"
             ;;
-
 
         stats)
             local filter_name=""
@@ -3756,7 +4075,7 @@ Commands:
   Hooks                       Cancel/delete               Resubmit/recovery
   os <id|name>  show hooks    c <id|name>   cancel        rs <id|name>
   ok <id|name> -- <cmd>       kd <id|name>  kill          rsd <id|name>
-  fail <id|name> -- <cmd>     d / dd <id|name>            h     health
+  fail <id|name> -- <cmd>     d / dd <id|name>            h     health              hd      health --deep
                                                           wait  waiting deps
                                                           sched scheduled
                               df <id|name>                hf    health --fix
