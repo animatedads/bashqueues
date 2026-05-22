@@ -125,3 +125,47 @@ if grep -q -- '--scope --quiet --wait' "$PWD/queuebash.sh"; then
     echo "Invalid systemd-run combination still present: --scope --wait" >&2
     exit 1
 fi
+
+
+# limits_probe_command_smoke
+queue limits >/tmp/qb_limits_basic.out 2>&1 || true
+grep -q 'resource limits:' /tmp/qb_limits_basic.out
+grep -q -- '--pipe --wait --collect' queuebash.sh
+
+
+# health_interrupted_smoke
+tmp_qb_health="$(mktemp -d)"
+old_qbr="${QUEUEBASH_ROOT:-}"
+export QUEUEBASH_ROOT="$tmp_qb_health"
+queue submit health_interrupted_smoke -- sleep 1 >/dev/null
+jobfile="$(find "$QUEUEBASH_ROOT/pending" -type f -name '*.job' | head -1)"
+id="$(basename "$jobfile" .job)"
+mkdir -p "$QUEUEBASH_ROOT/running" "$QUEUEBASH_ROOT/logs"
+mv "$jobfile" "$QUEUEBASH_ROOT/running/$id.job"
+{
+    echo "RUN_PID=999999999"
+    echo "RUN_PGID=999999999"
+    echo "RUN_STARTED_AT=$(date -Is)"
+} >> "$QUEUEBASH_ROOT/running/$id.job"
+queue health --fix >/tmp/qb_health_fix.out
+grep -q 'interrupted' /tmp/qb_health_fix.out
+test -f "$QUEUEBASH_ROOT/interrupted/$id.job"
+queue resubmit health_interrupted_smoke >/tmp/qb_resubmit_interrupted.out
+grep -q 'Resubmitted' /tmp/qb_resubmit_interrupted.out
+rm -rf "$tmp_qb_health"
+if [[ -n "$old_qbr" ]]; then
+    export QUEUEBASH_ROOT="$old_qbr"
+else
+    unset QUEUEBASH_ROOT
+fi
+
+
+# queuemgr_3col_smoke
+_queuemgr_print_commands >/tmp/qb_qmgr_3col.txt
+grep -q 'Run/workers' /tmp/qb_qmgr_3col.txt
+grep -q 'Resubmit/recovery' /tmp/qb_qmgr_3col.txt
+grep -q 'ci      clear interrupted' /tmp/qb_qmgr_3col.txt
+
+
+# systemd_workdir_regression
+grep -q -- '--working-directory' queuebash.sh

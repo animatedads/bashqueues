@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.3.7"
+QUEUEBASH_VERSION="0.4.4"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -235,7 +235,7 @@ _queue_root() {
 
 _queue_init() {
     local root="$(_queue_root)"
-    mkdir -p "$root"/{pending,running,paused,done,failed,cancelled,deleted,logs,workers}
+    mkdir -p "$root"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers}
 }
 
 _queue_now() {
@@ -265,7 +265,7 @@ _queue_job_pri() {
 _queue_job_id_and_names_for_completion() {
     local root="$(_queue_root)"
     local state f id name
-    for state in pending running paused done failed cancelled deleted; do
+    for state in pending running paused done failed interrupted cancelled deleted; do
         for f in "$root/$state"/*.job; do
             [[ -e "$f" ]] || continue
             id="$(basename "$f" .job)"
@@ -288,7 +288,7 @@ _queue_find_jobs() {
 
     [[ -z "$needle" ]] && return 1
 
-    for state in pending running paused done failed cancelled deleted; do
+    for state in pending running paused done failed interrupted cancelled deleted; do
         for f in "$root/$state"/*.job; do
             [[ -e "$f" ]] || continue
             id="$(basename "$f" .job)"
@@ -470,6 +470,7 @@ _queue_clone_job_to_pending() {
             printf 'CPU_LIMIT=%q\n' "${CPU_LIMIT:-}"
             printf 'MEM_LIMIT=%q\n' "${MEM_LIMIT:-}"
             printf 'MAX_LOG_SIZE_BYTES=%q\n' "${MAX_LOG_SIZE_BYTES:-${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}}"
+            printf 'RUNNER=%q\n' "${RUNNER:-${QUEUEBASH_RUNNER:-auto}}"
             printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
             printf 'PWD_AT_SUBMIT=%q\n' "$PWD_AT_SUBMIT"
             printf 'RESUBMITTED_FROM=%q\n' "$JOB_ID"
@@ -681,7 +682,7 @@ _queuemgr_repl_complete() {
     first="${before%% *}"
     [[ "$before" == "$first" ]] && first=""
 
-    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd stat stats ev events f filter n name st state a all cd cf cc ccd cdel q quit help ?"
+    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel q quit help ?"
 
     local words matches
     if [[ -z "$first" ]]; then
@@ -689,7 +690,7 @@ _queuemgr_repl_complete() {
     else
         case "$first" in
             st|state)
-                words="all pending running paused done failed cancelled deleted"
+                words="all pending running paused done failed interrupted cancelled deleted"
                 ;;
             f|filter|n|name|s|show|t|tail|pid|pids|p|prio|priority|pause|pd|unp|unpause|unpd|os|hooks|ok|fail|c|cancel|kd|kill|d|delete|dd|df|u|undelete|ud|uf|rs|resubmit|rsd)
                 words="$(_queue_job_id_and_names_for_completion)"
@@ -786,7 +787,7 @@ _queue_append_summary_to_job() {
 _queue_systemd_user_service_supported() {
     command -v systemd-run >/dev/null 2>&1 || return 1
 
-    # systemd-run --user --wait --collect creates a transient user service and waits for its exit code.
+    # systemd-run --user --pipe --wait --collect creates a transient user service and waits for its exit code.
     [[ -n "${XDG_RUNTIME_DIR:-}" ]] || return 1
 
     return 0
@@ -799,9 +800,9 @@ _queue_limit_status_text() {
     if [[ -z "$cpu" && -z "$mem" ]]; then
         echo "none"
     elif _queue_systemd_user_service_supported; then
-        echo "systemd-run-user-service"
+        echo "systemd-run-user-service-pipe"
     else
-        echo "requested-but-not-enforced-systemd-run-user-service-unavailable"
+        echo "requested-but-not-enforced-systemd-run-user-service-pipe-unavailable"
     fi
 }
 
@@ -811,11 +812,14 @@ _queue_build_payload_command() {
     # use setsid when available so cancel can signal the process group safely.
     local cpu="${1:-}"
     local mem="${2:-}"
-    shift 2
+    local cwd="${3:-}"
+    local runner="${4:-auto}"
+    shift 4
 
-    if [[ -n "$cpu" || -n "$mem" ]]; then
+    if [[ "$runner" == "systemd" ]]; then
         if _queue_systemd_user_service_supported; then
-            printf '%s\0' systemd-run --user --quiet --wait --collect
+            printf '%s\0' systemd-run --user --pipe --wait --collect
+            [[ -n "$cwd" ]] && printf '%s\0' --working-directory="$cwd"
             [[ -n "$cpu" ]] && printf '%s\0' -p "CPUQuota=${cpu}%"
             [[ -n "$mem" ]] && printf '%s\0' -p "MemoryMax=${mem}"
             printf '%s\0' --
@@ -842,18 +846,221 @@ _queue_cancel_does_not_run_failure_hook() {
     return 0
 }
 
+_queue_systemd_probe() {
+    local cpu="${1:-50}"
+    local mem="${2:-256M}"
+
+    echo "Probe command:"
+    printf '  %q' systemd-run --user --pipe --wait --collect -p "CPUQuota=${cpu}%" -p "MemoryMax=${mem}" -- /bin/sh -c 'echo queuebash-systemd-probe-ok; pwd; exit 0'
+    echo
+    echo
+
+    systemd-run --user --pipe --wait --collect \
+        --working-directory="$PWD" \
+        -p "CPUQuota=${cpu}%" \
+        -p "MemoryMax=${mem}" \
+        -- /bin/sh -c 'echo queuebash-systemd-probe-ok; pwd; exit 0'
+    local rc="$?"
+
+    echo
+    echo "probe_exit_code=$rc"
+    return "$rc"
+}
+
+_queue_health_print_issue() {
+    local level="$1"
+    local message="$2"
+    printf '[%s] %s\n' "$level" "$message"
+}
+
+_queue_job_id_from_file() {
+    local f="$1"
+    grep '^JOB_ID=' "$f" 2>/dev/null | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null
+}
+
+_queue_health_running_is_stale() {
+    local f="$1"
+    local run_pid
+    run_pid="$(grep '^RUN_PID=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    [[ -z "$run_pid" ]] && return 2
+    kill -0 "$run_pid" 2>/dev/null && return 1
+    return 0
+}
+
+_queue_mark_interrupted() {
+    local f="$1"
+    local reason="${2:-stale_running_pid}"
+    local root="$(_queue_root)"
+    local id name dest
+
+    id="$(basename "$f" .job)"
+    name="$(_queue_job_name "$f")"
+    dest="$root/interrupted/$id.job"
+
+    {
+        echo "INTERRUPTED_AT=$(printf '%q' "$(date -Is)")"
+        echo "INTERRUPTED_REASON=$(printf '%q' "$reason")"
+        echo "INTERRUPTED_FROM=running"
+    } >> "$f"
+
+    mv -f "$f" "$dest"
+    _queue_log_event "interrupted" "$id" "$name" "interrupted" "reason=$reason"
+    printf 'MOVED: %s (%s) running -> interrupted reason=%s\n' "$id" "$name" "$reason"
+}
+
+_queue_job_command() {
+    local f="$1"
+    grep '^COMMAND=' "$f" 2>/dev/null | sed 's/^COMMAND=( //; s/ )$//'
+}
+
+_queue_print_job_table() {
+    local idw=6 statew=5 priw=3 namew=4 okw=2 failw=4
+    local rows=()
+    local f id state pri name ok fail cmd row
+
+    for f in "$@"; do
+        [[ -f "$f" ]] || continue
+        id="$(basename "$f" .job)"
+        state="$(basename "$(dirname "$f")")"
+        pri="$(_queue_job_pri "$f")"
+        name="$(_queue_job_name "$f")"
+        ok="-"
+        fail="-"
+        _queue_job_has_array "$f" ON_SUCCESS && ok="Y"
+        _queue_job_has_array "$f" ON_FAILURE && fail="Y"
+        cmd="$(_queue_job_command "$f")"
+
+        rows+=( "$id"$'\t'"$state"$'\t'"$pri"$'\t'"$name"$'\t'"$ok"$'\t'"$fail"$'\t'"$cmd" )
+
+        (( ${#id} > idw )) && idw=${#id}
+        (( ${#state} > statew )) && statew=${#state}
+        (( ${#pri} > priw )) && priw=${#pri}
+        (( ${#name} > namew )) && namew=${#name}
+        (( ${#ok} > okw )) && okw=${#ok}
+        (( ${#fail} > failw )) && failw=${#fail}
+    done
+
+    printf "%-${idw}s  %-${statew}s  %${priw}s  %-${namew}s  %-${okw}s  %-${failw}s  %s\n" \
+        "JOB_ID" "STATE" "PRI" "NAME" "OK" "FAIL" "COMMAND"
+
+    for row in "${rows[@]}"; do
+        IFS=$'\t' read -r id state pri name ok fail cmd <<< "$row"
+        printf "%-${idw}s  %-${statew}s  %${priw}s  %-${namew}s  %-${okw}s  %-${failw}s  %s\n" \
+            "$id" "$state" "$pri" "$name" "$ok" "$fail" "$cmd"
+    done
+}
+
+_queue_runner_for_job() {
+    local requested="${1:-auto}"
+    local cpu="${2:-}"
+    local mem="${3:-}"
+
+    requested="${requested:-${QUEUEBASH_RUNNER:-auto}}"
+
+    case "$requested" in
+        direct) echo "direct"; return 0 ;;
+        systemd)
+            if _queue_systemd_user_service_supported; then
+                echo "systemd"
+                return 0
+            fi
+            echo "systemd-unavailable"
+            return 1
+            ;;
+        auto|"")
+            # Prefer systemd when available, because it gives us cgroup tracking.
+            if _queue_systemd_user_service_supported; then
+                echo "systemd"
+            else
+                echo "direct"
+            fi
+            return 0
+            ;;
+        *)
+            echo "direct"
+            return 0
+            ;;
+    esac
+}
+
+_queue_systemd_unit_from_log() {
+    local log="$1"
+    [[ -f "$log" ]] || return 1
+    grep -m1 '^Running as unit:' "$log" 2>/dev/null | sed 's/^Running as unit:[[:space:]]*//; s/[[:space:]]*$//'
+}
+
+_queue_record_systemd_unit_if_seen() {
+    local job="$1"
+    local log="$2"
+    local unit
+    unit="$(_queue_systemd_unit_from_log "$log" || true)"
+    [[ -z "$unit" ]] && return 0
+    if ! grep -q '^SYSTEMD_UNIT=' "$job" 2>/dev/null; then
+        printf 'SYSTEMD_UNIT=%q\n' "$unit" >> "$job"
+    fi
+}
+
+_queue_job_systemd_unit() {
+    local f="$1"
+    local unit
+    unit="$(grep '^SYSTEMD_UNIT=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    if [[ -z "$unit" ]]; then
+        local id root log
+        id="$(basename "$f" .job)"
+        root="$(_queue_root)"
+        log="$root/logs/$id.log"
+        unit="$(_queue_systemd_unit_from_log "$log" || true)"
+    fi
+    printf '%s\n' "$unit"
+}
+
+_queue_show_systemd_metrics_for_job() {
+    local f="$1"
+    local unit
+    unit="$(_queue_job_systemd_unit "$f")"
+
+    if [[ -z "$unit" ]]; then
+        echo "No SYSTEMD_UNIT recorded/found for $(basename "$f" .job)"
+        return 1
+    fi
+
+    echo "Unit: $unit"
+    echo
+
+    systemctl --user show "$unit" \
+        -p Id \
+        -p ActiveState \
+        -p SubState \
+        -p Result \
+        -p MainPID \
+        -p ControlGroup \
+        -p CPUAccounting \
+        -p CPUQuotaPerSecUSec \
+        -p MemoryAccounting \
+        -p MemoryMax \
+        -p MemoryCurrent \
+        -p TasksCurrent \
+        -p ExecMainCode \
+        -p ExecMainStatus \
+        2>/dev/null || {
+            echo "systemctl --user show failed for $unit"
+            return 1
+        }
+}
+
 _queue_help() {
     cat <<'EOF'
 Usage:
   queue [--dryrun] <command...>
   queue submit <name> [--dryrun] [--priority N|-p N] [--on-success <cmd...>] [--on-failure <cmd...>] -- <command...>
 
-  queue list [--state all|pending|running|paused|done|failed|cancelled|deleted] [--name TEXT] [--filter TEXT]
-  queue ls   [--state all|pending|running|paused|done|failed|cancelled|deleted] [--name TEXT] [--filter TEXT]
+  queue list [--state all|pending|running|paused|done|failed|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
+  queue ls   [--state all|pending|running|paused|done|failed|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
   queue find <text>
   queue show <qid|exact-job-name>
   queue tail <qid|exact-job-name>
   queue pids <qid|exact-job-name>
+  queue metrics <qid|exact-job-name>
   queue hooks <qid|exact-job-name>
 
   queue onsuccess <qid|exact-job-name> -- <command...>
@@ -876,6 +1083,7 @@ Usage:
   queue rm       <qid|exact-job-name> [--force] [--dryrun]
   queue undelete <qid|exact-job-name> [pending|done|failed] [--force] [--dryrun]
 
+  queue health [--fix]
   queue stats [--name exact-job-name] [--today]
   queue watch [--interval SEC]
   queue events [--tail N]
@@ -905,6 +1113,10 @@ Runtime PID tracking:
   queue pids <job> shows the recorded PID and any live child processes.
   queue cancel/kill use RUN_PGID where safe to signal the process group.
 
+Health/recovery:
+  queue health reports queue integrity, dead worker PID files, and stale running jobs.
+  queue health --fix creates missing directories, removes dead worker records, and moves stale running jobs to interrupted.
+
 Structured audit:
   State transitions and operator actions append JSONL records to ~/.queuebash/events.jsonl.
   queue stats summarizes queue states; queue events shows recent audit records.
@@ -915,6 +1127,7 @@ States:
   paused    held; workers will not run it
   done      completed successfully
   failed    completed with non-zero exit
+  interrupted worker/session died while job was running
   cancelled operator cancelled or killed
   deleted   marked deleted; can be undeleted
 
@@ -1018,10 +1231,28 @@ queue() {
     case "$cmd" in
 
         limits|limit-check)
+            local do_probe=0
+            local probe_cpu=50
+            local probe_mem=256M
+
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --probe) do_probe=1; shift ;;
+                    --cpu) probe_cpu="${2:-50}"; shift 2 ;;
+                    --mem|--memory) probe_mem="${2:-256M}"; shift 2 ;;
+                    *) shift ;;
+                esac
+            done
+
             echo "systemd-run: $(command -v systemd-run 2>/dev/null || echo missing)"
             echo "XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-}"
             if _queue_systemd_user_service_supported; then
-                echo "resource limits: available via systemd-run --user --wait --collect"
+                echo "resource limits: available via systemd-run --user --pipe --wait --collect"
+                if [[ "$do_probe" -eq 1 ]]; then
+                    echo
+                    _queue_systemd_probe "$probe_cpu" "$probe_mem"
+                    return "$?"
+                fi
                 return 0
             else
                 echo "resource limits: NOT available in this shell/session"
@@ -1044,6 +1275,7 @@ queue() {
             local retry_backoff=0
             local cpu_limit=""
             local mem_limit=""
+            local runner="${QUEUEBASH_RUNNER:-auto}"
             local max_log_size="${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}"
             local local_dryrun="$dryrun"
             local name="$1"
@@ -1094,6 +1326,11 @@ queue() {
                         [[ "$max_log_size" -gt 0 ]] || { echo "queue submit: invalid --max-log-size: $2" >&2; return 2; }
                         shift 2
                         ;;
+                    --runner)
+                        [[ -z "$2" ]] && { echo "queue submit: --runner needs a value: auto|systemd|direct" >&2; return 2; }
+                        runner="$2"
+                        shift 2
+                        ;;
                     --on-success)
                         shift
                         on_success=()
@@ -1140,6 +1377,7 @@ queue() {
                 echo "  cpu:      $cpu_limit"
                 echo "  mem:      $mem_limit"
                 echo "  maxlog:   $max_log_size"
+                echo "  runner:   $runner"
                 echo "  state:    pending"
                 echo "  jobfile:  $job"
                 printf "  command:"
@@ -1169,6 +1407,7 @@ queue() {
                 printf 'CPU_LIMIT=%q\n' "$cpu_limit"
                 printf 'MEM_LIMIT=%q\n' "$mem_limit"
                 printf 'MAX_LOG_SIZE_BYTES=%q\n' "$max_log_size"
+                printf 'RUNNER=%q\n' "$runner"
                 printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
                 printf 'PWD_AT_SUBMIT=%q\n' "$PWD"
 
@@ -1205,6 +1444,7 @@ queue() {
             local filter_state="all"
             local filter_name=""
             local filter_text=""
+            local jobs=()
 
             while [[ "$#" -gt 0 ]]; do
                 case "$1" in
@@ -1226,10 +1466,8 @@ queue() {
                 esac
             done
 
-            printf "%-24s %-10s %-8s %-20s %-4s %-4s %s\n" "JOB_ID" "STATE" "PRI" "NAME" "OK" "FAIL" "COMMAND"
-
-            local state f id name pri line ok fail
-            for state in pending running paused done failed cancelled deleted; do
+            local state f id name pri line
+            for state in pending running paused done failed interrupted cancelled deleted; do
                 [[ "$filter_state" != "all" && "$filter_state" != "$state" ]] && continue
 
                 for f in "$root/$state"/*.job; do
@@ -1238,19 +1476,16 @@ queue() {
                     id="$(basename "$f" .job)"
                     name="$(_queue_job_name "$f")"
                     pri="$(_queue_job_pri "$f")"
-                    line="$(grep '^COMMAND=' "$f" | sed 's/^COMMAND=( //; s/ )$//')"
+                    line="$(_queue_job_command "$f")"
 
                     [[ -n "$filter_name" && "$name" != *"$filter_name"* ]] && continue
                     [[ -n "$filter_text" && "$id $state $pri $name $line" != *"$filter_text"* ]] && continue
 
-                    ok="-"
-                    fail="-"
-                    if _queue_job_has_array "$f" ON_SUCCESS; then ok="Y"; fi
-                    if _queue_job_has_array "$f" ON_FAILURE; then fail="Y"; fi
-
-                    printf "%-24s %-10s %-8s %-20s %-4s %-4s %s\n" "$id" "$state" "$pri" "$name" "$ok" "$fail" "$line"
+                    jobs+=( "$f" )
                 done
             done
+
+            _queue_print_job_table "${jobs[@]}"
             ;;
 
         find)
@@ -1363,6 +1598,123 @@ queue() {
             _queue_tail_log_for_job "$chosen" "$id"
             ;;
 
+
+        health)
+            local fix=0
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --fix) fix=1; shift ;;
+                    *) shift ;;
+                esac
+            done
+
+            local issues=0
+            local fixed=0
+            local state dir f id jid pri log run_status pidfile pid
+
+            echo "=== queuebash health ==="
+            echo "root: $root"
+            echo "mode: $([[ "$fix" -eq 1 ]] && echo fix || echo report)"
+            echo
+
+            for state in pending running paused done failed interrupted cancelled deleted logs workers; do
+                dir="$root/$state"
+                if [[ ! -d "$dir" ]]; then
+                    issues=$((issues + 1))
+                    _queue_health_print_issue "MISSING" "directory: $dir"
+                    if [[ "$fix" -eq 1 ]]; then
+                        mkdir -p "$dir"
+                        fixed=$((fixed + 1))
+                        echo "FIXED: created $dir"
+                    fi
+                fi
+            done
+
+            if [[ ! -w "$root" ]]; then
+                issues=$((issues + 1))
+                _queue_health_print_issue "ERROR" "queue root is not writable: $root"
+            fi
+
+            touch "$root/events.jsonl" 2>/dev/null || {
+                issues=$((issues + 1))
+                _queue_health_print_issue "ERROR" "events.jsonl is not writable: $root/events.jsonl"
+            }
+
+            for state in pending running paused done failed interrupted cancelled deleted; do
+                for f in "$root/$state"/*.job; do
+                    [[ -e "$f" ]] || continue
+
+                    id="$(basename "$f" .job)"
+                    jid="$(_queue_job_id_from_file "$f")"
+                    pri="$(_queue_job_pri "$f")"
+
+                    if [[ -z "$jid" ]]; then
+                        issues=$((issues + 1))
+                        _queue_health_print_issue "BADJOB" "$f missing JOB_ID"
+                    elif [[ "$jid" != "$id" ]]; then
+                        issues=$((issues + 1))
+                        _queue_health_print_issue "BADJOB" "$f JOB_ID=$jid does not match filename $id"
+                    fi
+
+                    if ! [[ "$pri" =~ ^-?[0-9]+$ ]]; then
+                        issues=$((issues + 1))
+                        _queue_health_print_issue "BADJOB" "$f invalid PRIORITY=$pri"
+                    fi
+
+                    if [[ "$state" != "pending" && "$state" != "paused" ]]; then
+                        log="$root/logs/$id.log"
+                        if [[ ! -f "$log" ]]; then
+                            issues=$((issues + 1))
+                            _queue_health_print_issue "WARN" "$id state=$state has no log file"
+                        fi
+                    fi
+                done
+            done
+
+            for f in "$root/running"/*.job; do
+                [[ -e "$f" ]] || continue
+                id="$(basename "$f" .job)"
+                _queue_health_running_is_stale "$f"
+                run_status="$?"
+                if [[ "$run_status" -eq 0 ]]; then
+                    issues=$((issues + 1))
+                    _queue_health_print_issue "STALE" "$id is running but RUN_PID is dead"
+                    if [[ "$fix" -eq 1 ]]; then
+                        _queue_mark_interrupted "$f" "stale_running_pid"
+                        fixed=$((fixed + 1))
+                    fi
+                elif [[ "$run_status" -eq 2 ]]; then
+                    issues=$((issues + 1))
+                    _queue_health_print_issue "WARN" "$id is running but has no RUN_PID"
+                fi
+            done
+
+            for pidfile in "$root/workers"/*.pid; do
+                [[ -e "$pidfile" ]] || continue
+                pid="$(cat "$pidfile" 2>/dev/null)"
+                if [[ -z "$pid" || ! -d "/proc/$pid" ]]; then
+                    issues=$((issues + 1))
+                    _queue_health_print_issue "STALE" "dead worker pid file: $pidfile pid=$pid"
+                    if [[ "$fix" -eq 1 ]]; then
+                        rm -f "$pidfile"
+                        fixed=$((fixed + 1))
+                        echo "FIXED: removed $pidfile"
+                    fi
+                fi
+            done
+
+            echo
+            echo "issues: $issues"
+            echo "fixed:  $fixed"
+
+            if [[ "$fix" -eq 1 && "$fixed" -gt 0 ]]; then
+                _queue_log_event "health_fix" "" "" "health" "issues=$issues fixed=$fixed"
+            fi
+
+            [[ "$issues" -eq 0 || "$fix" -eq 1 ]]
+            ;;
+
+
         stats)
             local filter_name=""
             local today=0
@@ -1383,7 +1735,7 @@ queue() {
             echo "------------------------"
 
             local state f name submitted count total=0
-            for state in pending running paused done failed cancelled deleted; do
+            for state in pending running paused done failed interrupted cancelled deleted; do
                 count=0
                 for f in "$root/$state"/*.job; do
                     [[ -e "$f" ]] || continue
@@ -1410,6 +1762,36 @@ queue() {
             else
                 echo "queue events: no events.jsonl yet"
             fi
+            ;;
+
+
+
+        unit|metrics|metric)
+            local target="$1"
+            [[ -z "$target" ]] && { echo "Usage: queue metrics <qid-or-exact-job-name>" >&2; return 2; }
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue metrics: no such QID or exact job name: $target" >&2; return 1; }
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 ]]; then
+                echo "queue metrics: ambiguous QID prefix: $target" >&2
+                _queue_print_matches "${matches[@]}"
+                return 2
+            fi
+            if [[ "${#matches[@]}" -gt 1 ]]; then
+                echo "queue metrics: multiple jobs named '$target'; use a QID" >&2
+                _queue_print_matches "${matches[@]}"
+                return 2
+            fi
+
+            _queue_show_systemd_metrics_for_job "${matches[0]}"
             ;;
 
 
@@ -1910,7 +2292,7 @@ queue() {
             while IFS= read -r f; do
                 all_matches+=( "$f" )
                 state="$(basename "$(dirname "$f")")"
-                [[ "$state" == "failed" ]] && matches+=( "$f" )
+                [[ "$state" == "failed" || "$state" == "interrupted" ]] && matches+=( "$f" )
             done < <(_queue_find_jobs "$target")
 
             if [[ "${#all_matches[@]}" -eq 0 ]]; then
@@ -1919,7 +2301,7 @@ queue() {
             fi
 
             if [[ "${#matches[@]}" -eq 0 ]]; then
-                echo "queue resubmit: matching job(s) found, but none are in failed state:" >&2
+                echo "queue resubmit: matching job(s) found, but none are in failed or interrupted state:" >&2
                 _queue_print_matches "${all_matches[@]}"
                 return 1
             fi
@@ -1944,7 +2326,7 @@ queue() {
                 new_id="$(_queue_id)"
 
                 if [[ "$local_dryrun" -eq 1 ]]; then
-                    echo "DRYRUN: would resubmit failed job:"
+                    echo "DRYRUN: would resubmit failed/interrupted job:"
                     echo "  from:     $src_id"
                     echo "  new id:   $new_id"
                     echo "  name:     $name"
@@ -1960,9 +2342,9 @@ queue() {
             done
 
             if [[ "$local_dryrun" -eq 1 ]]; then
-                echo "DRYRUN: would resubmit $count failed job(s)."
+                echo "DRYRUN: would resubmit $count failed/interrupted job(s)."
             else
-                echo "Resubmitted $count failed job(s)."
+                echo "Resubmitted $count failed/interrupted job(s)."
             fi
             ;;
 
@@ -2084,7 +2466,7 @@ queue() {
             local local_dryrun="$dryrun"
             [[ "${2:-}" == "--dryrun" || "${2:-}" == "-n" ]] && local_dryrun=1
             case "$what" in
-                done|failed|paused|cancelled|deleted)
+                done|failed|paused|interrupted|cancelled|deleted)
                     if [[ "$local_dryrun" -eq 1 ]]; then
                         echo "DRYRUN: would clear $what jobs:"
                         find "$root/$what" -maxdepth 1 -type f -name '*.job' -printf '  %f\n' 2>/dev/null
@@ -2103,7 +2485,7 @@ queue() {
                         echo "Cleared all jobs and logs"
                     fi
                     ;;
-                *) echo "Usage: queue clear done|failed|paused|cancelled|deleted|all [--dryrun]" >&2; return 2 ;;
+                *) echo "Usage: queue clear done|failed|paused|interrupted|cancelled|deleted|all [--dryrun]" >&2; return 2 ;;
             esac
             ;;
 
@@ -2158,15 +2540,25 @@ _queue_worker() {
                 echo
                 echo
 
+                runner_requested="${RUNNER:-${QUEUEBASH_RUNNER:-auto}}"
+                runner_planned="$(_queue_runner_for_job "$runner_requested" "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" || true)"
                 limit_status="$(_queue_limit_status_text "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")"
+                [[ "$runner_planned" == "systemd" ]] && limit_status="systemd-run-user-service-pipe"
                 if [[ -n "${CPU_LIMIT:-}" || -n "${MEM_LIMIT:-}" ]]; then
-                    echo "resource_limit_request: cpu=${CPU_LIMIT:-} mem=${MEM_LIMIT:-} status=$limit_status"
-                    if [[ "$limit_status" != "systemd-run-user-service" ]]; then
+                    echo "resource_limit_request: cpu=${CPU_LIMIT:-} mem=${MEM_LIMIT:-} runner=${runner_requested:-auto} planned=${runner_planned:-} status=$limit_status"
+                    if [[ "$limit_status" != "systemd-run-user-service-pipe" ]]; then
                         echo "WARNING: resource limits were requested but are NOT enforced in this shell/session."
                     fi
                 fi
 
-                mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${COMMAND[@]}")
+                runner_used="$(_queue_runner_for_job "${RUNNER:-${QUEUEBASH_RUNNER:-auto}}" "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")"
+                {
+                    printf 'RUNNER_USED=%q\n' "$runner_used"
+                } >> "$running"
+                mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${PWD_AT_SUBMIT:-$PWD}" "$runner_used" "${COMMAND[@]}")
+                printf "launch_argv:"
+                printf " %q" "${payload_cmd[@]}"
+                printf "\n"
                 "${payload_cmd[@]}" &
                 cmd_pid="$!"
 
@@ -2183,6 +2575,7 @@ _queue_worker() {
 
                 wait "$cmd_pid"
                 rc="$?"
+                _queue_record_systemd_unit_if_seen "$running" "$log"
 
                 log_bytes_now="$(_queue_log_size_bytes "$log")"
                 max_log_bytes="$(_queue_job_log_max_bytes "$running")"
@@ -2283,39 +2676,30 @@ _queue_worker() {
 _queuemgr_print_commands() {
     cat <<'EOF'
 Commands:
-  Run/workers                         Inspect
-  r / r4       run 1 / 4 workers       s <id|name>     show job/log
-  rd / rd4     dryrun 1 / 4 workers    t <id|name>     tail job log
-                                      pid <id|name>   PID/process tree
+  Run/workers                 Inspect                     Priority/state
+  r / r4       run 1/4        s <id|name>   show          p <id|name> <pri>
+  rd / rd4     dryrun 1/4     t <id|name>   tail          pause <id|name>
+                              pid <id|name> pids
+                              m <id|name>   metrics          pd <id|name>
+                                                          unp / unpd <id|name>
 
-  Priority / state                    Hooks
-  p <id|name> <pri> set priority       os <id|name>    show hooks
-  pause <id|name>    pause             ok <id|name> -- <cmd>
-  pd <id|name>       dryrun pause      fail <id|name> -- <cmd>
-  unp <id|name>      unpause
-  unpd <id|name>     dryrun unpause
+  Hooks                       Cancel/delete               Resubmit/recovery
+  os <id|name>  show hooks    c <id|name>   cancel        rs <id|name>
+  ok <id|name> -- <cmd>       kd <id|name>  kill          rsd <id|name>
+  fail <id|name> -- <cmd>     d / dd <id|name>            h     health
+                              df <id|name>                hf    health --fix
+                              u / ud / uf <id|name>
 
-  Cancel/delete                       Resubmit
-  c <id|name>       cancel             rs <id|name>    resubmit failed
-  kd <id|name>      kill               rsd <id|name>   dryrun resubmit
-  d <id|name>       delete
-  dd <id|name>      dryrun delete
-  df <id|name>      force delete
-  u <id|name>       undelete
-  ud <id|name>      dryrun undelete
-  uf <id|name>      force undelete
-
-  Clear/history                       Filters/view
-  cd      clear done                   f <text>        text filter
-  cf      clear failed                 n <text>        name filter
-  cc      clear cancelled              st <state>      state filter
-  ccd     dryrun clear cancelled       a               clear filters
-  cdel    clear deleted                stat            stats
-                                       ev [N]          recent events
-
-  help/?  show this summary            q               quit
+  Clear/history               Filters/view                General
+  cd      clear done          f <text>      text filter    help/?  show help
+  cf      clear failed        n <text>      name filter    q       quit
+  ci      clear interrupted   st <state>    state filter
+  cc      clear cancelled     a             clear filters
+  ccd     dryrun clear canc.  stat          stats
+  cdel    clear deleted       ev [N]        recent events
 EOF
 }
+
 
 queuemgr() {
     _queue_init
@@ -2359,6 +2743,7 @@ queuemgr() {
             s|show) queue show "$arg"; read -r -p "press enter..." ;;
             t|tail|follow) queue tail "$arg"; read -r -p "press enter..." ;;
             pid|pids|ps) queue pids "$arg"; read -r -p "press enter..." ;;
+            m|metrics|metric|unit) queue metrics "$arg"; read -r -p "press enter..." ;;
             p|prio|priority) queue priority "$arg" "$extra"; read -r -p "press enter..." ;;
             pause|hold) queue pause "$arg"; read -r -p "press enter..." ;;
             pd|pausedry|drypause) queue --dryrun pause "$arg"; read -r -p "press enter..." ;;
@@ -2393,10 +2778,14 @@ queuemgr() {
             uf|undelf|undeletef|restoref) queue undelete "$arg" --force; read -r -p "press enter..." ;;
             rs|resubmit|retry) queue resubmit "$arg"; read -r -p "press enter..." ;;
             rsd|dryresubmit|dryretry) queue --dryrun resubmit "$arg"; read -r -p "press enter..." ;;
+            ci|clear-interrupted) queue clear interrupted; read -r -p "press enter..." ;;
+            cid|dry-clear-interrupted) queue --dryrun clear interrupted; read -r -p "press enter..." ;;
             cc|clear-cancelled) queue clear cancelled; read -r -p "press enter..." ;;
             ccd|dry-clear-cancelled) queue --dryrun clear cancelled; read -r -p "press enter..." ;;
             cdel|clear-deleted) queue clear deleted; read -r -p "press enter..." ;;
             stat|stats) queue stats; read -r -p "press enter..." ;;
+            h|health) queue health; read -r -p "press enter..." ;;
+            hf|healthfix|health-fix) queue health --fix; read -r -p "press enter..." ;;
             ev|events) queue events --tail "${arg:-20}"; read -r -p "press enter..." ;;
             f|filter) filter_text="$arg" ;;
             n|name) filter_name="$arg" ;;
@@ -2424,7 +2813,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit list ls find show tail follow pids pid ps hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry stats events watch run start clear version --version -V help --help -h"
+    local commands="--dryrun -n submit list ls find show tail follow pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start clear version --version -V help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
@@ -2441,7 +2830,7 @@ _queue_complete() {
                 COMPREPLY=( $(compgen -c -- "$cur") )
                 return 0
             fi
-            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --max-log-size --on-success --on-failure --" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --runner --max-log-size --on-success --on-failure --" -- "$cur") )
             COMPREPLY+=( $(compgen -c -- "$cur") )
             COMPREPLY+=( $(compgen -f -- "$cur") )
             return 0
@@ -2449,7 +2838,7 @@ _queue_complete() {
 
         list|ls)
             if [[ "$prev" == "--state" || "$prev" == "-s" ]]; then
-                COMPREPLY=( $(compgen -W "all pending running paused done failed cancelled deleted" -- "$cur") )
+                COMPREPLY=( $(compgen -W "all pending running paused done failed interrupted cancelled deleted" -- "$cur") )
                 return 0
             fi
             COMPREPLY=( $(compgen -W "--state -s --name -n --filter -f" -- "$cur") )
@@ -2457,7 +2846,7 @@ _queue_complete() {
             return 0
             ;;
 
-        show|tail|follow|pids|pid|ps|hooks|hook|pause|hold|unpause|resume|release|cancel|kill|delete|del|rm|remove|undelete|undel|restore|resubmit|retry)
+        show|tail|follow|pids|pid|ps|metrics|metric|unit|hooks|hook|pause|hold|unpause|resume|release|cancel|kill|delete|del|rm|remove|undelete|undel|restore|resubmit|retry)
             if [[ "$COMP_CWORD" -eq 2 ]]; then
                 COMPREPLY=( $(compgen -W "$(_queue_job_id_and_names_for_completion)" -- "$cur") )
                 return 0
@@ -2507,7 +2896,7 @@ _queue_complete() {
             ;;
 
         clear)
-            COMPREPLY=( $(compgen -W "done failed paused cancelled deleted all --dryrun -n" -- "$cur") )
+            COMPREPLY=( $(compgen -W "done failed paused interrupted cancelled deleted all --dryrun -n" -- "$cur") )
             return 0
             ;;
     esac
@@ -2526,7 +2915,7 @@ _queuemgr_complete() {
 
     case "$prev" in
         --state|-s)
-            COMPREPLY=( $(compgen -W "all pending running paused done failed cancelled deleted" -- "$cur") )
+            COMPREPLY=( $(compgen -W "all pending running paused done failed interrupted cancelled deleted" -- "$cur") )
             return 0
             ;;
         --filter|-f|--name|-n)

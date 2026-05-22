@@ -351,7 +351,7 @@ Retries clone the failed attempt into a fresh pending job. The failed attempt re
 queue submit heavy --cpu 200 --mem 4G -- ./heavy_dsp_job.sh
 ```
 
-When `systemd-run --user --wait --collect` is available, queuebash runs the payload inside a transient systemd scope with:
+When `systemd-run --user --pipe --wait --collect` is available, queuebash runs the payload inside a transient systemd scope with:
 
 ```text
 CPUQuota=<cpu>%
@@ -428,7 +428,7 @@ Shows live stats, running jobs, and the top of the pending list.
 
 ## Resource limit verification
 
-`--cpu` and `--mem` are enforced through `systemd-run --user --wait --collect` when available in the current login/session.
+`--cpu` and `--mem` are enforced through `systemd-run --user --pipe --wait --collect` when available in the current login/session.
 
 Check support:
 
@@ -447,11 +447,11 @@ queue tail heavy
 The job log should include:
 
 ```text
-resource_limit_request: cpu=50 mem=4G status=systemd-run-user-service
-limit_status: systemd-run-user-service
+resource_limit_request: cpu=50 mem=4G status=systemd-run-user-service-pipe
+limit_status: systemd-run-user-service-pipe
 ```
 
-If the status is `requested-but-not-enforced-systemd-run-user-service-unavailable`, the limit was recorded but not enforced by the OS in that shell/session.
+If the status is `requested-but-not-enforced-systemd-run-user-service-pipe-unavailable`, the limit was recorded but not enforced by the OS in that shell/session.
 
 
 ## Regression harness
@@ -530,7 +530,132 @@ prints the same compact summary.
 Resource-limited jobs use a transient user **service**:
 
 ```bash
-systemd-run --user --wait --collect -p CPUQuota=50% -p MemoryMax=4G -- command ...
+systemd-run --user --pipe --wait --collect -p CPUQuota=50% -p MemoryMax=4G -- command ...
 ```
 
 `--wait` is deliberately not combined with `--scope`, because systemd rejects that combination. Queue workers need `--wait` so they can collect the exit code and move the job to `done` or `failed` correctly.
+
+
+## systemd resource-limit probe
+
+Use this before trusting CPU/MEM enforcement on a machine:
+
+```bash
+queue limits --probe
+queue limits --probe --cpu 50 --mem 4G
+```
+
+`queuebash` uses:
+
+```bash
+systemd-run --user --pipe --wait --collect -p CPUQuota=50% -p MemoryMax=4G -- command ...
+```
+
+`--pipe` is important: it returns the transient service stdout/stderr to the queue worker, so the normal job log still captures command output and systemd diagnostics.
+
+
+## Health and interrupted recovery
+
+`queue health` reports queue integrity and recovery issues:
+
+```bash
+queue health
+queue health --fix
+```
+
+`queue health --fix` is intentionally non-interactive but loud. It prints everything it repairs, including stale `running` jobs whose recorded `RUN_PID` is no longer alive.
+
+Safe repairs include:
+
+- creating missing state directories
+- removing dead detached worker PID files
+- moving stale `running` jobs to `interrupted`
+- appending `INTERRUPTED_*` metadata
+
+`interrupted` means the worker/session died or disappeared while the job was marked running. It is distinct from `failed`, because no program exit code was observed.
+
+Resubmission accepts both failed and interrupted jobs:
+
+```bash
+queue resubmit myjob
+queue retry myjob
+```
+
+Inside `queuemgr`:
+
+```text
+h     health
+hf    health --fix
+```
+
+
+## Three-column queue manager help
+
+`queuemgr` now uses a compact three-column grouped command summary for standard full-screen terminals.
+
+Additional clear shortcut:
+
+```text
+ci    clear interrupted
+cid   dryrun clear interrupted
+```
+
+## Dynamic list column widths
+
+`queue list` calculates column widths from the actual displayed rows, so long QIDs align under `JOB_ID` correctly.
+
+
+## systemd working directory
+
+Resource-limited jobs use the original submit directory when launching through `systemd-run`:
+
+```bash
+--working-directory="$PWD_AT_SUBMIT"
+```
+
+This preserves normal relative-command behaviour:
+
+```bash
+queue submit heavy --cpu 50 --mem 4G -- rexx waiter.rex
+```
+
+The transient service now resolves `waiter.rex` from the directory where the job was submitted.
+
+
+## Runner policy
+
+Queuebash now supports a runner policy:
+
+```bash
+export QUEUEBASH_RUNNER=auto
+```
+
+Allowed values:
+
+```text
+auto     prefer systemd-run when available, otherwise direct
+systemd  require systemd-run support
+direct   use the direct/setsid runner
+```
+
+Per job:
+
+```bash
+queue submit heavy --runner systemd --cpu 50 --mem 4G -- rexx waiter.rex
+queue submit tiny --runner direct -- echo hello
+```
+
+When systemd is used, queuebash records:
+
+```text
+RUNNER=auto|systemd|direct
+RUNNER_USED=systemd|direct
+SYSTEMD_UNIT=<unit name when observed>
+```
+
+Inspect cgroup/unit information:
+
+```bash
+queue metrics <job>
+queue unit <job>
+```
