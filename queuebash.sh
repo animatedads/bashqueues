@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.6.3"
+QUEUEBASH_VERSION="0.7.0"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -468,7 +468,7 @@ _queue_job_dependency_tokens() {
 _queue_job_dependencies_satisfied() {
     local f="$1"
     local deps dep
-    deps="$(_queue_job_dependency_tokens "$f")"
+    deps="$(_queue_job_dependency_tokens "$f" || true)"
     [[ -z "$deps" ]] && return 0
 
     for dep in $deps; do
@@ -481,7 +481,7 @@ _queue_job_dependencies_satisfied() {
 _queue_job_dependencies_status() {
     local f="$1"
     local deps dep
-    deps="$(_queue_job_dependency_tokens "$f")"
+    deps="$(_queue_job_dependency_tokens "$f" || true)"
     [[ -z "$deps" ]] && { echo "none"; return 0; }
 
     for dep in $deps; do
@@ -498,7 +498,7 @@ _queue_job_dependencies_status() {
 _queue_job_dependencies_blocked() {
     local f="$1"
     local deps dep
-    deps="$(_queue_job_dependency_tokens "$f")"
+    deps="$(_queue_job_dependency_tokens "$f" || true)"
     [[ -z "$deps" ]] && return 1
 
     for dep in $deps; do
@@ -507,6 +507,104 @@ _queue_job_dependencies_blocked() {
     done
 
     return 1
+}
+
+_queue_now_epoch() {
+    date +%s
+}
+
+_queue_parse_delay_seconds() {
+    local spec="$1"
+    local n unit total=0 rest
+
+    [[ -z "$spec" ]] && return 1
+
+    if [[ "$spec" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$spec"
+        return 0
+    fi
+
+    rest="$spec"
+    while [[ -n "$rest" ]]; do
+        if [[ "$rest" =~ ^([0-9]+)([smhdw])(.*)$ ]]; then
+            n="${BASH_REMATCH[1]}"
+            unit="${BASH_REMATCH[2]}"
+            rest="${BASH_REMATCH[3]}"
+            case "$unit" in
+                s) total=$((total + n)) ;;
+                m) total=$((total + n * 60)) ;;
+                h) total=$((total + n * 3600)) ;;
+                d) total=$((total + n * 86400)) ;;
+                w) total=$((total + n * 604800)) ;;
+            esac
+        else
+            return 1
+        fi
+    done
+
+    printf '%s\n' "$total"
+}
+
+_queue_parse_at_epoch() {
+    local spec="$1"
+    local epoch today candidate
+
+    [[ -z "$spec" ]] && return 1
+
+    if [[ "$spec" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$spec"
+        return 0
+    fi
+
+    if [[ "$spec" =~ ^[0-9]{1,2}:[0-9]{2}(:[0-9]{2})?$ ]]; then
+        today="$(date +%Y-%m-%d)"
+        candidate="$(date -d "$today $spec" +%s 2>/dev/null)" || return 1
+        if (( candidate <= $(_queue_now_epoch) )); then
+            candidate="$(date -d "tomorrow $spec" +%s 2>/dev/null)" || return 1
+        fi
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+
+    epoch="$(date -d "$spec" +%s 2>/dev/null)" || return 1
+    printf '%s\n' "$epoch"
+}
+
+_queue_job_not_before_epoch() {
+    local f="$1"
+    local nb rb
+    nb="$(grep '^NOT_BEFORE_EPOCH=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    rb="$(grep '^RETRY_NOT_BEFORE_EPOCH=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    nb="${nb:-0}"
+    rb="${rb:-0}"
+    [[ "$nb" =~ ^[0-9]+$ ]] || nb=0
+    [[ "$rb" =~ ^[0-9]+$ ]] || rb=0
+    if (( rb > nb )); then
+        printf '%s\n' "$rb"
+    else
+        printf '%s\n' "$nb"
+    fi
+}
+
+_queue_job_schedule_due() {
+    local f="$1"
+    local due
+    due="$(_queue_job_not_before_epoch "$f")"
+    (( due <= $(_queue_now_epoch) ))
+}
+
+_queue_job_schedule_status() {
+    local f="$1"
+    local due now remain when
+    due="$(_queue_job_not_before_epoch "$f")"
+    now="$(_queue_now_epoch)"
+    when="$(date -d "@$due" -Is 2>/dev/null || echo "$due")"
+    if (( due <= now )); then
+        echo "due"
+    else
+        remain=$((due - now))
+        echo "waiting ${remain}s until $when"
+    fi
 }
 
 _queue_next_job() {
@@ -520,6 +618,7 @@ _queue_next_job() {
         [[ -e "$f" ]] || continue
 
         _queue_job_retry_due "$f" || continue
+        _queue_job_schedule_due "$f" || continue
         _queue_job_dependencies_satisfied "$f" || continue
 
         id="$(basename "$f" .job)"
@@ -804,7 +903,7 @@ _queuemgr_repl_complete() {
     first="${before%% *}"
     [[ "$before" == "$first" ]] && first=""
 
-    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel gz gzip-logs compress-logs q quit help ?"
+    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd sched scheduled schedule stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel gz gzip-logs compress-logs q quit help ?"
 
     local words matches
     if [[ -z "$first" ]]; then
@@ -1404,6 +1503,8 @@ _queue_explain_job() {
     printf "%-20s %s\n" "finished:" "${finished:-not-finished}"
     [[ -n "$exit_code" ]] && printf "%-20s %s\n" "exit code:" "$exit_code"
     [[ -n "$duration" ]] && printf "%-20s %ss\n" "duration:" "$duration"
+    schedule_status="$(_queue_job_schedule_status "$f" 2>/dev/null || echo due)"
+    printf "%-20s %s\n" "schedule:" "$schedule_status"
     echo
 
     echo "Runner"
@@ -1766,6 +1867,39 @@ queue() {
             _queue_help
             ;;
 
+
+        submit-in|in)
+            local delay_spec="$1"
+            [[ -z "$delay_spec" ]] && { echo "Usage: queue submit-in <delay> <name> [options] -- <command...>" >&2; return 2; }
+            shift
+
+            local delay_seconds
+            delay_seconds="$(_queue_parse_delay_seconds "$delay_spec")" || {
+                echo "queue submit-in: invalid delay '$delay_spec' (use e.g. 30s, 10m, 2h, 1d, 1h30m)" >&2
+                return 2
+            }
+
+            QUEUEBASH_SUBMIT_NOT_BEFORE_EPOCH="$(( $(_queue_now_epoch) + delay_seconds ))" \
+            QUEUEBASH_SUBMIT_SCHEDULE_LABEL="in $delay_spec" \
+                queue submit "$@"
+            ;;
+
+        submit-at|at)
+            local at_spec="$1"
+            [[ -z "$at_spec" ]] && { echo "Usage: queue submit-at <time> <name> [options] -- <command...>" >&2; return 2; }
+            shift
+
+            local at_epoch
+            at_epoch="$(_queue_parse_at_epoch "$at_spec")" || {
+                echo "queue submit-at: invalid time '$at_spec' (use e.g. 23:30 or '2026-05-22 23:30')" >&2
+                return 2
+            }
+
+            QUEUEBASH_SUBMIT_NOT_BEFORE_EPOCH="$at_epoch" \
+            QUEUEBASH_SUBMIT_SCHEDULE_LABEL="at $at_spec" \
+                queue submit "$@"
+            ;;
+
         submit)
             local priority=10
             local retries_max=0
@@ -1777,6 +1911,8 @@ queue() {
             local allow_large_log=0
             local depends_after_success=()
             local deps_join=""
+            local not_before_epoch="${QUEUEBASH_SUBMIT_NOT_BEFORE_EPOCH:-0}"
+            local schedule_label="${QUEUEBASH_SUBMIT_SCHEDULE_LABEL:-}"
             local local_dryrun="$dryrun"
             local name="$1"
             shift || true
@@ -1911,6 +2047,9 @@ queue() {
                     printf " %q" "${depends_after_success[@]}"
                     printf "\n"
                 fi
+                if [[ "${not_before_epoch:-0}" =~ ^[0-9]+$ && "${not_before_epoch:-0}" -gt 0 ]]; then
+                    echo "  scheduled: $(date -d "@$not_before_epoch" -Is 2>/dev/null || echo "$not_before_epoch") ${schedule_label:+($schedule_label)}"
+                fi
                 echo "  state:    pending"
                 echo "  jobfile:  $job"
                 printf "  command:"
@@ -1942,6 +2081,8 @@ queue() {
                 printf 'RETRIES_DONE=%q\n' "0"
                 printf 'RETRY_BACKOFF=%q\n' "$retry_backoff"
                 printf 'RETRY_NOT_BEFORE_EPOCH=%q\n' "0"
+                printf 'NOT_BEFORE_EPOCH=%q\n' "$not_before_epoch"
+                [[ -n "$schedule_label" ]] && printf 'SCHEDULE_LABEL=%q\n' "$schedule_label"
                 printf 'CPU_LIMIT=%q\n' "$cpu_limit"
                 printf 'MEM_LIMIT=%q\n' "$mem_limit"
                 printf 'MAX_LOG_SIZE_BYTES=%q\n' "$max_log_size"
@@ -1972,6 +2113,9 @@ queue() {
             } > "$job"
 
             echo "Submitted $id : $name priority=$priority"
+            if [[ "${not_before_epoch:-0}" =~ ^[0-9]+$ && "${not_before_epoch:-0}" -gt 0 ]]; then
+                echo "  scheduled for: $(date -d "@$not_before_epoch" -Is 2>/dev/null || echo "$not_before_epoch") ${schedule_label:+($schedule_label)}"
+            fi
             _queue_log_event "submitted" "$id" "$name" "pending" "priority=$priority"
 
             if [[ "${#on_success[@]}" -gt 0 ]]; then
@@ -2048,6 +2192,25 @@ queue() {
             ;;
 
 
+
+
+
+        scheduled|schedule)
+            local f any=0
+            for f in "$root/pending"/*.job; do
+                [[ -e "$f" ]] || continue
+                if ! _queue_job_schedule_due "$f"; then
+                    any=1
+                    echo "=============================================================================="
+                    echo "Job: $(basename "$f" .job)  Name: $(_queue_job_name "$f")"
+                    echo "Schedule: $(_queue_job_schedule_status "$f")"
+                    echo "Dependencies:"
+                    _queue_job_dependencies_status "$f" | sed 's/^/  /'
+                fi
+            done
+            [[ "$any" -eq 0 ]] && echo "No pending jobs are waiting on schedule."
+            return 0
+            ;;
 
 
         waiting|blocked)
@@ -3412,6 +3575,7 @@ Commands:
   ok <id|name> -- <cmd>       kd <id|name>  kill          rsd <id|name>
   fail <id|name> -- <cmd>     d / dd <id|name>            h     health
                                                           wait  waiting deps
+                                                          sched scheduled
                               df <id|name>                hf    health --fix
                               u / ud / uf <id|name>
 
@@ -3472,6 +3636,7 @@ queuemgr() {
             ex|explain) queue explain "$arg"; read -r -p "press enter..." ;;
             dep|deps|dependencies) queue deps "$arg"; read -r -p "press enter..." ;;
             wait|waiting|blocked) queue waiting; read -r -p "press enter..." ;;
+            sched|scheduled|schedule) queue scheduled; read -r -p "press enter..." ;;
             p|prio|priority) queue priority "$arg" "$extra"; read -r -p "press enter..." ;;
             pause|hold) queue pause "$arg"; read -r -p "press enter..." ;;
             pd|pausedry|drypause) queue --dryrun pause "$arg"; read -r -p "press enter..." ;;
@@ -3542,7 +3707,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit list ls find show explain deps dependencies waiting blocked tail follow pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start compress-logs gzip-logs clear version --version -V help --help -h"
+    local commands="--dryrun -n submit list ls find show explain deps dependencies waiting blocked scheduled schedule tail follow pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start compress-logs gzip-logs clear version --version -V help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
@@ -3575,7 +3740,7 @@ _queue_complete() {
             return 0
             ;;
 
-        show|explain|deps|dependencies|waiting|blocked|tail|follow|pids|pid|ps|metrics|metric|unit|hooks|hook|pause|hold|unpause|resume|release|cancel|kill|delete|del|rm|remove|undelete|undel|restore|resubmit|retry)
+        show|explain|deps|dependencies|waiting|blocked|scheduled|schedule|tail|follow|pids|pid|ps|metrics|metric|unit|hooks|hook|pause|hold|unpause|resume|release|cancel|kill|delete|del|rm|remove|undelete|undel|restore|resubmit|retry)
             if [[ "$COMP_CWORD" -eq 2 ]]; then
                 COMPREPLY=( $(compgen -W "$(_queue_job_id_and_names_for_completion)" -- "$cur") )
                 return 0

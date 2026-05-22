@@ -886,3 +886,31 @@ QUEUEBASH_ALLOW_NONINTERACTIVE=1 tests/retry_dependency_touch.sh
 
 
 Note: the retry-remediation hook is recorded in the failed first attempt log, while the final producer success is recorded in the retry job log. `tests/retry_dependency_touch.sh` checks the whole producer attempt chain.
+
+
+## One-shot scheduling
+
+Submit a job to become eligible after a delay:
+
+```bash
+queue submit-in 10m publish_later -- bash publish_to_github.sh
+```
+
+Submit a job to become eligible at a specific time:
+
+```bash
+queue submit-at 23:30 night_job -- ./nightly.sh
+```
+
+Inspect scheduled pending jobs:
+
+```bash
+queue scheduled
+queue explain <job>
+```
+
+See:
+
+```text
+docs/SCHEDULING.md
+```
