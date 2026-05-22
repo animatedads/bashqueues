@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.2.0"
+QUEUEBASH_VERSION="0.3.7"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -469,6 +469,7 @@ _queue_clone_job_to_pending() {
             printf 'RETRY_NOT_BEFORE_EPOCH=%q\n' "0"
             printf 'CPU_LIMIT=%q\n' "${CPU_LIMIT:-}"
             printf 'MEM_LIMIT=%q\n' "${MEM_LIMIT:-}"
+            printf 'MAX_LOG_SIZE_BYTES=%q\n' "${MAX_LOG_SIZE_BYTES:-${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}}"
             printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
             printf 'PWD_AT_SUBMIT=%q\n' "$PWD_AT_SUBMIT"
             printf 'RESUBMITTED_FROM=%q\n' "$JOB_ID"
@@ -680,7 +681,7 @@ _queuemgr_repl_complete() {
     first="${before%% *}"
     [[ "$before" == "$first" ]] && first=""
 
-    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd stat stats ev events f filter n name st state a all cd cf cdel q quit help ?"
+    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd stat stats ev events f filter n name st state a all cd cf cc ccd cdel q quit help ?"
 
     local words matches
     if [[ -z "$first" ]]; then
@@ -718,6 +719,129 @@ _queuemgr_repl_complete() {
     fi
 }
 
+_queue_job_log_max_bytes() {
+    local f="$1"
+    local v
+    v="$(grep '^MAX_LOG_SIZE_BYTES=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    v="${v:-${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}}"
+    [[ "$v" =~ ^[0-9]+$ ]] || v=52428800
+    printf '%s\n' "$v"
+}
+
+_queue_parse_size_to_bytes() {
+    local v="$1"
+    local n unit
+    [[ -z "$v" ]] && { echo 0; return; }
+
+    if [[ "$v" =~ ^([0-9]+)([KkMmGg])?[Bb]?$ ]]; then
+        n="${BASH_REMATCH[1]}"
+        unit="${BASH_REMATCH[2]}"
+        case "$unit" in
+            K|k) echo $((n * 1024)) ;;
+            M|m) echo $((n * 1024 * 1024)) ;;
+            G|g) echo $((n * 1024 * 1024 * 1024)) ;;
+            *) echo "$n" ;;
+        esac
+    else
+        echo 0
+    fi
+}
+
+_queue_log_size_bytes() {
+    local log="$1"
+    [[ -f "$log" ]] || { echo 0; return; }
+    wc -c < "$log" 2>/dev/null | tr -d '[:space:]'
+}
+
+_queue_append_summary_to_job() {
+    local job="$1"
+    local exit_code="$2"
+    local log="$3"
+    local root="$(_queue_root)"
+
+    [[ -f "$job" ]] || return 0
+
+    local started finished start_epoch finish_epoch duration log_bytes
+    started="$(grep '^RUN_STARTED_AT=' "$job" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    finished="$(date -Is)"
+
+    start_epoch="$(date -d "$started" +%s 2>/dev/null || echo 0)"
+    finish_epoch="$(date +%s)"
+    if [[ "$start_epoch" =~ ^[0-9]+$ && "$start_epoch" -gt 0 ]]; then
+        duration=$((finish_epoch - start_epoch))
+    else
+        duration=0
+    fi
+
+    log_bytes="$(_queue_log_size_bytes "$log")"
+
+    {
+        echo "EXEC_FINISHED_AT=$(printf '%q' "$finished")"
+        echo "EXIT_CODE=$(printf '%q' "$exit_code")"
+        echo "DURATION_SECONDS=$(printf '%q' "$duration")"
+        echo "LOG_BYTES=$(printf '%q' "$log_bytes")"
+    } >> "$job"
+}
+
+_queue_systemd_user_service_supported() {
+    command -v systemd-run >/dev/null 2>&1 || return 1
+
+    # systemd-run --user --wait --collect creates a transient user service and waits for its exit code.
+    [[ -n "${XDG_RUNTIME_DIR:-}" ]] || return 1
+
+    return 0
+}
+
+_queue_limit_status_text() {
+    local cpu="${1:-}"
+    local mem="${2:-}"
+
+    if [[ -z "$cpu" && -z "$mem" ]]; then
+        echo "none"
+    elif _queue_systemd_user_service_supported; then
+        echo "systemd-run-user-service"
+    else
+        echo "requested-but-not-enforced-systemd-run-user-service-unavailable"
+    fi
+}
+
+_queue_build_payload_command() {
+    # Prints NUL-separated argv for the actual process to spawn.
+    # We prefer systemd-run for CPU/MEM limits. If no limits are requested,
+    # use setsid when available so cancel can signal the process group safely.
+    local cpu="${1:-}"
+    local mem="${2:-}"
+    shift 2
+
+    if [[ -n "$cpu" || -n "$mem" ]]; then
+        if _queue_systemd_user_service_supported; then
+            printf '%s\0' systemd-run --user --quiet --wait --collect
+            [[ -n "$cpu" ]] && printf '%s\0' -p "CPUQuota=${cpu}%"
+            [[ -n "$mem" ]] && printf '%s\0' -p "MemoryMax=${mem}"
+            printf '%s\0' --
+            printf '%s\0' "$@"
+            return 0
+        fi
+    fi
+
+    if command -v setsid >/dev/null 2>&1; then
+        printf '%s\0' setsid --
+    fi
+    printf '%s\0' "$@"
+}
+
+_queue_cancel_does_not_run_failure_hook() {
+    # Documentation helper:
+    # Cancellation is an operator action, not program failure.
+    #
+    # ON_FAILURE is deliberately reserved for commands that run to completion
+    # and return a non-zero exit status. queue cancel/kill move the job record
+    # to cancelled and append CANCELLED_* metadata, but they must not execute
+    # ON_FAILURE. Otherwise an operator kill could accidentally trigger retry,
+    # alert, or cleanup flows intended only for program failure.
+    return 0
+}
+
 _queue_help() {
     cat <<'EOF'
 Usage:
@@ -739,7 +863,8 @@ Usage:
   queue on-failure <qid|exact-job-name> -- <command...>
   queue onfail <qid|exact-job-name> -- <command...>
 
-  queue priority <qid|exact-job-name> <priority> [--force] [--dryrun]
+  queue priority <qid|exact-job-name> <priority>
+  queue dynamic-prio <qid|exact-job-name> <priority> [--force] [--dryrun]
   queue prio     <qid|exact-job-name> <priority> [--force]
 
   queue pause   <qid|exact-job-name> [--force] [--dryrun]
@@ -752,6 +877,7 @@ Usage:
   queue undelete <qid|exact-job-name> [pending|done|failed] [--force] [--dryrun]
 
   queue stats [--name exact-job-name] [--today]
+  queue watch [--interval SEC]
   queue events [--tail N]
 
   queue run [--workers N] [--detach] [--dryrun]
@@ -763,6 +889,7 @@ Usage:
   queue clear deleted [--dryrun]
   queue clear all [--dryrun]
 
+  queue limits
   queue version
   queue help
 
@@ -800,9 +927,21 @@ Priority:
   Suggested: 100 urgent, 50 high, 10 normal/default, 0 low.
   Exact job name updates all jobs with that exact name.
 
+Log safety:
+  queue submit accepts --max-log-size SIZE, e.g. 50M, 500M, 2G.
+  Default is QUEUEBASH_MAX_LOG_SIZE_BYTES or 52428800 bytes.
+
+Execution summaries:
+  Completed jobs append EXIT_CODE, DURATION_SECONDS, LOG_BYTES, and EXEC_FINISHED_AT.
+
 Dry run:
   queue --dryrun <command...> previews a mutating action without changing files.
   Most mutating commands also accept --dryrun after the command or at the end.
+
+Cancellation semantics:
+  queue cancel/kill move jobs to cancelled and do NOT run ON_FAILURE.
+  ON_FAILURE is only for a command that exits non-zero by itself.
+  Future ON_CANCEL support should be separate from ON_FAILURE.
 
 Hooks:
   Hooks run after the main job has moved to done or failed.
@@ -877,6 +1016,21 @@ queue() {
     shift || true
 
     case "$cmd" in
+
+        limits|limit-check)
+            echo "systemd-run: $(command -v systemd-run 2>/dev/null || echo missing)"
+            echo "XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-}"
+            if _queue_systemd_user_service_supported; then
+                echo "resource limits: available via systemd-run --user --wait --collect"
+                return 0
+            else
+                echo "resource limits: NOT available in this shell/session"
+                echo "CPU_LIMIT/MEM_LIMIT will be recorded and warned, but not enforced."
+                return 1
+            fi
+            ;;
+
+
         version|--version|-V)
             echo "queuebash $QUEUEBASH_VERSION"
             ;;
@@ -890,12 +1044,13 @@ queue() {
             local retry_backoff=0
             local cpu_limit=""
             local mem_limit=""
+            local max_log_size="${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}"
             local local_dryrun="$dryrun"
             local name="$1"
             shift || true
 
             if [[ -z "$name" ]]; then
-                echo "Usage: queue submit <name> [--priority N|-p N] [--retries N] [--backoff SEC] [--cpu PCT] [--mem SIZE] [--on-success <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
+                echo "Usage: queue submit <name> [--priority N|-p N] [--max-log-size SIZE] [--retries N] [--backoff SEC] [--cpu PCT] [--mem SIZE] [--on-success <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
                 return 2
             fi
 
@@ -931,6 +1086,12 @@ queue() {
                     --mem|--memory)
                         [[ -z "$2" ]] && { echo "queue submit: --mem needs a value" >&2; return 2; }
                         mem_limit="$2"
+                        shift 2
+                        ;;
+                    --max-log-size)
+                        [[ -z "$2" ]] && { echo "queue submit: --max-log-size needs a value" >&2; return 2; }
+                        max_log_size="$(_queue_parse_size_to_bytes "$2")"
+                        [[ "$max_log_size" -gt 0 ]] || { echo "queue submit: invalid --max-log-size: $2" >&2; return 2; }
                         shift 2
                         ;;
                     --on-success)
@@ -978,6 +1139,7 @@ queue() {
                 echo "  backoff:  $retry_backoff"
                 echo "  cpu:      $cpu_limit"
                 echo "  mem:      $mem_limit"
+                echo "  maxlog:   $max_log_size"
                 echo "  state:    pending"
                 echo "  jobfile:  $job"
                 printf "  command:"
@@ -1006,6 +1168,7 @@ queue() {
                 printf 'RETRY_NOT_BEFORE_EPOCH=%q\n' "0"
                 printf 'CPU_LIMIT=%q\n' "$cpu_limit"
                 printf 'MEM_LIMIT=%q\n' "$mem_limit"
+                printf 'MAX_LOG_SIZE_BYTES=%q\n' "$max_log_size"
                 printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
                 printf 'PWD_AT_SUBMIT=%q\n' "$PWD"
 
@@ -1377,7 +1540,7 @@ queue() {
             fi
             ;;
 
-        priority|prio)
+        priority|prio|dynamic-prio)
             local local_dryrun="$dryrun"
             local target="$1"
             local new_priority="$2"
@@ -1521,8 +1684,9 @@ queue() {
                 } >> "$f"
 
                 mv -f "$f" "$dest"
-                _queue_log_event "cancelled" "$id" "$name" "cancelled" "from=$state signal=$sig pid=$run_pid pgid=$run_pgid"
+                _queue_log_event "cancelled" "$id" "$name" "cancelled" "from=$state signal=$sig pid=$run_pid pgid=$run_pgid hook=none"
                 echo "Moved $id from $state -> cancelled"
+                echo "ON_FAILURE was not run; cancellation is operator action, not program failure."
                 moved=$((moved + 1))
             done
 
@@ -1804,6 +1968,34 @@ queue() {
 
 
 
+
+        watch)
+            local interval=1
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --interval|-i) interval="${2:-1}"; shift 2 ;;
+                    *) shift ;;
+                esac
+            done
+            [[ "$interval" =~ ^[0-9]+$ ]] || interval=1
+            while true; do
+                clear
+                echo "queuebash watch - $(date -Is)"
+                echo
+                queue stats
+                echo
+                echo "=== running ==="
+                queue list --state running
+                echo
+                echo "=== pending top ==="
+                queue list --state pending | head -20
+                echo
+                echo "Ctrl+C to exit. interval=${interval}s"
+                sleep "$interval"
+            done
+            ;;
+
+
         workers|worker|jobs)
             echo "=== queuebash worker processes ==="
             local any=0
@@ -1966,11 +2158,16 @@ _queue_worker() {
                 echo
                 echo
 
-                if command -v setsid >/dev/null 2>&1; then
-                    setsid -- "${COMMAND[@]}" &
-                else
-                    "${COMMAND[@]}" &
+                limit_status="$(_queue_limit_status_text "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")"
+                if [[ -n "${CPU_LIMIT:-}" || -n "${MEM_LIMIT:-}" ]]; then
+                    echo "resource_limit_request: cpu=${CPU_LIMIT:-} mem=${MEM_LIMIT:-} status=$limit_status"
+                    if [[ "$limit_status" != "systemd-run-user-service" ]]; then
+                        echo "WARNING: resource limits were requested but are NOT enforced in this shell/session."
+                    fi
                 fi
+
+                mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${COMMAND[@]}")
+                "${payload_cmd[@]}" &
                 cmd_pid="$!"
 
                 cmd_pgid="$(ps -o pgid= -p "$cmd_pid" 2>/dev/null | tr -d '[:space:]')"
@@ -1987,6 +2184,14 @@ _queue_worker() {
                 wait "$cmd_pid"
                 rc="$?"
 
+                log_bytes_now="$(_queue_log_size_bytes "$log")"
+                max_log_bytes="$(_queue_job_log_max_bytes "$running")"
+                if [[ "$max_log_bytes" -gt 0 && "$log_bytes_now" -gt "$max_log_bytes" ]]; then
+                    echo
+                    echo "LOG_OVERFLOW_WARNING: log size ${log_bytes_now} exceeded cap ${max_log_bytes}" 
+                    _queue_log_event "log_overflow_warning" "$JOB_ID" "$JOB_NAME" "running" "bytes=$log_bytes_now cap=$max_log_bytes"
+                fi
+
                 echo
                 echo "finished: $(date -Is)"
                 echo "exit_code: $rc"
@@ -1999,6 +2204,7 @@ _queue_worker() {
 
         if [[ "$rc" -eq 0 ]]; then
             if [[ -f "$running" ]]; then
+                _queue_append_summary_to_job "$running" 0 "$log"
                 mv "$running" "$done"
                 _queue_log_event "done" "$id" "$(_queue_job_name "$done")" "done" "exit_code=0"
                 echo "[worker $worker_id] done $id"
@@ -2022,7 +2228,7 @@ _queue_worker() {
                     )
                 fi
             else
-                echo "[worker $worker_id] done $id but queue record was moved externally"
+                echo "[worker $worker_id] done $id but queue record was moved externally; no success/failure hook run by worker"
             fi
         else
             if [[ -f "$running" ]]; then
@@ -2036,6 +2242,7 @@ _queue_worker() {
                     not_before=$(( $(_queue_epoch_now) + retry_backoff ))
                     retry_id="$(_queue_id)"
                     _queue_clone_retry_to_pending "$running" "$retry_id" "$retry_done_new" "$not_before"
+                    _queue_append_summary_to_job "$running" "$rc" "$log"
                     mv "$running" "$failed"
                     _queue_log_event "retry_scheduled" "$retry_id" "$(_queue_job_name "$root/pending/$retry_id.job")" "pending" "from=$id attempt=$retry_done_new backoff=$retry_backoff exit_code=$rc"
                     _queue_log_event "failed_retrying" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc retry=$retry_id"
@@ -2043,6 +2250,7 @@ _queue_worker() {
                     continue
                 fi
 
+                _queue_append_summary_to_job "$running" "$rc" "$log"
                 mv "$running" "$failed"
                 _queue_log_event "failed" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc"
                 echo "[worker $worker_id] failed $id rc=$rc"
@@ -2066,10 +2274,47 @@ _queue_worker() {
                     )
                 fi
             else
-                echo "[worker $worker_id] failed $id rc=$rc but queue record was moved externally"
+                echo "[worker $worker_id] failed $id rc=$rc but queue record was moved externally; no failure hook run by worker"
             fi
         fi
     done
+}
+
+_queuemgr_print_commands() {
+    cat <<'EOF'
+Commands:
+  Run/workers                         Inspect
+  r / r4       run 1 / 4 workers       s <id|name>     show job/log
+  rd / rd4     dryrun 1 / 4 workers    t <id|name>     tail job log
+                                      pid <id|name>   PID/process tree
+
+  Priority / state                    Hooks
+  p <id|name> <pri> set priority       os <id|name>    show hooks
+  pause <id|name>    pause             ok <id|name> -- <cmd>
+  pd <id|name>       dryrun pause      fail <id|name> -- <cmd>
+  unp <id|name>      unpause
+  unpd <id|name>     dryrun unpause
+
+  Cancel/delete                       Resubmit
+  c <id|name>       cancel             rs <id|name>    resubmit failed
+  kd <id|name>      kill               rsd <id|name>   dryrun resubmit
+  d <id|name>       delete
+  dd <id|name>      dryrun delete
+  df <id|name>      force delete
+  u <id|name>       undelete
+  ud <id|name>      dryrun undelete
+  uf <id|name>      force undelete
+
+  Clear/history                       Filters/view
+  cd      clear done                   f <text>        text filter
+  cf      clear failed                 n <text>        name filter
+  cc      clear cancelled              st <state>      state filter
+  ccd     dryrun clear cancelled       a               clear filters
+  cdel    clear deleted                stat            stats
+                                       ev [N]          recent events
+
+  help/?  show this summary            q               quit
+EOF
 }
 
 queuemgr() {
@@ -2101,46 +2346,8 @@ queuemgr() {
         queue list "${args[@]}"
 
         echo
-        echo "Commands:"
-        echo "  r             run one worker"
-        echo "  rd            dryrun one worker"
-        echo "  r4            run four workers"
-        echo "  rd4           dryrun four workers"
-        echo "  s <id|name>   show job/log; exact name shows all matching jobs"
-        echo "  t <id|name>   tail job log"
-        echo "  pid <id|name> show recorded PID/process tree"
-        echo "  p <id|name> <priority>  set priority; exact name updates all matching jobs"
-        echo "  pause <id|name>  pause pending job"
-        echo "  pd <id|name>     dryrun pause"
-        echo "  unp <id|name>    unpause job to pending"
-        echo "  unpd <id|name>   dryrun unpause"
-        echo "  os <id|name>     show success/failure hooks"
-        echo "  ok <id|name> -- <cmd>    set on-success hook"
-        echo "  fail <id|name> -- <cmd>  set on-failure hook"
-        echo "  c <id|name>      cancel job into cancelled state"
-        echo "  kd <id|name>     kill job/process group into cancelled state"
-        echo "  d <id|name>      mark job as deleted"
-        echo "  dd <id|name>     dryrun delete"
-        echo "  df <id|name>     force delete ambiguous/running jobs"
-        echo "  u <id|name>      undelete matching deleted job to pending"
-        echo "  ud <id|name>     dryrun undelete"
-        echo "  rs <id|name>     resubmit failed job(s)"
-        echo "  rsd <id|name>    dryrun resubmit failed job(s)"
-        echo "  uf <id|name>     force undelete ambiguous QID-prefix matches"
-        echo "  cdel             clear deleted jobs"
-        echo "  stat             queue statistics"
-        echo "  ev               recent JSONL events"
-        echo "  f <text>         set text filter"
-        echo "  n <text>         set job-name filter"
-        echo "  st <state>       set state filter: all|pending|running|paused|done|failed|cancelled|deleted"
-        echo "  a                clear filters"
-        echo "  cd               clear done"
-        echo "  cf               clear failed"
-        echo "  help/?           show command summary"
-        echo "  q                quit"
+        _queuemgr_print_commands
         echo
-
-        local cmd arg extra rest
         read -e -r -p "queuemgr> " cmd arg extra rest
 
         case "$cmd" in
@@ -2186,6 +2393,8 @@ queuemgr() {
             uf|undelf|undeletef|restoref) queue undelete "$arg" --force; read -r -p "press enter..." ;;
             rs|resubmit|retry) queue resubmit "$arg"; read -r -p "press enter..." ;;
             rsd|dryresubmit|dryretry) queue --dryrun resubmit "$arg"; read -r -p "press enter..." ;;
+            cc|clear-cancelled) queue clear cancelled; read -r -p "press enter..." ;;
+            ccd|dry-clear-cancelled) queue --dryrun clear cancelled; read -r -p "press enter..." ;;
             cdel|clear-deleted) queue clear deleted; read -r -p "press enter..." ;;
             stat|stats) queue stats; read -r -p "press enter..." ;;
             ev|events) queue events --tail "${arg:-20}"; read -r -p "press enter..." ;;
@@ -2196,7 +2405,7 @@ queuemgr() {
             cd) queue clear done; read -r -p "press enter..." ;;
             cf) queue clear failed; read -r -p "press enter..." ;;
             help|?)
-                echo "Commands complete with TAB: r/rd/r4, show/tail/pid, priority, pause/unpause, cancel/kill, delete/undelete, resubmit, stats/events, filters."
+                _queuemgr_print_commands
                 read -r -p "press enter..."
                 ;;
             "") ;;
@@ -2215,7 +2424,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit list ls find show tail follow pids pid ps hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry stats events run start clear version --version -V help --help -h"
+    local commands="--dryrun -n submit list ls find show tail follow pids pid ps hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry stats events watch run start clear version --version -V help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
@@ -2232,7 +2441,7 @@ _queue_complete() {
                 COMPREPLY=( $(compgen -c -- "$cur") )
                 return 0
             fi
-            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --on-success --on-failure --" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --max-log-size --on-success --on-failure --" -- "$cur") )
             COMPREPLY+=( $(compgen -c -- "$cur") )
             COMPREPLY+=( $(compgen -f -- "$cur") )
             return 0
@@ -2275,7 +2484,7 @@ _queue_complete() {
             fi
             ;;
 
-        priority|prio)
+        priority|prio|dynamic-prio)
             if [[ "$COMP_CWORD" -eq 2 ]]; then
                 COMPREPLY=( $(compgen -W "$(_queue_job_id_and_names_for_completion)" -- "$cur") )
                 return 0

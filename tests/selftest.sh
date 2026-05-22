@@ -58,3 +58,70 @@ for i in $(seq 1 30); do
     sleep 0.1
 done
 queue list --state done | grep -q slowish
+
+
+# Final core conveniences
+queue submit finalprio --max-log-size 1M -- echo final >/dev/null
+queue dynamic-prio finalprio 88 >/dev/null
+queue run >/dev/null
+queue show finalprio >/tmp/qb_finalprio_show.txt
+grep -q '^DURATION_SECONDS=' "$QUEUEBASH_ROOT"/done/*.job
+grep -q '^LOG_BYTES=' "$QUEUEBASH_ROOT"/done/*.job
+
+
+# Resource limit metadata/check command. Availability depends on user systemd session.
+queue limits >/tmp/qb_limits_test.out 2>&1 || true
+grep -q 'resource limits:' /tmp/qb_limits_test.out
+queue submit limitmeta --cpu 50 --mem 128M -- echo limited >/dev/null
+grep -q '^CPU_LIMIT=50$' "$QUEUEBASH_ROOT"/pending/*.job
+grep -q '^MEM_LIMIT=128M$' "$QUEUEBASH_ROOT"/pending/*.job
+
+
+# Cancellation must not run ON_FAILURE.
+rm -f /tmp/qb_cancel_hook_ran
+queue submit cancelhooktest -- bash -c 'sleep 5' >/dev/null
+queue onfailure cancelhooktest -- bash -c 'echo bad >/tmp/qb_cancel_hook_ran' >/dev/null
+queue start >/dev/null
+for i in $(seq 1 50); do
+    if queue list --state running | grep -q cancelhooktest; then
+        break
+    fi
+    sleep 0.05
+done
+queue cancel cancelhooktest >/dev/null || true
+sleep 0.3
+[[ ! -f /tmp/qb_cancel_hook_ran ]]
+queue list --state cancelled | grep -q cancelhooktest
+rm -f /tmp/qb_cancel_hook_ran
+
+# Full regression: tests/regression.sh
+# Heavy log stress: tests/stress_logstorm.sh 1000000
+
+
+# clear_cancelled_smoke
+tmp_qb_cc="$(mktemp -d)"
+old_qbr="${QUEUEBASH_ROOT:-}"
+export QUEUEBASH_ROOT="$tmp_qb_cc"
+queue submit clear_cancelled_smoke -- echo hello >/dev/null
+queue cancel clear_cancelled_smoke >/dev/null || true
+queue --dryrun clear cancelled >/dev/null
+queue clear cancelled >/dev/null
+rm -rf "$tmp_qb_cc"
+if [[ -n "$old_qbr" ]]; then
+    export QUEUEBASH_ROOT="$old_qbr"
+else
+    unset QUEUEBASH_ROOT
+fi
+
+
+# queuemgr_print_commands smoke
+_queuemgr_print_commands >/tmp/qb_qmgr_help.txt
+grep -q 'Clear/history' /tmp/qb_qmgr_help.txt
+grep -q 'cc      clear cancelled' /tmp/qb_qmgr_help.txt
+
+
+# systemd_wait_scope_regression
+if grep -q -- '--scope --quiet --wait' "$PWD/queuebash.sh"; then
+    echo "Invalid systemd-run combination still present: --scope --wait" >&2
+    exit 1
+fi

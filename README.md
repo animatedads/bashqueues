@@ -167,6 +167,33 @@ queue cancel myjob --signal INT
 queue kill myjob --signal KILL
 ```
 
+
+## Cancellation semantics
+
+`queue cancel` and `queue kill` are operator actions. They move the job record into the `cancelled` state and append `CANCELLED_*` metadata, but they do **not** run `ON_FAILURE`.
+
+The distinction is deliberate:
+
+```text
+command exits 0        -> done       -> ON_SUCCESS runs
+command exits non-zero -> failed     -> ON_FAILURE runs
+queue cancel           -> cancelled  -> ON_FAILURE does not run
+queue kill             -> cancelled  -> ON_FAILURE does not run
+```
+
+This prevents dangerous surprises such as a killed job immediately resubmitting itself through an `ON_FAILURE` hook.
+
+Cancellation is recorded in `events.jsonl` and in the job metadata:
+
+```text
+CANCELLED_AT=
+CANCELLED_FROM=
+CANCEL_SIGNAL=
+```
+
+If cancellation hooks are needed later, they should be added as a separate `ON_CANCEL` mechanism rather than overloading `ON_FAILURE`.
+
+
 ## Logs and events
 
 Tail a job log:
@@ -324,7 +351,7 @@ Retries clone the failed attempt into a fresh pending job. The failed attempt re
 queue submit heavy --cpu 200 --mem 4G -- ./heavy_dsp_job.sh
 ```
 
-When `systemd-run --user --scope` is available, queuebash runs the payload inside a transient systemd scope with:
+When `systemd-run --user --wait --collect` is available, queuebash runs the payload inside a transient systemd scope with:
 
 ```text
 CPUQuota=<cpu>%
@@ -354,3 +381,156 @@ Check recorded detached workers:
 ```bash
 queue workers
 ```
+
+
+## Final core conveniences
+
+### Dynamic priority alias
+
+`queue priority` remains the canonical command. `queue dynamic-prio` is provided as an operator-friendly alias:
+
+```bash
+queue dynamic-prio forensic_heavy 99
+```
+
+### Log safety cap
+
+Submit with a maximum log size hint:
+
+```bash
+queue submit noisy --max-log-size 50M -- ./noisy-script.sh
+```
+
+The default is `QUEUEBASH_MAX_LOG_SIZE_BYTES` or 50MB.
+
+### Execution summary
+
+Completed job files append:
+
+```text
+EXEC_FINISHED_AT=
+EXIT_CODE=
+DURATION_SECONDS=
+LOG_BYTES=
+```
+
+So `queue show <job>` gives a quick operational summary without parsing the text log.
+
+### Watch mode
+
+```bash
+queue watch
+queue watch --interval 2
+```
+
+Shows live stats, running jobs, and the top of the pending list.
+
+
+## Resource limit verification
+
+`--cpu` and `--mem` are enforced through `systemd-run --user --wait --collect` when available in the current login/session.
+
+Check support:
+
+```bash
+queue limits
+```
+
+Example:
+
+```bash
+queue submit heavy --cpu 50 --mem 4G -- rexx waiter.rex
+queue start
+queue tail heavy
+```
+
+The job log should include:
+
+```text
+resource_limit_request: cpu=50 mem=4G status=systemd-run-user-service
+limit_status: systemd-run-user-service
+```
+
+If the status is `requested-but-not-enforced-systemd-run-user-service-unavailable`, the limit was recorded but not enforced by the OS in that shell/session.
+
+
+## Regression harness
+
+Fast smoke test:
+
+```bash
+QUEUEBASH_ALLOW_NONINTERACTIVE=1 tests/selftest.sh
+```
+
+Full regression harness:
+
+```bash
+QUEUEBASH_ALLOW_NONINTERACTIVE=1 tests/regression.sh
+```
+
+The full regression checks stdout/stderr capture, zero and non-zero return paths, hooks, priority, dry-run, pause/unpause, delete/undelete, detached workers, cancel/kill, PID reporting, retry, resubmit, log capture, stats, events, tail, resource metadata, and watch mode.
+
+Dedicated heavy log-volume stress test:
+
+```bash
+QUEUEBASH_ALLOW_NONINTERACTIVE=1 tests/stress_logstorm.sh 1000000
+```
+
+The ordinary regression uses a smaller logstorm by default. Override it with:
+
+```bash
+QB_REGRESSION_LINES=100000 QUEUEBASH_ALLOW_NONINTERACTIVE=1 tests/regression.sh
+```
+
+
+### Regression harness debugging
+
+`tests/regression.sh` now prints diagnostics if a state transition stalls:
+
+- full `queue list --state all`
+- matching job files
+- matching log tails
+
+Hook tests use `tests/write_marker.sh` to avoid nested `bash -c` quoting ambiguity.
+
+
+## Clearing cancelled jobs
+
+At the command line:
+
+```bash
+queue --dryrun clear cancelled
+queue clear cancelled
+```
+
+Inside `queuemgr`:
+
+```text
+cc    clear cancelled jobs
+ccd   dryrun clear cancelled jobs
+```
+
+
+## Two-column queue manager help
+
+`queuemgr` now renders its command summary in grouped two-column form to reduce screen space.
+
+Inside `queuemgr`:
+
+```text
+help
+?
+```
+
+prints the same compact summary.
+
+
+## systemd-run wait/scope note
+
+Resource-limited jobs use a transient user **service**:
+
+```bash
+systemd-run --user --wait --collect -p CPUQuota=50% -p MemoryMax=4G -- command ...
+```
+
+`--wait` is deliberately not combined with `--scope`, because systemd rejects that combination. Queue workers need `--wait` so they can collect the exit code and move the job to `done` or `failed` correctly.
