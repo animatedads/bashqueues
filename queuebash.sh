@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.7.11"
+QUEUEBASH_VERSION="0.7.12"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -797,7 +797,12 @@ _queue_job_file_state() {
 _queue_tail_log_for_job() {
     local f="$1"
     local id="$2"
+    local lines="${3:-${QUEUEBASH_TAIL_LINES:-40}}"
+    local follow="${4:-1}"
+    local from_start="${5:-0}"
     local state log
+
+    [[ "$lines" =~ ^[0-9]+$ ]] || lines=40
 
     state="$(basename "$(dirname "$f")")"
     log="$(_queue_log_existing_path "$id")"
@@ -807,14 +812,31 @@ _queue_tail_log_for_job() {
         return 1
     fi
 
+    if [[ "$from_start" -eq 1 ]]; then
+        if [[ "$state" == "running" && "$log" != *.gz && "$follow" -eq 1 ]]; then
+            echo "=== tailing live from start: $log ==="
+            tail -n +1 -f "$log"
+        else
+            echo "=== log from start: $log ==="
+            _queue_log_cat "$log"
+        fi
+        return 0
+    fi
+
     if [[ "$state" == "running" && "$log" != *.gz ]]; then
-        echo "=== tailing live: $log ==="
-        tail -f "$log"
+        if [[ "$follow" -eq 1 ]]; then
+            echo "=== tailing live: $log (last $lines lines; Ctrl+C to stop) ==="
+            tail -n "$lines" -f "$log"
+        else
+            echo "=== live log tail: $log (last $lines lines; no follow) ==="
+            tail -n "$lines" -- "$log"
+        fi
     else
-        echo "=== completed/compressed log tail: $log ==="
-        _queue_log_tail "$log" "${QUEUEBASH_TAIL_LINES:-120}"
+        echo "=== completed/compressed log tail: $log (last $lines lines) ==="
+        _queue_log_tail "$log" "$lines"
     fi
 }
+
 
 _queue_epoch_now() {
     date +%s
@@ -3269,8 +3291,64 @@ queue() {
             ;;
 
         tail|follow)
-            local target="$1"
-            [[ -z "$target" ]] && { echo "Usage: queue tail <qid-or-exact-job-name>" >&2; return 2; }
+            local lines="${QUEUEBASH_TAIL_LINES:-40}"
+            local follow=1
+            local from_start=0
+            local target=""
+
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --tail|-n)
+                        [[ -z "${2:-}" ]] && { echo "queue tail: $1 requires a line count" >&2; return 2; }
+                        lines="$2"
+                        shift 2
+                        ;;
+                    --no-follow|--no-f|--once)
+                        follow=0
+                        shift
+                        ;;
+                    --follow|-f)
+                        follow=1
+                        shift
+                        ;;
+                    --from-start|--full|--cat)
+                        from_start=1
+                        shift
+                        ;;
+                    --help|-h)
+                        cat <<'EOF'
+Usage:
+  queue tail <qid-or-exact-job-name> [--tail N] [--no-follow] [--from-start] [--tail N|-n N] [--no-follow] [--from-start]
+
+Defaults:
+  running job: show last 40 lines, then follow
+  completed job: show last 40 lines and return
+
+Options:
+  --tail N       number of physical log lines to show before following; default 40
+  --no-follow   show tail and return, even for running jobs
+  --from-start  show from start; follows if job is running
+EOF
+                        return 0
+                        ;;
+                    --*)
+                        echo "queue tail: unknown option: $1" >&2
+                        return 2
+                        ;;
+                    *)
+                        if [[ -z "$target" ]]; then
+                            target="$1"
+                            shift
+                        else
+                            echo "queue tail: unexpected argument: $1" >&2
+                            return 2
+                        fi
+                        ;;
+                esac
+            done
+
+            [[ -z "$target" ]] && { echo "Usage: queue tail <qid-or-exact-job-name> [--tail N] [--no-follow] [--from-start] [--tail N|-n N] [--no-follow] [--from-start]" >&2; return 2; }
+            [[ "$lines" =~ ^[0-9]+$ ]] || { echo "queue tail: --tail requires a numeric line count" >&2; return 2; }
 
             local matches=()
             local running_matches=()
@@ -3319,8 +3397,9 @@ queue() {
 
             local id
             id="$(basename "$chosen" .job)"
-            _queue_tail_log_for_job "$chosen" "$id"
+            _queue_tail_log_for_job "$chosen" "$id" "$lines" "$follow" "$from_start"
             ;;
+
 
 
 

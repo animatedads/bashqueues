@@ -1118,3 +1118,22 @@ exit_code:
 ```
 
 and prevents logger-side pipe closure from causing SIGPIPE failures in short jobs.
+
+
+## Tail defaults
+
+`queue tail <job>` now shows the last 40 lines before following a running log.
+
+```bash
+queue tail longrexx --tail 10
+queue tail longrexx --no-follow
+queue tail longrexx --from-start
+```
+
+Set the default with:
+
+```bash
+export QUEUEBASH_TAIL_LINES=80
+```
+
+See `docs/TAIL.md`.
