@@ -235,7 +235,7 @@ _queue_root() {
 
 _queue_init() {
     local root="$(_queue_root)"
-    mkdir -p "$root"/{pending,running,paused,done,failed,cancelled,deleted,logs}
+    mkdir -p "$root"/{pending,running,paused,done,failed,cancelled,deleted,logs,workers}
 }
 
 _queue_now() {
@@ -680,7 +680,7 @@ _queuemgr_repl_complete() {
     first="${before%% *}"
     [[ "$before" == "$first" ]] && first=""
 
-    local commands="r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd stat stats ev events f filter n name st state a all cd cf cdel q quit help ?"
+    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd stat stats ev events f filter n name st state a all cd cf cdel q quit help ?"
 
     local words matches
     if [[ -z "$first" ]]; then
@@ -754,7 +754,8 @@ Usage:
   queue stats [--name exact-job-name] [--today]
   queue events [--tail N]
 
-  queue run [--workers N] [--dryrun]
+  queue run [--workers N] [--detach] [--dryrun]
+  queue start [--workers N]
 
   queue clear done [--dryrun]
   queue clear failed [--dryrun]
@@ -846,10 +847,11 @@ Queue manager:
   queuemgr --filter unzip
 
   Inside queuemgr:
-    r     run one worker
+    r     run one worker in foreground
     rd    dryrun one worker
-    r4    run four workers
+    r4    run four workers in foreground
     rd4   dryrun four workers
+    start detached workers from the shell with: queue start --workers 4
 
 Notes:
   Jobs are stored in ~/.queuebash by default.
@@ -1801,14 +1803,50 @@ queue() {
             ;;
 
 
-        run)
+
+        workers|worker|jobs)
+            echo "=== queuebash worker processes ==="
+            local any=0
+            local pf pid
+            for pf in "$root/workers"/*.pid; do
+                [[ -e "$pf" ]] || continue
+                pid="$(cat "$pf" 2>/dev/null)"
+                if [[ -n "$pid" && -d "/proc/$pid" ]]; then
+                    any=1
+                    ps -o pid,ppid,pgid,stat,etime,pcpu,pmem,comm,args -p "$pid" 2>/dev/null || true
+                else
+                    rm -f "$pf"
+                fi
+            done
+            [[ "$any" -eq 0 ]] && echo "No live detached workers recorded."
+            ;;
+
+
+        run|start)
             local local_dryrun="$dryrun"
+            local detach=0
+            [[ "$cmd" == "start" ]] && detach=1
             local workers=1
-            if [[ "${1:-}" == "--workers" ]]; then
-                workers="$2"
-                shift 2
-            fi
-            [[ "${1:-}" == "--dryrun" || "${1:-}" == "-n" ]] && local_dryrun=1
+            while [[ "$#" -gt 0 ]]; do
+                case "${1:-}" in
+                    --workers|-w)
+                        workers="${2:-}"
+                        shift 2
+                        ;;
+                    --detach|-d|--background)
+                        detach=1
+                        shift
+                        ;;
+                    --dryrun|-n)
+                        local_dryrun=1
+                        shift
+                        ;;
+                    *)
+                        echo "queue $cmd: unexpected argument: $1" >&2
+                        return 2
+                        ;;
+                esac
+            done
 
             if ! [[ "$workers" =~ ^[0-9]+$ ]] || [[ "$workers" -lt 1 ]]; then
                 echo "queue run: workers must be a positive integer" >&2
@@ -1827,7 +1865,21 @@ queue() {
                 return 0
             fi
 
-            echo "Running queue with $workers worker(s)"
+            if [[ "$detach" -eq 1 ]]; then
+                echo "Starting queue with $workers detached worker(s)"
+                local i wp
+                for ((i=1; i<=workers; i++)); do
+                    (_queue_worker "$i") &
+                    wp="$!"
+                    echo "$wp" > "$root/workers/worker_${wp}.pid"
+                    echo "  worker $i pid=$wp"
+                done
+                _queue_log_event "workers_started" "" "" "workers" "workers=$workers detached=1"
+                echo "Detached workers started. Use: queue workers"
+                return 0
+            fi
+
+            echo "Running queue with $workers worker(s) in foreground"
             local i
             for ((i=1; i<=workers; i++)); do
                 (_queue_worker "$i") &
@@ -2163,7 +2215,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit list ls find show tail follow pids pid ps hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry stats events run clear version --version -V help --help -h"
+    local commands="--dryrun -n submit list ls find show tail follow pids pid ps hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry stats events run start clear version --version -V help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
@@ -2234,9 +2286,9 @@ _queue_complete() {
             fi
             ;;
 
-        run)
+        run|start)
             if [[ "$COMP_CWORD" -eq 2 ]]; then
-                COMPREPLY=( $(compgen -W "--workers --dryrun -n" -- "$cur") )
+                COMPREPLY=( $(compgen -W "--workers -w --detach -d --background --dryrun -n" -- "$cur") )
                 return 0
             fi
             if [[ "$prev" == "--workers" ]]; then

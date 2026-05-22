@@ -45,3 +45,16 @@ queue run >/dev/null || true
 queue run >/dev/null || true
 grep -q '^2$' "$tmp/retry/count"
 
+
+
+# Detached worker behaviour
+queue submit slowish -- bash -c 'sleep 0.2; echo detached-ok' >/dev/null
+queue start --workers 1 >/tmp/qb_start_test.out
+grep -q 'Detached workers started' /tmp/qb_start_test.out
+for i in $(seq 1 30); do
+    if queue list --state done | grep -q slowish; then
+        break
+    fi
+    sleep 0.1
+done
+queue list --state done | grep -q slowish

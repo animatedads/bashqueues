@@ -73,10 +73,19 @@ Run one worker:
 queue run
 ```
 
-Run four workers:
+Run four workers in the foreground:
 
 ```bash
 queue run --workers 4
+```
+
+Detached workers:
+
+```bash
+queue start
+queue start --workers 4
+queue run --workers 4 --detach
+queue workers
 ```
 
 Dry-run the next queue run:
@@ -328,3 +337,20 @@ If `systemd-run` is unavailable, the job runs normally and logs a warning.
 
 Inside `queuemgr`, press `TAB` to complete internal queue-manager commands and job IDs/names. This uses Bash readline and a temporary TAB binding while `queuemgr` is active.
 
+
+
+## Detached workers
+
+`queue run` is a foreground supervisor by default: it waits until its workers finish. For slow jobs, use detached mode:
+
+```bash
+queue start
+queue start --workers 4
+queue run --workers 4 --detach
+```
+
+Check recorded detached workers:
+
+```bash
+queue workers
+```
