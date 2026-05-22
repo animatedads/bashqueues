@@ -169,3 +169,5 @@ grep -q 'ci      clear interrupted' /tmp/qb_qmgr_3col.txt
 
 # systemd_workdir_regression
 grep -q -- '--working-directory' queuebash.sh
+
+# Dependency regression: tests/after_success.sh

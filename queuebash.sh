@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.6.0"
+QUEUEBASH_VERSION="0.6.3"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -446,7 +446,23 @@ _queue_dep_token_failed_or_cancelled() {
 
 _queue_job_dependency_tokens() {
     local f="$1"
-    grep '^DEPENDS_AFTER_SUCCESS=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null
+    local value=""
+
+    # Preferred path: source the job file, because DEPENDS_AFTER_SUCCESS is now
+    # written as one shell-quoted string assignment.
+    value="$(
+        source "$f" 2>/dev/null
+        printf '%s' "${DEPENDS_AFTER_SUCCESS:-}"
+    )"
+
+    if [[ -n "$value" ]]; then
+        printf '%s\n' "$value"
+        return 0
+    fi
+
+    # Compatibility fallback for early 0.6.0 job files that may contain an
+    # unsafe unquoted line like: DEPENDS_AFTER_SUCCESS=foo bar
+    grep '^DEPENDS_AFTER_SUCCESS=' "$f" 2>/dev/null | tail -1 | sed 's/^DEPENDS_AFTER_SUCCESS=//'
 }
 
 _queue_job_dependencies_satisfied() {
@@ -578,6 +594,10 @@ _queue_clone_job_to_pending() {
 
             printf 'ON_FAILURE=('
             printf ' %q' "${ON_FAILURE[@]}"
+            printf ' )\n'
+
+            printf 'ON_RETRY_FAILURE=('
+            printf ' %q' "${ON_RETRY_FAILURE[@]}"
             printf ' )\n'
         } > "$dest"
     )
@@ -735,6 +755,10 @@ _queue_clone_retry_to_pending() {
             printf 'RETRY_NOT_BEFORE_EPOCH=%q\n' "$not_before"
             printf 'CPU_LIMIT=%q\n' "${CPU_LIMIT:-}"
             printf 'MEM_LIMIT=%q\n' "${MEM_LIMIT:-}"
+            [[ -n "${MAX_LOG_SIZE_BYTES:-}" ]] && printf 'MAX_LOG_SIZE_BYTES=%q\n' "$MAX_LOG_SIZE_BYTES"
+            [[ -n "${ALLOW_LARGE_LOG:-}" ]] && printf 'ALLOW_LARGE_LOG=%q\n' "$ALLOW_LARGE_LOG"
+            [[ -n "${RUNNER:-}" ]] && printf 'RUNNER=%q\n' "$RUNNER"
+            [[ -n "${DEPENDS_AFTER_SUCCESS:-}" ]] && printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$DEPENDS_AFTER_SUCCESS"
 
             printf 'COMMAND=('
             printf ' %q' "${COMMAND[@]}"
@@ -1511,7 +1535,7 @@ _queue_help() {
     cat <<'EOF'
 Usage:
   queue [--dryrun] <command...>
-  queue submit <name> [--dryrun] [--priority N|-p N] [--on-success <cmd...>] [--on-failure <cmd...>] -- <command...>
+  queue submit <name> [--dryrun] [--priority N|-p N] [--on-success <cmd...>] [--on-retry-failure <cmd...>] [--on-failure <cmd...>] -- <command...>
 
   queue list [--state all|pending|running|paused|done|failed|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
   queue ls   [--state all|pending|running|paused|done|failed|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
@@ -1752,17 +1776,19 @@ queue() {
             local max_log_size="${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}"
             local allow_large_log=0
             local depends_after_success=()
+            local deps_join=""
             local local_dryrun="$dryrun"
             local name="$1"
             shift || true
 
             if [[ -z "$name" ]]; then
-                echo "Usage: queue submit <name> [--priority N|-p N] [--max-log-size SIZE] [--retries N] [--backoff SEC] [--cpu PCT] [--mem SIZE] [--on-success <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
+                echo "Usage: queue submit <name> [--priority N|-p N] [--max-log-size SIZE] [--retries N] [--backoff SEC] [--cpu PCT] [--mem SIZE] [--on-success <cmd...>] [--on-retry-failure <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
                 return 2
             fi
 
             local on_success=()
             local on_failure=()
+            local on_retry_failure=()
 
             while [[ "$#" -gt 0 ]]; do
                 case "$1" in
@@ -1824,10 +1850,18 @@ queue() {
                             shift
                         done
                         ;;
+                    --on-retry-failure|--on-attempt-failure)
+                        shift
+                        on_retry_failure=()
+                        while [[ "$#" -gt 0 && "$1" != "--on-success" && "$1" != "--on-failure" && "$1" != "--on-retry-failure" && "$1" != "--on-attempt-failure" && "$1" != "--priority" && "$1" != "-p" && "$1" != "--" ]]; do
+                            on_retry_failure+=( "$1" )
+                            shift
+                        done
+                        ;;
                     --on-failure)
                         shift
                         on_failure=()
-                        while [[ "$#" -gt 0 && "$1" != "--on-success" && "$1" != "--priority" && "$1" != "-p" && "$1" != "--" ]]; do
+                        while [[ "$#" -gt 0 && "$1" != "--on-success" && "$1" != "--on-retry-failure" && "$1" != "--on-attempt-failure" && "$1" != "--priority" && "$1" != "-p" && "$1" != "--" ]]; do
                             on_failure+=( "$1" )
                             shift
                         done
@@ -1838,7 +1872,7 @@ queue() {
                         ;;
                     *)
                         echo "queue submit: unexpected argument before -- : $1" >&2
-                        echo "Usage: queue submit <name> [--priority N|-p N] [--retries N] [--backoff SEC] [--cpu PCT] [--mem SIZE] [--on-success <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
+                        echo "Usage: queue submit <name> [--priority N|-p N] [--retries N] [--backoff SEC] [--cpu PCT] [--mem SIZE] [--on-success <cmd...>] [--on-retry-failure <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
                         return 2
                         ;;
                 esac
@@ -1848,6 +1882,14 @@ queue() {
             [[ "$priority" =~ ^-?[0-9]+$ ]] || priority=10
             [[ "$retries_max" =~ ^[0-9]+$ ]] || retries_max=0
             [[ "$retry_backoff" =~ ^[0-9]+$ ]] || retry_backoff=0
+
+            local dep
+            for dep in "${depends_after_success[@]}"; do
+                if [[ "$dep" == "$name" ]]; then
+                    echo "queue submit: job cannot depend on itself: $name" >&2
+                    return 2
+                fi
+            done
 
             local id="$(_queue_id)"
             local job="$root/pending/$id.job"
@@ -1884,6 +1926,11 @@ queue() {
                     printf " %q" "${on_failure[@]}"
                     printf "\n"
                 fi
+                if [[ "${#on_retry_failure[@]}" -gt 0 ]]; then
+                    printf "  on-retry-failure:"
+                    printf " %q" "${on_retry_failure[@]}"
+                    printf "\n"
+                fi
                 return 0
             fi
 
@@ -1901,9 +1948,8 @@ queue() {
                 printf 'ALLOW_LARGE_LOG=%q\n' "$allow_large_log"
                 printf 'RUNNER=%q\n' "$runner"
                 if [[ "${#depends_after_success[@]}" -gt 0 ]]; then
-                    printf 'DEPENDS_AFTER_SUCCESS='
-                    printf '%q ' "${depends_after_success[@]}"
-                    printf '\n'
+                    deps_join="${depends_after_success[*]}"
+                    printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$deps_join"
                 fi
                 printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
                 printf 'PWD_AT_SUBMIT=%q\n' "$PWD"
@@ -1919,6 +1965,10 @@ queue() {
                 printf 'ON_FAILURE=('
                 printf ' %q' "${on_failure[@]}"
                 printf ' )\n'
+
+                printf 'ON_RETRY_FAILURE=('
+                printf ' %q' "${on_retry_failure[@]}"
+                printf ' )\n'
             } > "$job"
 
             echo "Submitted $id : $name priority=$priority"
@@ -1933,6 +1983,12 @@ queue() {
             if [[ "${#on_failure[@]}" -gt 0 ]]; then
                 printf "  on-failure:"
                 printf " %q" "${on_failure[@]}"
+                printf "\n"
+            fi
+
+            if [[ "${#on_retry_failure[@]}" -gt 0 ]]; then
+                printf "  on-retry-failure:"
+                printf " %q" "${on_retry_failure[@]}"
                 printf "\n"
             fi
             ;;
@@ -3278,6 +3334,25 @@ _queue_worker() {
                     retry_backoff="${retry_backoff:-0}"
                     [[ "$retry_backoff" =~ ^[0-9]+$ ]] || retry_backoff=0
                     not_before=$(( $(_queue_epoch_now) + retry_backoff ))
+                    if _queue_job_has_array "$running" ON_RETRY_FAILURE; then
+                        (
+                            source "$running"
+                            cd "$PWD_AT_SUBMIT" || exit 98
+                            {
+                                echo
+                                echo "=== on-retry-failure hook for $JOB_ID ==="
+                                echo "started: $(date -Is)"
+                                printf "hook:"
+                                printf " %q" "${ON_RETRY_FAILURE[@]}"
+                                echo
+                                "${ON_RETRY_FAILURE[@]}"
+                                hook_rc="$?"
+                                echo "hook_exit_code: $hook_rc"
+                                echo "finished: $(date -Is)"
+                            } >> "$log" 2>&1
+                        )
+                    fi
+
                     retry_id="$(_queue_id)"
                     _queue_clone_retry_to_pending "$running" "$retry_id" "$retry_done_new" "$not_before"
                     _queue_append_summary_to_job "$running" "$rc" "$log"
@@ -3484,7 +3559,7 @@ _queue_complete() {
                 COMPREPLY=( $(compgen -c -- "$cur") )
                 return 0
             fi
-            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --runner --after-success --after --depends-on --max-log-size --allow-large-log --no-log-cap --on-success --on-failure --" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --runner --after-success --after --depends-on --max-log-size --allow-large-log --no-log-cap --on-success --on-retry-failure --on-attempt-failure --on-failure --" -- "$cur") )
             COMPREPLY+=( $(compgen -c -- "$cur") )
             COMPREPLY+=( $(compgen -f -- "$cur") )
             return 0

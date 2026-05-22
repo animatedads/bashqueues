@@ -840,3 +840,49 @@ See:
 ```text
 docs/DEPENDENCIES.md
 ```
+
+
+## After-success test script
+
+Dedicated dependency test:
+
+```bash
+QUEUEBASH_ALLOW_NONINTERACTIVE=1 tests/after_success.sh
+```
+
+The test forces:
+
+```bash
+QUEUEBASH_RUNNER=direct
+```
+
+because it validates dependency scheduling, not user-systemd execution.
+
+
+## Self-dependency validation
+
+Dependency jobs cannot depend on themselves by exact job name:
+
+```bash
+queue submit self_dep --after-success self_dep -- echo loop
+```
+
+returns:
+
+```text
+queue submit: job cannot depend on itself: self_dep
+```
+
+
+## Retry dependency touch test
+
+Dedicated integration test for retry + on-retry-failure + dependency release:
+
+```bash
+QUEUEBASH_ALLOW_NONINTERACTIVE=1 tests/retry_dependency_touch.sh
+```
+
+`--on-failure` remains the final-failure hook. Use `--on-retry-failure` when a hook should repair the environment before the retry attempt.
+
+
+Note: the retry-remediation hook is recorded in the failed first attempt log, while the final producer success is recorded in the retry job log. `tests/retry_dependency_touch.sh` checks the whole producer attempt chain.
