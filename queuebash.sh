@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.4.4"
+QUEUEBASH_VERSION="0.4.7"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -587,16 +587,23 @@ _queue_job_file_state() {
 _queue_tail_log_for_job() {
     local f="$1"
     local id="$2"
-    local root="$(_queue_root)"
-    local log="$root/logs/$id.log"
+    local state log
+
+    state="$(basename "$(dirname "$f")")"
+    log="$(_queue_log_existing_path "$id")"
 
     if [[ ! -f "$log" ]]; then
         echo "queue tail: no log yet for $id ($f)" >&2
         return 1
     fi
 
-    echo "=== tailing: $log ==="
-    tail -f "$log"
+    if [[ "$state" == "running" && "$log" != *.gz ]]; then
+        echo "=== tailing live: $log ==="
+        tail -f "$log"
+    else
+        echo "=== completed/compressed log tail: $log ==="
+        _queue_log_tail "$log" "${QUEUEBASH_TAIL_LINES:-120}"
+    fi
 }
 
 _queue_epoch_now() {
@@ -682,7 +689,7 @@ _queuemgr_repl_complete() {
     first="${before%% *}"
     [[ "$before" == "$first" ]] && first=""
 
-    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel q quit help ?"
+    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel gz gzip-logs compress-logs q quit help ?"
 
     local words matches
     if [[ -z "$first" ]]; then
@@ -1048,6 +1055,88 @@ _queue_show_systemd_metrics_for_job() {
         }
 }
 
+_queue_log_plain_path() {
+    local id="$1"
+    local root="$(_queue_root)"
+    printf '%s/logs/%s.log\n' "$root" "$id"
+}
+
+_queue_log_gz_path() {
+    local id="$1"
+    local root="$(_queue_root)"
+    printf '%s/logs/%s.log.gz\n' "$root" "$id"
+}
+
+_queue_log_existing_path() {
+    local id="$1"
+    local plain gz
+    plain="$(_queue_log_plain_path "$id")"
+    gz="$(_queue_log_gz_path "$id")"
+
+    if [[ -f "$plain" ]]; then
+        printf '%s\n' "$plain"
+    elif [[ -f "$gz" ]]; then
+        printf '%s\n' "$gz"
+    else
+        printf '%s\n' "$plain"
+    fi
+}
+
+_queue_log_cat() {
+    local path="$1"
+    if [[ "$path" == *.gz ]]; then
+        gzip -cd -- "$path"
+    else
+        cat -- "$path"
+    fi
+}
+
+_queue_log_tail() {
+    local path="$1"
+    local lines="${2:-120}"
+
+    if [[ "$path" == *.gz ]]; then
+        gzip -cd -- "$path" | tail -n "$lines"
+    else
+        tail -n "$lines" -- "$path"
+    fi
+}
+
+_queue_maybe_gzip_log() {
+    local id="$1"
+    local job="$2"
+    local root="$(_queue_root)"
+    local plain="$root/logs/$id.log"
+    local gz="$root/logs/$id.log.gz"
+
+    [[ "${QUEUEBASH_GZIP_LOGS:-1}" == "1" ]] || return 0
+    command -v gzip >/dev/null 2>&1 || return 0
+    [[ -f "$plain" ]] || return 0
+    [[ -f "$gz" ]] && return 0
+
+    gzip -f -- "$plain"
+    if [[ -f "$gz" && -f "$job" ]]; then
+        {
+            printf 'LOG_COMPRESSED=%q\n' "1"
+            printf 'LOG_COMPRESSED_AT=%q\n' "$(date -Is)"
+            printf 'LOG_PATH=%q\n' "$gz"
+        } >> "$job"
+        _queue_log_event "log_compressed" "$id" "$(_queue_job_name "$job")" "$(basename "$(dirname "$job")")" "path=$gz"
+    fi
+}
+
+_queue_compress_completed_logs() {
+    local root="$(_queue_root)"
+    local state f id
+    for state in done failed; do
+        for f in "$root/$state"/*.job; do
+            [[ -e "$f" ]] || continue
+            id="$(basename "$f" .job)"
+            _queue_maybe_gzip_log "$id" "$f"
+        done
+    done
+}
+
 _queue_help() {
     cat <<'EOF'
 Usage:
@@ -1057,7 +1146,7 @@ Usage:
   queue list [--state all|pending|running|paused|done|failed|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
   queue ls   [--state all|pending|running|paused|done|failed|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
   queue find <text>
-  queue show <qid|exact-job-name>
+  queue show <qid|exact-job-name> [--tail N|--full]
   queue tail <qid|exact-job-name>
   queue pids <qid|exact-job-name>
   queue metrics <qid|exact-job-name>
@@ -1084,6 +1173,7 @@ Usage:
   queue undelete <qid|exact-job-name> [pending|done|failed] [--force] [--dryrun]
 
   queue health [--fix]
+  queue compress-logs
   queue stats [--name exact-job-name] [--today]
   queue watch [--interval SEC]
   queue events [--tail N]
@@ -1139,6 +1229,11 @@ Priority:
   Higher number runs first.
   Suggested: 100 urgent, 50 high, 10 normal/default, 0 low.
   Exact job name updates all jobs with that exact name.
+
+Log compression:
+  Completed job logs are gzipped by default: QUEUEBASH_GZIP_LOGS=1.
+  Set QUEUEBASH_GZIP_LOGS=0 to keep completed logs as plain .log files.
+  queue show/tail read .log and .log.gz automatically.
 
 Log safety:
   queue submit accepts --max-log-size SIZE, e.g. 50M, 500M, 2G.
@@ -1496,7 +1591,19 @@ queue() {
 
         show)
             local target="$1"
-            [[ -z "$target" ]] && { echo "Usage: queue show <qid-or-exact-job-name>" >&2; return 2; }
+            shift || true
+            local show_full=0
+            local show_tail=120
+
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --full) show_full=1; shift ;;
+                    --tail|-n) show_tail="${2:-120}"; shift 2 ;;
+                    *) shift ;;
+                esac
+            done
+
+            [[ -z "$target" ]] && { echo "Usage: queue show <qid-or-exact-job-name> [--tail N|--full]" >&2; return 2; }
 
             local matches=()
             local f
@@ -1510,14 +1617,12 @@ queue() {
             exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
             if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 ]]; then
                 echo "queue show: ambiguous QID prefix: $target" >&2
-                echo "matches:" >&2
                 _queue_print_matches "${matches[@]}"
-                echo "Use a fuller QID or an exact job name." >&2
                 return 2
             fi
 
             local shown=0
-            local id state
+            local id state log_path
             for f in "${matches[@]}"; do
                 id="$(basename "$f" .job)"
                 state="$(basename "$(dirname "$f")")"
@@ -1526,23 +1631,25 @@ queue() {
                 echo "=============================================================================="
                 echo "=== $f ==="
                 cat "$f"
-                echo
 
-                if [[ -f "$root/logs/$id.log" ]]; then
-                    echo "=== log: $root/logs/$id.log ==="
-                    tail -200 "$root/logs/$id.log"
-                else
-                    echo "=== log ==="
-                    echo "(no log found)"
+                log_path="$(_queue_log_existing_path "$id")"
+                if [[ -f "$log_path" ]]; then
+                    echo
+                    echo "=== log: $log_path ==="
+                    if [[ "$show_full" -eq 1 ]]; then
+                        _queue_log_cat "$log_path"
+                    else
+                        _queue_log_tail "$log_path" "$show_tail"
+                        echo
+                        echo "=== showing last $show_tail lines; use queue show $id --full for complete log ==="
+                    fi
                 fi
-                echo
+
                 shown=$((shown + 1))
             done
-
+            echo
             echo "Shown $shown job(s)."
             ;;
-
-
 
         tail|follow)
             local target="$1"
@@ -1596,6 +1703,14 @@ queue() {
             local id
             id="$(basename "$chosen" .job)"
             _queue_tail_log_for_job "$chosen" "$id"
+            ;;
+
+
+
+        compress-logs|gzip-logs)
+            echo "Compressing completed done/failed logs..."
+            _queue_compress_completed_logs
+            echo "Done."
             ;;
 
 
@@ -2670,6 +2785,8 @@ _queue_worker() {
                 echo "[worker $worker_id] failed $id rc=$rc but queue record was moved externally; no failure hook run by worker"
             fi
         fi
+
+        _queue_compress_completed_logs
     done
 }
 
@@ -2696,7 +2813,7 @@ Commands:
   ci      clear interrupted   st <state>    state filter
   cc      clear cancelled     a             clear filters
   ccd     dryrun clear canc.  stat          stats
-  cdel    clear deleted       ev [N]        recent events
+  cdel    clear deleted       gz      compress logs       ev [N]        recent events
 EOF
 }
 
@@ -2783,6 +2900,7 @@ queuemgr() {
             cc|clear-cancelled) queue clear cancelled; read -r -p "press enter..." ;;
             ccd|dry-clear-cancelled) queue --dryrun clear cancelled; read -r -p "press enter..." ;;
             cdel|clear-deleted) queue clear deleted; read -r -p "press enter..." ;;
+            gz|gzip-logs|compress-logs) queue compress-logs; read -r -p "press enter..." ;;
             stat|stats) queue stats; read -r -p "press enter..." ;;
             h|health) queue health; read -r -p "press enter..." ;;
             hf|healthfix|health-fix) queue health --fix; read -r -p "press enter..." ;;
@@ -2813,7 +2931,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit list ls find show tail follow pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start clear version --version -V help --help -h"
+    local commands="--dryrun -n submit list ls find show tail follow pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start compress-logs gzip-logs clear version --version -V help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )

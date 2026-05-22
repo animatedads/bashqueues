@@ -659,3 +659,71 @@ Inspect cgroup/unit information:
 queue metrics <job>
 queue unit <job>
 ```
+
+
+## Automatic gzip log compression
+
+Completed job logs are compressed by default:
+
+```bash
+export QUEUEBASH_GZIP_LOGS=1
+```
+
+Disable compression:
+
+```bash
+export QUEUEBASH_GZIP_LOGS=0
+```
+
+While a job is running, the log remains plain:
+
+```text
+~/.queuebash/logs/<QID>.log
+```
+
+After completion, it becomes:
+
+```text
+~/.queuebash/logs/<QID>.log.gz
+```
+
+`queue show` and `queue tail` read both `.log` and `.log.gz` automatically.
+
+`queue show` now tails logs by default:
+
+```bash
+queue show myjob
+queue show myjob --tail 500
+queue show myjob --full
+```
+
+
+## Compress existing completed logs
+
+Automatic gzip runs after completed job logs are closed. To compress existing completed logs manually:
+
+```bash
+queue compress-logs
+```
+
+Alias:
+
+```bash
+queue gzip-logs
+```
+
+
+## Completion for log compression
+
+The shell completion includes:
+
+```bash
+queue compress-logs
+queue gzip-logs
+```
+
+Inside `queuemgr`:
+
+```text
+gz    compress completed logs
+```
