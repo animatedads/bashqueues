@@ -727,3 +727,59 @@ Inside `queuemgr`:
 ```text
 gz    compress completed logs
 ```
+
+
+## Live log watchdog
+
+Queuebash protects ordinary jobs from runaway stdout/stderr.
+
+Default cap:
+
+```bash
+QUEUEBASH_MAX_LOG_SIZE_BYTES=52428800
+```
+
+Override per job:
+
+```bash
+queue submit noisy --max-log-size 2G -- ./thing
+```
+
+Explicitly allow huge logs:
+
+```bash
+queue submit noisy --allow-large-log -- ./thing
+```
+
+If a running job exceeds the cap, queuebash records:
+
+```text
+LOG_OVERFLOW=1
+LOG_OVERFLOW_AT=
+LOG_OVERFLOW_BYTES=
+LOG_OVERFLOW_CAP=
+```
+
+and terminates the process or transient systemd unit.
+
+
+## Runner/operator documentation
+
+See:
+
+```text
+docs/RUNNERS.md
+```
+
+for the current execution model:
+
+```text
+direct runner  -> setsid + RUN_PGID
+systemd runner -> transient service + SYSTEMD_UNIT + cgroup
+```
+
+Operator summary command:
+
+```bash
+queue explain <job>
+```

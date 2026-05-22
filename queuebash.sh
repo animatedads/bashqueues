@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.4.7"
+QUEUEBASH_VERSION="0.4.9"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -470,6 +470,7 @@ _queue_clone_job_to_pending() {
             printf 'CPU_LIMIT=%q\n' "${CPU_LIMIT:-}"
             printf 'MEM_LIMIT=%q\n' "${MEM_LIMIT:-}"
             printf 'MAX_LOG_SIZE_BYTES=%q\n' "${MAX_LOG_SIZE_BYTES:-${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}}"
+            printf 'ALLOW_LARGE_LOG=%q\n' "${ALLOW_LARGE_LOG:-0}"
             printf 'RUNNER=%q\n' "${RUNNER:-${QUEUEBASH_RUNNER:-auto}}"
             printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
             printf 'PWD_AT_SUBMIT=%q\n' "$PWD_AT_SUBMIT"
@@ -1137,6 +1138,192 @@ _queue_compress_completed_logs() {
     done
 }
 
+_queue_log_watchdog() {
+    local id="$1"
+    local job="$2"
+    local log="$3"
+    local watched_pid="$4"
+    local max_bytes="$5"
+    local root="$(_queue_root)"
+
+    [[ -z "$max_bytes" ]] && return 0
+    [[ "$max_bytes" =~ ^[0-9]+$ ]] || return 0
+    [[ "$max_bytes" -le 0 ]] && return 0
+
+    local size unit pgid
+    while kill -0 "$watched_pid" 2>/dev/null; do
+        if [[ -f "$log" ]]; then
+            size="$(wc -c < "$log" 2>/dev/null | tr -d '[:space:]')"
+            size="${size:-0}"
+            if [[ "$size" =~ ^[0-9]+$ && "$size" -gt "$max_bytes" ]]; then
+                {
+                    echo
+                    echo "LOG_OVERFLOW_ERROR: log size ${size} exceeded cap ${max_bytes}; terminating job"
+                    echo "LOG_OVERFLOW_AT=$(date -Is)"
+                } >> "$log" 2>/dev/null || true
+
+                {
+                    printf 'LOG_OVERFLOW=%q\n' "1"
+                    printf 'LOG_OVERFLOW_AT=%q\n' "$(date -Is)"
+                    printf 'LOG_OVERFLOW_BYTES=%q\n' "$size"
+                    printf 'LOG_OVERFLOW_CAP=%q\n' "$max_bytes"
+                } >> "$job" 2>/dev/null || true
+
+                _queue_log_event "log_overflow_kill" "$id" "$(_queue_job_name "$job")" "running" "bytes=$size cap=$max_bytes pid=$watched_pid"
+
+                unit="$(_queue_systemd_unit_from_log "$log" 2>/dev/null || true)"
+                if [[ -n "$unit" ]]; then
+                    systemctl --user stop "$unit" >/dev/null 2>&1 || true
+                fi
+
+                pgid="$(ps -o pgid= -p "$watched_pid" 2>/dev/null | tr -d '[:space:]')"
+                if [[ -n "$pgid" ]]; then
+                    kill -TERM "-$pgid" >/dev/null 2>&1 || true
+                fi
+                kill -TERM "$watched_pid" >/dev/null 2>&1 || true
+
+                sleep 2
+
+                if kill -0 "$watched_pid" 2>/dev/null; then
+                    if [[ -n "$unit" ]]; then
+                        systemctl --user kill "$unit" >/dev/null 2>&1 || true
+                    fi
+                    [[ -n "$pgid" ]] && kill -KILL "-$pgid" >/dev/null 2>&1 || true
+                    kill -KILL "$watched_pid" >/dev/null 2>&1 || true
+                fi
+
+                return 0
+            fi
+        fi
+        sleep "${QUEUEBASH_LOG_WATCH_INTERVAL:-1}"
+    done
+}
+
+_queue_job_var_value() {
+    local f="$1"
+    local key="$2"
+    grep "^${key}=" "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null
+}
+
+_queue_human_bytes() {
+    local b="${1:-0}"
+    [[ "$b" =~ ^[0-9]+$ ]] || { echo "$b"; return; }
+
+    if (( b >= 1073741824 )); then
+        awk -v b="$b" 'BEGIN { printf "%.2fG", b/1073741824 }'
+    elif (( b >= 1048576 )); then
+        awk -v b="$b" 'BEGIN { printf "%.2fM", b/1048576 }'
+    elif (( b >= 1024 )); then
+        awk -v b="$b" 'BEGIN { printf "%.2fK", b/1024 }'
+    else
+        printf "%sB" "$b"
+    fi
+}
+
+_queue_explain_job() {
+    local f="$1"
+    local root="$(_queue_root)"
+    local id state log log_display unit runner runner_used cpu mem maxlog largelog overflow pid pgid cmd pwd submit started finished exit_code duration log_bytes compressed log_path
+
+    id="$(basename "$f" .job)"
+    state="$(basename "$(dirname "$f")")"
+
+    runner="$(_queue_job_var_value "$f" RUNNER)"
+    runner="${runner:-${QUEUEBASH_RUNNER:-auto}}"
+    runner_used="$(_queue_job_var_value "$f" RUNNER_USED)"
+    runner_used="${runner_used:-unknown}"
+
+    cpu="$(_queue_job_var_value "$f" CPU_LIMIT)"
+    mem="$(_queue_job_var_value "$f" MEM_LIMIT)"
+    maxlog="$(_queue_job_var_value "$f" MAX_LOG_SIZE_BYTES)"
+    largelog="$(_queue_job_var_value "$f" ALLOW_LARGE_LOG)"
+    overflow="$(_queue_job_var_value "$f" LOG_OVERFLOW)"
+    pid="$(_queue_job_var_value "$f" RUN_PID)"
+    pgid="$(_queue_job_var_value "$f" RUN_PGID)"
+    unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+
+    pwd="$(_queue_job_var_value "$f" PWD_AT_SUBMIT)"
+    submit="$(_queue_job_var_value "$f" SUBMITTED_AT)"
+    started="$(_queue_job_var_value "$f" RUN_STARTED_AT)"
+    finished="$(_queue_job_var_value "$f" EXEC_FINISHED_AT)"
+    exit_code="$(_queue_job_var_value "$f" EXIT_CODE)"
+    duration="$(_queue_job_var_value "$f" DURATION_SECONDS)"
+    log_bytes="$(_queue_job_var_value "$f" LOG_BYTES)"
+    compressed="$(_queue_job_var_value "$f" LOG_COMPRESSED)"
+    log_path="$(_queue_job_var_value "$f" LOG_PATH)"
+    cmd="$(_queue_job_command "$f" 2>/dev/null || grep '^COMMAND=' "$f" | sed 's/^COMMAND=( //; s/ )$//')"
+
+    log="$(_queue_log_existing_path "$id" 2>/dev/null || printf '%s/logs/%s.log\n' "$root" "$id")"
+    if [[ -n "$log_path" ]]; then
+        log_display="$log_path"
+    else
+        log_display="$log"
+    fi
+
+    echo "=============================================================================="
+    echo "QUEUEBASH EXPLAIN: $id"
+    echo "=============================================================================="
+    printf "%-20s %s\n" "state:" "$state"
+    printf "%-20s %s\n" "name:" "$(_queue_job_name "$f")"
+    printf "%-20s %s\n" "command:" "$cmd"
+    printf "%-20s %s\n" "submit directory:" "$pwd"
+    printf "%-20s %s\n" "submitted:" "$submit"
+    printf "%-20s %s\n" "started:" "${started:-not-started}"
+    printf "%-20s %s\n" "finished:" "${finished:-not-finished}"
+    [[ -n "$exit_code" ]] && printf "%-20s %s\n" "exit code:" "$exit_code"
+    [[ -n "$duration" ]] && printf "%-20s %ss\n" "duration:" "$duration"
+    echo
+
+    echo "Runner"
+    printf "  %-18s %s\n" "requested:" "$runner"
+    printf "  %-18s %s\n" "used:" "$runner_used"
+    if [[ "$runner_used" == "systemd" || -n "$unit" ]]; then
+        printf "  %-18s %s\n" "systemd unit:" "${unit:-not-recorded-yet}"
+    fi
+    [[ -n "$pid" ]] && printf "  %-18s %s\n" "RUN_PID:" "$pid"
+    [[ -n "$pgid" ]] && printf "  %-18s %s\n" "RUN_PGID:" "$pgid"
+    echo
+
+    echo "Resources"
+    printf "  %-18s %s\n" "CPU limit:" "${cpu:-none}"
+    printf "  %-18s %s\n" "memory limit:" "${mem:-none}"
+    if [[ -n "$unit" && "$runner_used" == "systemd" ]]; then
+        echo "  systemd metrics:"
+        systemctl --user show "$unit" \
+            -p ActiveState \
+            -p SubState \
+            -p MainPID \
+            -p ControlGroup \
+            -p CPUQuotaPerSecUSec \
+            -p MemoryMax \
+            -p MemoryCurrent \
+            -p TasksCurrent 2>/dev/null | sed 's/^/    /' || echo "    unavailable"
+    fi
+    echo
+
+    echo "Log"
+    printf "  %-18s %s\n" "path:" "$log_display"
+    [[ -n "$log_bytes" ]] && printf "  %-18s %s (%s bytes)\n" "final size:" "$(_queue_human_bytes "$log_bytes")" "$log_bytes"
+    [[ -n "$maxlog" ]] && printf "  %-18s %s (%s bytes)\n" "cap:" "$(_queue_human_bytes "$maxlog")" "$maxlog"
+    printf "  %-18s %s\n" "compressed:" "${compressed:-0}"
+    printf "  %-18s %s\n" "large-log opt-in:" "${largelog:-0}"
+    if [[ "${overflow:-0}" == "1" ]]; then
+        printf "  %-18s %s\n" "overflow:" "YES"
+        printf "  %-18s %s\n" "overflow bytes:" "$(_queue_job_var_value "$f" LOG_OVERFLOW_BYTES)"
+        printf "  %-18s %s\n" "overflow cap:" "$(_queue_job_var_value "$f" LOG_OVERFLOW_CAP)"
+    else
+        printf "  %-18s %s\n" "overflow:" "no"
+    fi
+    echo
+
+    echo "Cancellation model"
+    if [[ "$runner_used" == "systemd" || -n "$unit" ]]; then
+        echo "  queue cancel/kill should prefer the transient systemd unit, then fall back to PGID/PID."
+    else
+        echo "  direct jobs use RUN_PGID where available, falling back to RUN_PID."
+    fi
+}
+
 _queue_help() {
     cat <<'EOF'
 Usage:
@@ -1150,6 +1337,7 @@ Usage:
   queue tail <qid|exact-job-name>
   queue pids <qid|exact-job-name>
   queue metrics <qid|exact-job-name>
+  queue explain <qid|exact-job-name>
   queue hooks <qid|exact-job-name>
 
   queue onsuccess <qid|exact-job-name> -- <command...>
@@ -1234,6 +1422,11 @@ Log compression:
   Completed job logs are gzipped by default: QUEUEBASH_GZIP_LOGS=1.
   Set QUEUEBASH_GZIP_LOGS=0 to keep completed logs as plain .log files.
   queue show/tail read .log and .log.gz automatically.
+
+Log cap enforcement:
+  Default max log size is QUEUEBASH_MAX_LOG_SIZE_BYTES or 50MB.
+  If a running job exceeds the cap, queuebash terminates it and records LOG_OVERFLOW=1.
+  Use --allow-large-log or --max-log-size SIZE when huge logs are intentional.
 
 Log safety:
   queue submit accepts --max-log-size SIZE, e.g. 50M, 500M, 2G.
@@ -1372,6 +1565,7 @@ queue() {
             local mem_limit=""
             local runner="${QUEUEBASH_RUNNER:-auto}"
             local max_log_size="${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}"
+            local allow_large_log=0
             local local_dryrun="$dryrun"
             local name="$1"
             shift || true
@@ -1420,6 +1614,11 @@ queue() {
                         max_log_size="$(_queue_parse_size_to_bytes "$2")"
                         [[ "$max_log_size" -gt 0 ]] || { echo "queue submit: invalid --max-log-size: $2" >&2; return 2; }
                         shift 2
+                        ;;
+                    --allow-large-log|--no-log-cap)
+                        allow_large_log=1
+                        max_log_size=0
+                        shift
                         ;;
                     --runner)
                         [[ -z "$2" ]] && { echo "queue submit: --runner needs a value: auto|systemd|direct" >&2; return 2; }
@@ -1472,6 +1671,7 @@ queue() {
                 echo "  cpu:      $cpu_limit"
                 echo "  mem:      $mem_limit"
                 echo "  maxlog:   $max_log_size"
+                echo "  largelog: $allow_large_log"
                 echo "  runner:   $runner"
                 echo "  state:    pending"
                 echo "  jobfile:  $job"
@@ -1502,6 +1702,7 @@ queue() {
                 printf 'CPU_LIMIT=%q\n' "$cpu_limit"
                 printf 'MEM_LIMIT=%q\n' "$mem_limit"
                 printf 'MAX_LOG_SIZE_BYTES=%q\n' "$max_log_size"
+                printf 'ALLOW_LARGE_LOG=%q\n' "$allow_large_log"
                 printf 'RUNNER=%q\n' "$runner"
                 printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
                 printf 'PWD_AT_SUBMIT=%q\n' "$PWD"
@@ -1588,6 +1789,45 @@ queue() {
             [[ -z "$text" ]] && { echo "Usage: queue find <text>" >&2; return 2; }
             queue list --filter "$text"
             ;;
+
+
+        explain)
+            local target="$1"
+            [[ -z "$target" ]] && { echo "Usage: queue explain <qid-or-exact-job-name>" >&2; return 2; }
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue explain: no such QID or exact job name: $target" >&2; return 1; }
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 ]]; then
+                echo "queue explain: ambiguous QID prefix: $target" >&2
+                _queue_print_matches "${matches[@]}"
+                return 2
+            fi
+            if [[ "${#matches[@]}" -gt 1 ]]; then
+                # Prefer a running job with this exact name if there is exactly one.
+                local running_matches=()
+                for f in "${matches[@]}"; do
+                    [[ "$(basename "$(dirname "$f")")" == "running" ]] && running_matches+=( "$f" )
+                done
+                if [[ "${#running_matches[@]}" -eq 1 ]]; then
+                    matches=( "${running_matches[0]}" )
+                else
+                    echo "queue explain: multiple jobs named '$target'; use a QID" >&2
+                    _queue_print_matches "${matches[@]}"
+                    return 2
+                fi
+            fi
+
+            _queue_explain_job "${matches[0]}"
+            ;;
+
 
         show)
             local target="$1"
@@ -2688,16 +2928,31 @@ _queue_worker() {
                 echo "run_pgid: $cmd_pgid"
                 _queue_log_event "pid_recorded" "$JOB_ID" "$JOB_NAME" "running" "pid=$cmd_pid pgid=$cmd_pgid"
 
+                max_log_bytes="$(_queue_job_log_max_bytes "$running")"
+                if [[ "${ALLOW_LARGE_LOG:-0}" != "1" && "$max_log_bytes" =~ ^[0-9]+$ && "$max_log_bytes" -gt 0 ]]; then
+                    _queue_log_watchdog "$JOB_ID" "$running" "$log" "$cmd_pid" "$max_log_bytes" &
+                    log_watchdog_pid="$!"
+                else
+                    log_watchdog_pid=""
+                fi
+
                 wait "$cmd_pid"
                 rc="$?"
+                if [[ -n "${log_watchdog_pid:-}" ]]; then
+                    kill "$log_watchdog_pid" >/dev/null 2>&1 || true
+                    wait "$log_watchdog_pid" >/dev/null 2>&1 || true
+                fi
                 _queue_record_systemd_unit_if_seen "$running" "$log"
 
                 log_bytes_now="$(_queue_log_size_bytes "$log")"
                 max_log_bytes="$(_queue_job_log_max_bytes "$running")"
                 if [[ "$max_log_bytes" -gt 0 && "$log_bytes_now" -gt "$max_log_bytes" ]]; then
                     echo
-                    echo "LOG_OVERFLOW_WARNING: log size ${log_bytes_now} exceeded cap ${max_log_bytes}" 
+                    echo "LOG_OVERFLOW_WARNING: log size ${log_bytes_now} exceeded cap ${max_log_bytes}"
                     _queue_log_event "log_overflow_warning" "$JOB_ID" "$JOB_NAME" "running" "bytes=$log_bytes_now cap=$max_log_bytes"
+                    if grep -q '^LOG_OVERFLOW=1$' "$running" 2>/dev/null; then
+                        rc=97
+                    fi
                 fi
 
                 echo
@@ -2797,7 +3052,8 @@ Commands:
   r / r4       run 1/4        s <id|name>   show          p <id|name> <pri>
   rd / rd4     dryrun 1/4     t <id|name>   tail          pause <id|name>
                               pid <id|name> pids
-                              m <id|name>   metrics          pd <id|name>
+                              m <id|name>   metrics
+                              ex <id|name>  explain          pd <id|name>
                                                           unp / unpd <id|name>
 
   Hooks                       Cancel/delete               Resubmit/recovery
@@ -2861,6 +3117,7 @@ queuemgr() {
             t|tail|follow) queue tail "$arg"; read -r -p "press enter..." ;;
             pid|pids|ps) queue pids "$arg"; read -r -p "press enter..." ;;
             m|metrics|metric|unit) queue metrics "$arg"; read -r -p "press enter..." ;;
+            ex|explain) queue explain "$arg"; read -r -p "press enter..." ;;
             p|prio|priority) queue priority "$arg" "$extra"; read -r -p "press enter..." ;;
             pause|hold) queue pause "$arg"; read -r -p "press enter..." ;;
             pd|pausedry|drypause) queue --dryrun pause "$arg"; read -r -p "press enter..." ;;
@@ -2931,7 +3188,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit list ls find show tail follow pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start compress-logs gzip-logs clear version --version -V help --help -h"
+    local commands="--dryrun -n submit list ls find show explain tail follow pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start compress-logs gzip-logs clear version --version -V help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
@@ -2948,7 +3205,7 @@ _queue_complete() {
                 COMPREPLY=( $(compgen -c -- "$cur") )
                 return 0
             fi
-            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --runner --max-log-size --on-success --on-failure --" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --runner --max-log-size --allow-large-log --no-log-cap --on-success --on-failure --" -- "$cur") )
             COMPREPLY+=( $(compgen -c -- "$cur") )
             COMPREPLY+=( $(compgen -f -- "$cur") )
             return 0
@@ -2964,7 +3221,7 @@ _queue_complete() {
             return 0
             ;;
 
-        show|tail|follow|pids|pid|ps|metrics|metric|unit|hooks|hook|pause|hold|unpause|resume|release|cancel|kill|delete|del|rm|remove|undelete|undel|restore|resubmit|retry)
+        show|explain|tail|follow|pids|pid|ps|metrics|metric|unit|hooks|hook|pause|hold|unpause|resume|release|cancel|kill|delete|del|rm|remove|undelete|undel|restore|resubmit|retry)
             if [[ "$COMP_CWORD" -eq 2 ]]; then
                 COMPREPLY=( $(compgen -W "$(_queue_job_id_and_names_for_completion)" -- "$cur") )
                 return 0
