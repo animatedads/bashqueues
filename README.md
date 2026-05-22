@@ -797,3 +797,46 @@ systemctl --user show <unit> -p MainPID
 ```
 
 `queue pids`, `queue health`, `queue cancel`, `queue kill`, and the log watchdog prefer the active systemd unit/MainPID where available, then fall back to `RUN_PGID` / `RUN_PID`.
+
+
+## Explain exact-name batches
+
+`queue explain <name>` explains every job with that exact name, matching `queue show` behaviour. Use a QID when you want one specific record.
+
+For pending jobs, `queue explain` reports:
+
+```text
+planned: <runner>
+used: not-started
+```
+
+and explains that cancellation only moves the job record because no process exists yet.
+
+
+## Dependencies
+
+Queuebash supports simple success dependencies:
+
+```bash
+queue submit next_step --after-success previous_step -- ./next.sh
+```
+
+Aliases:
+
+```bash
+--after
+--depends-on
+```
+
+Inspect:
+
+```bash
+queue deps <job>
+queue waiting
+```
+
+See:
+
+```text
+docs/DEPENDENCIES.md
+```

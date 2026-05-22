@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.5.0"
+QUEUEBASH_VERSION="0.6.0"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -405,6 +405,94 @@ _queue_set_job_array() {
     mv "$tmp" "$file"
 }
 
+_queue_dep_token_done() {
+    local token="$1"
+    local root="$(_queue_root)"
+    local f name id
+
+    [[ -z "$token" ]] && return 1
+
+    # Direct QID match.
+    if [[ -f "$root/done/$token.job" ]]; then
+        return 0
+    fi
+
+    # Exact job-name match in done/.
+    for f in "$root/done"/*.job; do
+        [[ -e "$f" ]] || continue
+        name="$(_queue_job_name "$f")"
+        [[ "$name" == "$token" ]] && return 0
+    done
+
+    return 1
+}
+
+_queue_dep_token_failed_or_cancelled() {
+    local token="$1"
+    local root="$(_queue_root)"
+    local state f name
+
+    for state in failed interrupted cancelled deleted; do
+        [[ -f "$root/$state/$token.job" ]] && return 0
+        for f in "$root/$state"/*.job; do
+            [[ -e "$f" ]] || continue
+            name="$(_queue_job_name "$f")"
+            [[ "$name" == "$token" ]] && return 0
+        done
+    done
+
+    return 1
+}
+
+_queue_job_dependency_tokens() {
+    local f="$1"
+    grep '^DEPENDS_AFTER_SUCCESS=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null
+}
+
+_queue_job_dependencies_satisfied() {
+    local f="$1"
+    local deps dep
+    deps="$(_queue_job_dependency_tokens "$f")"
+    [[ -z "$deps" ]] && return 0
+
+    for dep in $deps; do
+        _queue_dep_token_done "$dep" || return 1
+    done
+
+    return 0
+}
+
+_queue_job_dependencies_status() {
+    local f="$1"
+    local deps dep
+    deps="$(_queue_job_dependency_tokens "$f")"
+    [[ -z "$deps" ]] && { echo "none"; return 0; }
+
+    for dep in $deps; do
+        if _queue_dep_token_done "$dep"; then
+            echo "$dep:done"
+        elif _queue_dep_token_failed_or_cancelled "$dep"; then
+            echo "$dep:blocked"
+        else
+            echo "$dep:waiting"
+        fi
+    done
+}
+
+_queue_job_dependencies_blocked() {
+    local f="$1"
+    local deps dep
+    deps="$(_queue_job_dependency_tokens "$f")"
+    [[ -z "$deps" ]] && return 1
+
+    for dep in $deps; do
+        _queue_dep_token_done "$dep" && continue
+        _queue_dep_token_failed_or_cancelled "$dep" && return 0
+    done
+
+    return 1
+}
+
 _queue_next_job() {
     local root="$(_queue_root)"
     local best=""
@@ -416,6 +504,7 @@ _queue_next_job() {
         [[ -e "$f" ]] || continue
 
         _queue_job_retry_due "$f" || continue
+        _queue_job_dependencies_satisfied "$f" || continue
 
         id="$(basename "$f" .job)"
         pri="$(_queue_job_pri "$f")"
@@ -472,6 +561,7 @@ _queue_clone_job_to_pending() {
             printf 'MAX_LOG_SIZE_BYTES=%q\n' "${MAX_LOG_SIZE_BYTES:-${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}}"
             printf 'ALLOW_LARGE_LOG=%q\n' "${ALLOW_LARGE_LOG:-0}"
             printf 'RUNNER=%q\n' "${RUNNER:-${QUEUEBASH_RUNNER:-auto}}"
+            [[ -n "${DEPENDS_AFTER_SUCCESS:-}" ]] && printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$DEPENDS_AFTER_SUCCESS"
             printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
             printf 'PWD_AT_SUBMIT=%q\n' "$PWD_AT_SUBMIT"
             printf 'RESUBMITTED_FROM=%q\n' "$JOB_ID"
@@ -1245,10 +1335,14 @@ _queue_explain_job() {
     runner="$(_queue_job_var_value "$f" RUNNER)"
     runner="${runner:-${QUEUEBASH_RUNNER:-auto}}"
     runner_used="$(_queue_job_var_value "$f" RUNNER_USED)"
-    runner_used="${runner_used:-unknown}"
-
+    if [[ -z "$runner_used" && "$state" == "pending" ]]; then
+        runner_used="not-started"
+    else
+        runner_used="${runner_used:-unknown}"
+    fi
     cpu="$(_queue_job_var_value "$f" CPU_LIMIT)"
     mem="$(_queue_job_var_value "$f" MEM_LIMIT)"
+    runner_planned="$(_queue_runner_for_job "$runner" "$cpu" "$mem" 2>/dev/null || echo unknown)"
     maxlog="$(_queue_job_var_value "$f" MAX_LOG_SIZE_BYTES)"
     largelog="$(_queue_job_var_value "$f" ALLOW_LARGE_LOG)"
     overflow="$(_queue_job_var_value "$f" LOG_OVERFLOW)"
@@ -1290,6 +1384,9 @@ _queue_explain_job() {
 
     echo "Runner"
     printf "  %-18s %s\n" "requested:" "$runner"
+    if [[ "$state" == "pending" ]]; then
+        printf "  %-18s %s\n" "planned:" "$runner_planned"
+    fi
     printf "  %-18s %s\n" "used:" "$runner_used"
     if [[ "$runner_used" == "systemd" || -n "$unit" ]]; then
         printf "  %-18s %s\n" "systemd unit:" "${unit:-not-recorded-yet}"
@@ -1332,8 +1429,15 @@ _queue_explain_job() {
     fi
     echo
 
+    echo "Dependencies"
+    _queue_job_dependencies_status "$f" | sed 's/^/  /'
+
+    echo
+
     echo "Cancellation model"
-    if [[ "$runner_used" == "systemd" || -n "$unit" ]]; then
+    if [[ "$state" == "pending" || "$state" == "paused" ]]; then
+        echo "  job has not started yet; cancel/delete moves the job record without signalling a process."
+    elif [[ "$runner_used" == "systemd" || -n "$unit" ]]; then
         echo "  queue cancel/kill should prefer the transient systemd unit, then fall back to PGID/PID."
     else
         echo "  direct jobs use RUN_PGID where available, falling back to RUN_PID."
@@ -1417,6 +1521,8 @@ Usage:
   queue pids <qid|exact-job-name>
   queue metrics <qid|exact-job-name>
   queue explain <qid|exact-job-name>
+  queue deps <qid|exact-job-name>
+  queue waiting
   queue hooks <qid|exact-job-name>
 
   queue onsuccess <qid|exact-job-name> -- <command...>
@@ -1645,6 +1751,7 @@ queue() {
             local runner="${QUEUEBASH_RUNNER:-auto}"
             local max_log_size="${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}"
             local allow_large_log=0
+            local depends_after_success=()
             local local_dryrun="$dryrun"
             local name="$1"
             shift || true
@@ -1699,6 +1806,11 @@ queue() {
                         max_log_size=0
                         shift
                         ;;
+                    --after-success|--after|--depends-on)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a QID or exact job name" >&2; return 2; }
+                        depends_after_success+=( "$2" )
+                        shift 2
+                        ;;
                     --runner)
                         [[ -z "$2" ]] && { echo "queue submit: --runner needs a value: auto|systemd|direct" >&2; return 2; }
                         runner="$2"
@@ -1752,6 +1864,11 @@ queue() {
                 echo "  maxlog:   $max_log_size"
                 echo "  largelog: $allow_large_log"
                 echo "  runner:   $runner"
+                if [[ "${#depends_after_success[@]}" -gt 0 ]]; then
+                    printf "  after-success:"
+                    printf " %q" "${depends_after_success[@]}"
+                    printf "\n"
+                fi
                 echo "  state:    pending"
                 echo "  jobfile:  $job"
                 printf "  command:"
@@ -1783,6 +1900,11 @@ queue() {
                 printf 'MAX_LOG_SIZE_BYTES=%q\n' "$max_log_size"
                 printf 'ALLOW_LARGE_LOG=%q\n' "$allow_large_log"
                 printf 'RUNNER=%q\n' "$runner"
+                if [[ "${#depends_after_success[@]}" -gt 0 ]]; then
+                    printf 'DEPENDS_AFTER_SUCCESS='
+                    printf '%q ' "${depends_after_success[@]}"
+                    printf '\n'
+                fi
                 printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
                 printf 'PWD_AT_SUBMIT=%q\n' "$PWD"
 
@@ -1870,6 +1992,48 @@ queue() {
             ;;
 
 
+
+
+        waiting|blocked)
+            local f any=0
+            for f in "$root/pending"/*.job; do
+                [[ -e "$f" ]] || continue
+                _queue_job_dependencies_satisfied "$f" && continue
+                any=1
+                echo "=============================================================================="
+                echo "Job: $(basename "$f" .job)  Name: $(_queue_job_name "$f")"
+                echo "Dependencies:"
+                _queue_job_dependencies_status "$f" | sed 's/^/  /'
+            done
+            [[ "$any" -eq 0 ]] && echo "No pending jobs are waiting on dependencies."
+            return 0
+            ;;
+
+
+        deps|dependencies)
+            local target="$1"
+            [[ -z "$target" ]] && { echo "Usage: queue deps <qid-or-exact-job-name>" >&2; return 2; }
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue deps: no such QID or exact job name: $target" >&2; return 1; }
+
+            local shown=0
+            for f in "${matches[@]}"; do
+                echo "=============================================================================="
+                echo "Job: $(basename "$f" .job)  State: $(basename "$(dirname "$f")")  Name: $(_queue_job_name "$f")"
+                echo "Dependencies:"
+                _queue_job_dependencies_status "$f" | sed 's/^/  /'
+                shown=$((shown + 1))
+            done
+            echo "Shown dependencies for $shown job(s)."
+            ;;
+
+
         explain)
             local target="$1"
             [[ -z "$target" ]] && { echo "Usage: queue explain <qid-or-exact-job-name>" >&2; return 2; }
@@ -1889,22 +2053,16 @@ queue() {
                 _queue_print_matches "${matches[@]}"
                 return 2
             fi
-            if [[ "${#matches[@]}" -gt 1 ]]; then
-                # Prefer a running job with this exact name if there is exactly one.
-                local running_matches=()
-                for f in "${matches[@]}"; do
-                    [[ "$(basename "$(dirname "$f")")" == "running" ]] && running_matches+=( "$f" )
-                done
-                if [[ "${#running_matches[@]}" -eq 1 ]]; then
-                    matches=( "${running_matches[0]}" )
-                else
-                    echo "queue explain: multiple jobs named '$target'; use a QID" >&2
-                    _queue_print_matches "${matches[@]}"
-                    return 2
+            local explained=0
+            for f in "${matches[@]}"; do
+                _queue_explain_job "$f"
+                explained=$((explained + 1))
+                if [[ "$explained" -lt "${#matches[@]}" ]]; then
+                    echo
                 fi
-            fi
-
-            _queue_explain_job "${matches[0]}"
+            done
+            echo
+            echo "Explained $explained job(s)."
             ;;
 
 
@@ -3170,13 +3328,15 @@ Commands:
   rd / rd4     dryrun 1/4     t <id|name>   tail          pause <id|name>
                               pid <id|name> pids
                               m <id|name>   metrics
-                              ex <id|name>  explain          pd <id|name>
+                              ex <id|name>  explain
+                              dep <id|name> deps          pd <id|name>
                                                           unp / unpd <id|name>
 
   Hooks                       Cancel/delete               Resubmit/recovery
   os <id|name>  show hooks    c <id|name>   cancel        rs <id|name>
   ok <id|name> -- <cmd>       kd <id|name>  kill          rsd <id|name>
   fail <id|name> -- <cmd>     d / dd <id|name>            h     health
+                                                          wait  waiting deps
                               df <id|name>                hf    health --fix
                               u / ud / uf <id|name>
 
@@ -3235,6 +3395,8 @@ queuemgr() {
             pid|pids|ps) queue pids "$arg"; read -r -p "press enter..." ;;
             m|metrics|metric|unit) queue metrics "$arg"; read -r -p "press enter..." ;;
             ex|explain) queue explain "$arg"; read -r -p "press enter..." ;;
+            dep|deps|dependencies) queue deps "$arg"; read -r -p "press enter..." ;;
+            wait|waiting|blocked) queue waiting; read -r -p "press enter..." ;;
             p|prio|priority) queue priority "$arg" "$extra"; read -r -p "press enter..." ;;
             pause|hold) queue pause "$arg"; read -r -p "press enter..." ;;
             pd|pausedry|drypause) queue --dryrun pause "$arg"; read -r -p "press enter..." ;;
@@ -3305,7 +3467,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit list ls find show explain tail follow pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start compress-logs gzip-logs clear version --version -V help --help -h"
+    local commands="--dryrun -n submit list ls find show explain deps dependencies waiting blocked tail follow pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start compress-logs gzip-logs clear version --version -V help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
@@ -3322,7 +3484,7 @@ _queue_complete() {
                 COMPREPLY=( $(compgen -c -- "$cur") )
                 return 0
             fi
-            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --runner --max-log-size --allow-large-log --no-log-cap --on-success --on-failure --" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --runner --after-success --after --depends-on --max-log-size --allow-large-log --no-log-cap --on-success --on-failure --" -- "$cur") )
             COMPREPLY+=( $(compgen -c -- "$cur") )
             COMPREPLY+=( $(compgen -f -- "$cur") )
             return 0
@@ -3338,7 +3500,7 @@ _queue_complete() {
             return 0
             ;;
 
-        show|explain|tail|follow|pids|pid|ps|metrics|metric|unit|hooks|hook|pause|hold|unpause|resume|release|cancel|kill|delete|del|rm|remove|undelete|undel|restore|resubmit|retry)
+        show|explain|deps|dependencies|waiting|blocked|tail|follow|pids|pid|ps|metrics|metric|unit|hooks|hook|pause|hold|unpause|resume|release|cancel|kill|delete|del|rm|remove|undelete|undel|restore|resubmit|retry)
             if [[ "$COMP_CWORD" -eq 2 ]]; then
                 COMPREPLY=( $(compgen -W "$(_queue_job_id_and_names_for_completion)" -- "$cur") )
                 return 0
