@@ -15,6 +15,8 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
+QUEUEBASH_VERSION="0.2.0"
+
 # -------------------------------------------------------------------
 # overdir / overfiles
 # -------------------------------------------------------------------
@@ -413,6 +415,8 @@ _queue_next_job() {
     for f in "$root/pending"/*.job; do
         [[ -e "$f" ]] || continue
 
+        _queue_job_retry_due "$f" || continue
+
         id="$(basename "$f" .job)"
         pri="$(_queue_job_pri "$f")"
 
@@ -459,6 +463,12 @@ _queue_clone_job_to_pending() {
             printf 'JOB_ID=%q\n' "$new_id"
             printf 'JOB_NAME=%q\n' "$JOB_NAME"
             printf 'PRIORITY=%q\n' "${PRIORITY:-10}"
+            printf 'RETRIES_MAX=%q\n' "${RETRIES_MAX:-0}"
+            printf 'RETRIES_DONE=%q\n' "${RETRIES_DONE:-0}"
+            printf 'RETRY_BACKOFF=%q\n' "${RETRY_BACKOFF:-0}"
+            printf 'RETRY_NOT_BEFORE_EPOCH=%q\n' "0"
+            printf 'CPU_LIMIT=%q\n' "${CPU_LIMIT:-}"
+            printf 'MEM_LIMIT=%q\n' "${MEM_LIMIT:-}"
             printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
             printf 'PWD_AT_SUBMIT=%q\n' "$PWD_AT_SUBMIT"
             printf 'RESUBMITTED_FROM=%q\n' "$JOB_ID"
@@ -587,6 +597,127 @@ _queue_tail_log_for_job() {
     tail -f "$log"
 }
 
+_queue_epoch_now() {
+    date +%s
+}
+
+_queue_job_retry_due() {
+    local f="$1"
+    local not_before now
+    not_before="$(grep '^RETRY_NOT_BEFORE_EPOCH=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    not_before="${not_before:-0}"
+    now="$(_queue_epoch_now)"
+    [[ "$not_before" =~ ^[0-9]+$ ]] || not_before=0
+    (( not_before <= now ))
+}
+
+_queue_clone_retry_to_pending() {
+    local src_job="$1"
+    local new_id="$2"
+    local retry_done="$3"
+    local not_before="$4"
+    local root="$(_queue_root)"
+    local dest="$root/pending/$new_id.job"
+
+    (
+        source "$src_job" 2>/dev/null || exit 1
+
+        {
+            printf 'JOB_ID=%q\n' "$new_id"
+            printf 'JOB_NAME=%q\n' "$JOB_NAME"
+            printf 'PRIORITY=%q\n' "${PRIORITY:-10}"
+            printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
+            printf 'PWD_AT_SUBMIT=%q\n' "$PWD_AT_SUBMIT"
+            printf 'RETRY_OF=%q\n' "$JOB_ID"
+            printf 'RETRIES_MAX=%q\n' "${RETRIES_MAX:-0}"
+            printf 'RETRIES_DONE=%q\n' "$retry_done"
+            printf 'RETRY_BACKOFF=%q\n' "${RETRY_BACKOFF:-0}"
+            printf 'RETRY_NOT_BEFORE_EPOCH=%q\n' "$not_before"
+            printf 'CPU_LIMIT=%q\n' "${CPU_LIMIT:-}"
+            printf 'MEM_LIMIT=%q\n' "${MEM_LIMIT:-}"
+
+            printf 'COMMAND=('
+            printf ' %q' "${COMMAND[@]}"
+            printf ' )\n'
+
+            printf 'ON_SUCCESS=('
+            printf ' %q' "${ON_SUCCESS[@]}"
+            printf ' )\n'
+
+            printf 'ON_FAILURE=('
+            printf ' %q' "${ON_FAILURE[@]}"
+            printf ' )\n'
+        } > "$dest"
+    )
+}
+
+_queue_should_retry_failed_job() {
+    local f="$1"
+    local max done
+    max="$(grep '^RETRIES_MAX=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    done="$(grep '^RETRIES_DONE=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    max="${max:-0}"
+    done="${done:-0}"
+    [[ "$max" =~ ^[0-9]+$ ]] || max=0
+    [[ "$done" =~ ^[0-9]+$ ]] || done=0
+    (( done < max ))
+}
+
+_queue_systemd_supported() {
+    command -v systemd-run >/dev/null 2>&1 || return 1
+    [[ -n "${XDG_RUNTIME_DIR:-}" || -d /run/systemd/system ]] || return 1
+    return 0
+}
+
+_queuemgr_repl_complete() {
+    local line point prefix before first cur
+    line="${READLINE_LINE:-}"
+    point="${READLINE_POINT:-0}"
+    before="${line:0:point}"
+
+    # Current token/prefix.
+    cur="${before##* }"
+    first="${before%% *}"
+    [[ "$before" == "$first" ]] && first=""
+
+    local commands="r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd stat stats ev events f filter n name st state a all cd cf cdel q quit help ?"
+
+    local words matches
+    if [[ -z "$first" ]]; then
+        words="$commands"
+    else
+        case "$first" in
+            st|state)
+                words="all pending running paused done failed cancelled deleted"
+                ;;
+            f|filter|n|name|s|show|t|tail|pid|pids|p|prio|priority|pause|pd|unp|unpause|unpd|os|hooks|ok|fail|c|cancel|kd|kill|d|delete|dd|df|u|undelete|ud|uf|rs|resubmit|rsd)
+                words="$(_queue_job_id_and_names_for_completion)"
+                ;;
+            ev|events)
+                words="5 10 20 50 100"
+                ;;
+            r|rd)
+                words=""
+                ;;
+            *)
+                words="$commands"
+                ;;
+        esac
+    fi
+
+    mapfile -t matches < <(compgen -W "$words" -- "$cur")
+
+    if [[ "${#matches[@]}" -eq 1 ]]; then
+        local replacement="${matches[0]}"
+        READLINE_LINE="${line:0:$((point - ${#cur}))}${replacement}${line:point}"
+        READLINE_POINT=$((point - ${#cur} + ${#replacement}))
+    elif [[ "${#matches[@]}" -gt 1 ]]; then
+        printf '\n'
+        printf '%s\n' "${matches[@]}" | column 2>/dev/null || printf '%s\n' "${matches[@]}"
+        printf 'queuemgr> %s' "$READLINE_LINE"
+    fi
+}
+
 _queue_help() {
     cat <<'EOF'
 Usage:
@@ -631,6 +762,7 @@ Usage:
   queue clear deleted [--dryrun]
   queue clear all [--dryrun]
 
+  queue version
   queue help
 
 Matching rules:
@@ -657,6 +789,10 @@ States:
   failed    completed with non-zero exit
   cancelled operator cancelled or killed
   deleted   marked deleted; can be undeleted
+
+Batch 2:
+  --retries N and --backoff SEC automatically requeue transient failures.
+  --cpu PCT and --mem SIZE request systemd-run resource limits when available.
 
 Priority:
   Higher number runs first.
@@ -739,18 +875,25 @@ queue() {
     shift || true
 
     case "$cmd" in
+        version|--version|-V)
+            echo "queuebash $QUEUEBASH_VERSION"
+            ;;
         help|--help|-h|"")
             _queue_help
             ;;
 
         submit)
             local priority=10
+            local retries_max=0
+            local retry_backoff=0
+            local cpu_limit=""
+            local mem_limit=""
             local local_dryrun="$dryrun"
             local name="$1"
             shift || true
 
             if [[ -z "$name" ]]; then
-                echo "Usage: queue submit <name> [--priority N|-p N] [--on-success <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
+                echo "Usage: queue submit <name> [--priority N|-p N] [--retries N] [--backoff SEC] [--cpu PCT] [--mem SIZE] [--on-success <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
                 return 2
             fi
 
@@ -766,6 +909,26 @@ queue() {
                     --priority|-p)
                         [[ -z "$2" ]] && { echo "queue submit: --priority needs a value" >&2; return 2; }
                         priority="$2"
+                        shift 2
+                        ;;
+                    --retries)
+                        [[ -z "$2" ]] && { echo "queue submit: --retries needs a value" >&2; return 2; }
+                        retries_max="$2"
+                        shift 2
+                        ;;
+                    --backoff|--retry-delay)
+                        [[ -z "$2" ]] && { echo "queue submit: --backoff needs a value" >&2; return 2; }
+                        retry_backoff="$2"
+                        shift 2
+                        ;;
+                    --cpu)
+                        [[ -z "$2" ]] && { echo "queue submit: --cpu needs a value" >&2; return 2; }
+                        cpu_limit="$2"
+                        shift 2
+                        ;;
+                    --mem|--memory)
+                        [[ -z "$2" ]] && { echo "queue submit: --mem needs a value" >&2; return 2; }
+                        mem_limit="$2"
                         shift 2
                         ;;
                     --on-success)
@@ -790,7 +953,7 @@ queue() {
                         ;;
                     *)
                         echo "queue submit: unexpected argument before -- : $1" >&2
-                        echo "Usage: queue submit <name> [--priority N|-p N] [--on-success <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
+                        echo "Usage: queue submit <name> [--priority N|-p N] [--retries N] [--backoff SEC] [--cpu PCT] [--mem SIZE] [--on-success <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
                         return 2
                         ;;
                 esac
@@ -798,6 +961,8 @@ queue() {
 
             [[ "$#" -eq 0 ]] && { echo "queue submit: missing main command" >&2; return 2; }
             [[ "$priority" =~ ^-?[0-9]+$ ]] || priority=10
+            [[ "$retries_max" =~ ^[0-9]+$ ]] || retries_max=0
+            [[ "$retry_backoff" =~ ^[0-9]+$ ]] || retry_backoff=0
 
             local id="$(_queue_id)"
             local job="$root/pending/$id.job"
@@ -807,6 +972,10 @@ queue() {
                 echo "  id:       $id"
                 echo "  name:     $name"
                 echo "  priority: $priority"
+                echo "  retries:  $retries_max"
+                echo "  backoff:  $retry_backoff"
+                echo "  cpu:      $cpu_limit"
+                echo "  mem:      $mem_limit"
                 echo "  state:    pending"
                 echo "  jobfile:  $job"
                 printf "  command:"
@@ -829,6 +998,12 @@ queue() {
                 printf 'JOB_ID=%q\n' "$id"
                 printf 'JOB_NAME=%q\n' "$name"
                 printf 'PRIORITY=%q\n' "$priority"
+                printf 'RETRIES_MAX=%q\n' "$retries_max"
+                printf 'RETRIES_DONE=%q\n' "0"
+                printf 'RETRY_BACKOFF=%q\n' "$retry_backoff"
+                printf 'RETRY_NOT_BEFORE_EPOCH=%q\n' "0"
+                printf 'CPU_LIMIT=%q\n' "$cpu_limit"
+                printf 'MEM_LIMIT=%q\n' "$mem_limit"
                 printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
                 printf 'PWD_AT_SUBMIT=%q\n' "$PWD"
 
@@ -1702,6 +1877,10 @@ _queue_worker() {
     local worker_id="$1"
     local root="$(_queue_root)"
 
+    # Enable simple readline completion inside the queue manager REPL.
+    # This temporarily binds TAB while queuemgr is active.
+    bind -x '"\t": _queuemgr_repl_complete' 2>/dev/null || true
+
     while true; do
         local job
         job="$(_queue_next_job)"
@@ -1795,6 +1974,23 @@ _queue_worker() {
             fi
         else
             if [[ -f "$running" ]]; then
+                if _queue_should_retry_failed_job "$running"; then
+                    retry_done_old="$(grep '^RETRIES_DONE=' "$running" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+                    retry_done_old="${retry_done_old:-0}"
+                    retry_done_new=$((retry_done_old + 1))
+                    retry_backoff="$(grep '^RETRY_BACKOFF=' "$running" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+                    retry_backoff="${retry_backoff:-0}"
+                    [[ "$retry_backoff" =~ ^[0-9]+$ ]] || retry_backoff=0
+                    not_before=$(( $(_queue_epoch_now) + retry_backoff ))
+                    retry_id="$(_queue_id)"
+                    _queue_clone_retry_to_pending "$running" "$retry_id" "$retry_done_new" "$not_before"
+                    mv "$running" "$failed"
+                    _queue_log_event "retry_scheduled" "$retry_id" "$(_queue_job_name "$root/pending/$retry_id.job")" "pending" "from=$id attempt=$retry_done_new backoff=$retry_backoff exit_code=$rc"
+                    _queue_log_event "failed_retrying" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc retry=$retry_id"
+                    echo "[worker $worker_id] failed $id rc=$rc; scheduled retry $retry_id attempt $retry_done_new after ${retry_backoff}s"
+                    continue
+                fi
+
                 mv "$running" "$failed"
                 _queue_log_event "failed" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc"
                 echo "[worker $worker_id] failed $id rc=$rc"
@@ -1888,14 +2084,15 @@ queuemgr() {
         echo "  a                clear filters"
         echo "  cd               clear done"
         echo "  cf               clear failed"
+        echo "  help/?           show command summary"
         echo "  q                quit"
         echo
 
         local cmd arg extra rest
-        read -r -p "queuemgr> " cmd arg extra rest
+        read -e -r -p "queuemgr> " cmd arg extra rest
 
         case "$cmd" in
-            q|quit|exit) break ;;
+            q|quit|exit) bind '"\t": complete' 2>/dev/null || true; break ;;
             r) queue run; read -r -p "press enter..." ;;
             rd) queue --dryrun run; read -r -p "press enter..." ;;
             rd[0-9]*) queue --dryrun run --workers "${cmd#rd}"; read -r -p "press enter..." ;;
@@ -1946,6 +2143,10 @@ queuemgr() {
             a|all) filter_text=""; filter_name=""; filter_state="all" ;;
             cd) queue clear done; read -r -p "press enter..." ;;
             cf) queue clear failed; read -r -p "press enter..." ;;
+            help|?)
+                echo "Commands complete with TAB: r/rd/r4, show/tail/pid, priority, pause/unpause, cancel/kill, delete/undelete, resubmit, stats/events, filters."
+                read -r -p "press enter..."
+                ;;
             "") ;;
             *) echo "unknown command"; sleep 1 ;;
         esac
@@ -1962,7 +2163,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit list ls find show tail follow pids pid ps hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry stats events run clear help --help -h"
+    local commands="--dryrun -n submit list ls find show tail follow pids pid ps hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry stats events run clear version --version -V help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
@@ -1979,7 +2180,7 @@ _queue_complete() {
                 COMPREPLY=( $(compgen -c -- "$cur") )
                 return 0
             fi
-            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --on-success --on-failure --" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --on-success --on-failure --" -- "$cur") )
             COMPREPLY+=( $(compgen -c -- "$cur") )
             COMPREPLY+=( $(compgen -f -- "$cur") )
             return 0

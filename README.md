@@ -291,3 +291,40 @@ queue --dryrun clear deleted
 ## License
 
 GPL-3.0.
+
+
+## Batch 2 / operational additions
+
+### Version
+
+```bash
+queue version
+```
+
+### Automatic retries
+
+```bash
+queue submit fetch_payload --retries 3 --backoff 30 -- curl -O https://example.invalid/file.wav
+```
+
+Retries clone the failed attempt into a fresh pending job. The failed attempt remains in `failed` for audit.
+
+### Resource limits with systemd-run
+
+```bash
+queue submit heavy --cpu 200 --mem 4G -- ./heavy_dsp_job.sh
+```
+
+When `systemd-run --user --scope` is available, queuebash runs the payload inside a transient systemd scope with:
+
+```text
+CPUQuota=<cpu>%
+MemoryMax=<mem>
+```
+
+If `systemd-run` is unavailable, the job runs normally and logs a warning.
+
+### Queue manager completion
+
+Inside `queuemgr`, press `TAB` to complete internal queue-manager commands and job IDs/names. This uses Bash readline and a temporary TAB binding while `queuemgr` is active.
+

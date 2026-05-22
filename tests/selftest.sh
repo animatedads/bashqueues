@@ -23,6 +23,25 @@ queue run --workers 2 >/dev/null || true
 queue resubmit failer >/dev/null
 queue --dryrun cancel failer >/dev/null || true
 queue stats >/dev/null
+queue version >/dev/null
 queue events --tail 10 >/dev/null
 
 echo "bashqueues selftest: OK"
+
+
+# Retry behaviour
+mkdir -p "$tmp/retry"
+cat > "$tmp/retry/flaky.sh" <<'EOS'
+#!/usr/bin/env bash
+count_file="$1"
+count="$(cat "$count_file" 2>/dev/null || echo 0)"
+count=$((count + 1))
+echo "$count" > "$count_file"
+[[ "$count" -ge 2 ]]
+EOS
+chmod +x "$tmp/retry/flaky.sh"
+queue submit retryonce --retries 1 --backoff 0 -- "$tmp/retry/flaky.sh" "$tmp/retry/count" >/dev/null
+queue run >/dev/null || true
+queue run >/dev/null || true
+grep -q '^2$' "$tmp/retry/count"
+
