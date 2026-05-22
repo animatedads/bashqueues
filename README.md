@@ -1029,3 +1029,92 @@ See:
 ```text
 docs/HEALTH.md
 ```
+
+
+## Restore diagnostics
+
+`queue restore` / `queue undelete` only restores jobs from `deleted/`.
+
+If no deleted job matches, queuebash now searches the other state directories and reports where matching jobs actually are:
+
+```text
+queue undelete: no matching deleted job: publish_to_git
+but matching job(s) exist outside deleted/:
+  2026... done publish_to_git
+```
+
+Use:
+
+```bash
+queue list --state deleted --name publish_to_git
+```
+
+to confirm whether a job is currently restorable.
+
+
+## stderr-only overflow policy
+
+The default log overflow policy protects noisy jobs without breaking their stdout pipe:
+
+```text
+before first cap: log stdout + stderr
+after first cap:  suppress stdout, continue stderr
+after second cap: suppress stderr too
+always:           drain streams so the child keeps running
+```
+
+Per job:
+
+```bash
+queue submit noisy --max-log-size 50M --log-overflow stderr-only -- ./noisy.sh
+queue submit strict --max-log-size 50M --log-overflow kill -- ./noisy.sh
+```
+
+
+## systemd runner process model
+
+For `RUNNER_USED=systemd`, `RUN_PID` is the `systemd-run` client process, not necessarily the payload PID.
+
+`queue cancel`, `queue kill`, `queue health`, and `queue explain` now prefer `SYSTEMD_UNIT` for process accounting and termination.
+
+See:
+
+```text
+docs/SYSTEMD_PROCESS_MODEL.md
+```
+
+
+## Systemd cancellation no longer falls back to PGID
+
+For `RUNNER_USED=systemd`, `queue cancel` and `queue kill` now target the transient unit with:
+
+```bash
+systemctl --user kill --kill-whom=all --signal=<SIG> <SYSTEMD_UNIT>
+```
+
+They do not fallback to `RUN_PGID` when the unit was targeted, because `RUN_PGID` may be the queue worker process group.
+
+Stream temp files/FIFOs are cleaned up on completion, cancellation, and health repair.
+
+
+## Cancellation race handling
+
+If an operator cancels/kills a running job while a worker is still waiting for the payload runner to return, the worker now reports:
+
+```text
+[worker N] cancelled <QID> (operator cancellation observed; payload rc=...)
+```
+
+rather than reporting the job as failed. This keeps `cancelled` and `failed` audit meanings separate.
+
+
+## Log drain synchronization
+
+Queuebash waits for stdout/stderr drainers to finish before appending the queue footer. This prevents payload output appearing after:
+
+```text
+finished:
+exit_code:
+```
+
+and prevents logger-side pipe closure from causing SIGPIPE failures in short jobs.

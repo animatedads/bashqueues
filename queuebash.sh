@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.7.5"
+QUEUEBASH_VERSION="0.7.11"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -856,6 +856,7 @@ _queue_clone_retry_to_pending() {
             printf 'MEM_LIMIT=%q\n' "${MEM_LIMIT:-}"
             [[ -n "${MAX_LOG_SIZE_BYTES:-}" ]] && printf 'MAX_LOG_SIZE_BYTES=%q\n' "$MAX_LOG_SIZE_BYTES"
             [[ -n "${ALLOW_LARGE_LOG:-}" ]] && printf 'ALLOW_LARGE_LOG=%q\n' "$ALLOW_LARGE_LOG"
+            [[ -n "${LOG_OVERFLOW_POLICY:-}" ]] && printf 'LOG_OVERFLOW_POLICY=%q\n' "$LOG_OVERFLOW_POLICY"
             [[ -n "${RUNNER:-}" ]] && printf 'RUNNER=%q\n' "$RUNNER"
             [[ -n "${DEPENDS_AFTER_SUCCESS:-}" ]] && printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$DEPENDS_AFTER_SUCCESS"
 
@@ -1103,9 +1104,17 @@ _queue_health_running_is_stale() {
     local f="$1"
     local unit run_pid
     unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
-    if [[ -n "$unit" ]] && _queue_systemd_unit_active "$unit"; then
-        return 1
+
+    if [[ -n "$unit" ]]; then
+        if _queue_systemd_unit_active "$unit"; then
+            return 1
+        fi
+        if _queue_systemd_unit_dead "$unit"; then
+            return 0
+        fi
+        # Unknown systemd state: fall through to RUN_PID fallback.
     fi
+
     run_pid="$(_queue_job_var_value "$f" RUN_PID)"
     [[ -z "$run_pid" ]] && return 2
     kill -0 "$run_pid" 2>/dev/null && return 1
@@ -1208,6 +1217,85 @@ _queue_runner_for_job() {
     esac
 }
 
+_queue_systemd_unit_clean() {
+    local unit="$1"
+    unit="${unit%%; invocation ID:*}"
+    unit="${unit%% invocation ID:*}"
+    unit="$(printf '%s' "$unit" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    printf '%s\n' "$unit"
+}
+
+_queue_systemd_unit_state() {
+    local unit="$1"
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+    systemctl --user show "$unit" -p ActiveState --value 2>/dev/null
+}
+
+_queue_systemd_unit_substate() {
+    local unit="$1"
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+    systemctl --user show "$unit" -p SubState --value 2>/dev/null
+}
+
+_queue_systemd_unit_active() {
+    local unit="$1"
+    local state
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+    state="$(_queue_systemd_unit_state "$unit" 2>/dev/null || true)"
+    [[ "$state" == "active" || "$state" == "activating" || "$state" == "reloading" ]]
+}
+
+_queue_systemd_unit_dead() {
+    local unit="$1"
+    local state sub
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+    state="$(_queue_systemd_unit_state "$unit" 2>/dev/null || true)"
+    sub="$(_queue_systemd_unit_substate "$unit" 2>/dev/null || true)"
+    [[ "$state" == "inactive" || "$state" == "failed" || "$state" == "not-found" || "$sub" == "dead" || "$sub" == "failed" || -z "$state" ]]
+}
+
+_queue_systemd_unit_mainpid() {
+    local unit="$1"
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+    systemctl --user show "$unit" -p MainPID --value 2>/dev/null
+}
+
+_queue_systemd_unit_pids() {
+    local unit="$1"
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+    systemctl --user status "$unit" --no-pager 2>/dev/null |
+        awk '
+            /^[[:space:]]*[0-9]+[[:space:]]/ { print $1 }
+            /Main PID:/ {
+                for (i=1; i<=NF; i++) if ($i == "PID:") print $(i+1)
+            }
+        ' |
+        sed 's/[^0-9].*$//' |
+        awk 'NF && !seen[$1]++'
+}
+
+_queue_systemd_kill_unit_tree() {
+    local unit="$1"
+    local sig="${2:-TERM}"
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+
+    echo "Sending -$sig to systemd unit $unit"
+    systemctl --user kill --kill-whom=all --signal="$sig" "$unit" >/dev/null 2>&1 || \
+        systemctl --user kill --signal="$sig" "$unit" >/dev/null 2>&1 || true
+
+    if [[ "$sig" == "TERM" || "$sig" == "SIGTERM" ]]; then
+        systemctl --user stop "$unit" >/dev/null 2>&1 || true
+    fi
+    return 0
+}
+
 _queue_systemd_unit_from_log() {
     local log="$1"
     [[ -f "$log" ]] || return 1
@@ -1236,6 +1324,7 @@ _queue_job_systemd_unit() {
         log="$root/logs/$id.log"
         unit="$(_queue_systemd_unit_from_log "$log" || true)"
     fi
+    unit="$(_queue_systemd_unit_clean "$unit")"
     printf '%s\n' "$unit"
 }
 
@@ -1252,7 +1341,7 @@ _queue_show_systemd_metrics_for_job() {
     echo "Unit: $unit"
     echo
 
-    systemctl --user show "$unit" \
+    systemctl --user show "$(_queue_systemd_unit_clean "$unit")" \
         -p Id \
         -p ActiveState \
         -p SubState \
@@ -1283,6 +1372,42 @@ _queue_log_gz_path() {
     local id="$1"
     local root="$(_queue_root)"
     printf '%s/logs/%s.log.gz\n' "$root" "$id"
+}
+
+_queue_job_stream_temp_cleanup() {
+    local id="$1"
+    local root="$(_queue_root)"
+    [[ -z "$id" ]] && return 0
+
+    rm -f -- \
+        "$root/logs/.${id}.stdout.fifo" \
+        "$root/logs/.${id}.stderr.fifo" \
+        "$root/logs/.${id}.stdout.suppressed" \
+        "$root/logs/.${id}.stderr.suppressed" \
+        2>/dev/null || true
+}
+
+_queue_cleanup_stale_stream_temps() {
+    local root="$(_queue_root)"
+    local f base id
+
+    shopt -s nullglob
+    for f in "$root/logs"/.*.stdout.fifo "$root/logs"/.*.stderr.fifo "$root/logs"/.*.stdout.suppressed "$root/logs"/.*.stderr.suppressed; do
+        [[ -e "$f" ]] || continue
+        base="$(basename "$f")"
+        id="$base"
+        id="${id#.}"
+        id="${id%.stdout.fifo}"
+        id="${id%.stderr.fifo}"
+        id="${id%.stdout.suppressed}"
+        id="${id%.stderr.suppressed}"
+
+        if [[ ! -f "$root/running/$id.job" ]]; then
+            rm -f -- "$f" 2>/dev/null || true
+            echo "FIX removed stale stream temp: $f"
+        fi
+    done
+    shopt -u nullglob
 }
 
 _queue_log_existing_path() {
@@ -1354,6 +1479,137 @@ _queue_compress_completed_logs() {
         done
     done
 }
+
+_queue_job_log_policy() {
+    local f="$1"
+    local v
+    v="$(grep '^LOG_OVERFLOW_POLICY=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    v="${v:-${QUEUEBASH_LOG_OVERFLOW_POLICY:-stderr-only}}"
+    case "$v" in
+        stderr-only|stderr|drain|kill|allow) printf '%s\n' "$v" ;;
+        *) printf '%s\n' "stderr-only" ;;
+    esac
+}
+
+_queue_log_overflow_marker_path() {
+    local id="$1"
+    local stream="$2"
+    local root="$(_queue_root)"
+    printf '%s/logs/.%s.%s.suppressed\n' "$root" "$id" "$stream"
+}
+
+_queue_mark_log_stream_suppressed() {
+    local id="$1"
+    local job="$2"
+    local log="$3"
+    local stream="$4"
+    local size="$5"
+    local cap="$6"
+    local marker ts
+
+    marker="$(_queue_log_overflow_marker_path "$id" "$stream")"
+    [[ -e "$marker" ]] && return 0
+    : > "$marker" 2>/dev/null || true
+    ts="$(date -Is)"
+
+    {
+        echo
+        if [[ "$stream" == "stdout" ]]; then
+            echo "LOG_OVERFLOW_WARNING: stdout log cap reached at ${size} bytes; stdout is now suppressed, stderr continues until next cutoff ${cap}."
+        else
+            echo "LOG_OVERFLOW_WARNING: stderr log cap reached at ${size} bytes; stderr is now suppressed too, streams are drained to protect the process."
+        fi
+        echo "LOG_OVERFLOW_AT=$ts"
+    } >> "$log" 2>/dev/null || true
+
+    {
+        printf 'LOG_OVERFLOW=%q\n' "1"
+        printf 'LOG_OVERFLOW_AT=%q\n' "$ts"
+        printf 'LOG_OVERFLOW_BYTES=%q\n' "$size"
+        printf 'LOG_OVERFLOW_CAP=%q\n' "$cap"
+        if [[ "$stream" == "stdout" ]]; then
+            printf 'LOG_STDOUT_SUPPRESSED=%q\n' "1"
+            printf 'LOG_STDOUT_SUPPRESSED_AT=%q\n' "$ts"
+            printf 'LOG_STDERR_ONLY_FROM_BYTES=%q\n' "$size"
+        else
+            printf 'LOG_STDERR_SUPPRESSED=%q\n' "1"
+            printf 'LOG_STDERR_SUPPRESSED_AT=%q\n' "$ts"
+        fi
+    } >> "$job" 2>/dev/null || true
+
+    _queue_log_event "log_${stream}_suppressed" "$id" "$(_queue_job_name "$job")" "running" "bytes=$size cap=$cap"
+}
+
+_queue_stream_logger() {
+    local id="$1"
+    local job="$2"
+    local log="$3"
+    local stream="$4"
+    local max_bytes="$5"
+
+    local cap first_cap second_cap policy line size
+
+    policy="$(_queue_job_log_policy "$job")"
+    cap="${max_bytes:-0}"
+    [[ "$cap" =~ ^[0-9]+$ ]] || cap=0
+    first_cap="$cap"
+    second_cap=$((cap * 2))
+
+    # Drain first, log second. Never close the child's stdout/stderr early.
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$cap" -le 0 || "$policy" == "allow" ]]; then
+            printf '%s\n' "$line" >> "$log"
+            continue
+        fi
+
+        size="$(_queue_log_size_bytes "$log")"
+        size="${size:-0}"
+        [[ "$size" =~ ^[0-9]+$ ]] || size=0
+
+        case "$stream" in
+            stdout)
+                if (( size < first_cap )); then
+                    printf '%s\n' "$line" >> "$log"
+                else
+                    _queue_mark_log_stream_suppressed "$id" "$job" "$log" "stdout" "$size" "$first_cap"
+                fi
+                ;;
+            stderr)
+                if (( size < second_cap )); then
+                    printf '%s\n' "$line" >> "$log"
+                else
+                    _queue_mark_log_stream_suppressed "$id" "$job" "$log" "stderr" "$size" "$second_cap"
+                fi
+                ;;
+            *)
+                printf '%s\n' "$line" >> "$log"
+                ;;
+        esac
+    done
+
+    return 0
+}
+
+_queue_wait_stream_loggers() {
+    local stdout_pid="${1:-}"
+    local stderr_pid="${2:-}"
+
+    [[ -n "$stdout_pid" ]] && wait "$stdout_pid" >/dev/null 2>&1 || true
+    [[ -n "$stderr_pid" ]] && wait "$stderr_pid" >/dev/null 2>&1 || true
+}
+
+_queue_log_worker_record() {
+    local use_stream_logger="${1:-0}"
+    local log="$2"
+    shift 2
+
+    if [[ "$use_stream_logger" == "1" ]]; then
+        printf '%s\n' "$@" >> "$log"
+    else
+        printf '%s\n' "$@"
+    fi
+}
+
 
 _queue_log_watchdog() {
     local id="$1"
@@ -1516,10 +1772,19 @@ _queue_explain_job() {
     if [[ "$runner_used" == "systemd" || -n "$unit" ]]; then
         printf "  %-18s %s\n" "systemd unit:" "${unit:-not-recorded-yet}"
     fi
-    [[ -n "$pid" ]] && printf "  %-18s %s\n" "RUN_PID:" "$pid"
+    if [[ -n "$pid" ]]; then
+        if [[ -n "$unit" || "$runner_used" == "systemd" ]]; then
+            printf "  %-18s %s\n" "RUN_PID:" "$pid (systemd-run client)"
+        else
+            printf "  %-18s %s\n" "RUN_PID:" "$pid"
+        fi
+    fi
     [[ -n "$pgid" ]] && printf "  %-18s %s\n" "RUN_PGID:" "$pgid"
     effective_pid="$(_queue_job_effective_pid "$f" 2>/dev/null || true)"
-    [[ -n "$effective_pid" ]] && printf "  %-18s %s\n" "effective PID:" "$effective_pid"
+    [[ -n "$effective_pid" ]] && printf "  %-18s %s\n" "payload PID:" "$effective_pid"
+    if [[ "$state" == "running" && -n "$unit" ]] && _queue_systemd_unit_dead "$unit"; then
+        printf "  %-18s %s\n" "WARNING:" "job marked running but systemd unit is inactive/dead; run: queue health --fix"
+    fi
     echo
 
     echo "Resources"
@@ -1527,7 +1792,7 @@ _queue_explain_job() {
     printf "  %-18s %s\n" "memory limit:" "${mem:-none}"
     if [[ -n "$unit" && "$runner_used" == "systemd" ]]; then
         echo "  systemd metrics:"
-        systemctl --user show "$unit" \
+        systemctl --user show "$(_queue_systemd_unit_clean "$unit")" \
             -p ActiveState \
             -p SubState \
             -p MainPID \
@@ -1563,34 +1828,26 @@ _queue_explain_job() {
     if [[ "$state" == "pending" || "$state" == "paused" ]]; then
         echo "  job has not started yet; cancel/delete moves the job record without signalling a process."
     elif [[ "$runner_used" == "systemd" || -n "$unit" ]]; then
-        echo "  queue cancel/kill should prefer the transient systemd unit, then fall back to PGID/PID."
+        echo "  systemd job: queue cancel/kill targets SYSTEMD_UNIT and does not PGID-fallback."
     else
-        echo "  direct jobs use RUN_PGID where available, falling back to RUN_PID."
+        echo "  direct job: queue cancel/kill uses RUN_PGID/RUN_PID."
     fi
-}
-
-_queue_systemd_unit_active() {
-    local unit="$1"
-    [[ -z "$unit" ]] && return 1
-    systemctl --user is-active --quiet "$unit" 2>/dev/null
-}
-
-_queue_systemd_unit_mainpid() {
-    local unit="$1"
-    [[ -z "$unit" ]] && return 1
-    systemctl --user show "$unit" -p MainPID --value 2>/dev/null
 }
 
 _queue_job_effective_pid() {
     local f="$1"
     local unit pid
     unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
-    if [[ -n "$unit" ]] && _queue_systemd_unit_active "$unit"; then
-        pid="$(_queue_systemd_unit_mainpid "$unit")"
-        if [[ -n "$pid" && "$pid" != "0" ]]; then
-            printf '%s\n' "$pid"
-            return 0
+    if [[ -n "$unit" ]]; then
+        if _queue_systemd_unit_active "$unit"; then
+            pid="$(_queue_systemd_unit_mainpid "$unit")"
+            if [[ -n "$pid" && "$pid" != "0" ]]; then
+                printf '%s\n' "$pid"
+                return 0
+            fi
         fi
+        # For systemd jobs RUN_PID is the systemd-run client, not the payload.
+        return 1
     fi
     _queue_job_var_value "$f" RUN_PID
 }
@@ -1916,10 +2173,14 @@ _queue_health_running_is_stale2() {
     local unit run_pid
     unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
 
-    if [[ -n "$unit" ]] && command -v systemctl >/dev/null 2>&1; then
-        if systemctl --user is-active --quiet "$unit" 2>/dev/null; then
+    if [[ -n "$unit" ]]; then
+        if _queue_systemd_unit_active "$unit"; then
             return 1
         fi
+        if _queue_systemd_unit_dead "$unit"; then
+            return 0
+        fi
+        # Unknown systemd state: fall through to RUN_PID fallback.
     fi
 
     run_pid="$(_queue_health_job_value "$f" RUN_PID)"
@@ -1943,6 +2204,7 @@ _queue_health_mark_interrupted() {
     } >> "$f"
 
     mv "$f" "$dest"
+    _queue_job_stream_temp_cleanup "$id"
     _queue_log_event "interrupted" "$id" "$name" "interrupted" "reason=stale-running-detected-by-health"
 }
 
@@ -2221,6 +2483,9 @@ EOF
         echo
         echo "=== worker pid cleanup ==="
         _queue_health_clean_dead_workers || true
+        echo
+        echo "=== stream temp cleanup ==="
+        _queue_cleanup_stale_stream_temps || true
     fi
 
     echo
@@ -2237,6 +2502,37 @@ EOF
     echo "Health summary: errors=$errors warnings=$warnings fix=$fix deep=$deep"
 
     [[ "$errors" -eq 0 ]]
+}
+
+_queue_restore_print_non_deleted_matches() {
+    local target="$1"
+    local root="$(_queue_root)"
+    local state f id name any=0
+
+    for state in pending running paused done failed interrupted cancelled; do
+        for f in "$root/$state"/*.job; do
+            [[ -e "$f" ]] || continue
+            id="$(basename "$f" .job)"
+            name="$(_queue_job_name "$f" 2>/dev/null || true)"
+            if [[ "$id" == "$target" || "$name" == "$target" || "$id" == "$target"* ]]; then
+                if [[ "$any" -eq 0 ]]; then
+                    echo "queue undelete: no matching deleted job: $target" >&2
+                    echo "but matching job(s) exist outside deleted/:" >&2
+                    echo "matches:" >&2
+                    any=1
+                fi
+                printf '  %-34s %-12s %s\n' "$id" "$state" "$name" >&2
+            fi
+        done
+    done
+
+    if [[ "$any" -eq 1 ]]; then
+        echo "Nothing restored. restore/undelete only operates on deleted/ jobs." >&2
+        echo "Use: queue list --state deleted --name '$target'" >&2
+        return 0
+    fi
+
+    return 1
 }
 
 _queue_help() {
@@ -2275,7 +2571,8 @@ Usage:
 
   queue delete   <qid|exact-job-name> [--force] [--dryrun]
   queue rm       <qid|exact-job-name> [--force] [--dryrun]
-  queue undelete <qid|exact-job-name> [pending|done|failed] [--force] [--dryrun]
+  queue undelete <qid|exact-job-name> [pending|done|failed] [--force]
+  queue restore  <qid|exact-job-name> [pending|done|failed] [--force] [--dryrun]
 
   queue health [--fix] [--deep]
   queue compress-logs
@@ -2343,11 +2640,14 @@ Log compression:
 
 Log cap enforcement:
   Default max log size is QUEUEBASH_MAX_LOG_SIZE_BYTES or 50MB.
-  If a running job exceeds the cap, queuebash terminates it and records LOG_OVERFLOW=1.
+  Default overflow policy is stderr-only: stdout is suppressed at the first cap,
+  stderr continues until the next cap, and both streams are drained so the child
+  process does not receive a broken pipe.
+  Use --log-overflow kill for strict termination behaviour.
   Use --allow-large-log or --max-log-size SIZE when huge logs are intentional.
 
 Log safety:
-  queue submit accepts --max-log-size SIZE, e.g. 50M, 500M, 2G.
+  queue submit accepts --max-log-size SIZE and --log-overflow stderr-only|kill|allow.
   Default is QUEUEBASH_MAX_LOG_SIZE_BYTES or 52428800 bytes.
 
 Execution summaries:
@@ -2517,6 +2817,7 @@ queue() {
             local runner="${QUEUEBASH_RUNNER:-auto}"
             local max_log_size="${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}"
             local allow_large_log=0
+            local log_overflow_policy="${QUEUEBASH_LOG_OVERFLOW_POLICY:-stderr-only}"
             local depends_after_success=()
             local deps_join=""
             local not_before_epoch="${QUEUEBASH_SUBMIT_NOT_BEFORE_EPOCH:-0}"
@@ -2574,7 +2875,18 @@ queue() {
                     --allow-large-log|--no-log-cap)
                         allow_large_log=1
                         max_log_size=0
+                        log_overflow_policy="allow"
                         shift
+                        ;;
+                    --log-overflow|--log-overflow-policy)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a value: stderr-only|kill|allow" >&2; return 2; }
+                        case "$2" in
+                            stderr-only|stderr|drain) log_overflow_policy="stderr-only" ;;
+                            kill) log_overflow_policy="kill" ;;
+                            allow) log_overflow_policy="allow"; allow_large_log=1; max_log_size=0 ;;
+                            *) echo "queue submit: invalid $1: $2" >&2; return 2 ;;
+                        esac
+                        shift 2
                         ;;
                     --after-success|--after|--depends-on)
                         [[ -z "$2" ]] && { echo "queue submit: $1 needs a QID or exact job name" >&2; return 2; }
@@ -2695,6 +3007,7 @@ queue() {
                 printf 'MEM_LIMIT=%q\n' "$mem_limit"
                 printf 'MAX_LOG_SIZE_BYTES=%q\n' "$max_log_size"
                 printf 'ALLOW_LARGE_LOG=%q\n' "$allow_large_log"
+                printf 'LOG_OVERFLOW_POLICY=%q\n' "$log_overflow_policy"
                 printf 'RUNNER=%q\n' "$runner"
                 if [[ "${#depends_after_success[@]}" -gt 0 ]]; then
                     deps_join="${depends_after_success[*]}"
@@ -3362,7 +3675,7 @@ queue() {
 
             local moved=0
             for f in "${matches[@]}"; do
-                local id state dest run_pid run_pgid name self_pgid signal_target
+                local id state dest run_pid run_pgid name self_pgid signal_target unit systemd_targeted
                 id="$(basename "$f" .job)"
                 state="$(_queue_job_file_state "$f")"
                 name="$(_queue_job_name "$f")"
@@ -3370,6 +3683,8 @@ queue() {
                 run_pid="$(grep '^RUN_PID=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
                 run_pgid="$(grep '^RUN_PGID=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
                 self_pgid="$(ps -o pgid= -p $$ 2>/dev/null | tr -d '[:space:]')"
+                unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+                systemd_targeted=0
 
                 if [[ "$state" == "cancelled" ]]; then
                     echo "Already cancelled $id"
@@ -3387,7 +3702,11 @@ queue() {
 
                 if [[ "$local_dryrun" -eq 1 ]]; then
                     if [[ "$state" == "running" ]]; then
-                        echo "DRYRUN: would signal $sig to job $id ($name), target=${signal_target:-none}, RUN_PID=$run_pid RUN_PGID=$run_pgid, then move running -> cancelled"
+                        if [[ -n "$unit" ]]; then
+                            echo "DRYRUN: would signal $sig to systemd unit $unit for job $id ($name), then move running -> cancelled"
+                        else
+                            echo "DRYRUN: would signal $sig to job $id ($name), target=${signal_target:-none}, RUN_PID=$run_pid RUN_PGID=$run_pgid, then move running -> cancelled"
+                        fi
                     else
                         echo "DRYRUN: would move $id ($name) from $state -> cancelled without signalling"
                     fi
@@ -3396,11 +3715,20 @@ queue() {
                 fi
 
                 if [[ "$state" == "running" ]]; then
-                    if [[ -n "$signal_target" ]]; then
-                        echo "Sending -$sig to $signal_target for $id ($name)"
+                    if [[ -n "$unit" ]]; then
+                        _queue_systemd_kill_unit_tree "$unit" "$sig" || true
+                        systemd_targeted=1
+                    fi
+
+                    if [[ "$systemd_targeted" -eq 1 ]]; then
+                        # For systemd jobs, RUN_PID is the systemd-run client and RUN_PGID can
+                        # be the queue worker's process group. Do not PGID-fallback by default.
+                        :
+                    elif [[ -n "$signal_target" ]]; then
+                        echo "Fallback: sending -$sig to $signal_target for $id ($name)"
                         kill "-$sig" "$signal_target" 2>/dev/null || true
                     else
-                        echo "queue $cmd: running job $id has no safe RUN_PID/RUN_PGID target; moving record only" >&2
+                        echo "queue $cmd: running job $id has no safe SYSTEMD_UNIT/RUN_PID/RUN_PGID target; moving record only" >&2
                     fi
                 fi
 
@@ -3408,10 +3736,12 @@ queue() {
                     echo "CANCELLED_AT=$(printf '%q' "$(date -Is)")"
                     echo "CANCELLED_FROM=$(printf '%q' "$state")"
                     echo "CANCEL_SIGNAL=$(printf '%q' "$sig")"
+                    [[ -n "$unit" ]] && echo "CANCEL_SYSTEMD_UNIT=$(printf '%q' "$unit")"
                 } >> "$f"
 
                 mv -f "$f" "$dest"
-                _queue_log_event "cancelled" "$id" "$name" "cancelled" "from=$state signal=$sig pid=$run_pid pgid=$run_pgid hook=none"
+                _queue_job_stream_temp_cleanup "$id"
+                _queue_log_event "cancelled" "$id" "$name" "cancelled" "from=$state signal=$sig pid=$run_pid pgid=$run_pgid unit=$unit hook=none"
                 echo "Moved $id from $state -> cancelled"
                 echo "ON_FAILURE was not run; cancellation is operator action, not program failure."
                 moved=$((moved + 1))
@@ -3581,7 +3911,10 @@ queue() {
                 fi
             done
 
-            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue undelete: no matching deleted job: $target" >&2; return 1; }
+            if [[ "${#matches[@]}" -eq 0 ]]; then
+                _queue_restore_print_non_deleted_matches "$target" || echo "queue undelete: no matching deleted job: $target" >&2
+                return 1
+            fi
 
             local exact_name_count
             exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
@@ -3848,6 +4181,19 @@ queue() {
     esac
 }
 
+_queue_worker_external_move_state() {
+    local id="$1"
+    local root="$(_queue_root)"
+    local state
+    for state in cancelled deleted interrupted paused done failed pending; do
+        if [[ -f "$root/$state/$id.job" ]]; then
+            printf '%s\n' "$state"
+            return 0
+        fi
+    done
+    printf '%s\n' "missing"
+}
+
 _queue_worker() {
     _queue_init
 
@@ -3910,7 +4256,28 @@ _queue_worker() {
                 printf "launch_argv:"
                 printf " %q" "${payload_cmd[@]}"
                 printf "\n"
-                "${payload_cmd[@]}" &
+                max_log_bytes="$(_queue_job_log_max_bytes "$running")"
+                log_overflow_policy="$(_queue_job_log_policy "$running")"
+
+                stream_logger_stdout_pid=""
+                stream_logger_stderr_pid=""
+                stream_stdout_fifo=""
+                stream_stderr_fifo=""
+                use_stream_logger=0
+                if [[ "${ALLOW_LARGE_LOG:-0}" != "1" && "$log_overflow_policy" != "allow" && "$log_overflow_policy" != "kill" && "$max_log_bytes" =~ ^[0-9]+$ && "$max_log_bytes" -gt 0 ]]; then
+                    stream_stdout_fifo="$root/logs/.${JOB_ID}.stdout.fifo"
+                    stream_stderr_fifo="$root/logs/.${JOB_ID}.stderr.fifo"
+                    rm -f -- "$stream_stdout_fifo" "$stream_stderr_fifo"
+                    mkfifo "$stream_stdout_fifo" "$stream_stderr_fifo"
+                    use_stream_logger=1
+                    _queue_stream_logger "$JOB_ID" "$running" "$log" "stdout" "$max_log_bytes" < "$stream_stdout_fifo" &
+                    stream_logger_stdout_pid="$!"
+                    _queue_stream_logger "$JOB_ID" "$running" "$log" "stderr" "$max_log_bytes" < "$stream_stderr_fifo" &
+                    stream_logger_stderr_pid="$!"
+                    "${payload_cmd[@]}" > "$stream_stdout_fifo" 2> "$stream_stderr_fifo" &
+                else
+                    "${payload_cmd[@]}" &
+                fi
                 cmd_pid="$!"
 
                 cmd_pgid="$(ps -o pgid= -p "$cmd_pid" 2>/dev/null | tr -d '[:space:]')"
@@ -3920,12 +4287,12 @@ _queue_worker() {
                     printf 'RUN_STARTED_AT=%q\n' "$(date -Is)"
                 } >> "$running"
 
-                echo "run_pid: $cmd_pid"
-                echo "run_pgid: $cmd_pgid"
+                _queue_log_worker_record "$use_stream_logger" "$log" "run_pid: $cmd_pid" "run_pgid: $cmd_pgid"
                 _queue_log_event "pid_recorded" "$JOB_ID" "$JOB_NAME" "running" "pid=$cmd_pid pgid=$cmd_pgid"
 
                 max_log_bytes="$(_queue_job_log_max_bytes "$running")"
-                if [[ "${ALLOW_LARGE_LOG:-0}" != "1" && "$max_log_bytes" =~ ^[0-9]+$ && "$max_log_bytes" -gt 0 ]]; then
+                log_overflow_policy="$(_queue_job_log_policy "$running")"
+                if [[ "${ALLOW_LARGE_LOG:-0}" != "1" && "$log_overflow_policy" == "kill" && "$max_log_bytes" =~ ^[0-9]+$ && "$max_log_bytes" -gt 0 ]]; then
                     _queue_log_watchdog "$JOB_ID" "$running" "$log" "$cmd_pid" "$max_log_bytes" &
                     log_watchdog_pid="$!"
                 else
@@ -3934,6 +4301,13 @@ _queue_worker() {
 
                 wait "$cmd_pid"
                 rc="$?"
+
+                # The payload is gone, but stream readers may still be appending.
+                # Wait for them before writing footer or other post-run records.
+                _queue_wait_stream_loggers "${stream_logger_stdout_pid:-}" "${stream_logger_stderr_pid:-}"
+
+                [[ -n "${stream_stdout_fifo:-}" ]] && rm -f -- "$stream_stdout_fifo" 2>/dev/null || true
+                [[ -n "${stream_stderr_fifo:-}" ]] && rm -f -- "$stream_stderr_fifo" 2>/dev/null || true
                 if [[ -n "${log_watchdog_pid:-}" ]]; then
                     kill "$log_watchdog_pid" >/dev/null 2>&1 || true
                     wait "$log_watchdog_pid" >/dev/null 2>&1 || true
@@ -3943,17 +4317,14 @@ _queue_worker() {
                 log_bytes_now="$(_queue_log_size_bytes "$log")"
                 max_log_bytes="$(_queue_job_log_max_bytes "$running")"
                 if [[ "$max_log_bytes" -gt 0 && "$log_bytes_now" -gt "$max_log_bytes" ]]; then
-                    echo
-                    echo "LOG_OVERFLOW_WARNING: log size ${log_bytes_now} exceeded cap ${max_log_bytes}"
+                    _queue_log_worker_record "$use_stream_logger" "$log" "" "LOG_OVERFLOW_WARNING: log size ${log_bytes_now} exceeded cap ${max_log_bytes}"
                     _queue_log_event "log_overflow_warning" "$JOB_ID" "$JOB_NAME" "running" "bytes=$log_bytes_now cap=$max_log_bytes"
-                    if grep -q '^LOG_OVERFLOW=1$' "$running" 2>/dev/null; then
+                    if [[ "$log_overflow_policy" == "kill" ]] && grep -q '^LOG_OVERFLOW=1$' "$running" 2>/dev/null; then
                         rc=97
                     fi
                 fi
 
-                echo
-                echo "finished: $(date -Is)"
-                echo "exit_code: $rc"
+                _queue_log_worker_record "$use_stream_logger" "$log" "" "finished: $(date -Is)" "exit_code: $rc"
 
                 exit "$rc"
             } > "$log" 2>&1
@@ -3987,7 +4358,13 @@ _queue_worker() {
                     )
                 fi
             else
-                echo "[worker $worker_id] done $id but queue record was moved externally; no success/failure hook run by worker"
+                external_state="$(_queue_worker_external_move_state "$id")"
+                if [[ "$external_state" == "cancelled" ]]; then
+                    _queue_log_event "worker_observed_cancelled" "$id" "$JOB_NAME" "cancelled" "worker=$worker_id rc=0"
+                    echo "[worker $worker_id] cancelled $id (operator moved record while worker was finishing)"
+                else
+                    echo "[worker $worker_id] done $id but queue record was moved externally to $external_state; no success/failure hook run by worker"
+                fi
             fi
         else
             if [[ -f "$running" ]]; then
@@ -4052,7 +4429,13 @@ _queue_worker() {
                     )
                 fi
             else
-                echo "[worker $worker_id] failed $id rc=$rc but queue record was moved externally; no failure hook run by worker"
+                external_state="$(_queue_worker_external_move_state "$id")"
+                if [[ "$external_state" == "cancelled" ]]; then
+                    _queue_log_event "worker_observed_cancelled" "$id" "$JOB_NAME" "cancelled" "worker=$worker_id rc=$rc"
+                    echo "[worker $worker_id] cancelled $id (operator cancellation observed; payload rc=$rc)"
+                else
+                    echo "[worker $worker_id] failed $id rc=$rc but queue record was moved externally to $external_state; no failure hook run by worker"
+                fi
             fi
         fi
 
