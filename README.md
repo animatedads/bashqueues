@@ -1137,3 +1137,16 @@ export QUEUEBASH_TAIL_LINES=80
 ```
 
 See `docs/TAIL.md`.
+
+
+## Targeted log compression
+
+Workers now compress only the log for the job they just completed. They no longer scan all completed jobs after every job.
+
+Manual bulk compression remains available:
+
+```bash
+queue compress-logs
+```
+
+See `docs/TARGETED_COMPRESSION.md`.

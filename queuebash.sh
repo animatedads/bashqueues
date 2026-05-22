@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.7.12"
+QUEUEBASH_VERSION="0.7.13"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1489,6 +1489,25 @@ _queue_maybe_gzip_log() {
         _queue_log_event "log_compressed" "$id" "$(_queue_job_name "$job")" "$(basename "$(dirname "$job")")" "path=$gz"
     fi
 }
+
+_queue_maybe_gzip_completed_job_log() {
+    local id="$1"
+    local job="$2"
+    local state
+
+    [[ -f "$job" ]] || return 0
+    state="$(basename "$(dirname "$job")")"
+
+    case "$state" in
+        done|failed)
+            _queue_maybe_gzip_log "$id" "$job"
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
 
 _queue_compress_completed_logs() {
     local root="$(_queue_root)"
@@ -3404,7 +3423,7 @@ EOF
 
 
         compress-logs|gzip-logs)
-            echo "Compressing completed done/failed logs..."
+            echo "Bulk-compressing completed done/failed logs..."
             _queue_compress_completed_logs
             echo "Done."
             ;;
@@ -4436,6 +4455,7 @@ _queue_worker() {
                         } >> "$log" 2>&1
                     )
                 fi
+                _queue_maybe_gzip_completed_job_log "$id" "$done"
             else
                 external_state="$(_queue_worker_external_move_state "$id")"
                 if [[ "$external_state" == "cancelled" ]]; then
@@ -4481,6 +4501,7 @@ _queue_worker() {
                     _queue_log_event "retry_scheduled" "$retry_id" "$(_queue_job_name "$root/pending/$retry_id.job")" "pending" "from=$id attempt=$retry_done_new backoff=$retry_backoff exit_code=$rc"
                     _queue_log_event "failed_retrying" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc retry=$retry_id"
                     echo "[worker $worker_id] failed $id rc=$rc; scheduled retry $retry_id attempt $retry_done_new after ${retry_backoff}s"
+                    _queue_maybe_gzip_completed_job_log "$id" "$failed"
                     continue
                 fi
 
@@ -4507,6 +4528,7 @@ _queue_worker() {
                         } >> "$log" 2>&1
                     )
                 fi
+                _queue_maybe_gzip_completed_job_log "$id" "$failed"
             else
                 external_state="$(_queue_worker_external_move_state "$id")"
                 if [[ "$external_state" == "cancelled" ]]; then
@@ -4518,7 +4540,8 @@ _queue_worker() {
             fi
         fi
 
-        _queue_compress_completed_logs
+        # Worker-side compression is intentionally targeted at the job just completed.
+        # Bulk scanning/compression is reserved for explicit: queue compress-logs.
     done
 }
 
