@@ -783,3 +783,17 @@ Operator summary command:
 ```bash
 queue explain <job>
 ```
+
+
+## Systemd MainPID handling
+
+For systemd-run jobs, `RUN_PID` may be the `systemd-run` launcher process rather than the long-running payload.
+
+For active systemd jobs, queuebash now treats the transient unit as authoritative:
+
+```text
+SYSTEMD_UNIT
+systemctl --user show <unit> -p MainPID
+```
+
+`queue pids`, `queue health`, `queue cancel`, `queue kill`, and the log watchdog prefer the active systemd unit/MainPID where available, then fall back to `RUN_PGID` / `RUN_PID`.

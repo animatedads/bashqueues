@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.4.9"
+QUEUEBASH_VERSION="0.5.0"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -888,8 +888,12 @@ _queue_job_id_from_file() {
 
 _queue_health_running_is_stale() {
     local f="$1"
-    local run_pid
-    run_pid="$(grep '^RUN_PID=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    local unit run_pid
+    unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+    if [[ -n "$unit" ]] && _queue_systemd_unit_active "$unit"; then
+        return 1
+    fi
+    run_pid="$(_queue_job_var_value "$f" RUN_PID)"
     [[ -z "$run_pid" ]] && return 2
     kill -0 "$run_pid" 2>/dev/null && return 1
     return 0
@@ -1150,8 +1154,18 @@ _queue_log_watchdog() {
     [[ "$max_bytes" =~ ^[0-9]+$ ]] || return 0
     [[ "$max_bytes" -le 0 ]] && return 0
 
-    local size unit pgid
-    while kill -0 "$watched_pid" 2>/dev/null; do
+    local size unit pgid effective_pid
+    while true; do
+        unit="$(_queue_systemd_unit_from_log "$log" 2>/dev/null || true)"
+        if [[ -n "$unit" ]] && _queue_systemd_unit_active "$unit"; then
+            effective_pid="$(_queue_systemd_unit_mainpid "$unit")"
+        else
+            effective_pid="$watched_pid"
+        fi
+
+        if ! kill -0 "$effective_pid" 2>/dev/null; then
+            break
+        fi
         if [[ -f "$log" ]]; then
             size="$(wc -c < "$log" 2>/dev/null | tr -d '[:space:]')"
             size="${size:-0}"
@@ -1176,20 +1190,20 @@ _queue_log_watchdog() {
                     systemctl --user stop "$unit" >/dev/null 2>&1 || true
                 fi
 
-                pgid="$(ps -o pgid= -p "$watched_pid" 2>/dev/null | tr -d '[:space:]')"
+                pgid="$(ps -o pgid= -p "$effective_pid" 2>/dev/null | tr -d '[:space:]')"
                 if [[ -n "$pgid" ]]; then
                     kill -TERM "-$pgid" >/dev/null 2>&1 || true
                 fi
-                kill -TERM "$watched_pid" >/dev/null 2>&1 || true
+                kill -TERM "$effective_pid" >/dev/null 2>&1 || true
 
                 sleep 2
 
-                if kill -0 "$watched_pid" 2>/dev/null; then
+                if kill -0 "$effective_pid" 2>/dev/null; then
                     if [[ -n "$unit" ]]; then
                         systemctl --user kill "$unit" >/dev/null 2>&1 || true
                     fi
                     [[ -n "$pgid" ]] && kill -KILL "-$pgid" >/dev/null 2>&1 || true
-                    kill -KILL "$watched_pid" >/dev/null 2>&1 || true
+                    kill -KILL "$effective_pid" >/dev/null 2>&1 || true
                 fi
 
                 return 0
@@ -1282,6 +1296,8 @@ _queue_explain_job() {
     fi
     [[ -n "$pid" ]] && printf "  %-18s %s\n" "RUN_PID:" "$pid"
     [[ -n "$pgid" ]] && printf "  %-18s %s\n" "RUN_PGID:" "$pgid"
+    effective_pid="$(_queue_job_effective_pid "$f" 2>/dev/null || true)"
+    [[ -n "$effective_pid" ]] && printf "  %-18s %s\n" "effective PID:" "$effective_pid"
     echo
 
     echo "Resources"
@@ -1321,6 +1337,69 @@ _queue_explain_job() {
         echo "  queue cancel/kill should prefer the transient systemd unit, then fall back to PGID/PID."
     else
         echo "  direct jobs use RUN_PGID where available, falling back to RUN_PID."
+    fi
+}
+
+_queue_systemd_unit_active() {
+    local unit="$1"
+    [[ -z "$unit" ]] && return 1
+    systemctl --user is-active --quiet "$unit" 2>/dev/null
+}
+
+_queue_systemd_unit_mainpid() {
+    local unit="$1"
+    [[ -z "$unit" ]] && return 1
+    systemctl --user show "$unit" -p MainPID --value 2>/dev/null
+}
+
+_queue_job_effective_pid() {
+    local f="$1"
+    local unit pid
+    unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+    if [[ -n "$unit" ]] && _queue_systemd_unit_active "$unit"; then
+        pid="$(_queue_systemd_unit_mainpid "$unit")"
+        if [[ -n "$pid" && "$pid" != "0" ]]; then
+            printf '%s\n' "$pid"
+            return 0
+        fi
+    fi
+    _queue_job_var_value "$f" RUN_PID
+}
+
+_queue_job_is_live() {
+    local f="$1"
+    local unit pid
+    unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+    if [[ -n "$unit" ]] && _queue_systemd_unit_active "$unit"; then
+        return 0
+    fi
+    pid="$(_queue_job_var_value "$f" RUN_PID)"
+    [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+_queue_stop_job_payload() {
+    local f="$1"
+    local sig="${2:-TERM}"
+    local unit run_pid run_pgid effective_pid
+
+    unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+    if [[ -n "$unit" ]] && _queue_systemd_unit_active "$unit"; then
+        if [[ "$sig" == "KILL" || "$sig" == "9" || "$sig" == "-9" ]]; then
+            systemctl --user kill --signal=KILL "$unit" >/dev/null 2>&1 || true
+        else
+            systemctl --user stop "$unit" >/dev/null 2>&1 || true
+        fi
+        return 0
+    fi
+
+    run_pid="$(_queue_job_var_value "$f" RUN_PID)"
+    run_pgid="$(_queue_job_var_value "$f" RUN_PGID)"
+
+    if [[ -n "$run_pgid" ]]; then
+        kill "-$sig" "-$run_pgid" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "$run_pid" ]]; then
+        kill "-$sig" "$run_pid" >/dev/null 2>&1 || true
     fi
 }
 
@@ -2171,9 +2250,47 @@ queue() {
             fi
 
             local shown=0
+            local id name run_pid run_pgid unit mainpid effective
             for f in "${matches[@]}"; do
+                id="$(basename "$f" .job)"
+                name="$(_queue_job_name "$f")"
+                run_pid="$(_queue_job_var_value "$f" RUN_PID)"
+                run_pgid="$(_queue_job_var_value "$f" RUN_PGID)"
+                unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+                effective="$(_queue_job_effective_pid "$f" 2>/dev/null || true)"
+
                 echo "=============================================================================="
-                _queue_pid_report_for_job "$f"
+                echo "Job: $id"
+                echo "Name: $name"
+                echo "Recorded RUN_PID: ${run_pid:-}"
+                echo "Recorded RUN_PGID: ${run_pgid:-}"
+                echo "Run started: $(_queue_job_var_value "$f" RUN_STARTED_AT)"
+
+                if [[ -n "$unit" ]]; then
+                    echo "Systemd unit: $unit"
+                    if _queue_systemd_unit_active "$unit"; then
+                        mainpid="$(_queue_systemd_unit_mainpid "$unit")"
+                        echo "Systemd unit is active."
+                        echo "Systemd MainPID: $mainpid"
+                        if [[ -n "$mainpid" && "$mainpid" != "0" ]]; then
+                            ps -o pid,ppid,pgid,stat,etime,pcpu,pmem,comm,args -p "$mainpid" 2>/dev/null || true
+                        fi
+                    else
+                        echo "Systemd unit is not active."
+                    fi
+                elif [[ -n "$run_pid" && -d "/proc/$run_pid" ]]; then
+                    echo
+                    ps -o pid,ppid,pgid,stat,etime,pcpu,pmem,comm,args -p "$run_pid" 2>/dev/null || true
+                    if [[ -n "$run_pgid" ]]; then
+                        echo
+                        echo "Process group $run_pgid:"
+                        ps -o pid,ppid,pgid,stat,etime,pcpu,pmem,comm,args -g "$run_pgid" 2>/dev/null || true
+                    fi
+                else
+                    echo
+                    echo "No live RUN_PID or active systemd unit found."
+                fi
+
                 shown=$((shown + 1))
             done
             echo "Shown PID info for $shown job(s)."
