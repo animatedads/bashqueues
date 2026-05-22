@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.7.0"
+QUEUEBASH_VERSION="0.7.2"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -903,7 +903,7 @@ _queuemgr_repl_complete() {
     first="${before%% *}"
     [[ "$before" == "$first" ]] && first=""
 
-    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd sched scheduled schedule stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel gz gzip-logs compress-logs q quit help ?"
+    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd sched scheduled schedule stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel gz gzip-logs compress-logs clog clean-logs cleanlogs log-clean logs-clean q quit help ?"
 
     local words matches
     if [[ -z "$first" ]]; then
@@ -1632,6 +1632,182 @@ _queue_stop_job_payload() {
     fi
 }
 
+_queue_parse_age_seconds() {
+    local spec="$1"
+    _queue_parse_delay_seconds "$spec"
+}
+
+_queue_log_file_id() {
+    local path="$1"
+    local base
+    base="$(basename "$path")"
+    case "$base" in
+        *.log.gz) base="${base%.log.gz}" ;;
+        *.log) base="${base%.log}" ;;
+        *.gz) base="${base%.gz}" ;;
+    esac
+    printf '%s\n' "$base"
+}
+
+_queue_log_job_state_for_id() {
+    local id="$1"
+    local root="$(_queue_root)"
+    local state
+    for state in pending running paused done failed interrupted cancelled deleted; do
+        if [[ -f "$root/$state/$id.job" ]]; then
+            printf '%s\n' "$state"
+            return 0
+        fi
+    done
+    printf '%s\n' "orphan"
+}
+
+_queue_log_job_name_for_id() {
+    local id="$1"
+    local root="$(_queue_root)"
+    local state
+    for state in pending running paused done failed interrupted cancelled deleted; do
+        if [[ -f "$root/$state/$id.job" ]]; then
+            _queue_job_name "$root/$state/$id.job"
+            return 0
+        fi
+    done
+    printf '%s\n' "-"
+}
+
+_queue_clean_logs_usage() {
+    cat <<'EOF'
+Usage:
+  queue clean-logs [options]
+
+Options:
+  --dryrun, --dry-run       show what would be removed; do not delete
+  --force, -f              actually remove matching logs
+  --older-than AGE         only logs older than AGE: 30s, 10m, 2h, 7d, 4w
+  --state STATE            only logs whose job is in STATE
+                           states: done failed interrupted cancelled deleted orphan all
+  --orphan                 same as --state orphan
+  --all                    include all states; otherwise defaults to safe completed states
+  --include-running        allow running logs to match; dangerous
+  --verbose                show skipped reasons
+EOF
+}
+
+_queue_clean_logs() {
+    local root="$(_queue_root)"
+    local logs="$root/logs"
+    local dryrun=1
+    local force=0
+    local older_than=""
+    local older_seconds=0
+    local state_filter=""
+    local include_all=0
+    local include_running=0
+    local verbose=0
+
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --dryrun|--dry-run|-n) dryrun=1; shift ;;
+            --force|-f|--delete) force=1; dryrun=0; shift ;;
+            --older-than|--older)
+                [[ -z "${2:-}" ]] && { echo "queue clean-logs: --older-than needs an age" >&2; return 2; }
+                older_than="$2"
+                older_seconds="$(_queue_parse_age_seconds "$older_than")" || { echo "queue clean-logs: invalid age '$older_than'" >&2; return 2; }
+                shift 2
+                ;;
+            --state)
+                [[ -z "${2:-}" ]] && { echo "queue clean-logs: --state needs a value" >&2; return 2; }
+                state_filter="$2"
+                shift 2
+                ;;
+            --orphan|--orphans) state_filter="orphan"; shift ;;
+            --all) include_all=1; state_filter="all"; shift ;;
+            --include-running) include_running=1; shift ;;
+            --verbose|-v) verbose=1; shift ;;
+            --help|-h) _queue_clean_logs_usage; return 0 ;;
+            *) echo "queue clean-logs: unknown option: $1" >&2; _queue_clean_logs_usage >&2; return 2 ;;
+        esac
+    done
+
+    [[ -d "$logs" ]] || { echo "No logs directory: $logs"; return 0; }
+
+    local now cutoff path id state name eligible count=0 bytes=0 removed=0 skipped=0 size mtime
+    now="$(_queue_now_epoch 2>/dev/null || date +%s)"
+    if [[ "$older_seconds" =~ ^[0-9]+$ && "$older_seconds" -gt 0 ]]; then
+        cutoff=$((now - older_seconds))
+    else
+        cutoff=0
+    fi
+
+    if [[ "$force" -eq 1 ]]; then
+        echo "Cleaning matching logs..."
+    else
+        echo "DRYRUN: previewing matching logs. Use --force to delete."
+    fi
+    echo "Root: $root"
+    [[ -n "$older_than" ]] && echo "Older than: $older_than"
+    [[ -n "$state_filter" ]] && echo "State filter: $state_filter"
+    echo
+
+    shopt -s nullglob
+    for path in "$logs"/*.log "$logs"/*.log.gz; do
+        [[ -f "$path" ]] || continue
+        id="$(_queue_log_file_id "$path")"
+        state="$(_queue_log_job_state_for_id "$id")"
+        name="$(_queue_log_job_name_for_id "$id")"
+        eligible=1
+
+        if [[ "$state" == "running" && "$include_running" -ne 1 ]]; then
+            eligible=0
+            [[ "$verbose" -eq 1 ]] && echo "SKIP running: $path"
+        fi
+
+        if [[ "$eligible" -eq 1 ]]; then
+            if [[ -n "$state_filter" && "$state_filter" != "all" && "$state" != "$state_filter" ]]; then
+                eligible=0
+                [[ "$verbose" -eq 1 ]] && echo "SKIP state=$state not $state_filter: $path"
+            elif [[ -z "$state_filter" && "$include_all" -ne 1 ]]; then
+                case "$state" in
+                    done|failed|interrupted|cancelled|deleted|orphan) ;;
+                    *) eligible=0; [[ "$verbose" -eq 1 ]] && echo "SKIP unsafe state=$state: $path" ;;
+                esac
+            fi
+        fi
+
+        if [[ "$eligible" -eq 1 && "$cutoff" -gt 0 ]]; then
+            mtime="$(stat -c %Y "$path" 2>/dev/null || stat -f %m "$path" 2>/dev/null || echo 0)"
+            if [[ "$mtime" -gt "$cutoff" ]]; then
+                eligible=0
+                [[ "$verbose" -eq 1 ]] && echo "SKIP new: $path"
+            fi
+        fi
+
+        if [[ "$eligible" -ne 1 ]]; then
+            skipped=$((skipped + 1))
+            continue
+        fi
+
+        size="$(stat -c %s "$path" 2>/dev/null || stat -f %z "$path" 2>/dev/null || echo 0)"
+        bytes=$((bytes + size))
+        count=$((count + 1))
+
+        if [[ "$dryrun" -eq 1 ]]; then
+            printf 'WOULD_REMOVE %10s  %-12s %-18s %s\n' "$size" "$state" "$name" "$path"
+        else
+            printf 'REMOVE       %10s  %-12s %-18s %s\n' "$size" "$state" "$name" "$path"
+            rm -f -- "$path"
+            removed=$((removed + 1))
+        fi
+    done
+    shopt -u nullglob
+
+    echo
+    echo "Matched logs: $count"
+    echo "Matched bytes: $bytes"
+    echo "Removed logs: $removed"
+    echo "Skipped logs: $skipped"
+}
+
 _queue_help() {
     cat <<'EOF'
 Usage:
@@ -1672,6 +1848,7 @@ Usage:
 
   queue health [--fix]
   queue compress-logs
+  queue clean-logs [--dryrun] [--older-than AGE] [--state STATE] [--force]
   queue stats [--name exact-job-name] [--today]
   queue watch [--interval SEC]
   queue events [--tail N]
@@ -1900,7 +2077,7 @@ queue() {
                 queue submit "$@"
             ;;
 
-        submit)
+        submit|submit-in|submit-at|in|at)
             local priority=10
             local retries_max=0
             local retry_backoff=0
@@ -3310,6 +3487,12 @@ queue() {
             wait
             ;;
 
+
+        clean-logs|cleanlogs|log-clean|logs-clean)
+            _queue_clean_logs "$@"
+            ;;
+
+
         clear)
             local what="${1:-}"
             local local_dryrun="$dryrun"
@@ -3585,7 +3768,7 @@ Commands:
   ci      clear interrupted   st <state>    state filter
   cc      clear cancelled     a             clear filters
   ccd     dryrun clear canc.  stat          stats
-  cdel    clear deleted       gz      compress logs       ev [N]        recent events
+  cdel    clear deleted       gz      compress logs      clog    clean logs       ev [N]        recent events
 EOF
 }
 
@@ -3677,6 +3860,7 @@ queuemgr() {
             ccd|dry-clear-cancelled) queue --dryrun clear cancelled; read -r -p "press enter..." ;;
             cdel|clear-deleted) queue clear deleted; read -r -p "press enter..." ;;
             gz|gzip-logs|compress-logs) queue compress-logs; read -r -p "press enter..." ;;
+            clog|clean-logs|cleanlogs|log-clean|logs-clean) queue clean-logs --dryrun; read -r -p "press enter..." ;;
             stat|stats) queue stats; read -r -p "press enter..." ;;
             h|health) queue health; read -r -p "press enter..." ;;
             hf|healthfix|health-fix) queue health --fix; read -r -p "press enter..." ;;
@@ -3707,7 +3891,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit list ls find show explain deps dependencies waiting blocked scheduled schedule tail follow pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start compress-logs gzip-logs clear version --version -V help --help -h"
+    local commands="--dryrun -n submit submit-at submit-in list ls find show explain deps dependencies waiting blocked scheduled schedule tail follow pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )

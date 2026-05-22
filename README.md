@@ -914,3 +914,49 @@ See:
 ```text
 docs/SCHEDULING.md
 ```
+
+
+## Scheduling completion
+
+Shell completion includes:
+
+```bash
+queue submit-in
+queue submit-at
+queue in
+queue at
+queue scheduled
+queue schedule
+```
+
+
+## Clean log files
+
+Preview removable completed/orphan logs:
+
+```bash
+queue clean-logs --dryrun
+```
+
+Delete matching logs:
+
+```bash
+queue clean-logs --older-than 30d --force
+```
+
+Examples:
+
+```bash
+queue clean-logs --state done --older-than 7d --force
+queue clean-logs --state failed --older-than 14d --force
+queue clean-logs --orphan --force
+queue clean-logs --all --older-than 90d --force
+```
+
+Safe defaults:
+
+```text
+without --force, clean-logs previews only
+running logs are never deleted unless --include-running is used
+without --all/--state, only completed/dead/orphan states are eligible
+```
