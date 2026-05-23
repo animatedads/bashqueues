@@ -1226,3 +1226,35 @@ queue submit consumer --inherit-env-from producer -- ./consume.sh
 ```
 
 automatically validates `RESULT_PATH` before the payload starts.
+
+
+## Default class and class preflight plugins
+
+Every submitted job records a class. Jobs without `--class` use `JOB_CLASS=DEFAULT`.
+
+Class files can call machine-specific readiness checks:
+
+```bash
+CLASS_PREFLIGHT_PLUGINS="vpn.sh"
+CLASS_PREFLIGHT_FUNC="check_vpn_ready"
+```
+
+Plugins live under `~/.queuebash/class.d/`. If preflight fails, the job stays in `pending/` rather than moving to `failed/`.
+
+
+## Published asset facilities
+
+Asset plugins publish the checks they provide:
+
+```bash
+queue assets
+queue assets show path
+```
+
+A nested asset such as:
+
+```bash
+CLASS_EXCLUSIVE_ASSETS="path:freespace:/mnt/audio:min_gb=100"
+```
+
+maps to `~/.queuebash/assets.d/path.sh`, published facility `path:freespace`, and function `queue_asset_check_path_freespace`.

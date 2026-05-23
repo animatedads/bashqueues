@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.9.0
+
+- Add nested asset-implied preflight checks with published plugin facilities.
+- Add `~/.queuebash/assets.d/` asset plugins and standard `path.sh` helper.
+- Asset plugins publish capabilities using `queue_asset_facilities`.
+- Add `queue assets` / `queue facilities` and `queue assets show <family>`.
+- Add standard facilities: `path:exists`, `path:mount`, and `path:freespace`.
+- A nested token like `path:freespace:/path:min_gb=100` maps to `queue_asset_check_path_freespace` only if the plugin publishes `path:freespace`.
+- Failed implied asset preflight leaves jobs in `pending/` and logs `resource_blocked`.
+- Add `tests/classes_asset_facilities.sh`.
+
+
+## 0.8.9
+
+- Every job now has a class; jobs without `--class` use `JOB_CLASS=DEFAULT`.
+- Automatically create `~/.queuebash/classes/DEFAULT.env`.
+- Add dynamic class preflight hooks: `CLASS_PREFLIGHT_PLUGINS`, `CLASS_PREFLIGHT_FUNC(S)`, and `CLASS_PREFLIGHT_CMD(S)`.
+- Preflight failure leaves the job in `pending/` and logs `resource_blocked`, rather than failing the job.
+- Add `~/.queuebash/class.d/` for machine-specific class plugin helpers.
+- Add `tests/classes_default_preflight.sh`.
+
+
 ## 0.8.8
 
 - Add automatic pre-flight checksum validation for inherited `queue_output_file` hand-offs.

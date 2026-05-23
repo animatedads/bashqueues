@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.8.8"
+QUEUEBASH_VERSION="0.9.0"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -235,7 +235,123 @@ _queue_root() {
 
 _queue_init() {
     local root="$(_queue_root)"
-    mkdir -p "$root"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,claims/classes,claims/assets}
+    local default_class="${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}"
+    local default_file="$root/classes/$default_class.env"
+
+    mkdir -p "$root"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,claims/classes,claims/assets}
+
+    if [[ ! -f "$default_file" ]]; then
+        cat > "$default_file" <<'EOF'
+# bashqueues default class
+# Every job has a class. Jobs submitted without --class use this one.
+CLASS_ALLOW_PARALLEL=1
+CLASS_MAX_CONCURRENT=0
+CLASS_SHARED_ASSETS=""
+CLASS_EXCLUSIVE_ASSETS=""
+
+# Optional dynamic preflight hooks:
+# CLASS_PREFLIGHT_PLUGINS=""
+# CLASS_PREFLIGHT_FUNC=""
+# CLASS_PREFLIGHT_CMD=""
+EOF
+    fi
+
+    if [[ ! -f "$root/assets.d/path.sh" ]]; then
+        cat > "$root/assets.d/path.sh" <<'EOF'
+# bashqueues standard path asset checks
+
+queue_asset_facilities() {
+    cat <<'FACILITIES'
+path:exists	Checks that a filesystem path exists
+path:mount	Checks that a path is currently a mountpoint
+path:freespace	Checks that a directory has at least min_gb/min_mb/min_kb free
+FACILITIES
+}
+
+queue_asset_param() {
+    local key="$1"
+    shift
+    local p
+    for p in "$@"; do
+        case "$p" in
+            "$key="*) printf '%s\n' "${p#*=}"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+queue_asset_check_path_exists() {
+    local token="$1"
+    local target="$2"
+    shift 2 || true
+
+    if [[ -e "$target" ]]; then
+        echo "asset_check_ok: $token"
+        return 0
+    fi
+
+    echo "asset_check_blocked: path does not exist: $target"
+    return 1
+}
+
+queue_asset_check_path_mount() {
+    local token="$1"
+    local target="$2"
+    shift 2 || true
+
+    if mountpoint -q -- "$target" 2>/dev/null; then
+        echo "asset_check_ok: $token"
+        return 0
+    fi
+
+    echo "asset_check_blocked: path is not a mountpoint: $target"
+    return 1
+}
+
+queue_asset_check_path_freespace() {
+    local token="$1"
+    local target="$2"
+    shift 2 || true
+
+    local min_gb min_mb min_kb avail_kb need_kb
+
+    min_gb="$(queue_asset_param min_gb "$@" || true)"
+    min_mb="$(queue_asset_param min_mb "$@" || true)"
+    min_kb="$(queue_asset_param min_kb "$@" || true)"
+
+    if [[ ! -d "$target" ]]; then
+        echo "asset_check_blocked: freespace path is not a directory: $target"
+        return 1
+    fi
+
+    if [[ -n "$min_gb" ]]; then
+        need_kb=$(( min_gb * 1024 * 1024 ))
+    elif [[ -n "$min_mb" ]]; then
+        need_kb=$(( min_mb * 1024 ))
+    elif [[ -n "$min_kb" ]]; then
+        need_kb="$min_kb"
+    else
+        echo "asset_check_blocked: path:freespace requires min_gb=, min_mb=, or min_kb=: $token"
+        return 1
+    fi
+
+    avail_kb="$(df -Pk -- "$target" 2>/dev/null | awk 'NR==2 {print $4}')"
+    if [[ -z "$avail_kb" || ! "$avail_kb" =~ ^[0-9]+$ ]]; then
+        echo "asset_check_blocked: unable to read free space for: $target"
+        return 1
+    fi
+
+    if (( avail_kb < need_kb )); then
+        echo "asset_check_blocked: insufficient freespace target=$target available_kb=$avail_kb required_kb=$need_kb"
+        return 1
+    fi
+
+    echo "asset_check_ok: path:freespace target=$target available_kb=$avail_kb required_kb=$need_kb"
+    return 0
+}
+EOF
+    fi
+
 }
 
 _queue_now() {
@@ -613,7 +729,9 @@ _queue_job_schedule_status() {
 
 _queue_class_name_for_job() {
     local f="$1"
-    grep '^JOB_CLASS=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null
+    local class
+    class="$(grep '^JOB_CLASS=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    printf '%s\n' "${class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}"
 }
 
 _queue_class_safe_token() {
@@ -630,6 +748,175 @@ _queue_class_file() {
     else
         printf '%s/classes/%s.env\n' "$root" "$class"
     fi
+}
+
+
+_queue_class_plugin_path() {
+    local name="$1"
+    local root="$(_queue_root)"
+    if [[ -f "$name" ]]; then
+        printf '%s\n' "$name"
+    else
+        printf '%s/class.d/%s\n' "$root" "$name"
+    fi
+}
+
+
+_queue_asset_check_function_name() {
+    local family="$1"
+    local check="$2"
+    family="${family//[^A-Za-z0-9_]/_}"
+    check="${check//[^A-Za-z0-9_]/_}"
+    printf 'queue_asset_check_%s_%s\n' "$family" "$check"
+}
+
+_queue_asset_helper_path() {
+    local family="$1"
+    local root="$(_queue_root)"
+    if [[ -f "$family" ]]; then
+        printf '%s\n' "$family"
+    else
+        printf '%s/assets.d/%s.sh\n' "$root" "$family"
+    fi
+}
+
+_queue_asset_facility_is_published() {
+    local family="$1"
+    local check="$2"
+    local facility="${family}:${check}"
+
+    if declare -F queue_asset_facilities >/dev/null 2>&1; then
+        queue_asset_facilities | awk '{print $1}' | grep -Fxq "$facility"
+        return "$?"
+    fi
+
+    return 1
+}
+
+_queue_asset_scan_facilities() {
+    local root="$(_queue_root)"
+    local plugin
+    shopt -s nullglob
+    for plugin in "$root/assets.d"/*.sh; do
+        [[ -f "$plugin" ]] || continue
+        (
+            source "$plugin" >/dev/null 2>&1 || exit 0
+            if declare -F queue_asset_facilities >/dev/null 2>&1; then
+                queue_asset_facilities
+            fi
+        )
+    done
+    shopt -u nullglob
+}
+
+_queue_asset_implied_preflight_one() {
+    local token="$1"
+    local family check target helper func
+    local -a parts params
+
+    [[ "$token" == *:*:* ]] || return 0
+
+    IFS=':' read -r -a parts <<< "$token"
+    family="${parts[0]:-}"
+    check="${parts[1]:-}"
+    target="${parts[2]:-}"
+
+    [[ -n "$family" && -n "$check" && -n "$target" ]] || return 0
+
+    helper="$(_queue_asset_helper_path "$family")"
+    func="$(_queue_asset_check_function_name "$family" "$check")"
+
+    # No helper means claim-only token.
+    [[ -f "$helper" ]] || return 0
+
+    (
+        source "$helper" || exit 40
+
+        # Plugin must publish before queue manager invokes.
+        _queue_asset_facility_is_published "$family" "$check" || exit 41
+
+        declare -F "$func" >/dev/null 2>&1 || exit 42
+
+        params=()
+        if ((${#parts[@]} > 3)); then
+            params=("${parts[@]:3}")
+        fi
+
+        "$func" "$token" "$target" "${params[@]}"
+    )
+}
+
+_queue_asset_implied_preflight_for_class() {
+    local asset rc
+
+    for asset in $CLASS_EXCLUSIVE_ASSETS $CLASS_SHARED_ASSETS; do
+        [[ -z "$asset" ]] && continue
+        _queue_asset_implied_preflight_one "$asset"
+        rc="$?"
+        case "$rc" in
+            0) ;;
+            41)
+                echo "asset_preflight_blocked: unpublished_facility asset=$asset"
+                return "$rc"
+                ;;
+            42)
+                echo "asset_preflight_blocked: missing_check_function asset=$asset"
+                return "$rc"
+                ;;
+            *)
+                echo "asset_preflight_blocked: asset=$asset rc=$rc"
+                return "$rc"
+                ;;
+        esac
+    done
+
+    return 0
+}
+
+_queue_class_dynamic_preflight() {
+    local f="$1"
+    local cmd func plugin plugin_path rc
+
+    for plugin in ${CLASS_PREFLIGHT_PLUGINS:-}; do
+        plugin_path="$(_queue_class_plugin_path "$plugin")"
+        if [[ ! -f "$plugin_path" ]]; then
+            echo "class_preflight_blocked: plugin_not_found plugin=$plugin path=$plugin_path"
+            return 41
+        fi
+        source "$plugin_path"
+    done
+
+    for func in ${CLASS_PREFLIGHT_FUNC:-} ${CLASS_PREFLIGHT_FUNCS:-}; do
+        [[ -z "$func" ]] && continue
+        if ! declare -F "$func" >/dev/null 2>&1; then
+            echo "class_preflight_blocked: func_not_found func=$func"
+            return 42
+        fi
+        "$func"
+        rc="$?"
+        if [[ "$rc" -ne 0 ]]; then
+            echo "class_preflight_blocked: func_failed func=$func rc=$rc"
+            return "$rc"
+        fi
+    done
+
+    for cmd in ${CLASS_PREFLIGHT_CMD:-} ${CLASS_PREFLIGHT_CMDS:-}; do
+        [[ -z "$cmd" ]] && continue
+        if [[ "$cmd" == */* ]]; then
+            [[ -x "$cmd" ]] || { echo "class_preflight_blocked: cmd_not_executable cmd=$cmd"; return 43; }
+            "$cmd"
+        else
+            command -v "$cmd" >/dev/null 2>&1 || { echo "class_preflight_blocked: cmd_not_found cmd=$cmd"; return 44; }
+            "$cmd"
+        fi
+        rc="$?"
+        if [[ "$rc" -ne 0 ]]; then
+            echo "class_preflight_blocked: cmd_failed cmd=$cmd rc=$rc"
+            return "$rc"
+        fi
+    done
+
+    return 0
 }
 
 _queue_claim_lock_acquire() {
@@ -673,12 +960,12 @@ _queue_asset_has_exclusive_claim() {
 }
 
 _queue_class_load_for_job() {
-    local f="$1" class file
+    local f="$1" class file root default_file
+    root="$(_queue_root)"
     class="$(_queue_class_name_for_job "$f")"
-    [[ -z "$class" ]] && return 1
 
-    QUEUE_CLASS_NAME="$class"
-    QUEUE_CLASS_FILE="$(_queue_class_file "$class")"
+    QUEUE_CLASS_NAME="${class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}"
+    QUEUE_CLASS_FILE="$(_queue_class_file "$QUEUE_CLASS_NAME")"
 
     CLASS_ALLOW_PARALLEL=1
     CLASS_EXCLUSIVE=0
@@ -686,6 +973,23 @@ _queue_class_load_for_job() {
     CLASS_SHARED_ASSETS=""
     CLASS_EXCLUSIVE_ASSETS=""
     CLASS_ASSETS=""
+    CLASS_PREFLIGHT_FUNC=""
+    CLASS_PREFLIGHT_FUNCS=""
+    CLASS_PREFLIGHT_CMD=""
+    CLASS_PREFLIGHT_CMDS=""
+    CLASS_PREFLIGHT_PLUGINS=""
+
+    if [[ ! -f "$QUEUE_CLASS_FILE" && "$QUEUE_CLASS_NAME" == "${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}" ]]; then
+        default_file="$root/classes/${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}.env"
+        mkdir -p "$root/classes" "$root/class.d"
+        cat > "$default_file" <<'EOF'
+# bashqueues default class
+CLASS_ALLOW_PARALLEL=1
+CLASS_MAX_CONCURRENT=0
+CLASS_SHARED_ASSETS=""
+CLASS_EXCLUSIVE_ASSETS=""
+EOF
+    fi
 
     if [[ -f "$QUEUE_CLASS_FILE" ]]; then
         source "$QUEUE_CLASS_FILE"
@@ -704,10 +1008,11 @@ _queue_class_load_for_job() {
 
 _queue_class_available() {
     local f="$1"
-    local class count max asset
+    local class count max asset rc id name
 
     class="$(_queue_class_name_for_job "$f")"
-    [[ -z "$class" ]] && return 0
+    id="$(basename "$f" .job)"
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
 
     (
         _queue_class_load_for_job "$f" >/dev/null 2>&1 || exit 1
@@ -716,27 +1021,40 @@ _queue_class_available() {
         [[ "$max" =~ ^[0-9]+$ ]] || max=0
 
         if [[ "${CLASS_EXCLUSIVE:-0}" == "1" || "${CLASS_ALLOW_PARALLEL:-1}" == "0" ]]; then
-            (( count == 0 )) || exit 1
+            (( count == 0 )) || exit 10
         fi
         if (( max > 0 && count >= max )); then
-            exit 1
+            exit 11
         fi
 
         for asset in $CLASS_EXCLUSIVE_ASSETS; do
-            _queue_asset_has_any_claim "$asset" && exit 1
+            _queue_asset_has_any_claim "$asset" && exit 12
         done
         for asset in $CLASS_SHARED_ASSETS; do
-            _queue_asset_has_exclusive_claim "$asset" && exit 1
+            _queue_asset_has_exclusive_claim "$asset" && exit 13
         done
+
+        _queue_asset_implied_preflight_for_class || exit 23
+        _queue_class_dynamic_preflight "$f" || exit 24
         exit 0
     )
+    rc="$?"
+    if [[ "$rc" -ne 0 ]]; then
+        case "$rc" in
+            23) _queue_log_event "resource_blocked" "$id" "$name" "pending" "class=$class reason=asset_preflight" ;;
+            24) _queue_log_event "resource_blocked" "$id" "$name" "pending" "class=$class reason=preflight" ;;
+            10|11|12|13) _queue_log_event "class_blocked" "$id" "$name" "pending" "class=$class rc=$rc" ;;
+            *) _queue_log_event "class_blocked" "$id" "$name" "pending" "class=$class rc=$rc" ;;
+        esac
+        return 1
+    fi
+    return 0
 }
 
 _queue_class_claim_job() {
     local f="$1" id="$2" root class rc
     root="$(_queue_root)"
     class="$(_queue_class_name_for_job "$f")"
-    [[ -z "$class" ]] && return 0
 
     _queue_claim_lock_acquire || return 1
     (
@@ -3834,7 +4152,7 @@ queue() {
                 printf 'ALLOW_LARGE_LOG=%q\n' "$allow_large_log"
                 printf 'LOG_OVERFLOW_POLICY=%q\n' "$log_overflow_policy"
                 printf 'RUNNER=%q\n' "$runner"
-                [[ -n "$job_class" ]] && printf 'JOB_CLASS=%q\n' "$job_class"
+                printf 'JOB_CLASS=%q\n' "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}"
                 if [[ "${#depends_after_success[@]}" -gt 0 ]]; then
                     deps_join="${depends_after_success[*]}"
                     printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$deps_join"
@@ -4230,6 +4548,38 @@ EOF
             _queue_stream_job_log_to_fifo "$id" "$log" "$fifo" "$pidfile"
             echo "=== streaming FIFO tap: $fifo ==="
             cat "$fifo"
+            ;;
+
+
+        assets|facilities)
+            local action="${1:-list}"
+            case "$action" in
+                list|"")
+                    echo "=== queue asset facilities ==="
+                    _queue_asset_scan_facilities | sort
+                    ;;
+                show)
+                    local family="${2:-}"
+                    [[ -z "$family" ]] && { echo "Usage: queue assets show <family>" >&2; return 2; }
+                    local helper
+                    helper="$(_queue_asset_helper_path "$family")"
+                    [[ -f "$helper" ]] || { echo "queue assets: no helper for family: $family ($helper)" >&2; return 1; }
+                    echo "=== asset family: $family ==="
+                    echo "file: $helper"
+                    (
+                        source "$helper" >/dev/null 2>&1 || exit 1
+                        if declare -F queue_asset_facilities >/dev/null 2>&1; then
+                            queue_asset_facilities
+                        else
+                            echo "No queue_asset_facilities publisher found."
+                        fi
+                    )
+                    ;;
+                *)
+                    echo "Usage: queue assets list|show <family>" >&2
+                    return 2
+                    ;;
+            esac
             ;;
 
 
@@ -5594,7 +5944,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit submit-at submit-in list ls find show explain deps dependencies waiting blocked scheduled schedule tail stream follow class classes claims resources pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V help --help -h"
+    local commands="--dryrun -n submit submit-at submit-in list ls find show explain deps dependencies waiting blocked scheduled schedule tail stream follow class classes assets facilities claims resources pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
