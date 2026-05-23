@@ -1258,3 +1258,32 @@ CLASS_EXCLUSIVE_ASSETS="path:freespace:/mnt/audio:min_gb=100"
 ```
 
 maps to `~/.queuebash/assets.d/path.sh`, published facility `path:freespace`, and function `queue_asset_check_path_freespace`.
+
+
+## Asset helper contract validation
+
+Validate asset plugins with:
+
+```bash
+queue assets validate
+queue assets show path
+```
+
+For every published `family:check`, the helper must define `queue_asset_check_family_check`.
+
+
+## Asset plugins are separate files
+
+Asset checks are not embedded in `queuebash.sh`. The core loads helpers from:
+
+```text
+~/.queuebash/assets.d/
+```
+
+The bundled standard path helper is shipped as:
+
+```text
+assets.d/path.sh
+```
+
+and is copied into the queue root only when missing, so site-specific edits are preserved.

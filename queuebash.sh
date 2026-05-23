@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.9.0"
+QUEUEBASH_VERSION="0.9.2"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -233,6 +233,43 @@ _queue_root() {
     echo "${QUEUEBASH_ROOT:-$HOME/.queuebash}"
 }
 
+_queue_install_bundled_asset_plugins() {
+    local root="$(_queue_root)"
+    local source_dir="${QUEUEBASH_PLUGIN_SOURCE_DIR:-}"
+    local src dst base script_dir
+
+    if [[ -z "$source_dir" ]]; then
+        # Prefer the checked-out source tree when queuebash.sh is sourced/run from it.
+        if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+            if [[ -n "$script_dir" && -d "$script_dir/assets.d" ]]; then
+                source_dir="$script_dir/assets.d"
+            fi
+        fi
+    fi
+
+    if [[ -z "$source_dir" && -d "./assets.d" ]]; then
+        source_dir="./assets.d"
+    fi
+
+    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
+
+    mkdir -p "$root/assets.d"
+    shopt -s nullglob
+    for src in "$source_dir"/*.sh; do
+        [[ -f "$src" ]] || continue
+        base="$(basename "$src")"
+        dst="$root/assets.d/$base"
+
+        # Never overwrite local/site-edited plugins.
+        if [[ ! -e "$dst" ]]; then
+            cp "$src" "$dst"
+            chmod +x "$dst" 2>/dev/null || true
+        fi
+    done
+    shopt -u nullglob
+}
+
 _queue_init() {
     local root="$(_queue_root)"
     local default_class="${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}"
@@ -256,101 +293,8 @@ CLASS_EXCLUSIVE_ASSETS=""
 EOF
     fi
 
-    if [[ ! -f "$root/assets.d/path.sh" ]]; then
-        cat > "$root/assets.d/path.sh" <<'EOF'
-# bashqueues standard path asset checks
 
-queue_asset_facilities() {
-    cat <<'FACILITIES'
-path:exists	Checks that a filesystem path exists
-path:mount	Checks that a path is currently a mountpoint
-path:freespace	Checks that a directory has at least min_gb/min_mb/min_kb free
-FACILITIES
-}
-
-queue_asset_param() {
-    local key="$1"
-    shift
-    local p
-    for p in "$@"; do
-        case "$p" in
-            "$key="*) printf '%s\n' "${p#*=}"; return 0 ;;
-        esac
-    done
-    return 1
-}
-
-queue_asset_check_path_exists() {
-    local token="$1"
-    local target="$2"
-    shift 2 || true
-
-    if [[ -e "$target" ]]; then
-        echo "asset_check_ok: $token"
-        return 0
-    fi
-
-    echo "asset_check_blocked: path does not exist: $target"
-    return 1
-}
-
-queue_asset_check_path_mount() {
-    local token="$1"
-    local target="$2"
-    shift 2 || true
-
-    if mountpoint -q -- "$target" 2>/dev/null; then
-        echo "asset_check_ok: $token"
-        return 0
-    fi
-
-    echo "asset_check_blocked: path is not a mountpoint: $target"
-    return 1
-}
-
-queue_asset_check_path_freespace() {
-    local token="$1"
-    local target="$2"
-    shift 2 || true
-
-    local min_gb min_mb min_kb avail_kb need_kb
-
-    min_gb="$(queue_asset_param min_gb "$@" || true)"
-    min_mb="$(queue_asset_param min_mb "$@" || true)"
-    min_kb="$(queue_asset_param min_kb "$@" || true)"
-
-    if [[ ! -d "$target" ]]; then
-        echo "asset_check_blocked: freespace path is not a directory: $target"
-        return 1
-    fi
-
-    if [[ -n "$min_gb" ]]; then
-        need_kb=$(( min_gb * 1024 * 1024 ))
-    elif [[ -n "$min_mb" ]]; then
-        need_kb=$(( min_mb * 1024 ))
-    elif [[ -n "$min_kb" ]]; then
-        need_kb="$min_kb"
-    else
-        echo "asset_check_blocked: path:freespace requires min_gb=, min_mb=, or min_kb=: $token"
-        return 1
-    fi
-
-    avail_kb="$(df -Pk -- "$target" 2>/dev/null | awk 'NR==2 {print $4}')"
-    if [[ -z "$avail_kb" || ! "$avail_kb" =~ ^[0-9]+$ ]]; then
-        echo "asset_check_blocked: unable to read free space for: $target"
-        return 1
-    fi
-
-    if (( avail_kb < need_kb )); then
-        echo "asset_check_blocked: insufficient freespace target=$target available_kb=$avail_kb required_kb=$need_kb"
-        return 1
-    fi
-
-    echo "asset_check_ok: path:freespace target=$target available_kb=$avail_kb required_kb=$need_kb"
-    return 0
-}
-EOF
-    fi
+    _queue_install_bundled_asset_plugins
 
 }
 
@@ -770,6 +714,71 @@ _queue_asset_check_function_name() {
     printf 'queue_asset_check_%s_%s\n' "$family" "$check"
 }
 
+
+_queue_asset_facility_valid_name() {
+    local facility="$1"
+    [[ "$facility" =~ ^[A-Za-z_][A-Za-z0-9_]*:[A-Za-z_][A-Za-z0-9_]*$ ]]
+}
+
+_queue_asset_contract_validate_loaded() {
+    local helper="$1"
+    local mode="${2:-strict}"
+    local line facility family check func
+    local rc=0
+    local any=0
+
+    if ! declare -F queue_asset_facilities >/dev/null 2>&1; then
+        echo "asset_contract_error: missing publisher queue_asset_facilities helper=$helper"
+        return 1
+    fi
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" ]] && continue
+        facility="${line%%[[:space:]]*}"
+        [[ -z "$facility" ]] && continue
+        any=1
+
+        if ! _queue_asset_facility_valid_name "$facility"; then
+            echo "asset_contract_error: invalid facility '$facility' helper=$helper"
+            rc=1
+            continue
+        fi
+
+        family="${facility%%:*}"
+        check="${facility#*:}"
+        func="$(_queue_asset_check_function_name "$family" "$check")"
+
+        if ! declare -F "$func" >/dev/null 2>&1; then
+            echo "asset_contract_error: facility '$facility' missing function $func helper=$helper"
+            rc=1
+            continue
+        fi
+
+        if [[ "$mode" != "quiet" ]]; then
+            echo "asset_contract_ok: $facility -> $func"
+        fi
+    done < <(queue_asset_facilities)
+
+    if [[ "$any" -eq 0 ]]; then
+        echo "asset_contract_error: publisher returned no facilities helper=$helper"
+        rc=1
+    fi
+
+    return "$rc"
+}
+
+_queue_asset_contract_validate_helper() {
+    local helper="$1"
+    local mode="${2:-strict}"
+
+    [[ -f "$helper" ]] || { echo "asset_contract_error: helper not found: $helper"; return 1; }
+
+    (
+        source "$helper" >/dev/null 2>&1 || { echo "asset_contract_error: source failed helper=$helper"; exit 1; }
+        _queue_asset_contract_validate_loaded "$helper" "$mode"
+    )
+}
+
 _queue_asset_helper_path() {
     local family="$1"
     local root="$(_queue_root)"
@@ -800,10 +809,14 @@ _queue_asset_scan_facilities() {
     for plugin in "$root/assets.d"/*.sh; do
         [[ -f "$plugin" ]] || continue
         (
-            source "$plugin" >/dev/null 2>&1 || exit 0
-            if declare -F queue_asset_facilities >/dev/null 2>&1; then
-                queue_asset_facilities
+            source "$plugin" >/dev/null 2>&1 || { echo "INVALID helper=$(basename "$plugin") source_failed"; exit 0; }
+
+            if ! _queue_asset_contract_validate_loaded "$plugin" quiet >/dev/null; then
+                echo "INVALID helper=$(basename "$plugin") contract_failed"
+                exit 0
             fi
+
+            queue_asset_facilities
         )
     done
     shopt -u nullglob
@@ -831,6 +844,9 @@ _queue_asset_implied_preflight_one() {
 
     (
         source "$helper" || exit 40
+
+        # Validate the whole helper contract before using any nested asset from it.
+        _queue_asset_contract_validate_loaded "$helper" quiet >/dev/null || exit 43
 
         # Plugin must publish before queue manager invokes.
         _queue_asset_facility_is_published "$family" "$check" || exit 41
@@ -861,6 +877,10 @@ _queue_asset_implied_preflight_for_class() {
                 ;;
             42)
                 echo "asset_preflight_blocked: missing_check_function asset=$asset"
+                return "$rc"
+                ;;
+            43)
+                echo "asset_preflight_blocked: helper_contract_failed asset=$asset"
                 return "$rc"
                 ;;
             *)
@@ -4567,16 +4587,36 @@ EOF
                     echo "=== asset family: $family ==="
                     echo "file: $helper"
                     (
-                        source "$helper" >/dev/null 2>&1 || exit 1
+                        source "$helper" >/dev/null 2>&1 || { echo "asset_contract_error: source failed"; exit 1; }
                         if declare -F queue_asset_facilities >/dev/null 2>&1; then
+                            echo
+                            echo "Published facilities:"
                             queue_asset_facilities
+                            echo
+                            echo "Contract check:"
+                            _queue_asset_contract_validate_loaded "$helper" strict
                         else
                             echo "No queue_asset_facilities publisher found."
+                            exit 1
                         fi
                     )
                     ;;
+                validate)
+                    local root="$(_queue_root)"
+                    local failed=0 plugin
+                    shopt -s nullglob
+                    for plugin in "$root/assets.d"/*.sh; do
+                        [[ -f "$plugin" ]] || continue
+                        echo "=== validating asset helper: $(basename "$plugin") ==="
+                        if ! _queue_asset_contract_validate_helper "$plugin" strict; then
+                            failed=1
+                        fi
+                    done
+                    shopt -u nullglob
+                    [[ "$failed" -eq 0 ]] || return 1
+                    ;;
                 *)
-                    echo "Usage: queue assets list|show <family>" >&2
+                    echo "Usage: queue assets list|show <family>|validate" >&2
                     return 2
                     ;;
             esac

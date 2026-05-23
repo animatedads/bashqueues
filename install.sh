@@ -24,3 +24,21 @@ fi
 
 echo "Installed queuebash to $target"
 echo "Run: source ~/.bashrc"
+
+
+# Install bundled asset plugins without overwriting user/site edits.
+QUEUEBASH_ROOT="${QUEUEBASH_ROOT:-$HOME/.queuebash}"
+mkdir -p "$QUEUEBASH_ROOT/assets.d"
+if [[ -d "$(dirname "$0")/assets.d" ]]; then
+  for plugin in "$(dirname "$0")"/assets.d/*.sh; do
+    [[ -f "$plugin" ]] || continue
+    dst="$QUEUEBASH_ROOT/assets.d/$(basename "$plugin")"
+    if [[ ! -e "$dst" ]]; then
+      cp "$plugin" "$dst"
+      chmod +x "$dst" 2>/dev/null || true
+      echo "Installed asset plugin: $dst"
+    else
+      echo "Keeping existing asset plugin: $dst"
+    fi
+  done
+fi

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.2
+
+- Move the standard `path` asset helper out of `queuebash.sh` into `assets.d/path.sh`.
+- Core now only creates plugin directories, installs bundled plugins when missing, loads plugins, and validates plugin contracts.
+- Bundled plugins are copied into `~/.queuebash/assets.d/` without overwriting local/site-edited plugins.
+- Update publish/install scripts to include `assets.d/`.
+- Add `tests/classes_external_asset_plugins.sh`.
+
+
+## 0.9.1
+
+- Enforce asset helper published-facility contracts.
+- For every published `family:check`, helper must define `queue_asset_check_<family>_<check>`.
+- Add `queue assets validate`.
+- `queue assets show <family>` now displays published facilities and contract check results.
+- Invalid helper contracts block nested asset dispatch and leave jobs pending.
+- Add `tests/classes_asset_contract.sh`.
+
+
 ## 0.9.0
 
 - Add nested asset-implied preflight checks with published plugin facilities.

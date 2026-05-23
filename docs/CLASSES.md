@@ -159,3 +159,51 @@ queue assets show path
 A helper must publish the facility before queuebash invokes it. A nested token with no helper remains a plain claim token; a helper with an unpublished facility is treated as blocked/misconfigured.
 
 A `path:freespace` target must be a directory; non-directories block dispatch and leave the job pending.
+
+
+## Asset helper contract validation
+
+Asset helpers must meet a published-facility contract.
+
+For every published facility:
+
+```text
+family:check
+```
+
+the helper must define:
+
+```bash
+queue_asset_check_<family>_<check>
+```
+
+Validate helpers:
+
+```bash
+queue assets validate
+queue assets show path
+```
+
+If a helper exists but fails its contract, nested assets from that helper are treated as blocked/misconfigured and the job remains pending.
+
+
+## Core does not contain asset plugin bodies
+
+`queuebash.sh` only contains the plugin loader, contract validator, and dispatch logic.
+
+Actual asset checks live as separate plugin files:
+
+```text
+assets.d/path.sh                 # bundled source plugin
+~/.queuebash/assets.d/path.sh    # installed/site editable copy
+```
+
+Users should add or edit plugins under:
+
+```text
+~/.queuebash/assets.d/
+```
+
+not by editing `queuebash.sh`.
+
+Bundled plugins are copied into the queue root only if the destination file does not already exist, so local machine-specific edits are preserved.
