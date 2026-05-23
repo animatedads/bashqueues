@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.10.1
+
+- Remove legacy class asset string support during development.
+- `CLASS_SHARED_ASSETS`, `CLASS_EXCLUSIVE_ASSETS`, and `CLASS_ASSETS` are now validation errors.
+- Classes must use record APIs: `queue_class_shared_asset`, `queue_class_exclusive_asset`, and `queue_class_exclusive_claim`.
+- Update default class template and bundled `GITHUB_PUBLISH` to record-only format.
+- Add regression tests confirming legacy format is rejected and record format works.
+
+
+## 0.10.0
+
+- Add delimiter-safe class asset record format via `queue_class_shared_asset` and `queue_class_exclusive_asset`.
+- New format preserves arbitrary `:`, `,`, `/`, `=`, and spaces because fields are Bash arguments, not packed tokens.
+- Legacy `CLASS_SHARED_ASSETS` and `CLASS_EXCLUSIVE_ASSETS` remain supported.
+- Update `GITHUB_PUBLISH.env` to use the new record format for `https://github.com` and comma-separated status lists.
+- Add regression tests for colon/comma-heavy assets and class claims.
+
+
+## 0.9.9
+
+- Fix nested asset parser so colon-bearing targets are preserved until the first `key=value` parameter.
+- Parameter values may also contain colons, e.g. `want=https://github.com`.
+- Fixes tokens such as `net:http_status:https://github.com:timeout=5` and `net:tcp_endpoint:host:5432:timeout=3`.
+- Add bundled external `assets.d/format.sh` plugin for JSON, XML, YAML, CSV, archive, and SQLite validation.
+- Add regression tests for colon-bearing asset targets and format validators.
+
+
+## 0.9.8
+
+- Add bundled `classes/GITHUB_PUBLISH.env` for GitHub publishing jobs.
+- Add bundled class installer that copies source-tree classes into `~/.queuebash/classes/` without overwriting local edits.
+- Extend `queue classes` with edit, validate, replace, refresh, rollback, backups, delete/archive, undelete/unarchive, archives, explain, and expand.
+- Update publish/install scripts to include bundled classes.
+- Add `tests/classes_github_publish.sh` and `tests/classes_manager_lifecycle.sh`.
+
+
+## 0.9.7
+
+- Add bundled external asset plugins `assets.d/git.sh` and `assets.d/db.sh`.
+- Git plugin publishes `git:repo_exists`, `git:clean_tree`, and `git:branch`.
+- Database plugin publishes `db:postgres_connect`, `db:mysql_connect`, `db:sqlite_accessible`, `db:redis_connect`, and `db:mongodb_connect`.
+- Make class file lookup case-friendly so `queue classes show default` resolves `DEFAULT.env`.
+- Add `queue assets expand` and extend asset completion support.
+- Harden asset undelete against stale empty directories at plugin paths.
+- Add `tests/classes_git_db_assets.sh` and `tests/classes_default_case_lookup.sh`.
+
+
 ## 0.9.6
 
 - Add `queue assets refresh`, archival `delete`, `undelete`, `archives`, and `explain`.

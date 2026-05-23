@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.9.6"
+QUEUEBASH_VERSION="0.10.1"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -233,6 +233,37 @@ _queue_root() {
     echo "${QUEUEBASH_ROOT:-$HOME/.queuebash}"
 }
 
+_queue_install_bundled_classes() {
+    local root="$(_queue_root)"
+    local source_dir="${QUEUEBASH_CLASS_SOURCE_DIR:-}"
+    local src dst base script_dir
+
+    if [[ -z "$source_dir" ]]; then
+        if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+            if [[ -n "$script_dir" && -d "$script_dir/classes" ]]; then
+                source_dir="$script_dir/classes"
+            fi
+        fi
+    fi
+
+    if [[ -z "$source_dir" && -d "./classes" ]]; then
+        source_dir="./classes"
+    fi
+
+    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
+
+    mkdir -p "$root/classes"
+    shopt -s nullglob
+    for src in "$source_dir"/*.env; do
+        [[ -f "$src" ]] || continue
+        base="$(basename "$src")"
+        dst="$root/classes/$base"
+        [[ ! -e "$dst" ]] && cp "$src" "$dst"
+    done
+    shopt -u nullglob
+}
+
 _queue_install_bundled_asset_plugins() {
     local root="$(_queue_root)"
     local source_dir="${QUEUEBASH_PLUGIN_SOURCE_DIR:-}"
@@ -283,17 +314,16 @@ _queue_init() {
 # Every job has a class. Jobs submitted without --class use this one.
 CLASS_ALLOW_PARALLEL=1
 CLASS_MAX_CONCURRENT=0
-CLASS_SHARED_ASSETS=""
-CLASS_EXCLUSIVE_ASSETS=""
 
-# Optional dynamic preflight hooks:
-# CLASS_PREFLIGHT_PLUGINS=""
-# CLASS_PREFLIGHT_FUNC=""
-# CLASS_PREFLIGHT_CMD=""
+# Record-format assets only:
+#   queue_class_shared_asset family check "target" key=value
+#   queue_class_exclusive_asset family check "target" key=value
+#   queue_class_exclusive_claim "claim-token"
 EOF
     fi
 
 
+    _queue_install_bundled_classes
     _queue_install_bundled_asset_plugins
 
 }
@@ -687,11 +717,26 @@ _queue_class_safe_token() {
 _queue_class_file() {
     local class="$1"
     local root="$(_queue_root)"
-    if [[ -f "$class" ]]; then
-        printf '%s\n' "$class"
-    else
-        printf '%s/classes/%s.env\n' "$root" "$class"
+    local exact="$root/classes/$class.env"
+    local f base
+
+    if [[ -f "$exact" ]]; then
+        printf '%s\n' "$exact"
+        return 0
     fi
+
+    shopt -s nullglob
+    for f in "$root/classes"/*.env; do
+        base="$(basename "$f" .env)"
+        if [[ "${base,,}" == "${class,,}" ]]; then
+            printf '%s\n' "$f"
+            shopt -u nullglob
+            return 0
+        fi
+    done
+    shopt -u nullglob
+
+    printf '%s\n' "$exact"
 }
 
 
@@ -809,18 +854,235 @@ _queue_asset_family_valid_name() {
 }
 
 
+
+_queue_class_archive_dir() { printf '%s\n' "$(_queue_root)/classes/.archive"; }
+_queue_class_backup_dir() { printf '%s\n' "$(_queue_root)/classes/.backup"; }
+_queue_class_valid_name() { local class="$1"; [[ "$class" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]; }
+
+_queue_class_list_names() {
+    local root="$(_queue_root)" f
+    shopt -s nullglob
+    for f in "$root/classes"/*.env; do [[ -f "$f" ]] && basename "$f" .env; done | sort
+    shopt -u nullglob
+}
+
+
+_queue_class_validate_no_legacy_assets() {
+    local src="$1"
+
+    if grep -Eq '^[[:space:]]*CLASS_(SHARED_ASSETS|EXCLUSIVE_ASSETS|ASSETS)[[:space:]]*=' "$src"; then
+        echo "queue classes: legacy CLASS_*_ASSETS format is not supported: $src" >&2
+        echo "queue classes: use queue_class_shared_asset / queue_class_exclusive_asset records" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+_queue_class_validate_file() {
+    local class="$1" src="$2" tmpdir tmp rc
+    _queue_class_valid_name "$class" || { echo "queue classes: invalid class name: $class" >&2; return 2; }
+    [[ -f "$src" ]] || { echo "queue classes: class file not found: $src" >&2; return 2; }
+    _queue_class_validate_no_legacy_assets "$src" || return 6
+    tmpdir="$(mktemp -d)"; tmp="$tmpdir/$class.env"; cp "$src" "$tmp" || { rm -rf "$tmpdir"; return 1; }
+    if ! bash -n "$tmp"; then echo "queue classes: syntax validation failed: $src" >&2; rm -rf "$tmpdir"; return 3; fi
+    (
+        CLASS_ALLOW_PARALLEL=1; CLASS_MAX_CONCURRENT=0; CLASS_SHARED_ASSETS=""; CLASS_EXCLUSIVE_ASSETS=""; CLASS_ASSETS=""
+        source "$tmp" >/dev/null 2>&1 || exit 4
+        [[ "${CLASS_MAX_CONCURRENT:-0}" =~ ^[0-9]+$ ]] || exit 5
+        exit 0
+    )
+    rc="$?"
+    case "$rc" in
+        0) ;;
+        4) echo "queue classes: source failed: $src" >&2 ;;
+        5) echo "queue classes: CLASS_MAX_CONCURRENT must be numeric: $src" >&2 ;;
+        *) echo "queue classes: validation failed rc=$rc: $src" >&2 ;;
+    esac
+    rm -rf "$tmpdir"; return "$rc"
+}
+
+_queue_class_replace() {
+    local class="$1" src="$2" force="${3:-0}" root dst backup_dir backup tmp meta ts
+    _queue_class_valid_name "$class" || { echo "queue classes replace: invalid class: $class" >&2; return 2; }
+    [[ -f "$src" ]] || { echo "queue classes replace: source not found: $src" >&2; return 2; }
+    if [[ "$force" != "1" ]]; then _queue_class_validate_file "$class" "$src" || return "$?"; else bash -n "$src" || return 3; fi
+    root="$(_queue_root)"; mkdir -p "$root/classes"; dst="$root/classes/$class.env"
+    backup_dir="$(_queue_class_backup_dir)"; mkdir -p "$backup_dir"
+    ts="$(date +%Y%m%d_%H%M%S_%N)"; backup="$backup_dir/${class}.${ts}.env"; meta="$backup_dir/${class}.${ts}.meta"; tmp="$root/classes/.${class}.new.$$"
+    if [[ -e "$dst" ]]; then
+        cp -p "$dst" "$backup" || return 1
+        { printf 'class=%q\n' "$class"; printf 'backup=%q\n' "$backup"; printf 'original=%q\n' "$dst"; printf 'replaced_at=%q\n' "$(date -Is)"; printf 'source=%q\n' "$src"; } > "$meta"
+    else
+        { printf 'class=%q\n' "$class"; printf 'backup=%q\n' ""; printf 'original=%q\n' "$dst"; printf 'replaced_at=%q\n' "$(date -Is)"; printf 'source=%q\n' "$src"; printf 'created_new=1\n'; } > "$meta"
+    fi
+    cp "$src" "$tmp" || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+    echo "Replaced queue class: $dst"; [[ -f "$backup" ]] && echo "Backup: $backup" || echo "Backup: none (new class)"
+    _queue_log_event "class_replaced" "$class" "$class" "classes" "path=$dst backup=$backup source=$src" 2>/dev/null || true
+}
+
+_queue_class_refresh_from_dir() {
+    local src_dir="$1" src class rc=0
+    [[ -n "$src_dir" && -d "$src_dir" ]] || { echo "queue classes refresh: directory not found: $src_dir" >&2; return 2; }
+    shopt -s nullglob
+    for src in "$src_dir"/*.env; do [[ -f "$src" ]] || continue; class="$(basename "$src" .env)"; echo "Refreshing class=$class source=$src"; _queue_class_replace "$class" "$src" 0 || rc=1; done
+    shopt -u nullglob; return "$rc"
+}
+
+_queue_class_latest_backup() { local class="$1" dir="$(_queue_class_backup_dir)"; ls -1t "$dir/${class}".*.env 2>/dev/null | head -1 || true; }
+
+_queue_class_rollback() {
+    local class="$1" backup="${2:-}" root dst tmp
+    _queue_class_valid_name "$class" || return 2
+    root="$(_queue_root)"; dst="$root/classes/$class.env"; [[ -n "$backup" ]] || backup="$(_queue_class_latest_backup "$class")"
+    [[ -n "$backup" && -f "$backup" ]] || { echo "queue classes rollback: no backup found for class: $class" >&2; return 1; }
+    _queue_class_validate_file "$class" "$backup" || return 4
+    tmp="$root/classes/.${class}.rollback.$$"; cp "$backup" "$tmp" || { rm -f "$tmp"; return 1; }; mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+    echo "Rolled back queue class: $dst"; echo "Restored from: $backup"
+}
+
+_queue_class_delete() {
+    local class="$1" root dst archive_dir archive meta ts ref
+    _queue_class_valid_name "$class" || return 2
+    root="$(_queue_root)"; dst="$(_queue_class_file "$class")"; [[ -f "$dst" ]] || { echo "queue classes delete: class not found: $class ($dst)" >&2; return 1; }
+    ref="$(grep -R -l -E "^JOB_CLASS=['\"]?${class}['\"]?$|^JOB_CLASS=${class}$" "$root/pending" "$root/running" "$root/paused" 2>/dev/null | head -1 || true)"
+    [[ -z "$ref" ]] || { echo "queue classes delete: refusing because pending/running/paused jobs reference class: $class" >&2; echo "$ref" >&2; return 3; }
+    archive_dir="$(_queue_class_archive_dir)"; mkdir -p "$archive_dir"; ts="$(date +%Y%m%d_%H%M%S_%N)"; archive="$archive_dir/${class}.${ts}.env"; meta="$archive_dir/${class}.${ts}.meta"
+    mv "$dst" "$archive" || return 1
+    { printf 'class=%q\n' "$class"; printf 'archive=%q\n' "$archive"; printf 'original=%q\n' "$dst"; printf 'archived_at=%q\n' "$(date -Is)"; } > "$meta"
+    echo "Archived queue class: $dst"; echo "Archive: $archive"
+}
+
+_queue_class_latest_archive() { local class="$1" dir="$(_queue_class_archive_dir)"; ls -1t "$dir/${class}".*.env 2>/dev/null | head -1 || true; }
+
+_queue_class_undelete() {
+    local class="$1" archive="${2:-}" root dst tmp
+    _queue_class_valid_name "$class" || return 2
+    root="$(_queue_root)"; dst="$root/classes/$class.env"; [[ -n "$archive" ]] || archive="$(_queue_class_latest_archive "$class")"
+    [[ -n "$archive" && -f "$archive" ]] || { echo "queue classes undelete: no archive found for class: $class" >&2; return 1; }
+    [[ ! -e "$dst" ]] || { echo "queue classes undelete: active class already exists: $dst" >&2; return 3; }
+    _queue_class_validate_file "$class" "$archive" || return 4
+    tmp="$root/classes/.${class}.undelete.$$"; cp "$archive" "$tmp" || { rm -f "$tmp"; return 1; }; mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+    echo "Restored archived queue class: $dst"; echo "Restored from: $archive"
+}
+
+_queue_class_backups() { local class="${1:-}" dir="$(_queue_class_backup_dir)"; mkdir -p "$dir"; if [[ -n "$class" ]]; then ls -1t "$dir/${class}".*.env 2>/dev/null || true; else ls -1t "$dir"/*.env 2>/dev/null || true; fi; }
+_queue_class_archives() { local class="${1:-}" dir="$(_queue_class_archive_dir)"; mkdir -p "$dir"; if [[ -n "$class" ]]; then ls -1t "$dir/${class}".*.env 2>/dev/null || true; else ls -1t "$dir"/*.env 2>/dev/null || true; fi; }
+
+_queue_class_explain() {
+    local class="$1" f refs
+    [[ -n "$class" ]] || { echo "Usage: queue classes explain <class>" >&2; return 2; }
+    f="$(_queue_class_file "$class")"
+    echo "============================================================================="
+    echo "CLASS EXPLAIN: $class"
+    echo "============================================================================="
+    echo "class file:       $f"
+    if [[ -f "$f" ]]; then echo "exists:           yes"; echo; echo "Contents:"; sed 's/^/  /' "$f"; echo; echo "Validation:"; _queue_class_validate_file "$(basename "$f" .env)" "$f" && echo "  OK" || true; else echo "exists:           no"; fi
+    echo; echo "Jobs referencing this class:"
+    refs="$(grep -R -l -E "^JOB_CLASS=['\"]?${class}['\"]?$|^JOB_CLASS=${class}$" "$(_queue_root)"/{pending,running,paused,done,failed,interrupted,cancelled,deleted} 2>/dev/null || true)"
+    [[ -n "$refs" ]] && echo "$refs" || echo "  none"
+}
+
+
+# -----------------------------------------------------------------------------
+# Class asset record format
+# -----------------------------------------------------------------------------
+# Legacy format remains supported:
+#   CLASS_SHARED_ASSETS="path:exists:/tmp git:repo_exists:/repo"
+#
+# New record format is delimiter-safe. The class file calls functions; Bash keeps
+# each argument separate, so targets/params may contain as many ':' or ',' chars
+# as needed:
+#   queue_class_shared_asset net http_status "https://github.com" timeout=5 accept_status="200,201,302,403"
+#   queue_class_shared_asset net tcp_endpoint "db.internal:5432" timeout=3
+#   queue_class_exclusive_asset "github_publish:slot"
+
+_queue_class_asset_reset() {
+    QUEUE_CLASS_SHARED_ASSET_SPECS=()
+    QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS=()
+}
+
+_queue_class_asset_pack() {
+    local arg q out=""
+    for arg in "$@"; do
+        printf -v q '%q' "$arg"
+        out+="$q "
+    done
+    printf '%s' "$out"
+}
+
+queue_class_shared_asset() {
+    QUEUE_CLASS_SHARED_ASSET_SPECS+=("$(_queue_class_asset_pack "$@")")
+}
+
+queue_class_exclusive_asset() {
+    QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS+=("$(_queue_class_asset_pack "$@")")
+}
+
+# Friendly aliases for claim-only assets.
+queue_class_shared_claim() { queue_class_shared_asset "$@"; }
+queue_class_exclusive_claim() { queue_class_exclusive_asset "$@"; }
+
+_queue_class_asset_claim_token_from_spec() {
+    local spec="$1"
+    eval "set -- $spec"
+    case "$#" in
+        0) return 0 ;;
+        1) printf '%s\n' "$1" ;;
+        2) printf '%s:%s\n' "$1" "$2" ;;
+        *) printf '%s:%s:%s\n' "$1" "$2" "$3" ;;
+    esac
+}
+
+_queue_asset_implied_preflight_args() {
+    local token="$1" family="$2" check="$3" target="$4"
+    shift 4 || true
+    local helper func
+
+    [[ -n "$family" && -n "$check" && -n "$target" ]] || return 0
+
+    helper="$(_queue_asset_helper_path "$family")"
+    func="$(_queue_asset_check_function_name "$family" "$check")"
+
+    # No helper means claim-only token.
+    [[ -f "$helper" ]] || return 0
+
+    (
+        source "$helper" || exit 40
+        _queue_asset_contract_validate_loaded "$helper" quiet >/dev/null || exit 43
+        _queue_asset_facility_is_published "$family" "$check" || exit 41
+        declare -F "$func" >/dev/null 2>&1 || exit 42
+        "$func" "$token" "$target" "$@"
+    )
+}
+
+_queue_asset_implied_preflight_spec() {
+    local spec="$1" token
+    eval "set -- $spec"
+    (($# >= 3)) || return 0
+    token="$(_queue_class_asset_claim_token_from_spec "$spec")"
+    _queue_asset_implied_preflight_args "$token" "$@"
+}
+
 _queue_asset_archive_dir() { printf '%s\n' "$(_queue_root)/assets.d/.archive"; }
 
 _queue_asset_family_is_used_by_classes() {
-    local family="$1" root="$(_queue_root)" classfile asset
+    local family="$1"
+    local root="$(_queue_root)"
+    local classfile rec rec_family
     shopt -s nullglob
     for classfile in "$root/classes"/*.env; do
         [[ -f "$classfile" ]] || continue
         (
-            CLASS_SHARED_ASSETS=""; CLASS_EXCLUSIVE_ASSETS=""; CLASS_ASSETS=""
+            _queue_class_record_reset 2>/dev/null || true
             source "$classfile" >/dev/null 2>&1 || exit 0
-            for asset in ${CLASS_SHARED_ASSETS:-${CLASS_ASSETS:-}} ${CLASS_EXCLUSIVE_ASSETS:-}; do
-                case "$asset" in "$family":*|"${family}") echo "$classfile:$asset" ;; esac
+
+            for rec in "${QUEUE_CLASS_SHARED_ASSET_RECORDS[@]:-}" "${QUEUE_CLASS_EXCLUSIVE_ASSET_RECORDS[@]:-}"; do
+                rec_family="${rec%%"$'\t'"*}"
+                if [[ "$rec_family" == "$family" ]]; then
+                    echo "$classfile:$rec"
+                fi
             done
         )
     done
@@ -1144,42 +1406,45 @@ _queue_asset_scan_facilities() {
 
 _queue_asset_implied_preflight_one() {
     local token="$1"
-    local family check target helper func
-    local -a parts params
+    local family check rest target seg cur_param
+    local -a raw params target_parts
 
     [[ "$token" == *:*:* ]] || return 0
 
-    IFS=':' read -r -a parts <<< "$token"
-    family="${parts[0]:-}"
-    check="${parts[1]:-}"
-    target="${parts[2]:-}"
+    family="${token%%:*}"
+    rest="${token#*:}"
+    check="${rest%%:*}"
+    rest="${rest#*:}"
 
-    [[ -n "$family" && -n "$check" && -n "$target" ]] || return 0
+    [[ -n "$family" && -n "$check" && -n "$rest" ]] || return 0
 
-    helper="$(_queue_asset_helper_path "$family")"
-    func="$(_queue_asset_check_function_name "$family" "$check")"
+    IFS=':' read -r -a raw <<< "$rest"
 
-    # No helper means claim-only token.
-    [[ -f "$helper" ]] || return 0
+    params=()
+    target_parts=()
+    cur_param=""
 
-    (
-        source "$helper" || exit 40
-
-        # Validate the whole helper contract before using any nested asset from it.
-        _queue_asset_contract_validate_loaded "$helper" quiet >/dev/null || exit 43
-
-        # Plugin must publish before queue manager invokes.
-        _queue_asset_facility_is_published "$family" "$check" || exit 41
-
-        declare -F "$func" >/dev/null 2>&1 || exit 42
-
-        params=()
-        if ((${#parts[@]} > 3)); then
-            params=("${parts[@]:3}")
+    for seg in "${raw[@]}"; do
+        if [[ -z "$cur_param" && "$seg" == *=* ]]; then
+            cur_param="$seg"
+        elif [[ -n "$cur_param" && "$seg" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            params+=("$cur_param")
+            cur_param="$seg"
+        elif [[ -n "$cur_param" ]]; then
+            cur_param="${cur_param}:$seg"
+        else
+            target_parts+=("$seg")
         fi
+    done
+    [[ -n "$cur_param" ]] && params+=("$cur_param")
 
-        "$func" "$token" "$target" "${params[@]}"
-    )
+    target=""
+    if ((${#target_parts[@]} > 0)); then
+        local IFS=':'
+        target="${target_parts[*]}"
+    fi
+
+    _queue_asset_implied_preflight_args "$token" "$family" "$check" "$target" "${params[@]}"
 }
 
 _queue_asset_implied_preflight_for_class() {
@@ -1205,6 +1470,33 @@ _queue_asset_implied_preflight_for_class() {
                 ;;
             *)
                 echo "asset_preflight_blocked: asset=$asset rc=$rc"
+                return "$rc"
+                ;;
+        esac
+    done
+
+    local spec spec_asset
+    for spec in "${QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS[@]}" "${QUEUE_CLASS_SHARED_ASSET_SPECS[@]}"; do
+        [[ -z "$spec" ]] && continue
+        spec_asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+        _queue_asset_implied_preflight_spec "$spec"
+        rc="$?"
+        case "$rc" in
+            0) ;;
+            41)
+                echo "asset_preflight_blocked: unpublished_facility asset=$spec_asset"
+                return "$rc"
+                ;;
+            42)
+                echo "asset_preflight_blocked: missing_check_function asset=$spec_asset"
+                return "$rc"
+                ;;
+            43)
+                echo "asset_preflight_blocked: helper_contract_failed asset=$spec_asset"
+                return "$rc"
+                ;;
+            *)
+                echo "asset_preflight_blocked: asset=$spec_asset rc=$rc"
                 return "$rc"
                 ;;
         esac
@@ -1310,14 +1602,12 @@ _queue_class_load_for_job() {
     CLASS_ALLOW_PARALLEL=1
     CLASS_EXCLUSIVE=0
     CLASS_MAX_CONCURRENT=0
-    CLASS_SHARED_ASSETS=""
-    CLASS_EXCLUSIVE_ASSETS=""
-    CLASS_ASSETS=""
     CLASS_PREFLIGHT_FUNC=""
     CLASS_PREFLIGHT_FUNCS=""
     CLASS_PREFLIGHT_CMD=""
     CLASS_PREFLIGHT_CMDS=""
     CLASS_PREFLIGHT_PLUGINS=""
+    _queue_class_asset_reset
 
     if [[ ! -f "$QUEUE_CLASS_FILE" && "$QUEUE_CLASS_NAME" == "${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}" ]]; then
         default_file="$root/classes/${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}.env"
@@ -1326,13 +1616,12 @@ _queue_class_load_for_job() {
 # bashqueues default class
 CLASS_ALLOW_PARALLEL=1
 CLASS_MAX_CONCURRENT=0
-CLASS_SHARED_ASSETS=""
-CLASS_EXCLUSIVE_ASSETS=""
 EOF
     fi
 
     if [[ -f "$QUEUE_CLASS_FILE" ]]; then
         source "$QUEUE_CLASS_FILE"
+    unset CLASS_SHARED_ASSETS CLASS_EXCLUSIVE_ASSETS CLASS_ASSETS
     else
         echo "queue class: class file not found: $QUEUE_CLASS_FILE" >&2
         return 2
@@ -1370,8 +1659,16 @@ _queue_class_available() {
         for asset in $CLASS_EXCLUSIVE_ASSETS; do
             _queue_asset_has_any_claim "$asset" && exit 12
         done
+        for spec in "${QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS[@]}"; do
+            asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+            [[ -n "$asset" ]] && _queue_asset_has_any_claim "$asset" && exit 12
+        done
         for asset in $CLASS_SHARED_ASSETS; do
             _queue_asset_has_exclusive_claim "$asset" && exit 13
+        done
+        for spec in "${QUEUE_CLASS_SHARED_ASSET_SPECS[@]}"; do
+            asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+            [[ -n "$asset" ]] && _queue_asset_has_exclusive_claim "$asset" && exit 13
         done
 
         _queue_asset_implied_preflight_for_class || exit 23
@@ -1415,8 +1712,16 @@ _queue_class_claim_job() {
         for asset in $CLASS_EXCLUSIVE_ASSETS; do
             _queue_asset_has_any_claim "$asset" && exit 22
         done
+        for spec in "${QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS[@]}"; do
+            asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+            [[ -n "$asset" ]] && _queue_asset_has_any_claim "$asset" && exit 22
+        done
         for asset in $CLASS_SHARED_ASSETS; do
             _queue_asset_has_exclusive_claim "$asset" && exit 23
+        done
+        for spec in "${QUEUE_CLASS_SHARED_ASSET_SPECS[@]}"; do
+            asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+            [[ -n "$asset" ]] && _queue_asset_has_exclusive_claim "$asset" && exit 23
         done
 
         safe="$(_queue_class_safe_token "$QUEUE_CLASS_NAME")"
@@ -1436,7 +1741,29 @@ _queue_class_claim_job() {
             printf '%s\n' "exclusive" > "$claim/mode"
             date -Is > "$claim/claimed_at"
         done
+        for spec in "${QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS[@]}"; do
+            asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+            [[ -z "$asset" ]] && continue
+            asafe="$(_queue_class_safe_token "$asset")"
+            claim="$root/claims/assets/$asafe.exclusive.$id.claim"
+            mkdir -p "$claim"
+            printf '%s\n' "$id" > "$claim/job_id"
+            printf '%s\n' "$asset" > "$claim/asset"
+            printf '%s\n' "exclusive" > "$claim/mode"
+            date -Is > "$claim/claimed_at"
+        done
         for asset in $CLASS_SHARED_ASSETS; do
+            asafe="$(_queue_class_safe_token "$asset")"
+            claim="$root/claims/assets/$asafe.shared.$id.claim"
+            mkdir -p "$claim"
+            printf '%s\n' "$id" > "$claim/job_id"
+            printf '%s\n' "$asset" > "$claim/asset"
+            printf '%s\n' "shared" > "$claim/mode"
+            date -Is > "$claim/claimed_at"
+        done
+        for spec in "${QUEUE_CLASS_SHARED_ASSET_SPECS[@]}"; do
+            asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+            [[ -z "$asset" ]] && continue
             asafe="$(_queue_class_safe_token "$asset")"
             claim="$root/claims/assets/$asafe.shared.$id.claim"
             mkdir -p "$claim"
@@ -4978,8 +5305,19 @@ EOF
                 explain)
                     _queue_asset_explain "${2:-}"; return "$?"
                     ;;
+                expand)
+                    echo "asset subcommands:"
+                    echo "  list show validate duplicates dupes replace rollback backups refresh delete archive undelete unarchive archives explain expand"
+                    echo
+                    echo "asset families:"
+                    local root="${QUEUEBASH_ROOT:-$HOME/.queuebash}"
+                    if [[ -d "$root/assets.d" ]]; then
+                        find "$root/assets.d" -maxdepth 1 -type f -name '*.sh' -printf '  %f\n' 2>/dev/null | sed 's/\.sh$//' | sort
+                    fi
+                    return 0
+                    ;;
                 *)
-                    echo "Usage: queue assets list|show <family>|validate|duplicates|replace <family> <plugin.sh> [--force]|rollback <family> [backup-file]|backups [family]|refresh <directory>|delete <family>|undelete <family> [archive-file]|archives [family]|explain <family|family:check>" >&2
+                    echo "Usage: queue assets list|show <family>|validate|duplicates|replace <family> <plugin.sh> [--force]|rollback <family> [backup-file]|backups [family]|refresh <directory>|delete <family>|undelete <family> [archive-file]|archives [family]|explain <family|family:check>|expand" >&2
                     return 2
                     ;;
             esac
@@ -4993,14 +5331,9 @@ EOF
                 list|"")
                     echo "=== queue classes ==="
                     mkdir -p "$root/classes"
-                    local cf
-                    shopt -s nullglob
-                    for cf in "$root/classes"/*.env; do
-                        basename "$cf" .env
-                    done
-                    shopt -u nullglob
+                    _queue_class_list_names
                     ;;
-                show)
+                show|cat)
                     local cname="${2:-}"
                     [[ -z "$cname" ]] && { echo "Usage: queue class show <class>" >&2; return 2; }
                     local cfile
@@ -5010,9 +5343,10 @@ EOF
                     echo "file: $cfile"
                     cat "$cfile"
                     ;;
-                init)
+                init|new)
                     local cname="${2:-}"
                     [[ -z "$cname" ]] && { echo "Usage: queue class init <class>" >&2; return 2; }
+                    _queue_class_valid_name "$cname" || { echo "queue class: invalid class name: $cname" >&2; return 2; }
                     local cfile
                     cfile="$root/classes/$cname.env"
                     [[ -e "$cfile" ]] && { echo "queue class: already exists: $cfile" >&2; return 1; }
@@ -5020,15 +5354,43 @@ EOF
 # bashqueues class definition
 CLASS_ALLOW_PARALLEL=1
 CLASS_MAX_CONCURRENT=0
-CLASS_SHARED_ASSETS=""
-CLASS_EXCLUSIVE_ASSETS=""
 EOF
                     echo "Created $cfile"
                     ;;
-                *)
-                    echo "Usage: queue class list|show <class>|init <class>" >&2
-                    return 2
+                edit)
+                    local cname="${2:-}"
+                    [[ -z "$cname" ]] && { echo "Usage: queue class edit <class>" >&2; return 2; }
+                    local cfile
+                    cfile="$(_queue_class_file "$cname")"
+                    [[ -f "$cfile" ]] || { echo "queue class: not found: $cname ($cfile)" >&2; return 1; }
+                    "${EDITOR:-vi}" "$cfile"
+                    _queue_class_validate_file "$(basename "$cfile" .env)" "$cfile"
                     ;;
+                validate)
+                    local cname="${2:-}"
+                    if [[ -n "$cname" ]]; then
+                        local cfile
+                        cfile="$(_queue_class_file "$cname")"
+                        [[ -f "$cfile" ]] || { echo "queue class: not found: $cname ($cfile)" >&2; return 1; }
+                        _queue_class_validate_file "$(basename "$cfile" .env)" "$cfile"
+                    else
+                        local failed=0 cf
+                        shopt -s nullglob
+                        for cf in "$root/classes"/*.env; do echo "=== validating class: $(basename "$cf" .env) ==="; _queue_class_validate_file "$(basename "$cf" .env)" "$cf" || failed=1; done
+                        shopt -u nullglob
+                        [[ "$failed" -eq 0 ]] || return 1
+                    fi
+                    ;;
+                replace) local cname="${2:-}" src="${3:-}" force=0; [[ "${4:-}" == "--force" ]] && force=1; [[ -n "$cname" && -n "$src" ]] || { echo "Usage: queue class replace <class> <file.env> [--force]" >&2; return 2; }; _queue_class_replace "$cname" "$src" "$force" ;;
+                refresh) local src_dir="${2:-}"; [[ -n "$src_dir" ]] || { echo "Usage: queue class refresh <directory>" >&2; return 2; }; _queue_class_refresh_from_dir "$src_dir" ;;
+                rollback) local cname="${2:-}" backup="${3:-}"; [[ -n "$cname" ]] || { echo "Usage: queue class rollback <class> [backup-file]" >&2; return 2; }; _queue_class_rollback "$cname" "$backup" ;;
+                backups) _queue_class_backups "${2:-}" ;;
+                delete|archive) local cname="${2:-}"; [[ -n "$cname" ]] || { echo "Usage: queue class delete <class>" >&2; return 2; }; _queue_class_delete "$cname" ;;
+                undelete|unarchive) local cname="${2:-}" archive="${3:-}"; [[ -n "$cname" ]] || { echo "Usage: queue class undelete <class> [archive-file]" >&2; return 2; }; _queue_class_undelete "$cname" "$archive" ;;
+                archives) _queue_class_archives "${2:-}" ;;
+                explain) _queue_class_explain "${2:-}" ;;
+                expand) echo "class subcommands:"; echo "  list show init edit validate replace refresh rollback backups delete archive undelete unarchive archives explain expand"; echo; echo "classes:"; _queue_class_list_names | sed 's/^/  /' ;;
+                *) echo "Usage: queue class list|show <class>|init <class>|edit <class>|validate [class]|replace <class> <file.env> [--force]|refresh <directory>|rollback <class> [backup-file]|backups [class]|delete <class>|undelete <class> [archive-file]|archives [class]|explain <class>|expand" >&2; return 2 ;;
             esac
             ;;
 
@@ -6437,6 +6799,12 @@ _queue_complete() {
 
     COMPREPLY=( $(compgen -f -- "$cur") )
     return 0
+}
+
+
+
+_queue_assets_completion_words() {
+    printf '%s\n' "list show validate duplicates dupes replace rollback backups refresh delete archive undelete unarchive archives explain expand"
 }
 
 complete -F _queue_complete queue

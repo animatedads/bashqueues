@@ -1338,3 +1338,81 @@ queue assets delete net
 queue assets undelete net
 queue assets explain net:tcp_endpoint
 ```
+
+
+## Git and database asset plugins
+
+Bundled external plugins include:
+
+```text
+assets.d/git.sh
+assets.d/db.sh
+```
+
+Examples:
+
+```bash
+CLASS_SHARED_ASSETS="git:branch:/home/hc3/bashqueues:require_branch=main"
+CLASS_SHARED_ASSETS="db:sqlite_accessible:/tmp/test.db:query=SELECT 1"
+```
+
+Inspect asset subcommands and families:
+
+```bash
+queue assets expand
+```
+
+
+## GitHub publishing class
+
+```bash
+queue submit publish_to_git --class GITHUB_PUBLISH -- bash publish_to_github.sh
+queue classes show GITHUB_PUBLISH
+queue classes edit GITHUB_PUBLISH
+queue classes explain GITHUB_PUBLISH
+```
+
+
+## Format validation assets
+
+```bash
+CLASS_SHARED_ASSETS="format:json:/tmp/payload.json"
+CLASS_SHARED_ASSETS="format:csv:/tmp/data.csv:strict_columns=1"
+CLASS_SHARED_ASSETS="format:archive:/tmp/download.tar.gz"
+CLASS_SHARED_ASSETS="format:sqlite:/tmp/state.db"
+```
+
+Colon-bearing targets are supported:
+
+```bash
+CLASS_SHARED_ASSETS="net:http_status:https://github.com:timeout=5"
+CLASS_SHARED_ASSETS="net:tcp_endpoint:db.internal:5432:timeout=3"
+```
+
+
+## Delimiter-safe class asset records
+
+Preferred class syntax:
+
+```bash
+queue_class_shared_asset net http_status "https://github.com" \
+  timeout=5 \
+  accept_status="200,201,204,301,302,304,307,308,403"
+
+queue_class_shared_asset net tcp_endpoint "db.internal:5432" timeout=3
+```
+
+This avoids delimiter bugs entirely because `:`, `,`, and `=` are preserved inside real Bash arguments.
+
+
+## Record-only class assets
+
+Class assets are record-only:
+
+```bash
+queue_class_shared_asset net http_status "https://github.com" timeout=5
+queue_class_shared_asset git branch "/home/hc3/bashqueues" require_branch=main
+queue_class_exclusive_claim "github_publish:slot"
+```
+
+Legacy `CLASS_SHARED_ASSETS`, `CLASS_EXCLUSIVE_ASSETS`, and `CLASS_ASSETS` are intentionally unsupported during development.

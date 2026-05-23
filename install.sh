@@ -42,3 +42,20 @@ if [[ -d "$(dirname "$0")/assets.d" ]]; then
     fi
   done
 fi
+
+
+# Install bundled classes without overwriting user/site edits.
+QUEUEBASH_ROOT="${QUEUEBASH_ROOT:-$HOME/.queuebash}"
+mkdir -p "$QUEUEBASH_ROOT/classes"
+if [[ -d "$(dirname "$0")/classes" ]]; then
+  for classfile in "$(dirname "$0")"/classes/*.env; do
+    [[ -f "$classfile" ]] || continue
+    dst="$QUEUEBASH_ROOT/classes/$(basename "$classfile")"
+    if [[ ! -e "$dst" ]]; then
+      cp "$classfile" "$dst"
+      echo "Installed queue class: $dst"
+    else
+      echo "Keeping existing queue class: $dst"
+    fi
+  done
+fi

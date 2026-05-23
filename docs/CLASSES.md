@@ -344,3 +344,138 @@ Force still checks shell syntax, but skips contract validation.
 ## Refreshing, deleting, and explaining asset plugins
 
 Use `queue assets refresh <dir>`, `delete <family>`, `undelete <family>`, `archives [family]`, and `explain <family|family:check>` for managed plugin lifecycle.
+
+
+## Git and database asset plugins
+
+Bundled external plugins now include:
+
+```text
+assets.d/git.sh
+assets.d/db.sh
+```
+
+Git facilities:
+
+```text
+git:repo_exists
+git:clean_tree
+git:branch
+```
+
+Database facilities:
+
+```text
+db:postgres_connect
+db:mysql_connect
+db:sqlite_accessible
+db:redis_connect
+db:mongodb_connect
+```
+
+Examples:
+
+```bash
+CLASS_SHARED_ASSETS="git:clean_tree:/home/hc3/bashqueues"
+CLASS_SHARED_ASSETS="git:branch:/home/hc3/bashqueues:require_branch=main"
+CLASS_SHARED_ASSETS="db:sqlite_accessible:/tmp/test.db:query=SELECT 1"
+```
+
+Database helpers depend on the relevant command-line clients being installed.
+
+
+## GitHub publishing class
+
+Bundled class:
+
+```text
+classes/GITHUB_PUBLISH.env
+```
+
+Submit publishing jobs with:
+
+```bash
+queue submit publish_to_git --class GITHUB_PUBLISH -- bash publish_to_github.sh
+```
+
+It gates dispatch using `net:http_status:https://github.com`, `git:repo_exists`, and `git:branch`, and serialises publishing jobs with `CLASS_ALLOW_PARALLEL=0`.
+
+Class manager commands:
+
+```bash
+queue classes list
+queue classes show GITHUB_PUBLISH
+queue classes edit GITHUB_PUBLISH
+queue classes validate
+queue classes replace GITHUB_PUBLISH ./GITHUB_PUBLISH.env
+queue classes refresh ./classes
+queue classes rollback GITHUB_PUBLISH
+queue classes delete OLD_CLASS
+queue classes undelete OLD_CLASS
+queue classes explain GITHUB_PUBLISH
+queue classes expand
+```
+
+
+## Asset token parser and format plugin
+
+Nested asset tokens now support colon-bearing targets. Parameters start at the first `key=value` segment, and parameter values may also contain colons.
+
+```bash
+CLASS_SHARED_ASSETS="net:http_status:https://github.com:timeout=5"
+CLASS_SHARED_ASSETS="net:tcp_endpoint:db.internal:5432:timeout=3"
+CLASS_SHARED_ASSETS="git:branch:/home/hc3/bashqueues:require_branch=main"
+```
+
+The bundled `format.sh` plugin publishes `format:json`, `format:xml`, `format:yaml`, `format:csv`, `format:archive`, and `format:sqlite`.
+
+
+## Delimiter-safe class asset records
+
+Classes can now define assets using function calls rather than delimiter-packed strings.
+This is the preferred format for plugin-backed assets because each field is a Bash
+argument, so targets and parameters may contain any number of `:`, `,`, `/`, `=`, or spaces.
+
+```bash
+queue_class_exclusive_asset "github_publish:slot"
+
+queue_class_shared_asset net http_status "https://github.com" \
+  timeout=5 \
+  accept_status="200,201,204,301,302,304,307,308,403"
+
+queue_class_shared_asset net tcp_endpoint "db.internal:5432" timeout=3
+
+queue_class_shared_asset git branch "/home/hc3/bashqueues" require_branch=main
+```
+
+Legacy `CLASS_SHARED_ASSETS` and `CLASS_EXCLUSIVE_ASSETS` strings remain supported, but
+new classes should use `queue_class_shared_asset` and `queue_class_exclusive_asset`.
+
+
+## Record-only class assets
+
+As of 0.10.1, legacy string asset fields are removed:
+
+```bash
+CLASS_SHARED_ASSETS="..."
+CLASS_EXCLUSIVE_ASSETS="..."
+CLASS_ASSETS="..."
+```
+
+Classes must use record calls:
+
+```bash
+queue_class_shared_asset net http_status "https://github.com" \
+  timeout=5 \
+  accept_status="200,201,204,301,302,304,307,308,403"
+
+queue_class_shared_asset git branch "/home/hc3/bashqueues" \
+  require_branch=main
+
+queue_class_exclusive_asset net tcp_endpoint "db.internal:5432" \
+  timeout=3
+
+queue_class_exclusive_claim "github_publish:slot"
+```
+
+This removes delimiter parsing from class definitions. Targets and parameter values may contain `:`, `,`, `=`, `/`, spaces, and other shell-safe quoted content.
