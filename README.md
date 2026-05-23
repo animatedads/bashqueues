@@ -1472,3 +1472,34 @@ class output <qid>: asset_check_ok: ...
 ```
 
 This prevents plugin messages from contaminating the path passed to `mv pending -> running`.
+
+
+## QueueManager split
+
+QueueManager is now a lazily sourced module:
+
+```text
+queuemgr.sh
+```
+
+Launch it with:
+
+```bash
+queue mgr
+queue manager
+queue qm
+```
+
+Scriptable record-format class creation:
+
+```bash
+queue mgr class-create GITHUB_PUBLISH_TEST \
+  --no-parallel \
+  --max-concurrent 1 \
+  --exclusive-claim github_publish:slot \
+  --shared-asset net http_status "https://github.com" timeout=5 \
+  --shared-asset git repo_exists "/home/hc3/bashqueues" \
+  --shared-asset git branch "/home/hc3/bashqueues" require_branch=main
+```
+
+The manager generates record-format classes only.

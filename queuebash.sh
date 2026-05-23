@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.10.6"
+QUEUEBASH_VERSION="0.11.0"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1967,6 +1967,32 @@ _queue_duplicate_qids_report() {
     fi
 
     rm -f "$tmp"
+}
+
+
+_queue_script_dir() {
+    local src="${BASH_SOURCE[0]:-$0}"
+    cd "$(dirname "$src")" 2>/dev/null && pwd -P
+}
+
+_queue_manager_load() {
+    local dir mgr
+
+    dir="$(_queue_script_dir)"
+    mgr="$dir/queuemgr.sh"
+
+    if [[ ! -f "$mgr" ]]; then
+        echo "queue manager: missing manager module: $mgr" >&2
+        return 1
+    fi
+
+    # shellcheck source=/dev/null
+    source "$mgr"
+}
+
+_queue_manager_entry() {
+    _queue_manager_load || return "$?"
+    _queue_manager "$@"
 }
 
 _queue_next_job() {
@@ -5376,6 +5402,10 @@ queue() {
             _queue_duplicate_qids_report
             ;;
 
+        mgr|manager|qm|queuemgr)
+            _queue_manager_entry "$@"
+            ;;
+
         dispatch-trace|trace-dispatch)
             _queue_dispatch_trace_show "${1:-120}"
             ;;
@@ -6601,7 +6631,8 @@ EOF
                     echo "  worker $i pid=$wp"
                 done
                 _queue_log_event "workers_started" "" "" "workers" "workers=$workers detached=1"
-                echo "Detached workers started. Use: queue workers"
+                echo "Detached workers started. Use: queue workers
+  queue mgr|manager|qm"
                 return 0
             fi
 

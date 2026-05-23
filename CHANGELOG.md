@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0
+
+- Split QueueManager into lazily sourced `queuemgr.sh`.
+- Add `queue mgr`, `queue manager`, `queue qm`, and `queue queuemgr` entry points.
+- Add AS/400-style text menus for jobs, classes, assets, workers, health, and trace operations.
+- Add scriptable `queue mgr class-create` for record-format class creation.
+- Add `docs/QUEUEMGR.md` and regression tests for lazy loading and class generation.
+
+
 ## 0.10.6
 
 - Fix `_queue_next_job` stdout contamination from asset/class plugin output.
