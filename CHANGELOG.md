@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.15.3
+
+- Fix Task Creator execution directory handling: remove unsupported `--chdir` submit option.
+- Task Creator now previews `cd <dir> && queue submit ...` and actually runs submit with `cwd=<dir>`, so queuebash captures `PWD_AT_SUBMIT` correctly.
+
+
+## 0.15.2
+
+- Fix Task Creator submit command ordering to match `queue submit <name> [options] -- <command...>`.
+- Normalize spaces and unsafe characters in Task Creator job names to underscores.
+- Add Task Creator execution directory field, emitted as `--chdir <dir>`.
+- Use `--backoff` for retry backoff to match queue submit usage.
+
+
+## 0.15.1
+
+- Add panel Task Creator.
+- Task Creator supports job name, command, class selection, priority, schedule/not-before, retries, runner/resource overrides, preview, dry-run, and submit.
+- Classes panel can send the selected class to Task Creator with `use-for-task`.
+
+
 ## 0.15.0
 
 - Add panel Class Creator.

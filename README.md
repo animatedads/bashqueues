@@ -1997,3 +1997,54 @@ queue_class_exclusive_claim "runtime:nightly:slot"
 ```
 
 No legacy `CLASS_SHARED_ASSETS` or colon/comma token parsing is generated.
+
+
+## Panel Task Creator
+
+The panel manager includes a Task Creator panel.
+
+Workflow:
+
+```text
+1. Open: queue panel
+2. Go to Task Creator
+3. Set name and command
+4. Select class from installed classes
+5. Set priority and optional schedule/not-before
+6. Preview or dry-run
+7. Submit
+```
+
+The generated command uses the existing queue submit interface:
+
+```bash
+cd /home/hc3/bashqueues && queue submit nightly --priority 10 --class OVERNIGHT_WINDOW --not-before "2026-05-23T22:00:00+01:00" -- bash job.sh
+```
+
+The Classes panel can also set the selected class into Task Creator using the `use-for-task` action.
+
+
+### Task Creator job names and execution directory
+
+Task Creator normalizes job names before submit. Spaces and unsafe characters become underscores:
+
+```text
+publish git -> publish_git
+```
+
+Generated submit commands put the job name before options and can include an execution directory:
+
+```bash
+cd /home/hc3/bashqueues && queue submit publish_git --priority 10 --class GITHUB_PUBLISH -- bash publish_to_github.sh
+```
+
+
+### Task Creator execution directory is not a submit option
+
+`queue submit` captures the submit directory from the process current working directory. Task Creator therefore previews:
+
+```bash
+cd /home/hc3/bashqueues && queue submit publish_git --class GITHUB_PUBLISH -- bash publish_to_github.sh
+```
+
+and internally runs `queue submit` with that working directory. It does not emit `--chdir`.
