@@ -1150,3 +1150,62 @@ queue compress-logs
 ```
 
 See `docs/TARGETED_COMPRESSION.md`.
+
+
+## Filesystem-native IPC
+
+`bashqueues` supports lightweight IPC:
+
+```bash
+queue_output KEY VALUE
+queue submit consumer --inherit-env-from <producer-qid> -- ./consumer.sh
+queue stream <running-job>
+```
+
+IPC files live under `outputs/` and `streams/`. See `docs/IPC.md`.
+
+
+## Name-based IPC inheritance
+
+`--inherit-env-from` now accepts a job name and automatically creates the after-success dependency:
+
+```bash
+queue submit producer -- bash -c 'queue_output RESULT_PATH /tmp/out.txt; echo hello > /tmp/out.txt'
+queue submit consumer --inherit-env-from producer -- bash -c 'cat "$RESULT_PATH"'
+queue run
+```
+
+The consumer waits for `producer` to finish successfully, then sources `outputs/<producer-qid>.env`.
+
+
+## Queue classes
+
+Queue classes provide cooperative concurrency/resource gating:
+
+```bash
+queue class init FORENSIC_DSP
+queue submit enhance --class FORENSIC_DSP -- ./enhance.sh
+```
+
+Class files define sequential class execution, maximum class concurrency, shared assets, and exclusive assets.
+
+See `docs/CLASSES.md`.
+
+
+## queue_output helper command
+
+`queue_output KEY VALUE` is installed as a per-job helper command and added to `PATH`. This keeps env-drop IPC working under both direct and systemd runners, even when `systemd-run` strips exported Bash functions.
+
+
+## IPC file checksums
+
+For auditable file hand-offs:
+
+```bash
+queue_output_file RESULT_PATH /tmp/result.txt
+queue_require_file RESULT_PATH
+```
+
+Use `bash -e` or `queue_require_file RESULT_PATH || exit $?` in consumers so validation failure stops the payload.
+
+See `docs/IPC.md`.

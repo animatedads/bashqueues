@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.7.13"
+QUEUEBASH_VERSION="0.8.7"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -235,7 +235,7 @@ _queue_root() {
 
 _queue_init() {
     local root="$(_queue_root)"
-    mkdir -p "$root"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers}
+    mkdir -p "$root"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,claims/classes,claims/assets}
 }
 
 _queue_now() {
@@ -607,6 +607,221 @@ _queue_job_schedule_status() {
     fi
 }
 
+# -------------------------------------------------------------------
+# Queue classes and cooperative resource claims
+# -------------------------------------------------------------------
+
+_queue_class_name_for_job() {
+    local f="$1"
+    grep '^JOB_CLASS=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null
+}
+
+_queue_class_safe_token() {
+    local x="$1"
+    x="${x//[^A-Za-z0-9_.:-]/_}"
+    printf '%s\n' "$x"
+}
+
+_queue_class_file() {
+    local class="$1"
+    local root="$(_queue_root)"
+    if [[ -f "$class" ]]; then
+        printf '%s\n' "$class"
+    else
+        printf '%s/classes/%s.env\n' "$root" "$class"
+    fi
+}
+
+_queue_claim_lock_acquire() {
+    local root="$(_queue_root)" lock i
+    lock="$root/claims/.lock"
+    mkdir -p "$root/claims"
+    for i in $(seq 1 100); do
+        if mkdir "$lock" 2>/dev/null; then
+            printf '%s\n' "$$" > "$lock/pid" 2>/dev/null || true
+            date -Is > "$lock/at" 2>/dev/null || true
+            return 0
+        fi
+        sleep 0.02
+    done
+    return 1
+}
+
+_queue_claim_lock_release() {
+    rm -rf "$(_queue_root)/claims/.lock" 2>/dev/null || true
+}
+
+_queue_class_claim_count() {
+    local class="$1" root safe
+    root="$(_queue_root)"
+    safe="$(_queue_class_safe_token "$class")"
+    find "$root/claims/classes" -maxdepth 1 -type d -name "$safe.*.claim" 2>/dev/null | wc -l | tr -d ' '
+}
+
+_queue_asset_has_any_claim() {
+    local asset="$1" root safe
+    root="$(_queue_root)"
+    safe="$(_queue_class_safe_token "$asset")"
+    find "$root/claims/assets" -maxdepth 1 -type d -name "$safe.*.claim" 2>/dev/null | grep -q .
+}
+
+_queue_asset_has_exclusive_claim() {
+    local asset="$1" root safe
+    root="$(_queue_root)"
+    safe="$(_queue_class_safe_token "$asset")"
+    find "$root/claims/assets" -maxdepth 1 -type d -name "$safe.exclusive.*.claim" 2>/dev/null | grep -q .
+}
+
+_queue_class_load_for_job() {
+    local f="$1" class file
+    class="$(_queue_class_name_for_job "$f")"
+    [[ -z "$class" ]] && return 1
+
+    QUEUE_CLASS_NAME="$class"
+    QUEUE_CLASS_FILE="$(_queue_class_file "$class")"
+
+    CLASS_ALLOW_PARALLEL=1
+    CLASS_EXCLUSIVE=0
+    CLASS_MAX_CONCURRENT=0
+    CLASS_SHARED_ASSETS=""
+    CLASS_EXCLUSIVE_ASSETS=""
+    CLASS_ASSETS=""
+
+    if [[ -f "$QUEUE_CLASS_FILE" ]]; then
+        source "$QUEUE_CLASS_FILE"
+    else
+        echo "queue class: class file not found: $QUEUE_CLASS_FILE" >&2
+        return 2
+    fi
+
+    CLASS_SHARED_ASSETS="${CLASS_SHARED_ASSETS:-${CLASS_ASSETS:-}}"
+    CLASS_ALLOW_PARALLEL="${CLASS_ALLOW_PARALLEL:-1}"
+    CLASS_EXCLUSIVE="${CLASS_EXCLUSIVE:-0}"
+    CLASS_MAX_CONCURRENT="${CLASS_MAX_CONCURRENT:-0}"
+    CLASS_EXCLUSIVE_ASSETS="${CLASS_EXCLUSIVE_ASSETS:-}"
+    return 0
+}
+
+_queue_class_available() {
+    local f="$1"
+    local class count max asset
+
+    class="$(_queue_class_name_for_job "$f")"
+    [[ -z "$class" ]] && return 0
+
+    (
+        _queue_class_load_for_job "$f" >/dev/null 2>&1 || exit 1
+        count="$(_queue_class_claim_count "$QUEUE_CLASS_NAME")"
+        max="${CLASS_MAX_CONCURRENT:-0}"
+        [[ "$max" =~ ^[0-9]+$ ]] || max=0
+
+        if [[ "${CLASS_EXCLUSIVE:-0}" == "1" || "${CLASS_ALLOW_PARALLEL:-1}" == "0" ]]; then
+            (( count == 0 )) || exit 1
+        fi
+        if (( max > 0 && count >= max )); then
+            exit 1
+        fi
+
+        for asset in $CLASS_EXCLUSIVE_ASSETS; do
+            _queue_asset_has_any_claim "$asset" && exit 1
+        done
+        for asset in $CLASS_SHARED_ASSETS; do
+            _queue_asset_has_exclusive_claim "$asset" && exit 1
+        done
+        exit 0
+    )
+}
+
+_queue_class_claim_job() {
+    local f="$1" id="$2" root class rc
+    root="$(_queue_root)"
+    class="$(_queue_class_name_for_job "$f")"
+    [[ -z "$class" ]] && return 0
+
+    _queue_claim_lock_acquire || return 1
+    (
+        local count max asset safe asafe claim
+        _queue_class_load_for_job "$f" >/dev/null || exit 10
+
+        count="$(_queue_class_claim_count "$QUEUE_CLASS_NAME")"
+        max="${CLASS_MAX_CONCURRENT:-0}"
+        [[ "$max" =~ ^[0-9]+$ ]] || max=0
+
+        if [[ "${CLASS_EXCLUSIVE:-0}" == "1" || "${CLASS_ALLOW_PARALLEL:-1}" == "0" ]]; then
+            (( count == 0 )) || exit 20
+        fi
+        if (( max > 0 && count >= max )); then
+            exit 21
+        fi
+
+        for asset in $CLASS_EXCLUSIVE_ASSETS; do
+            _queue_asset_has_any_claim "$asset" && exit 22
+        done
+        for asset in $CLASS_SHARED_ASSETS; do
+            _queue_asset_has_exclusive_claim "$asset" && exit 23
+        done
+
+        safe="$(_queue_class_safe_token "$QUEUE_CLASS_NAME")"
+        claim="$root/claims/classes/$safe.$id.claim"
+        mkdir -p "$claim"
+        printf '%s\n' "$id" > "$claim/job_id"
+        printf '%s\n' "$QUEUE_CLASS_NAME" > "$claim/class"
+        printf '%s\n' "$QUEUE_CLASS_FILE" > "$claim/class_file"
+        date -Is > "$claim/claimed_at"
+
+        for asset in $CLASS_EXCLUSIVE_ASSETS; do
+            asafe="$(_queue_class_safe_token "$asset")"
+            claim="$root/claims/assets/$asafe.exclusive.$id.claim"
+            mkdir -p "$claim"
+            printf '%s\n' "$id" > "$claim/job_id"
+            printf '%s\n' "$asset" > "$claim/asset"
+            printf '%s\n' "exclusive" > "$claim/mode"
+            date -Is > "$claim/claimed_at"
+        done
+        for asset in $CLASS_SHARED_ASSETS; do
+            asafe="$(_queue_class_safe_token "$asset")"
+            claim="$root/claims/assets/$asafe.shared.$id.claim"
+            mkdir -p "$claim"
+            printf '%s\n' "$id" > "$claim/job_id"
+            printf '%s\n' "$asset" > "$claim/asset"
+            printf '%s\n' "shared" > "$claim/mode"
+            date -Is > "$claim/claimed_at"
+        done
+    )
+    rc="$?"
+    _queue_claim_lock_release
+
+    if [[ "$rc" -eq 0 ]]; then
+        {
+            printf 'JOB_CLASS_CLAIMED=%q\n' "$class"
+            printf 'JOB_CLASS_CLAIMED_AT=%q\n' "$(date -Is)"
+        } >> "$f" 2>/dev/null || true
+        _queue_log_event "class_claimed" "$id" "$(_queue_job_name "$f")" "running" "class=$class"
+        return 0
+    fi
+    return 1
+}
+
+_queue_class_release_claims() {
+    local id="$1" root
+    root="$(_queue_root)"
+    [[ -z "$id" ]] && return 0
+    rm -rf "$root/claims/classes/"*".$id.claim" "$root/claims/assets/"*".$id.claim" 2>/dev/null || true
+}
+
+_queue_cleanup_stale_claims() {
+    local root="$(_queue_root)" claim id
+    for claim in "$root/claims/classes"/*.claim "$root/claims/assets"/*.claim; do
+        [[ -d "$claim" ]] || continue
+        id="$(cat "$claim/job_id" 2>/dev/null || true)"
+        if [[ -z "$id" || ! -f "$root/running/$id.job" ]]; then
+            rm -rf "$claim" 2>/dev/null || true
+            echo "FIX removed stale class/resource claim: $claim"
+        fi
+    done
+}
+
+
 _queue_next_job() {
     local root="$(_queue_root)"
     local best=""
@@ -620,6 +835,7 @@ _queue_next_job() {
         _queue_job_retry_due "$f" || continue
         _queue_job_schedule_due "$f" || continue
         _queue_job_dependencies_satisfied "$f" || continue
+        _queue_class_available "$f" || continue
 
         id="$(basename "$f" .job)"
         pri="$(_queue_job_pri "$f")"
@@ -676,7 +892,9 @@ _queue_clone_job_to_pending() {
             printf 'MAX_LOG_SIZE_BYTES=%q\n' "${MAX_LOG_SIZE_BYTES:-${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}}"
             printf 'ALLOW_LARGE_LOG=%q\n' "${ALLOW_LARGE_LOG:-0}"
             printf 'RUNNER=%q\n' "${RUNNER:-${QUEUEBASH_RUNNER:-auto}}"
+            [[ -n "${JOB_CLASS:-}" ]] && printf 'JOB_CLASS=%q\n' "$JOB_CLASS"
             [[ -n "${DEPENDS_AFTER_SUCCESS:-}" ]] && printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$DEPENDS_AFTER_SUCCESS"
+            [[ -n "${INHERIT_ENV_FROM:-}" ]] && printf 'INHERIT_ENV_FROM=%q\n' "$INHERIT_ENV_FROM"
             printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
             printf 'PWD_AT_SUBMIT=%q\n' "$PWD_AT_SUBMIT"
             printf 'RESUBMITTED_FROM=%q\n' "$JOB_ID"
@@ -881,6 +1099,7 @@ _queue_clone_retry_to_pending() {
             [[ -n "${LOG_OVERFLOW_POLICY:-}" ]] && printf 'LOG_OVERFLOW_POLICY=%q\n' "$LOG_OVERFLOW_POLICY"
             [[ -n "${RUNNER:-}" ]] && printf 'RUNNER=%q\n' "$RUNNER"
             [[ -n "${DEPENDS_AFTER_SUCCESS:-}" ]] && printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$DEPENDS_AFTER_SUCCESS"
+            [[ -n "${INHERIT_ENV_FROM:-}" ]] && printf 'INHERIT_ENV_FROM=%q\n' "$INHERIT_ENV_FROM"
 
             printf 'COMMAND=('
             printf ' %q' "${COMMAND[@]}"
@@ -926,7 +1145,7 @@ _queuemgr_repl_complete() {
     first="${before%% *}"
     [[ "$before" == "$first" ]] && first=""
 
-    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd sched scheduled schedule stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel gz gzip-logs compress-logs clog clean-logs cleanlogs log-clean logs-clean q quit help ?"
+    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail stream pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd sched scheduled schedule stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel gz gzip-logs compress-logs clog clean-logs cleanlogs log-clean logs-clean q quit help ?"
 
     local words matches
     if [[ -z "$first" ]]; then
@@ -1063,6 +1282,17 @@ _queue_build_payload_command() {
     if [[ "$runner" == "systemd" ]]; then
         if _queue_systemd_user_service_supported; then
             printf '%s\0' systemd-run --user --pipe --wait --collect
+
+            # systemd-run does not reliably preserve exported bash functions.
+            # queue_output is therefore installed as an external helper command
+            # and PATH / queue env are passed explicitly to the transient unit.
+            local env_name env_val
+            for env_name in PATH QUEUEBASH_JOB_ID QUEUEBASH_OUTPUT_ENV QUEUEBASH_ENV_OUT QUEUEBASH_STREAM_FIFO QUEUEBASH_HELPER_DIR QUEUEBASH_INHERITED_ENV_FROM QUEUEBASH_INHERITED_ENV_KEYS ${QUEUEBASH_INHERITED_ENV_KEYS:-}; do
+                [[ "$env_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+                env_val="${!env_name-}"
+                [[ -n "$env_val" ]] && printf '%s\0' "--setenv=${env_name}=${env_val}"
+            done
+
             [[ -n "$cwd" ]] && printf '%s\0' --working-directory="$cwd"
             [[ -n "$cpu" ]] && printf '%s\0' -p "CPUQuota=${cpu}%"
             [[ -n "$mem" ]] && printf '%s\0' -p "MemoryMax=${mem}"
@@ -1384,6 +1614,382 @@ _queue_show_systemd_metrics_for_job() {
         }
 }
 
+# -------------------------------------------------------------------
+# IPC helpers: env-drop outputs and live stream taps
+# -------------------------------------------------------------------
+_queue_output_env_path(){ local id="$1" root="$(_queue_root)"; printf '%s/outputs/%s.env\n' "$root" "$id"; }
+_queue_stream_fifo_path(){ local id="$1" root="$(_queue_root)"; printf '%s/streams/%s.fifo\n' "$root" "$id"; }
+_queue_stream_pid_path(){ local id="$1" root="$(_queue_root)"; printf '%s/streams/%s.tail.pid\n' "$root" "$id"; }
+_queue_cleanup_stream_fifo(){
+    local id="$1" fifo pidfile pid
+    [[ -z "$id" ]] && return 0
+    fifo="$(_queue_stream_fifo_path "$id")"; pidfile="$(_queue_stream_pid_path "$id")"
+    if [[ -f "$pidfile" ]]; then
+        pid="$(cat "$pidfile" 2>/dev/null || true)"
+        [[ "$pid" =~ ^[0-9]+$ ]] && kill "$pid" >/dev/null 2>&1 || true
+        rm -f -- "$pidfile" 2>/dev/null || true
+    fi
+    rm -f -- "$fifo" 2>/dev/null || true
+}
+_queue_cleanup_stale_ipc(){
+    local root="$(_queue_root)" f base id pid
+    shopt -s nullglob
+    for f in "$root/streams"/*.fifo "$root/streams"/*.tail.pid; do
+        [[ -e "$f" ]] || continue
+        base="$(basename "$f")"; id="${base%.fifo}"; id="${id%.tail.pid}"
+        if [[ ! -f "$root/running/$id.job" ]]; then
+            if [[ "$f" == *.tail.pid ]]; then
+                pid="$(cat "$f" 2>/dev/null || true)"
+                [[ "$pid" =~ ^[0-9]+$ ]] && kill "$pid" >/dev/null 2>&1 || true
+            fi
+            rm -f -- "$f" 2>/dev/null || true
+            echo "FIX removed stale IPC stream file: $f"
+        fi
+    done
+    shopt -u nullglob
+}
+_queue_cleanup_stale_helpers() {
+    local root="$(_queue_root)"
+    local d id
+    shopt -s nullglob
+    for d in "$root/helpers"/*; do
+        [[ -d "$d" ]] || continue
+        id="$(basename "$d")"
+        if [[ ! -f "$root/running/$id.job" ]]; then
+            rm -rf "$d" 2>/dev/null || true
+            echo "FIX removed stale IPC helper dir: $d"
+        fi
+    done
+    shopt -u nullglob
+}
+
+
+_queue_create_stream_fifo_for_job(){ local id="$1" fifo; fifo="$(_queue_stream_fifo_path "$id")"; mkdir -p "$(dirname "$fifo")"; rm -f -- "$fifo" 2>/dev/null || true; mkfifo "$fifo" 2>/dev/null || return 1; printf '%s\n' "$fifo"; }
+_queue_ipc_helper_dir() {
+    local id="$1"
+    local root="$(_queue_root)"
+    printf '%s/helpers/%s/bin\n' "$root" "$id"
+}
+
+_queue_install_ipc_helpers() {
+    local id="$1"
+    local bindir helper
+
+    bindir="$(_queue_ipc_helper_dir "$id")"
+    mkdir -p "$bindir"
+
+    helper="$bindir/queue_output"
+    cat > "$helper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+key="${1:-}"
+value="${2:-}"
+out="${QUEUEBASH_OUTPUT_ENV:-${QUEUEBASH_ENV_OUT:-}}"
+
+if [[ -z "$out" ]]; then
+    echo "queue_output: QUEUEBASH_OUTPUT_ENV is not set; this must run inside a queue job" >&2
+    exit 2
+fi
+
+if [[ -z "$key" || ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "queue_output: invalid key: $key" >&2
+    exit 2
+fi
+
+mkdir -p "$(dirname "$out")"
+printf 'export %s=%q\n' "$key" "$value" >> "$out"
+EOF
+    chmod +x "$helper"
+
+    helper="$bindir/queue_output_file"
+    cat > "$helper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+key="${1:-}"
+path="${2:-}"
+out="${QUEUEBASH_OUTPUT_ENV:-${QUEUEBASH_ENV_OUT:-}}"
+
+if [[ -z "$out" ]]; then
+    echo "queue_output_file: QUEUEBASH_OUTPUT_ENV is not set; this must run inside a queue job" >&2
+    exit 2
+fi
+
+if [[ -z "$key" || ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "queue_output_file: invalid key: $key" >&2
+    exit 2
+fi
+
+if [[ -z "$path" || ! -f "$path" ]]; then
+    echo "queue_output_file: file not found: $path" >&2
+    exit 3
+fi
+
+if ! command -v sha256sum >/dev/null 2>&1; then
+    echo "queue_output_file: sha256sum is required" >&2
+    exit 4
+fi
+
+bytes="$(wc -c < "$path" | tr -d '[:space:]')"
+sha="$(sha256sum -- "$path" | awk '{print $1}')"
+
+if mtime="$(stat -c %Y -- "$path" 2>/dev/null)"; then
+    :
+elif mtime="$(stat -f %m -- "$path" 2>/dev/null)"; then
+    :
+else
+    mtime=0
+fi
+
+mkdir -p "$(dirname "$out")"
+{
+    printf 'export %s=%q\n' "$key" "$path"
+    printf 'export %s_SHA256=%q\n' "$key" "$sha"
+    printf 'export %s_BYTES=%q\n' "$key" "$bytes"
+    printf 'export %s_MTIME=%q\n' "$key" "$mtime"
+} >> "$out"
+EOF
+    chmod +x "$helper"
+
+    helper="$bindir/queue_require_file"
+    cat > "$helper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+key="${1:-}"
+
+if [[ -z "$key" || ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "queue_require_file: invalid key: $key" >&2
+    exit 2
+fi
+
+path_var="$key"
+sha_var="${key}_SHA256"
+bytes_var="${key}_BYTES"
+mtime_var="${key}_MTIME"
+
+path="${!path_var:-}"
+expected_sha="${!sha_var:-}"
+expected_bytes="${!bytes_var:-}"
+expected_mtime="${!mtime_var:-}"
+
+if [[ -z "$path" ]]; then
+    echo "queue_require_file: $path_var is not set" >&2
+    exit 10
+fi
+
+if [[ ! -f "$path" ]]; then
+    echo "queue_require_file: file missing for $path_var: $path" >&2
+    exit 11
+fi
+
+if [[ -n "$expected_bytes" ]]; then
+    actual_bytes="$(wc -c < "$path" | tr -d '[:space:]')"
+    if [[ "$actual_bytes" != "$expected_bytes" ]]; then
+        echo "queue_require_file: byte size mismatch for $path_var: expected=$expected_bytes actual=$actual_bytes path=$path" >&2
+        exit 12
+    fi
+fi
+
+if [[ -n "$expected_sha" ]]; then
+    if ! command -v sha256sum >/dev/null 2>&1; then
+        echo "queue_require_file: sha256sum is required for $path_var validation" >&2
+        exit 13
+    fi
+
+    actual_sha="$(sha256sum -- "$path" | awk '{print $1}')"
+    if [[ "$actual_sha" != "$expected_sha" ]]; then
+        echo "queue_require_file: sha256 mismatch for $path_var: expected=$expected_sha actual=$actual_sha path=$path" >&2
+        exit 14
+    fi
+fi
+
+if [[ -n "$expected_mtime" && "$expected_mtime" != "0" ]]; then
+    if actual_mtime="$(stat -c %Y -- "$path" 2>/dev/null)"; then
+        :
+    elif actual_mtime="$(stat -f %m -- "$path" 2>/dev/null)"; then
+        :
+    else
+        actual_mtime=""
+    fi
+
+    if [[ -n "$actual_mtime" && "$actual_mtime" != "$expected_mtime" ]]; then
+        echo "queue_require_file: mtime mismatch for $path_var: expected=$expected_mtime actual=$actual_mtime path=$path" >&2
+        exit 15
+    fi
+fi
+
+exit 0
+EOF
+    chmod +x "$helper"
+
+    printf '%s\n' "$bindir"
+}
+
+_queue_export_job_ipc_env(){
+    local id="$1" out fifo helper_dir
+    out="$(_queue_output_env_path "$id")"; fifo="$(_queue_stream_fifo_path "$id")"
+
+    helper_dir="$(_queue_install_ipc_helpers "$id")"
+
+    export QUEUEBASH_JOB_ID="$id"
+    export QUEUEBASH_OUTPUT_ENV="$out"
+    export QUEUEBASH_ENV_OUT="$out"
+    export QUEUEBASH_STREAM_FIFO="$fifo"
+    export QUEUEBASH_HELPER_DIR="$helper_dir"
+
+    # Make queue_output available as an external command, not only as a shell
+    # function. systemd-run does not reliably preserve exported bash functions.
+    export PATH="$helper_dir:$PATH"
+
+    mkdir -p "$(dirname "$out")"
+    : > "$out"
+}
+
+queue_output(){
+    local key="${1:-}" value="${2:-}" out="${QUEUEBASH_OUTPUT_ENV:-${QUEUEBASH_ENV_OUT:-}}"
+    [[ -z "$out" ]] && { echo "queue_output: QUEUEBASH_OUTPUT_ENV is not set; this must run inside a queue job" >&2; return 2; }
+    [[ -z "$key" || ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && { echo "queue_output: invalid key: $key" >&2; return 2; }
+    mkdir -p "$(dirname "$out")"; printf 'export %s=%q\n' "$key" "$value" >> "$out"
+}
+_queue_env_drop_job_name_from_file() {
+    local f="$1"
+    local JOB_NAME=""
+    # Job files are generated by queuebash using shell-safe assignments/arrays.
+    # Source in a subshell-safe helper and print only JOB_NAME.
+    (
+        source "$f" >/dev/null 2>&1 || exit 1
+        printf '%s\n' "${JOB_NAME:-}"
+    )
+}
+
+_queue_env_drop_inherit_tokens_from_file() {
+    local f="$1"
+    (
+        source "$f" >/dev/null 2>&1 || exit 1
+        if declare -p INHERIT_ENV_FROM >/dev/null 2>&1; then
+            if declare -p INHERIT_ENV_FROM 2>/dev/null | grep -q '^declare \-[^ ]*a'; then
+                printf '%s\n' "${INHERIT_ENV_FROM[@]}"
+            else
+                printf '%s\n' "${INHERIT_ENV_FROM:-}"
+            fi
+        fi
+    )
+}
+
+_queue_resolve_env_drop_source_qid(){
+    local token="$1"
+    local root="$(_queue_root)"
+    local f name
+    local matches=()
+
+    [[ -z "$token" ]] && return 1
+
+    # Direct QID path.
+    if [[ -f "$root/outputs/$token.env" || -f "$root/done/$token.job" ]]; then
+        printf '%s\n' "$token"
+        return 0
+    fi
+
+    # Name path: inherit only from successful completed jobs.
+    # Sort by filename for deterministic behaviour. If more than one successful
+    # producer has the same name, refuse to guess.
+    shopt -s nullglob
+    for f in "$root/done"/*.job; do
+        [[ -e "$f" ]] || continue
+        name="$(_queue_env_drop_job_name_from_file "$f" 2>/dev/null || true)"
+        if [[ "$name" == "$token" ]]; then
+            matches+=( "$(basename "$f" .job)" )
+        fi
+    done
+    shopt -u nullglob
+
+    if [[ "${#matches[@]}" -eq 1 ]]; then
+        printf '%s\n' "${matches[0]}"
+        return 0
+    fi
+
+    if [[ "${#matches[@]}" -gt 1 ]]; then
+        echo "queue worker: env-drop source name '$token' is ambiguous; use a QID" >&2
+        return 2
+    fi
+
+    return 1
+}
+
+
+_queue_env_drop_keys_from_file() {
+    local env_file="$1"
+    local line key
+    [[ -f "$env_file" ]] || return 0
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        case "$line" in
+            export\ [A-Za-z_]*=*)
+                key="${line#export }"
+                key="${key%%=*}"
+                if [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+                    printf '%s\n' "$key"
+                fi
+                ;;
+        esac
+    done < "$env_file"
+}
+
+_queue_add_inherited_env_key() {
+    local key="$1"
+    local existing
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 0
+
+    for existing in ${QUEUEBASH_INHERITED_ENV_KEYS:-}; do
+        [[ "$existing" == "$key" ]] && return 0
+    done
+
+    export QUEUEBASH_INHERITED_ENV_KEYS="${QUEUEBASH_INHERITED_ENV_KEYS:+$QUEUEBASH_INHERITED_ENV_KEYS }$key"
+}
+
+_queue_source_env_drop_if_requested(){
+    local f="$1"
+    local env_id env_file qid
+    local found_any=0
+
+    while IFS= read -r env_id; do
+        [[ -z "$env_id" ]] && continue
+        found_any=1
+
+        qid="$(_queue_resolve_env_drop_source_qid "$env_id" 2>/dev/null || true)"
+        if [[ -z "$qid" ]]; then
+            echo "queue worker: requested env-drop source is not available: $env_id" >&2
+            continue
+        fi
+
+        env_file="$(_queue_output_env_path "$qid")"
+        if [[ -f "$env_file" ]]; then
+            export QUEUEBASH_INHERITED_ENV_FROM="${QUEUEBASH_INHERITED_ENV_FROM:+$QUEUEBASH_INHERITED_ENV_FROM }$qid"
+
+            local _queue_env_key
+            while IFS= read -r _queue_env_key; do
+                _queue_add_inherited_env_key "$_queue_env_key"
+            done < <(_queue_env_drop_keys_from_file "$env_file")
+
+            # shellcheck disable=SC1090
+            source "$env_file"
+
+            for _queue_env_key in ${QUEUEBASH_INHERITED_ENV_KEYS:-}; do
+                export "$_queue_env_key"
+            done
+        else
+            echo "queue worker: requested env-drop not found: $env_file" >&2
+        fi
+    done < <(_queue_env_drop_inherit_tokens_from_file "$f" 2>/dev/null || true)
+
+    return 0
+}
+
+_queue_stream_job_log_to_fifo(){ local id="$1" log="$2" fifo="$3" pidfile="$4"; ( tail -n 0 -f "$log" > "$fifo" 2>/dev/null ) & printf '%s\n' "$!" > "$pidfile"; }
+
+
 _queue_log_plain_path() {
     local id="$1"
     local root="$(_queue_root)"
@@ -1407,6 +2013,9 @@ _queue_job_stream_temp_cleanup() {
         "$root/logs/.${id}.stdout.suppressed" \
         "$root/logs/.${id}.stderr.suppressed" \
         2>/dev/null || true
+    _queue_cleanup_stream_fifo "$id"
+    _queue_class_release_claims "$id"
+    rm -rf "$root/helpers/$id" 2>/dev/null || true
 }
 
 _queue_cleanup_stale_stream_temps() {
@@ -2148,7 +2757,7 @@ _queue_clean_logs() {
 # -------------------------------------------------------------------
 
 _queue_health_state_dirs() {
-    printf '%s\n' pending running paused done failed interrupted cancelled deleted logs workers
+    printf '%s\n' pending running paused done failed interrupted cancelled deleted logs workers outputs streams
 }
 
 _queue_health_has_command() {
@@ -2527,6 +3136,15 @@ EOF
         echo
         echo "=== stream temp cleanup ==="
         _queue_cleanup_stale_stream_temps || true
+        echo
+        echo "=== IPC stream cleanup ==="
+        _queue_cleanup_stale_ipc || true
+        echo
+        echo "=== IPC helper cleanup ==="
+        _queue_cleanup_stale_helpers || true
+        echo
+        echo "=== class/resource claim cleanup ==="
+        _queue_cleanup_stale_claims || true
     fi
 
     echo
@@ -2761,6 +3379,100 @@ Notes:
 EOF
 }
 
+# -------------------------------------------------------------------
+# Submit-time name binding for env-drop inheritance
+# -------------------------------------------------------------------
+
+_queue_job_name_from_file_source() {
+    local f="$1"
+    (
+        source "$f" >/dev/null 2>&1 || exit 1
+        printf '%s\n' "${JOB_NAME:-}"
+    )
+}
+
+_queue_find_exact_name_qids_in_state() {
+    local name="$1"
+    local state="$2"
+    local root="$(_queue_root)"
+    local f jname
+
+    shopt -s nullglob
+    for f in "$root/$state"/*.job; do
+        [[ -e "$f" ]] || continue
+        jname="$(_queue_job_name_from_file_source "$f" 2>/dev/null || true)"
+        if [[ "$jname" == "$name" ]]; then
+            basename "$f" .job
+        fi
+    done
+    shopt -u nullglob
+}
+
+_queue_bind_submit_reference_to_qid() {
+    local token="$1"
+    local root="$(_queue_root)"
+    local matches=()
+    local qid
+
+    [[ -z "$token" ]] && return 1
+
+    # Already a visible QID.
+    for state in pending running paused done failed interrupted cancelled deleted; do
+        if [[ -f "$root/$state/$token.job" ]]; then
+            printf '%s\n' "$token"
+            return 0
+        fi
+    done
+
+    # Prefer exactly one not-yet-complete/live match. This is the common pipeline:
+    # submit producer; submit consumer --inherit-env-from producer.
+    for state in pending running paused; do
+        while IFS= read -r qid; do
+            [[ -n "$qid" ]] && matches+=( "$qid" )
+        done < <(_queue_find_exact_name_qids_in_state "$token" "$state")
+    done
+
+    if [[ "${#matches[@]}" -eq 1 ]]; then
+        printf '%s\n' "${matches[0]}"
+        return 0
+    fi
+    if [[ "${#matches[@]}" -gt 1 ]]; then
+        echo "queue submit: name '$token' matches multiple pending/running jobs; use a QID" >&2
+        return 2
+    fi
+
+    # If there is no active match, allow exactly one successful historical match.
+    while IFS= read -r qid; do
+        [[ -n "$qid" ]] && matches+=( "$qid" )
+    done < <(_queue_find_exact_name_qids_in_state "$token" "done")
+
+    if [[ "${#matches[@]}" -eq 1 ]]; then
+        printf '%s\n' "${matches[0]}"
+        return 0
+    fi
+    if [[ "${#matches[@]}" -gt 1 ]]; then
+        echo "queue submit: name '$token' matches multiple completed jobs; use a QID" >&2
+        return 2
+    fi
+
+    # No current match. Keep the original token so legacy dependency waiting can
+    # still handle producer submitted later. Env-drop inheritance will resolve at
+    # dispatch if the name becomes unique.
+    printf '%s\n' "$token"
+    return 0
+}
+
+_queue_array_contains() {
+    local needle="$1"
+    shift
+    local x
+    for x in "$@"; do
+        [[ "$x" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
+
 queue() {
     _queue_init
 
@@ -2860,6 +3572,8 @@ queue() {
             local allow_large_log=0
             local log_overflow_policy="${QUEUEBASH_LOG_OVERFLOW_POLICY:-stderr-only}"
             local depends_after_success=()
+            local inherit_env_from=()
+            local job_class=""
             local deps_join=""
             local not_before_epoch="${QUEUEBASH_SUBMIT_NOT_BEFORE_EPOCH:-0}"
             local schedule_label="${QUEUEBASH_SUBMIT_SCHEDULE_LABEL:-}"
@@ -2932,6 +3646,31 @@ queue() {
                     --after-success|--after|--depends-on)
                         [[ -z "$2" ]] && { echo "queue submit: $1 needs a QID or exact job name" >&2; return 2; }
                         depends_after_success+=( "$2" )
+                        shift 2
+                        ;;
+                    --inherit-env-from|--inherit-env)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a source job QID/name" >&2; return 2; }
+
+                        local _raw_inherit _inherit_dep _bound_ref
+                        IFS=',' read -r -a _raw_inherit <<< "$2"
+
+                        for _inherit_dep in "${_raw_inherit[@]}"; do
+                            [[ -z "$_inherit_dep" ]] && continue
+                            _bound_ref="$(_queue_bind_submit_reference_to_qid "$_inherit_dep")" || return 2
+
+                            inherit_env_from+=( "$_bound_ref" )
+
+                            # Env inheritance implies after-success dependency.
+                            # Bind to QID when possible to avoid historical name ambiguity.
+                            if ! _queue_array_contains "$_bound_ref" "${depends_after_success[@]}"; then
+                                depends_after_success+=( "$_bound_ref" )
+                            fi
+                        done
+                        shift 2
+                        ;;
+                    --class|--queue-class)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a class name" >&2; return 2; }
+                        job_class="$2"
                         shift 2
                         ;;
                     --runner)
@@ -3050,9 +3789,13 @@ queue() {
                 printf 'ALLOW_LARGE_LOG=%q\n' "$allow_large_log"
                 printf 'LOG_OVERFLOW_POLICY=%q\n' "$log_overflow_policy"
                 printf 'RUNNER=%q\n' "$runner"
+                [[ -n "$job_class" ]] && printf 'JOB_CLASS=%q\n' "$job_class"
                 if [[ "${#depends_after_success[@]}" -gt 0 ]]; then
                     deps_join="${depends_after_success[*]}"
                     printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$deps_join"
+                fi
+                if [[ "${#inherit_env_from[@]}" -gt 0 ]]; then
+                    printf 'INHERIT_ENV_FROM=%q\n' "${inherit_env_from[*]}"
                 fi
                 printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
                 printf 'PWD_AT_SUBMIT=%q\n' "$PWD"
@@ -3417,6 +4160,87 @@ EOF
             local id
             id="$(basename "$chosen" .job)"
             _queue_tail_log_for_job "$chosen" "$id" "$lines" "$follow" "$from_start"
+            ;;
+
+
+
+        stream)
+            local target="${1:-}"
+            [[ -z "$target" ]] && { echo "Usage: queue stream <running-qid-or-name>" >&2; return 2; }
+            local running_matches=() f state
+            while IFS= read -r f; do state="$(_queue_job_file_state "$f")"; [[ "$state" == "running" ]] && running_matches+=( "$f" ); done < <(_queue_find_jobs "$target")
+            [[ "${#running_matches[@]}" -eq 0 ]] && { echo "queue stream: no running job matches: $target" >&2; return 1; }
+            local chosen=""
+            if [[ "${#running_matches[@]}" -eq 1 ]]; then chosen="${running_matches[0]}"; else
+                echo "Multiple running jobs match '$target':"; local i=1 choice
+                for f in "${running_matches[@]}"; do printf "  [%d] %-40s %s\n" "$i" "$(basename "$f" .job)" "$(_queue_job_name "$f")"; i=$((i+1)); done
+                read -r -p "Select job [1-${#running_matches[@]}]: " choice
+                [[ "$choice" =~ ^[0-9]+$ && "$choice" -ge 1 && "$choice" -le "${#running_matches[@]}" ]] || { echo "queue stream: invalid selection" >&2; return 2; }
+                chosen="${running_matches[$((choice-1))]}"
+            fi
+            local id fifo pidfile log oldpid
+            id="$(basename "$chosen" .job)"; fifo="$(_queue_stream_fifo_path "$id")"; pidfile="$(_queue_stream_pid_path "$id")"; log="$(_queue_log_existing_path "$id")"
+            [[ -p "$fifo" ]] || mkfifo "$fifo"
+            if [[ -f "$pidfile" ]]; then oldpid="$(cat "$pidfile" 2>/dev/null || true)"; [[ "$oldpid" =~ ^[0-9]+$ ]] && kill "$oldpid" >/dev/null 2>&1 || true; rm -f -- "$pidfile" 2>/dev/null || true; fi
+            _queue_stream_job_log_to_fifo "$id" "$log" "$fifo" "$pidfile"
+            echo "=== streaming FIFO tap: $fifo ==="
+            cat "$fifo"
+            ;;
+
+
+        class|classes)
+            local action="${1:-list}"
+            local root="$(_queue_root)"
+            case "$action" in
+                list|"")
+                    echo "=== queue classes ==="
+                    mkdir -p "$root/classes"
+                    local cf
+                    shopt -s nullglob
+                    for cf in "$root/classes"/*.env; do
+                        basename "$cf" .env
+                    done
+                    shopt -u nullglob
+                    ;;
+                show)
+                    local cname="${2:-}"
+                    [[ -z "$cname" ]] && { echo "Usage: queue class show <class>" >&2; return 2; }
+                    local cfile
+                    cfile="$(_queue_class_file "$cname")"
+                    [[ -f "$cfile" ]] || { echo "queue class: not found: $cname ($cfile)" >&2; return 1; }
+                    echo "=== class: $cname ==="
+                    echo "file: $cfile"
+                    cat "$cfile"
+                    ;;
+                init)
+                    local cname="${2:-}"
+                    [[ -z "$cname" ]] && { echo "Usage: queue class init <class>" >&2; return 2; }
+                    local cfile
+                    cfile="$root/classes/$cname.env"
+                    [[ -e "$cfile" ]] && { echo "queue class: already exists: $cfile" >&2; return 1; }
+                    cat > "$cfile" <<'EOF'
+# bashqueues class definition
+CLASS_ALLOW_PARALLEL=1
+CLASS_MAX_CONCURRENT=0
+CLASS_SHARED_ASSETS=""
+CLASS_EXCLUSIVE_ASSETS=""
+EOF
+                    echo "Created $cfile"
+                    ;;
+                *)
+                    echo "Usage: queue class list|show <class>|init <class>" >&2
+                    return 2
+                    ;;
+            esac
+            ;;
+
+        claims|resources)
+            local root="$(_queue_root)"
+            echo "=== class claims ==="
+            find "$root/claims/classes" -mindepth 1 -maxdepth 1 -type d -name '*.claim' -printf '%f\n' 2>/dev/null | sort
+            echo
+            echo "=== asset claims ==="
+            find "$root/claims/assets" -mindepth 1 -maxdepth 1 -type d -name '*.claim' -printf '%f\n' 2>/dev/null | sort
             ;;
 
 
@@ -4319,17 +5143,32 @@ _queue_worker() {
             continue
         fi
 
+        if ! _queue_class_claim_job "$running" "$id"; then
+            mv "$running" "$root/pending/$id.job" 2>/dev/null || true
+            _queue_log_event "class_blocked" "$id" "$(_queue_job_name "$root/pending/$id.job" 2>/dev/null || echo "-")" "pending" "worker=$worker_id"
+            continue
+        fi
+
         echo "[worker $worker_id] running $id"
         _queue_log_event "started" "$id" "$(_queue_job_name "$running")" "running" "worker=$worker_id"
 
         (
             source "$running"
             cd "$PWD_AT_SUBMIT" || exit 98
+            _queue_source_env_drop_if_requested "$running"
+            _queue_export_job_ipc_env "$JOB_ID"
+            export -f queue_output 2>/dev/null || true
+            stream_public_fifo="$(_queue_create_stream_fifo_for_job "$JOB_ID" 2>/dev/null || true)"
 
             {
                 echo "=== queue job $JOB_ID : $JOB_NAME ==="
                 echo "started: $(date -Is)"
                 echo "pwd: $PWD"
+                echo "output_env: ${QUEUEBASH_OUTPUT_ENV:-}"
+                echo "helper_dir: ${QUEUEBASH_HELPER_DIR:-}"
+                [[ -n "${QUEUEBASH_INHERITED_ENV_FROM:-}" ]] && echo "inherited_env_from: ${QUEUEBASH_INHERITED_ENV_FROM:-}"
+                [[ -n "${QUEUEBASH_INHERITED_ENV_KEYS:-}" ]] && echo "inherited_env_keys: ${QUEUEBASH_INHERITED_ENV_KEYS:-}"
+                [[ -n "${stream_public_fifo:-}" ]] && echo "stream_fifo: $stream_public_fifo"
                 printf "command:"
                 printf " %q" "${COMMAND[@]}"
                 echo
@@ -4383,6 +5222,8 @@ _queue_worker() {
                     printf 'RUN_PID=%q\n' "$cmd_pid"
                     printf 'RUN_PGID=%q\n' "$cmd_pgid"
                     printf 'RUN_STARTED_AT=%q\n' "$(date -Is)"
+                    [[ -n "${QUEUEBASH_INHERITED_ENV_FROM:-}" ]] && printf 'QUEUEBASH_INHERITED_ENV_FROM=%q\n' "$QUEUEBASH_INHERITED_ENV_FROM"
+                    [[ -n "${QUEUEBASH_INHERITED_ENV_KEYS:-}" ]] && printf 'QUEUEBASH_INHERITED_ENV_KEYS=%q\n' "$QUEUEBASH_INHERITED_ENV_KEYS"
                 } >> "$running"
 
                 _queue_log_worker_record "$use_stream_logger" "$log" "run_pid: $cmd_pid" "run_pgid: $cmd_pgid"
@@ -4434,6 +5275,7 @@ _queue_worker() {
             if [[ -f "$running" ]]; then
                 _queue_append_summary_to_job "$running" 0 "$log"
                 mv "$running" "$done"
+                _queue_job_stream_temp_cleanup "$id"
                 _queue_log_event "done" "$id" "$(_queue_job_name "$done")" "done" "exit_code=0"
                 echo "[worker $worker_id] done $id"
 
@@ -4498,6 +5340,7 @@ _queue_worker() {
                     _queue_clone_retry_to_pending "$running" "$retry_id" "$retry_done_new" "$not_before"
                     _queue_append_summary_to_job "$running" "$rc" "$log"
                     mv "$running" "$failed"
+                    _queue_job_stream_temp_cleanup "$id"
                     _queue_log_event "retry_scheduled" "$retry_id" "$(_queue_job_name "$root/pending/$retry_id.job")" "pending" "from=$id attempt=$retry_done_new backoff=$retry_backoff exit_code=$rc"
                     _queue_log_event "failed_retrying" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc retry=$retry_id"
                     echo "[worker $worker_id] failed $id rc=$rc; scheduled retry $retry_id attempt $retry_done_new after ${retry_backoff}s"
@@ -4507,6 +5350,7 @@ _queue_worker() {
 
                 _queue_append_summary_to_job "$running" "$rc" "$log"
                 mv "$running" "$failed"
+                _queue_job_stream_temp_cleanup "$id"
                 _queue_log_event "failed" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc"
                 echo "[worker $worker_id] failed $id rc=$rc"
 
@@ -4695,7 +5539,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit submit-at submit-in list ls find show explain deps dependencies waiting blocked scheduled schedule tail follow pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V help --help -h"
+    local commands="--dryrun -n submit submit-at submit-in list ls find show explain deps dependencies waiting blocked scheduled schedule tail stream follow class classes claims resources pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
@@ -4712,7 +5556,7 @@ _queue_complete() {
                 COMPREPLY=( $(compgen -c -- "$cur") )
                 return 0
             fi
-            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --runner --after-success --after --depends-on --max-log-size --allow-large-log --no-log-cap --on-success --on-retry-failure --on-attempt-failure --on-failure --" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --runner --class --queue-class --after-success --after --depends-on --max-log-size --allow-large-log --no-log-cap --on-success --on-retry-failure --on-attempt-failure --on-failure --" -- "$cur") )
             COMPREPLY+=( $(compgen -c -- "$cur") )
             COMPREPLY+=( $(compgen -f -- "$cur") )
             return 0
