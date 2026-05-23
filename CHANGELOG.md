@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.13.1
+
+- Harden asset/class refresh dispatch.
+- Add unambiguous top-level `queue asset-refresh <directory>` and `queue class-refresh <directory>` aliases.
+- QueueManager Assets menu now calls `queue asset-refresh` directly so plugin refresh cannot route through class refresh.
+- Add regression coverage proving `queue assets refresh` and QueueManager-equivalent asset refresh do not call class refresh.
+
+
+## 0.13.0
+
+- Fix `queue assets refresh <directory>` dispatch so it calls asset plugin refresh, not class refresh.
+- Repair corrupted `queue assets refresh: directory not found` error text caused by help-string injection.
+- Ensure bundled `runnable:path_safe` is published by refreshed runnable asset helpers.
+- Update bundled `REXX_RUNAWAY` path_safe check to use an absolute target based on `QUEUEBASH_REXX_CWD`.
+
+
 ## 0.12.9
 
 - Add `queue history <job-id|name>` to show lifecycle events, exit codes, logs, resubmit links, and class/cap details for a job chain.

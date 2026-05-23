@@ -1712,3 +1712,34 @@ queue history <job-id|name>
 ```
 
 `queue explain <job>` includes a compact History section and points to the full command.
+
+
+## Asset refresh dispatcher fix
+
+`queue assets refresh ./assets.d` refreshes asset helpers from a directory of `.sh` plugin files. It must route to the asset plugin refresher, not class refresh.
+
+Use after installing patched bundled helpers:
+
+```bash
+queue assets refresh ./assets.d
+queue assets validate
+queue assets explain runnable:path_safe
+queue asset-hint runnable:path_safe
+```
+
+
+## Unambiguous refresh aliases
+
+For scriptable use and QueueManager internals, bashqueues provides direct refresh aliases:
+
+```bash
+queue asset-refresh ./assets.d
+queue class-refresh ./classes
+```
+
+The older grouped commands remain valid:
+
+```bash
+queue assets refresh ./assets.d
+queue classes refresh ./classes
+```

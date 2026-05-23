@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.12.9"
+QUEUEBASH_VERSION="0.13.1"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1205,9 +1205,7 @@ _queue_asset_family_is_used_by_classes() {
 
 _queue_asset_refresh_from_dir() {
     local src_dir="$1" plugin family rc=0
-    [[ -n "$src_dir" && -d "$src_dir" ]] || { echo "queue assets
-  queue asset-hints
-  queue asset-hint <facility> refresh: directory not found: $src_dir" >&2; return 2; }
+    [[ -n "$src_dir" && -d "$src_dir" ]] || { echo "queue assets refresh: directory not found: $src_dir" >&2; return 2; }
     shopt -s nullglob
     for plugin in "$src_dir"/*.sh; do
         [[ -f "$plugin" ]] || continue
@@ -6415,6 +6413,18 @@ EOF
             ;;
 
 
+        asset-refresh)
+            local src_dir="${1:-}"
+            [[ -n "$src_dir" ]] || { echo "Usage: queue asset-refresh <directory>" >&2; return 2; }
+            _queue_asset_refresh_from_dir "$src_dir"
+            ;;
+
+        class-refresh)
+            local src_dir="${1:-}"
+            [[ -n "$src_dir" ]] || { echo "Usage: queue class-refresh <directory>" >&2; return 2; }
+            _queue_class_refresh_from_dir "$src_dir"
+            ;;
+
         assets|facilities)
             local action="${1:-list}"
             case "$action" in
@@ -6463,10 +6473,7 @@ EOF
                     echo "=== duplicate asset facility publishers ==="
                     _queue_asset_scan_duplicate_publishers
                     ;;
-                refresh)
-            _queue_classes_refresh "$@"
-            ;;
-        replace)
+                replace)
                     local family="${2:-}"
                     local src="${3:-}"
                     local force=0
