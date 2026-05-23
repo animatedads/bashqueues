@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.8.7"
+QUEUEBASH_VERSION="0.8.8"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1268,6 +1268,51 @@ _queue_limit_status_text() {
         echo "requested-but-not-enforced-systemd-run-user-service-pipe-unavailable"
     fi
 }
+
+_queue_auto_required_file_keys_from_env() {
+    local var base bytes_var sha_var
+
+    # Any inherited variable with KEY_SHA256 and KEY_BYTES metadata is treated
+    # as a file hand-off that must be validated before payload launch.
+    for var in ${QUEUEBASH_INHERITED_ENV_KEYS:-}; do
+        case "$var" in
+            *_SHA256)
+                base="${var%_SHA256}"
+                bytes_var="${base}_BYTES"
+                sha_var="${base}_SHA256"
+                if [[ "$base" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && [[ -n "${!base-}" ]] && [[ -n "${!bytes_var-}" ]] && [[ -n "${!sha_var-}" ]]; then
+                    printf '%s\n' "$base"
+                fi
+                ;;
+        esac
+    done | sort -u
+}
+
+_queue_preflight_auto_required_files() {
+    local key rc any=0
+
+    while IFS= read -r key; do
+        [[ -z "$key" ]] && continue
+        any=1
+        echo "preflight_require_file: $key"
+
+        queue_require_file "$key"
+        rc="$?"
+        if [[ "$rc" -ne 0 ]]; then
+            echo "preflight_require_file_failed: $key rc=$rc"
+            return "$rc"
+        fi
+
+        echo "preflight_require_file_ok: $key"
+    done < <(_queue_auto_required_file_keys_from_env)
+
+    if [[ "$any" -eq 1 ]]; then
+        echo "preflight_require_file_complete"
+    fi
+
+    return 0
+}
+
 
 _queue_build_payload_command() {
     # Prints NUL-separated argv for the actual process to spawn.
@@ -5168,6 +5213,8 @@ _queue_worker() {
                 echo "helper_dir: ${QUEUEBASH_HELPER_DIR:-}"
                 [[ -n "${QUEUEBASH_INHERITED_ENV_FROM:-}" ]] && echo "inherited_env_from: ${QUEUEBASH_INHERITED_ENV_FROM:-}"
                 [[ -n "${QUEUEBASH_INHERITED_ENV_KEYS:-}" ]] && echo "inherited_env_keys: ${QUEUEBASH_INHERITED_ENV_KEYS:-}"
+                auto_required_file_keys="$(_queue_auto_required_file_keys_from_env | xargs echo 2>/dev/null || true)"
+                [[ -n "$auto_required_file_keys" ]] && echo "auto_required_files: $auto_required_file_keys"
                 [[ -n "${stream_public_fifo:-}" ]] && echo "stream_fifo: $stream_public_fifo"
                 printf "command:"
                 printf " %q" "${COMMAND[@]}"
@@ -5183,6 +5230,14 @@ _queue_worker() {
                     if [[ "$limit_status" != "systemd-run-user-service-pipe" ]]; then
                         echo "WARNING: resource limits were requested but are NOT enforced in this shell/session."
                     fi
+                fi
+
+                _queue_preflight_auto_required_files
+                preflight_rc="$?"
+                if [[ "$preflight_rc" -ne 0 ]]; then
+                    echo
+                    echo "PRE_FLIGHT_REQUIRE_FILE_FAILED: exit_code=$preflight_rc"
+                    exit "$preflight_rc"
                 fi
 
                 runner_used="$(_queue_runner_for_job "${RUNNER:-${QUEUEBASH_RUNNER:-auto}}" "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")"

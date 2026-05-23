@@ -1209,3 +1209,20 @@ queue_require_file RESULT_PATH
 Use `bash -e` or `queue_require_file RESULT_PATH || exit $?` in consumers so validation failure stops the payload.
 
 See `docs/IPC.md`.
+
+
+## Automatic pre-flight checksum validation
+
+Consumers do not need an extra `--require-file` flag. If a producer uses:
+
+```bash
+queue_output_file RESULT_PATH /tmp/result.txt
+```
+
+then any consumer using:
+
+```bash
+queue submit consumer --inherit-env-from producer -- ./consume.sh
+```
+
+automatically validates `RESULT_PATH` before the payload starts.
