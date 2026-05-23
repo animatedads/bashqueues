@@ -39,7 +39,7 @@ queue_asset_check_db_postgres_connect() {
     shift 2 || true
 
     local host port user password db_name timeout query result
-    
+
     host="$(queue_asset_param host "$@" || echo 'localhost')"
     port="$(queue_asset_param port "$@" || echo 5432)"
     user="$(queue_asset_param user "$@" || echo 'postgres')"
@@ -64,13 +64,13 @@ queue_asset_check_db_postgres_connect() {
 
     # Build psql command
     local psql_opts="-h $host -p $port -U $user -d $db_name -w --no-password -c \"$query\" -t"
-    
+
     if [[ -n "$password" ]]; then
         PGPASSWORD="$password" timeout "$timeout" psql $psql_opts >/dev/null 2>&1
     else
         timeout "$timeout" psql $psql_opts >/dev/null 2>&1
     fi
-    
+
     if [[ $? -eq 0 ]]; then
         echo "asset_check_ok: db:postgres_connect $host:$port/$db_name"
         return 0
@@ -86,7 +86,7 @@ queue_asset_check_db_mysql_connect() {
     shift 2 || true
 
     local host port user password db_name timeout query
-    
+
     host="$(queue_asset_param host "$@" || echo 'localhost')"
     port="$(queue_asset_param port "$@" || echo 3306)"
     user="$(queue_asset_param user "$@" || echo 'root')"
@@ -111,13 +111,13 @@ queue_asset_check_db_mysql_connect() {
 
     # Build mysql command
     local mysql_opts="-h $host -P $port -u $user -D $db_name"
-    
+
     if [[ -n "$password" ]]; then
         mysql_opts="$mysql_opts -p$password"
     fi
 
     timeout "$timeout" mysql $mysql_opts -e "$query" >/dev/null 2>&1
-    
+
     if [[ $? -eq 0 ]]; then
         echo "asset_check_ok: db:mysql_connect $host:$port/$db_name"
         return 0
@@ -133,7 +133,7 @@ queue_asset_check_db_sqlite_accessible() {
     shift 2 || true
 
     local timeout query
-    
+
     timeout="$(queue_asset_param timeout "$@" || echo 5)"
     query="$(queue_asset_param query "$@" || echo 'SELECT 1')"
 
@@ -154,7 +154,7 @@ queue_asset_check_db_sqlite_accessible() {
 
     # Test sqlite3 connectivity with timeout
     timeout "$timeout" sqlite3 "$db_path" "$query" >/dev/null 2>&1
-    
+
     if [[ $? -eq 0 ]]; then
         echo "asset_check_ok: db:sqlite_accessible $db_path"
         return 0
@@ -170,7 +170,7 @@ queue_asset_check_db_redis_connect() {
     shift 2 || true
 
     local host port password timeout key_check require_key
-    
+
     host="$(queue_asset_param host "$@" || echo 'localhost')"
     port="$(queue_asset_param port "$@" || echo 6379)"
     password="$(queue_asset_param password "$@" || echo '')"
@@ -199,7 +199,7 @@ queue_asset_check_db_redis_connect() {
 
     # Test basic connectivity
     timeout "$timeout" redis-cli $redis_opts ping >/dev/null 2>&1
-    
+
     if [[ $? -ne 0 ]]; then
         echo "asset_check_blocked: db:redis_connect failed to connect to $host:$port (timeout=${timeout}s)"
         return 1
@@ -224,7 +224,7 @@ queue_asset_check_db_mongodb_connect() {
     shift 2 || true
 
     local host port user password auth_db db_name timeout query
-    
+
     host="$(queue_asset_param host "$@" || echo 'localhost')"
     port="$(queue_asset_param port "$@" || echo 27017)"
     user="$(queue_asset_param user "$@" || echo '')"
@@ -267,19 +267,19 @@ queue_asset_check_db_mongodb_connect() {
         mongosh_uri="${mongosh_uri}${user}:${password}@"
     fi
     mongosh_uri="${mongosh_uri}${host}:${port}/${db_name}"
-    
+
     if [[ -n "$auth_db" && -n "$user" ]]; then
         mongosh_uri="${mongosh_uri}?authSource=${auth_db}"
     fi
 
     # Test connectivity using mongosh (or mongo for older versions)
     timeout "$timeout" mongosh "$mongosh_uri" --eval "db.adminCommand({ping: 1})" >/dev/null 2>&1
-    
+
     # Fallback to older 'mongo' client if mongosh not available
     if [[ $? -ne 0 ]]; then
         timeout "$timeout" mongo "$mongosh_uri" --eval "db.adminCommand({ping: 1})" >/dev/null 2>&1
     fi
-    
+
     if [[ $? -eq 0 ]]; then
         echo "asset_check_ok: db:mongodb_connect $host:$port/$db_name"
         return 0

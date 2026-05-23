@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.9.6
+
+- Add `queue assets refresh`, archival `delete`, `undelete`, `archives`, and `explain`.
+- Delete refuses while classes reference the asset family.
+- Add `tests/classes_asset_refresh_delete_explain.sh`.
+
+
+## 0.9.5
+
+- Add transactional asset plugin replacement: `queue assets replace <family> <plugin.sh> [--force]`.
+- Add rollback support: `queue assets rollback <family> [backup-file]`.
+- Add backup listing: `queue assets backups [family]`.
+- Replacement validates shell syntax, helper contract, and that the plugin publishes the requested family before replacing.
+- Existing plugins are backed up under `~/.queuebash/assets.d/.backup/` and replacements are installed with atomic rename.
+- Add `tests/classes_asset_replace_rollback.sh`.
+
+
+## 0.9.4
+
+- De-duplicate `queue assets` output by published facility name.
+- Add `queue assets duplicates` / `queue assets dupes` to report duplicate facility publishers.
+- Helps clean up legacy `network.sh`/`system.sh` helpers after the family-aligned rename to `net.sh`/`sys.sh`.
+
+
 ## 0.9.3
 
 - Add bundled external asset plugins `assets.d/net.sh` and `assets.d/sys.sh`.

@@ -263,3 +263,84 @@ CLASS_EXCLUSIVE_ASSETS="net:interface_state:tun0"
 CLASS_SHARED_ASSETS="sys:memory_available:0:min_gb=8"
 CLASS_SHARED_ASSETS="sys:cpu_load:0:max_load_1m=4.0"
 ```
+
+
+## Duplicate asset publishers
+
+`queue assets` de-duplicates by facility name, so legacy/helper duplicates do not clutter the normal list.
+
+To find duplicates:
+
+```bash
+queue assets duplicates
+```
+
+After the family-aligned rename, old files such as these can be removed if they only duplicate the bundled helpers:
+
+```bash
+rm ~/.queuebash/assets.d/network.sh ~/.queuebash/assets.d/system.sh
+```
+
+The active family-aligned helpers are:
+
+```text
+~/.queuebash/assets.d/net.sh
+~/.queuebash/assets.d/sys.sh
+```
+
+
+## Replacing and rolling back asset plugins
+
+Asset plugins can be replaced transactionally.
+
+```bash
+queue assets replace net ./net.sh
+```
+
+Replacement process:
+
+```text
+1. validate shell syntax with bash -n
+2. validate published-facility contract
+3. verify the plugin publishes at least one facility for the requested family
+4. back up the existing ~/.queuebash/assets.d/<family>.sh
+5. atomically move the replacement into place
+```
+
+Backups are stored under:
+
+```text
+~/.queuebash/assets.d/.backup/
+```
+
+Rollback:
+
+```bash
+queue assets rollback net
+```
+
+or restore a specific backup:
+
+```bash
+queue assets rollback net ~/.queuebash/assets.d/.backup/net.20260523_120000_000000000.sh
+```
+
+List backups:
+
+```bash
+queue assets backups
+queue assets backups net
+```
+
+Force mode exists for emergency use, but should be avoided:
+
+```bash
+queue assets replace net ./net.sh --force
+```
+
+Force still checks shell syntax, but skips contract validation.
+
+
+## Refreshing, deleting, and explaining asset plugins
+
+Use `queue assets refresh <dir>`, `delete <family>`, `undelete <family>`, `archives [family]`, and `explain <family|family:check>` for managed plugin lifecycle.

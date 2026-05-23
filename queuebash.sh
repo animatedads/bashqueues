@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.9.3"
+QUEUEBASH_VERSION="0.9.6"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -802,6 +802,316 @@ _queue_asset_facility_is_published() {
     return 1
 }
 
+
+_queue_asset_family_valid_name() {
+    local family="$1"
+    [[ "$family" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
+}
+
+
+_queue_asset_archive_dir() { printf '%s\n' "$(_queue_root)/assets.d/.archive"; }
+
+_queue_asset_family_is_used_by_classes() {
+    local family="$1" root="$(_queue_root)" classfile asset
+    shopt -s nullglob
+    for classfile in "$root/classes"/*.env; do
+        [[ -f "$classfile" ]] || continue
+        (
+            CLASS_SHARED_ASSETS=""; CLASS_EXCLUSIVE_ASSETS=""; CLASS_ASSETS=""
+            source "$classfile" >/dev/null 2>&1 || exit 0
+            for asset in ${CLASS_SHARED_ASSETS:-${CLASS_ASSETS:-}} ${CLASS_EXCLUSIVE_ASSETS:-}; do
+                case "$asset" in "$family":*|"${family}") echo "$classfile:$asset" ;; esac
+            done
+        )
+    done
+    shopt -u nullglob
+}
+
+_queue_asset_refresh_from_dir() {
+    local src_dir="$1" plugin family rc=0
+    [[ -n "$src_dir" && -d "$src_dir" ]] || { echo "queue assets refresh: directory not found: $src_dir" >&2; return 2; }
+    shopt -s nullglob
+    for plugin in "$src_dir"/*.sh; do
+        [[ -f "$plugin" ]] || continue
+        family="$(basename "$plugin" .sh)"
+        echo "Refreshing asset plugin family=$family source=$plugin"
+        _queue_asset_replace_plugin "$family" "$plugin" 0 || rc=1
+    done
+    shopt -u nullglob
+    return "$rc"
+}
+
+_queue_asset_delete_plugin() {
+    local family="$1" root dst archive_dir ts archive meta used
+    _queue_asset_family_valid_name "$family" || { echo "queue assets delete: invalid family: $family" >&2; return 2; }
+    used="$(_queue_asset_family_is_used_by_classes "$family")"
+    if [[ -n "$used" ]]; then
+        echo "queue assets delete: refusing to archive plugin because family is used by classes:" >&2
+        echo "$used" >&2
+        echo "Remove or change those class assets first." >&2
+        return 3
+    fi
+    root="$(_queue_root)"; dst="$root/assets.d/$family.sh"
+    [[ -f "$dst" ]] || { echo "queue assets delete: plugin not found: $dst" >&2; return 1; }
+    archive_dir="$(_queue_asset_archive_dir)"; mkdir -p "$archive_dir"
+    ts="$(date +%Y%m%d_%H%M%S_%N)"
+    archive="$archive_dir/${family}.${ts}.sh"; meta="$archive_dir/${family}.${ts}.meta"
+    mv "$dst" "$archive" || return 1
+    { printf 'family=%q\n' "$family"; printf 'archive=%q\n' "$archive"; printf 'original=%q\n' "$dst"; printf 'archived_at=%q\n' "$(date -Is)"; } > "$meta"
+    echo "Archived asset plugin: $dst"
+    echo "Archive: $archive"
+    _queue_log_event "asset_plugin_archived" "$family" "$family" "assets" "path=$dst archive=$archive" 2>/dev/null || true
+}
+
+_queue_asset_latest_archive_for_family() {
+    local family="$1" archive_dir="$(_queue_asset_archive_dir)"
+    ls -1t "$archive_dir/${family}".*.sh 2>/dev/null | head -1 || true
+}
+
+_queue_asset_undelete_plugin() {
+    local family="$1" archive="${2:-}" root dst tmp
+    _queue_asset_family_valid_name "$family" || { echo "queue assets undelete: invalid family: $family" >&2; return 2; }
+    root="$(_queue_root)"; dst="$root/assets.d/$family.sh"
+    [[ -n "$archive" ]] || archive="$(_queue_asset_latest_archive_for_family "$family")"
+    [[ -n "$archive" && -f "$archive" ]] || { echo "queue assets undelete: no archived plugin found for family: $family" >&2; return 1; }
+    [[ ! -e "$dst" ]] || { echo "queue assets undelete: active plugin already exists: $dst" >&2; return 3; }
+    _queue_asset_replace_validate_source "$family" "$archive" || return 4
+    tmp="$root/assets.d/.${family}.undelete.$$"
+    cp "$archive" "$tmp" || { rm -f "$tmp"; return 1; }
+    chmod +x "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+    echo "Restored archived asset plugin: $dst"
+    echo "Restored from: $archive"
+    _queue_log_event "asset_plugin_undeleted" "$family" "$family" "assets" "path=$dst archive=$archive" 2>/dev/null || true
+}
+
+_queue_asset_list_archives() {
+    local family="${1:-}" archive_dir="$(_queue_asset_archive_dir)"
+    mkdir -p "$archive_dir"
+    if [[ -n "$family" ]]; then ls -1t "$archive_dir/${family}".*.sh 2>/dev/null || true; else ls -1t "$archive_dir"/*.sh 2>/dev/null || true; fi
+}
+
+_queue_asset_explain() {
+    local subject="$1" family check helper func used dupes archived backups
+    [[ -n "$subject" ]] || { echo "Usage: queue assets explain <family|family:check>" >&2; return 2; }
+    if [[ "$subject" == *:* ]]; then family="${subject%%:*}"; check="${subject#*:}"; else family="$subject"; check=""; fi
+    _queue_asset_family_valid_name "$family" || { echo "queue assets explain: invalid family: $family" >&2; return 2; }
+    helper="$(_queue_asset_helper_path "$family")"
+    echo "============================================================================="
+    echo "ASSET EXPLAIN: $subject"
+    echo "============================================================================="
+    echo "family:              $family"
+    [[ -n "$check" ]] && echo "facility:            $family:$check"
+    echo "active helper:       $helper"
+    if [[ -f "$helper" ]]; then
+        echo "active helper exists: yes"; echo; echo "Published facilities:"
+        ( source "$helper" >/dev/null 2>&1 && declare -F queue_asset_facilities >/dev/null 2>&1 && queue_asset_facilities ) || echo "  none"
+        echo; echo "Contract:"; _queue_asset_contract_validate_helper "$helper" strict || true
+    else
+        echo "active helper exists: no"
+    fi
+    if [[ -n "$check" ]]; then func="$(_queue_asset_check_function_name "$family" "$check")"; echo; echo "Resolved check function:"; echo "  $func"; fi
+    echo; echo "Class usage:"; used="$(_queue_asset_family_is_used_by_classes "$family" || true)"; [[ -n "$used" ]] && echo "$used" || echo "  none"
+    echo; echo "Duplicate publishers:"; dupes="$(_queue_asset_scan_duplicate_publishers | awk -v fam="$family" -F '\t' '$1 ~ "^" fam ":" {print}' || true)"; [[ -n "$dupes" ]] && echo "$dupes" || echo "  none"
+    echo; echo "Backups:"; backups="$(_queue_asset_list_backups "$family" || true)"; [[ -n "$backups" ]] && echo "$backups" || echo "  none"
+    echo; echo "Archives:"; archived="$(_queue_asset_list_archives "$family" || true)"; [[ -n "$archived" ]] && echo "$archived" || echo "  none"
+    return 0
+}
+
+_queue_asset_replace_backup_dir() {
+    printf '%s\n' "$(_queue_root)/assets.d/.backup"
+}
+
+_queue_asset_replace_validate_source() {
+    local family="$1"
+    local src="$2"
+    local tmpdir tmp helper_rc
+
+    _queue_asset_family_valid_name "$family" || { echo "queue assets replace: invalid family: $family" >&2; return 2; }
+    [[ -f "$src" ]] || { echo "queue assets replace: source plugin not found: $src" >&2; return 2; }
+
+    tmpdir="$(mktemp -d)"
+    tmp="$tmpdir/$family.sh"
+    cp "$src" "$tmp" || { rm -rf "$tmpdir"; return 1; }
+
+    # Syntax validation first.
+    if ! bash -n "$tmp"; then
+        echo "queue assets replace: syntax validation failed: $src" >&2
+        rm -rf "$tmpdir"
+        return 3
+    fi
+
+    # Contract validation against the temporary helper.
+    _queue_asset_contract_validate_helper "$tmp" quiet >/dev/null
+    helper_rc="$?"
+    if [[ "$helper_rc" -ne 0 ]]; then
+        echo "queue assets replace: contract validation failed: $src" >&2
+        _queue_asset_contract_validate_helper "$tmp" strict >&2 || true
+        rm -rf "$tmpdir"
+        return 4
+    fi
+
+    # Require at least one facility for this family to prevent accidentally
+    # installing a sys plugin as net.sh, etc.
+    (
+        source "$tmp" >/dev/null 2>&1 || exit 1
+        queue_asset_facilities | awk '{print $1}' | grep -Eq "^${family}:"
+    )
+    helper_rc="$?"
+    if [[ "$helper_rc" -ne 0 ]]; then
+        echo "queue assets replace: plugin does not publish any ${family}: facilities: $src" >&2
+        rm -rf "$tmpdir"
+        return 5
+    fi
+
+    rm -rf "$tmpdir"
+    return 0
+}
+
+_queue_asset_replace_plugin() {
+    local family="$1"
+    local src="$2"
+    local force="${3:-0}"
+    local root dst backup_dir ts backup tmp meta
+
+    _queue_asset_family_valid_name "$family" || { echo "queue assets replace: invalid family: $family" >&2; return 2; }
+    [[ -f "$src" ]] || { echo "queue assets replace: source plugin not found: $src" >&2; return 2; }
+
+    if [[ "$force" != "1" ]]; then
+        _queue_asset_replace_validate_source "$family" "$src" || return "$?"
+    else
+        bash -n "$src" || return 3
+        echo "queue assets replace: WARNING force mode skipped contract validation" >&2
+    fi
+
+    root="$(_queue_root)"
+    mkdir -p "$root/assets.d"
+    backup_dir="$(_queue_asset_replace_backup_dir)"
+    mkdir -p "$backup_dir"
+
+    dst="$root/assets.d/$family.sh"
+    ts="$(date +%Y%m%d_%H%M%S_%N)"
+    backup="$backup_dir/${family}.${ts}.sh"
+    tmp="$root/assets.d/.${family}.new.$$"
+    meta="$backup_dir/${family}.${ts}.meta"
+
+    if [[ -e "$dst" ]]; then
+        cp -p "$dst" "$backup" || return 1
+        {
+            printf 'family=%q\n' "$family"
+            printf 'backup=%q\n' "$backup"
+            printf 'original=%q\n' "$dst"
+            printf 'replaced_at=%q\n' "$(date -Is)"
+            printf 'source=%q\n' "$src"
+        } > "$meta"
+    else
+        {
+            printf 'family=%q\n' "$family"
+            printf 'backup=%q\n' ""
+            printf 'original=%q\n' "$dst"
+            printf 'replaced_at=%q\n' "$(date -Is)"
+            printf 'source=%q\n' "$src"
+            printf 'created_new=1\n'
+        } > "$meta"
+    fi
+
+    cp "$src" "$tmp" || { rm -f "$tmp"; return 1; }
+    chmod +x "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+
+    echo "Replaced asset plugin: $dst"
+    if [[ -f "$backup" ]]; then
+        echo "Backup: $backup"
+    else
+        echo "Backup: none (new plugin)"
+    fi
+
+    _queue_log_event "asset_plugin_replaced" "$family" "$family" "assets" "path=$dst backup=$backup source=$src" 2>/dev/null || true
+}
+
+_queue_asset_latest_backup_for_family() {
+    local family="$1"
+    local backup_dir="$(_queue_asset_replace_backup_dir)"
+    ls -1t "$backup_dir/${family}".*.sh 2>/dev/null | head -1
+}
+
+_queue_asset_rollback_plugin() {
+    local family="$1"
+    local backup="${2:-}"
+    local root dst tmp
+
+    _queue_asset_family_valid_name "$family" || { echo "queue assets rollback: invalid family: $family" >&2; return 2; }
+
+    root="$(_queue_root)"
+    dst="$root/assets.d/$family.sh"
+
+    if [[ -z "$backup" ]]; then
+        backup="$(_queue_asset_latest_backup_for_family "$family")"
+    fi
+
+    [[ -n "$backup" && -f "$backup" ]] || { echo "queue assets rollback: no backup found for family: $family" >&2; return 1; }
+
+    # Validate backup before restoring it. A broken backup is worse than no rollback.
+    _queue_asset_replace_validate_source "$family" "$backup" || {
+        echo "queue assets rollback: backup failed validation, not restoring: $backup" >&2
+        return 4
+    }
+
+    tmp="$root/assets.d/.${family}.rollback.$$"
+    cp "$backup" "$tmp" || { rm -f "$tmp"; return 1; }
+    chmod +x "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+
+    echo "Rolled back asset plugin: $dst"
+    echo "Restored from: $backup"
+
+    _queue_log_event "asset_plugin_rolled_back" "$family" "$family" "assets" "path=$dst backup=$backup" 2>/dev/null || true
+}
+
+_queue_asset_list_backups() {
+    local family="${1:-}"
+    local backup_dir="$(_queue_asset_replace_backup_dir)"
+    mkdir -p "$backup_dir"
+
+    if [[ -n "$family" ]]; then
+        ls -1t "$backup_dir/${family}".*.sh 2>/dev/null || true
+    else
+        ls -1t "$backup_dir"/*.sh 2>/dev/null || true
+    fi
+}
+
+_queue_asset_scan_duplicate_publishers() {
+    local root="$(_queue_root)"
+    local plugin facility
+    local tmp
+    tmp="$(mktemp)"
+    shopt -s nullglob
+    for plugin in "$root/assets.d"/*.sh; do
+        [[ -f "$plugin" ]] || continue
+        (
+            source "$plugin" >/dev/null 2>&1 || exit 0
+            declare -F queue_asset_facilities >/dev/null 2>&1 || exit 0
+            queue_asset_facilities | awk -v helper="$(basename "$plugin")" '{print $1 "\t" helper}'
+        ) >> "$tmp"
+    done
+    shopt -u nullglob
+
+    awk -F '\t' '
+        {
+            count[$1]++
+            helpers[$1] = helpers[$1] ? helpers[$1] "," $2 : $2
+        }
+        END {
+            for (facility in count) {
+                if (count[facility] > 1) {
+                    print facility "\t" helpers[facility]
+                }
+            }
+        }
+    ' "$tmp" | sort
+    rm -f "$tmp"
+}
+
 _queue_asset_scan_facilities() {
     local root="$(_queue_root)"
     local plugin
@@ -818,7 +1128,17 @@ _queue_asset_scan_facilities() {
 
             queue_asset_facilities
         )
-    done
+    done | awk '
+        /^INVALID / {
+            if (!seen_invalid[$0]++) print
+            next
+        }
+        {
+            facility=$1
+            if (facility == "") next
+            if (!seen_facility[facility]++) print
+        }
+    '
     shopt -u nullglob
 }
 
@@ -4615,8 +4935,51 @@ EOF
                     shopt -u nullglob
                     [[ "$failed" -eq 0 ]] || return 1
                     ;;
+                duplicates|dupes)
+                    echo "=== duplicate asset facility publishers ==="
+                    _queue_asset_scan_duplicate_publishers
+                    ;;
+                replace)
+                    local family="${2:-}"
+                    local src="${3:-}"
+                    local force=0
+                    [[ "${4:-}" == "--force" ]] && force=1
+                    [[ -n "$family" && -n "$src" ]] || { echo "Usage: queue assets replace <family> <plugin.sh> [--force]" >&2; return 2; }
+                    _queue_asset_replace_plugin "$family" "$src" "$force"
+                    ;;
+                rollback)
+                    local family="${2:-}"
+                    local backup="${3:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue assets rollback <family> [backup-file]" >&2; return 2; }
+                    _queue_asset_rollback_plugin "$family" "$backup"
+                    ;;
+                backups)
+                    _queue_asset_list_backups "${2:-}"
+                    return 0
+                    ;;
+                refresh)
+                    local src_dir="${2:-}"
+                    [[ -n "$src_dir" ]] || { echo "Usage: queue assets refresh <directory>" >&2; return 2; }
+                    _queue_asset_refresh_from_dir "$src_dir"; return "$?"
+                    ;;
+                delete|archive)
+                    local family="${2:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue assets delete <family>" >&2; return 2; }
+                    _queue_asset_delete_plugin "$family"; return "$?"
+                    ;;
+                undelete|unarchive)
+                    local family="${2:-}"; local archive="${3:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue assets undelete <family> [archive-file]" >&2; return 2; }
+                    _queue_asset_undelete_plugin "$family" "$archive"; return "$?"
+                    ;;
+                archives)
+                    _queue_asset_list_archives "${2:-}"; return 0
+                    ;;
+                explain)
+                    _queue_asset_explain "${2:-}"; return "$?"
+                    ;;
                 *)
-                    echo "Usage: queue assets list|show <family>|validate" >&2
+                    echo "Usage: queue assets list|show <family>|validate|duplicates|replace <family> <plugin.sh> [--force]|rollback <family> [backup-file]|backups [family]|refresh <directory>|delete <family>|undelete <family> [archive-file]|archives [family]|explain <family|family:check>" >&2
                     return 2
                     ;;
             esac

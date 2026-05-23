@@ -1306,3 +1306,35 @@ queue assets show net
 queue assets show sys
 queue assets validate
 ```
+
+
+## Replace and rollback asset plugins
+
+Install an updated plugin safely:
+
+```bash
+queue assets replace net ./net.sh
+```
+
+Rollback the last replacement:
+
+```bash
+queue assets rollback net
+```
+
+List backups:
+
+```bash
+queue assets backups
+queue assets backups net
+```
+
+
+## Refresh, delete, and explain asset plugins
+
+```bash
+queue assets refresh ./assets.d
+queue assets delete net
+queue assets undelete net
+queue assets explain net:tcp_endpoint
+```
