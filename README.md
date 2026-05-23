@@ -1743,3 +1743,52 @@ The older grouped commands remain valid:
 queue assets refresh ./assets.d
 queue classes refresh ./classes
 ```
+
+
+## Asset helper argv contract
+
+Asset check helpers receive the asset target as `$1`, followed by optional `key=value` parameters:
+
+```bash
+queue_asset_check_runnable_interpreter "rexx"
+queue_asset_check_runnable_path_safe "/home/hc3/bashqueues/waiter.rex" allow_relative=1
+```
+
+They do not receive the full asset token as `$1`.
+
+
+## Class default working directory
+
+A class can force the execution working directory for submitted/resubmitted jobs:
+
+```bash
+CLASS_DEFAULT_WORKING_DIR=/home/hc3/bashqueues
+```
+
+This is copied into the job record as:
+
+```bash
+PWD_AT_SUBMIT=/home/hc3/bashqueues
+```
+
+and is useful for jobs whose command uses relative paths, for example:
+
+```bash
+queue submit rexx_waiter_caps --class REXX_RUNAWAY -- rexx waiter.rex
+```
+
+even when the submit command is typed from another directory.
+
+
+## Class job command context
+
+When a class is sourced for a specific job preflight, bashqueues exports command context variables that class records can use:
+
+```bash
+QUEUEBASH_JOB_WORKDIR
+QUEUEBASH_COMMAND_0
+QUEUEBASH_COMMAND_ARG_1
+QUEUEBASH_COMMAND_ARG_1_ABSPATH
+```
+
+Use `${QUEUEBASH_COMMAND_ARG_1_ABSPATH:-fallback}` in class files so class-default inspection still works before a concrete job is loaded.

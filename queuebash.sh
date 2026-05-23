@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.13.1"
+QUEUEBASH_VERSION="0.13.5"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1149,6 +1149,18 @@ _queue_class_asset_claim_token_from_spec() {
     esac
 }
 
+
+_queue_asset_check_uses_legacy_token_target_contract() {
+    local func="$1"
+    local body
+
+    body="$(declare -f "$func" 2>/dev/null || true)"
+
+    # Older bundled helpers used token as $1 and target as $2.
+    grep -Eq 'local[[:space:]]+token="\$1"|local[[:space:]][^;]*token="\$1"' <<< "$body" &&
+        grep -Eq 'shift[[:space:]]+2|\$2' <<< "$body"
+}
+
 _queue_asset_implied_preflight_args() {
     local token="$1" family="$2" check="$3" target="$4"
     shift 4 || true
@@ -1167,7 +1179,11 @@ _queue_asset_implied_preflight_args() {
         _queue_asset_contract_validate_loaded "$helper" quiet >/dev/null || exit 43
         _queue_asset_facility_is_published "$family" "$check" || exit 41
         declare -F "$func" >/dev/null 2>&1 || exit 42
-        "$func" "$token" "$target" "$@"
+        if _queue_asset_check_uses_legacy_token_target_contract "$func"; then
+            "$func" "$token" "$target" "$@"
+        else
+            "$func" "$target" "$@"
+        fi
     )
 }
 
@@ -1705,6 +1721,58 @@ _queue_asset_has_exclusive_claim() {
     find "$root/claims/assets" -maxdepth 1 -type d -name "$safe.exclusive.*.claim" 2>/dev/null | grep -q .
 }
 
+
+_queue_class_export_job_context() {
+    local f="$1"
+    local workdir idx val abs job_id job_name
+
+    [[ -f "$f" ]] || return 0
+
+    (
+        JOB_ID=""
+        JOB_NAME=""
+        PWD_AT_SUBMIT=""
+        COMMAND=()
+        source "$f" >/dev/null 2>&1 || exit 0
+
+        job_id="${JOB_ID:-$(basename "$f" .job)}"
+        job_name="${JOB_NAME:-}"
+        workdir="${PWD_AT_SUBMIT:-$PWD}"
+
+        printf 'QUEUEBASH_CLASS_JOB_ID=%q\n' "$job_id"
+        printf 'QUEUEBASH_CLASS_JOB_NAME=%q\n' "$job_name"
+        printf 'QUEUEBASH_JOB_WORKDIR=%q\n' "$workdir"
+        printf 'QUEUEBASH_COMMAND_COUNT=%q\n' "${#COMMAND[@]}"
+
+        for idx in "${!COMMAND[@]}"; do
+            val="${COMMAND[$idx]}"
+            printf 'QUEUEBASH_COMMAND_%s=%q\n' "$idx" "$val"
+
+            if (( idx > 0 )); then
+                printf 'QUEUEBASH_COMMAND_ARG_%s=%q\n' "$idx" "$val"
+                case "$val" in
+                    /*) abs="$val" ;;
+                    *)  abs="$workdir/$val" ;;
+                esac
+                printf 'QUEUEBASH_COMMAND_ARG_%s_ABSPATH=%q\n' "$idx" "$abs"
+            fi
+        done
+    )
+}
+
+_queue_class_source_with_job_context() {
+    local class_file="$1"
+    local job_file="$2"
+    local line
+
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        export "$line"
+    done < <(_queue_class_export_job_context "$job_file")
+
+    source "$class_file"
+}
+
 _queue_class_load_for_job() {
     local f="$1" class file root default_file
     root="$(_queue_root)"
@@ -1734,7 +1802,7 @@ EOF
     fi
 
     if [[ -f "$QUEUE_CLASS_FILE" ]]; then
-        source "$QUEUE_CLASS_FILE"
+        _queue_class_source_with_job_context "$QUEUE_CLASS_FILE" "$f"
     unset CLASS_SHARED_ASSETS CLASS_EXCLUSIVE_ASSETS CLASS_ASSETS
     else
         echo "queue class: class file not found: $QUEUE_CLASS_FILE" >&2
@@ -2146,6 +2214,7 @@ _queue_class_load_defaults_for_class() {
         CLASS_DEFAULT_LOG_TAG=""
         CLASS_DEFAULT_OUTPUT_DIR=""
         CLASS_DEFAULT_ENV_PREFIX=""
+        CLASS_DEFAULT_WORKING_DIR=""
 
         # Execution/cost caps.
         CLASS_DEFAULT_CPU_SECONDS=""
@@ -2168,6 +2237,7 @@ _queue_class_load_defaults_for_class() {
         [[ -n "${CLASS_DEFAULT_LOG_TAG:-}" ]] && printf 'LOG_TAG\t%s\n' "$CLASS_DEFAULT_LOG_TAG"
         [[ -n "${CLASS_DEFAULT_OUTPUT_DIR:-}" ]] && printf 'OUTPUT_DIR\t%s\n' "$CLASS_DEFAULT_OUTPUT_DIR"
         [[ -n "${CLASS_DEFAULT_ENV_PREFIX:-}" ]] && printf 'ENV_PREFIX\t%s\n' "$CLASS_DEFAULT_ENV_PREFIX"
+        [[ -n "${CLASS_DEFAULT_WORKING_DIR:-}" ]] && printf 'PWD_AT_SUBMIT\t%s\n' "$CLASS_DEFAULT_WORKING_DIR"
 
         [[ -n "${CLASS_DEFAULT_CPU_SECONDS:-}" ]] && printf 'CPU_SECONDS\t%s\n' "$CLASS_DEFAULT_CPU_SECONDS"
         [[ -n "${CLASS_DEFAULT_WALL_SECONDS:-}" ]] && printf 'WALL_SECONDS\t%s\n' "$CLASS_DEFAULT_WALL_SECONDS"
@@ -2212,7 +2282,7 @@ _queue_append_class_defaults_to_job_file() {
         [[ -n "$key" ]] || continue
 
         case "$key" in
-            OUTPUT_DIR|ENV_PREFIX|LOG_TAG)
+            OUTPUT_DIR|ENV_PREFIX|LOG_TAG|PWD_AT_SUBMIT)
                 expanded="$(_queue_expand_job_template "$value" "$id" "$name")"
                 ;;
             *)
@@ -4632,6 +4702,7 @@ _queue_explain_job() {
         [[ -n "${LOG_TAG:-}" ]] && echo "  log tag:           $LOG_TAG"
         [[ -n "${OUTPUT_DIR:-}" ]] && echo "  output dir:        $OUTPUT_DIR"
         [[ -n "${ENV_PREFIX:-}" ]] && echo "  env prefix:        $ENV_PREFIX"
+        [[ -n "${PWD_AT_SUBMIT:-}" ]] && echo "  working dir:       $PWD_AT_SUBMIT"
     )
     echo
 

@@ -30,12 +30,11 @@ queue_asset_param() {
 }
 
 queue_asset_check_path_exists() {
-    local token="$1"
-    local target="$2"
-    shift 2 || true
+    local target="$1"
+    shift || true
 
     if [[ -e "$target" ]]; then
-        echo "asset_check_ok: $token"
+        echo "asset_check_ok: path:exists target=$target"
         return 0
     fi
 
@@ -44,12 +43,11 @@ queue_asset_check_path_exists() {
 }
 
 queue_asset_check_path_mount() {
-    local token="$1"
-    local target="$2"
-    shift 2 || true
+    local target="$1"
+    shift || true
 
     if mountpoint -q -- "$target" 2>/dev/null; then
-        echo "asset_check_ok: $token"
+        echo "asset_check_ok: path:mount target=$target"
         return 0
     fi
 
@@ -58,9 +56,8 @@ queue_asset_check_path_mount() {
 }
 
 queue_asset_check_path_freespace() {
-    local token="$1"
-    local target="$2"
-    shift 2 || true
+    local target="$1"
+    shift || true
 
     local min_gb min_mb min_kb avail_kb need_kb
 
@@ -80,7 +77,7 @@ queue_asset_check_path_freespace() {
     elif [[ -n "$min_kb" ]]; then
         need_kb="$min_kb"
     else
-        echo "asset_check_blocked: path:freespace requires min_gb=, min_mb=, or min_kb=: $token"
+        echo "asset_check_blocked: path:freespace requires min_gb=, min_mb=, or min_kb=: target=$target"
         return 1
     fi
 

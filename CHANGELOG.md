@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.13.5
+
+- Export job command context while sourcing class files for job preflight.
+- Classes can reference `${QUEUEBASH_COMMAND_0}`, `${QUEUEBASH_COMMAND_ARG_1}`, and `${QUEUEBASH_COMMAND_ARG_1_ABSPATH}` in record-format assets.
+- `REXX_RUNAWAY` now checks the actual submitted REXX script argument instead of hardcoded `waiter.rex`.
+
+
+## 0.13.4
+
+- Add `CLASS_DEFAULT_WORKING_DIR` class default, copied into `PWD_AT_SUBMIT` at submit/resubmit time.
+- This allows classes such as `REXX_RUNAWAY` to force a stable execution directory even when submitted from another directory.
+- QueueManager class creation supports `--default-working-dir`.
+- Bundled `REXX_RUNAWAY` now defaults to `${QUEUEBASH_REXX_CWD:-/home/hc3/bashqueues}` and checks an absolute `waiter.rex` path.
+
+
+## 0.13.3
+
+- Add a compatibility adapter for older installed asset helpers that still use `token, target, params`.
+- Keep the documented target-first contract for new helpers.
+- Update bundled `path.sh` to target-first so `path:freespace` receives the directory as target and `min_mb=...` as a parameter.
+
+
+## 0.13.2
+
+- Fix asset preflight helper invocation so check functions receive the target as `$1`, not the full asset token.
+- This corrects blockers like `runnable:interpreter` receiving `runnable:interpreter:rexx` instead of `rexx`.
+- Record-format class assets now call helpers with the documented argv contract: target first, then key=value params.
+
+
 ## 0.13.1
 
 - Harden asset/class refresh dispatch.
