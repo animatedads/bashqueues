@@ -1971,3 +1971,29 @@ Exception overlays
 ```
 
 This makes the QID explanation the primary audit surface for any restriction bypass.
+
+
+## Panel Class Creator
+
+The panel manager includes a Class Creator panel.
+
+Workflow:
+
+```text
+1. Open: queue panel
+2. Go to Class Creator
+3. Set name/purpose/defaults
+4. Go to Restriction Builder
+5. Select a facility and add a shared/exclusive restriction to the draft
+6. Return to Class Creator
+7. Preview, validate, save
+```
+
+Generated classes use record-format functions only:
+
+```bash
+queue_class_shared_asset time window "overnight-window" weekdays=mon-fri weekday_windows=18:00-05:00
+queue_class_exclusive_claim "runtime:nightly:slot"
+```
+
+No legacy `CLASS_SHARED_ASSETS` or colon/comma token parsing is generated.

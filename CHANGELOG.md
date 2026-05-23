@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.0
+
+- Add panel Class Creator.
+- Class Creator supports class metadata/defaults, preview, bash syntax validation, save to queue classes, and editable record-format restrictions.
+- Restriction Builder can now append shared/exclusive asset records or exclusive claims directly to the Class Creator draft.
+
+
 ## 0.14.9
 
 - Make `queue explain <qid>` always include an `Exception overlays` section.

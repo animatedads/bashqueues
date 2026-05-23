@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.14.9"
+QUEUEBASH_VERSION="0.15.0"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
