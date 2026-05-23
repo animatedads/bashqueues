@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.12.8
+
+- Resubmitted jobs now adopt the current class definition at resubmit time.
+- `_queue_clone_job_to_pending` writes an intent-only job record and reapplies current class defaults to the new QID.
+- Stale runtime fields and old class-derived fields are stripped from resubmitted jobs.
+
+
+## 0.12.7
+
+- Add/standardize `queue classes refresh <directory>` to install or replace class definitions from `.env` files.
+- Class refresh validates refreshed class files and records timestamped backup metadata.
+- QueueManager now exposes class refresh from the Classes menu and as `queue mgr class-refresh <directory>`.
+
+
 ## 0.12.6
 
 - Add bundled `runnable:path_safe` asset facility to detect scripts with unsafe relative path assumptions.

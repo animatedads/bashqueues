@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.12.6"
+QUEUEBASH_VERSION="0.12.8"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -969,6 +969,116 @@ _queue_class_undelete() {
 
 _queue_class_backups() { local class="${1:-}" dir="$(_queue_class_backup_dir)"; mkdir -p "$dir"; if [[ -n "$class" ]]; then ls -1t "$dir/${class}".*.env 2>/dev/null || true; else ls -1t "$dir"/*.env 2>/dev/null || true; fi; }
 _queue_class_archives() { local class="${1:-}" dir="$(_queue_class_archive_dir)"; mkdir -p "$dir"; if [[ -n "$class" ]]; then ls -1t "$dir/${class}".*.env 2>/dev/null || true; else ls -1t "$dir"/*.env 2>/dev/null || true; fi; }
+
+
+_queue_class_name_from_file() {
+    local file="$1"
+    local base name
+
+    base="$(basename "$file")"
+    name="${base%.env}"
+
+    [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || return 1
+    printf '%s\n' "$name"
+}
+
+_queue_class_refresh_one() {
+    local src="$1"
+    local name dst backup_dir backup ts tmp meta created_new=0
+
+    [[ -f "$src" ]] || {
+        echo "queue classes refresh: not a file: $src" >&2
+        return 1
+    }
+
+    name="$(_queue_class_name_from_file "$src")" || {
+        echo "queue classes refresh: invalid class filename: $src" >&2
+        return 1
+    }
+
+    mkdir -p "$(_queue_root)/classes" "$(_queue_root)/classes/.backup"
+
+    dst="$(_queue_root)/classes/${name}.env"
+    backup_dir="$(_queue_root)/classes/.backup"
+
+    tmp="$(mktemp)"
+    cp "$src" "$tmp"
+
+    if ! bash -n "$tmp" >/dev/null 2>&1; then
+        echo "queue classes refresh: syntax check failed: $src" >&2
+        rm -f "$tmp"
+        return 1
+    fi
+
+    ts="$(date +%Y%m%d_%H%M%S_%N)"
+    meta="$backup_dir/${name}.${ts}.meta"
+
+    if [[ -f "$dst" ]]; then
+        backup="$backup_dir/${name}.${ts}.env"
+        cp "$dst" "$backup"
+    else
+        backup=""
+        created_new=1
+    fi
+
+    echo "Refreshing class definition name=$name source=$src"
+    cp "$tmp" "$dst"
+    rm -f "$tmp"
+
+    if ! _queue_class_validate "$name" >/dev/null 2>&1; then
+        echo "queue classes refresh: validation failed after install: $name" >&2
+        if [[ -n "$backup" && -f "$backup" ]]; then
+            cp "$backup" "$dst"
+            echo "Rolled back class definition: $dst" >&2
+        else
+            rm -f "$dst"
+            echo "Removed invalid new class definition: $dst" >&2
+        fi
+        return 1
+    fi
+
+    {
+        printf 'class=%q\n' "$name"
+        printf 'backup=%q\n' "$backup"
+        printf 'original=%q\n' "$dst"
+        printf 'replaced_at=%q\n' "$(date -Is 2>/dev/null || date)"
+        printf 'source=%q\n' "$src"
+        printf 'created_new=%q\n' "$created_new"
+    } > "$meta"
+
+    echo "Replaced class definition: $dst"
+    [[ -n "$backup" ]] && echo "Backup: $backup"
+    echo "Metadata: $meta"
+}
+
+_queue_classes_refresh() {
+    local dir="${1:-}"
+    local src any=0 rc=0
+
+    if [[ -z "$dir" ]]; then
+        echo "Usage: queue classes refresh <directory>" >&2
+        return 2
+    fi
+
+    if [[ ! -d "$dir" ]]; then
+        echo "queue classes refresh: directory not found: $dir" >&2
+        return 1
+    fi
+
+    shopt -s nullglob
+    for src in "$dir"/*.env; do
+        any=1
+        _queue_class_refresh_one "$src" || rc=1
+    done
+    shopt -u nullglob
+
+    if [[ "$any" -eq 0 ]]; then
+        echo "queue classes refresh: no .env class files found in $dir" >&2
+        return 1
+    fi
+
+    return "$rc"
+}
 
 _queue_class_explain() {
     local class="$1" f refs
@@ -2240,6 +2350,76 @@ _queue_dryrun_print() {
     printf '\n'
 }
 
+
+_queue_strip_resubmit_runtime_fields() {
+    local f="$1"
+    local tmp
+
+    [[ -f "$f" ]] || return 0
+    tmp="$(mktemp)"
+
+    awk '
+        /^RUNNER_USED=/ { next }
+        /^RUN_PID=/ { next }
+        /^RUN_PGID=/ { next }
+        /^RUN_STARTED_AT=/ { next }
+        /^EXEC_FINISHED_AT=/ { next }
+        /^EXIT_CODE=/ { next }
+        /^DURATION_SECONDS=/ { next }
+        /^SYSTEMD_UNIT=/ { next }
+        /^SYSTEMD_UNIT_RAW=/ { next }
+        /^SYSTEMD_MAIN_PID=/ { next }
+        /^PAYLOAD_PID=/ { next }
+        /^LOG_BYTES=/ { next }
+        /^LOG_COMPRESSED=/ { next }
+        /^LOG_COMPRESSED_AT=/ { next }
+        /^LOG_PATH=/ { next }
+        /^JOB_CLASS_CLAIMED=/ { next }
+        /^JOB_CLASS_CLAIMED_AT=/ { next }
+        /^QUEUEBASH_INHERITED_ENV_FROM=/ { next }
+        /^QUEUEBASH_INHERITED_ENV_KEYS=/ { next }
+
+        /^CLASS_DEFAULTS_APPLIED_AT=/ { next }
+        /^CLASS_DEFAULTS_SOURCE=/ { next }
+        /^TIMEOUT=/ { next }
+        /^KILL_AFTER=/ { next }
+        /^LOG_TAG=/ { next }
+        /^OUTPUT_DIR=/ { next }
+        /^ENV_PREFIX=/ { next }
+        /^CPU_SECONDS=/ { next }
+        /^WALL_SECONDS=/ { next }
+        /^BILLING_CYCLES=/ { next }
+        /^BILLING_UNIT_SECONDS=/ { next }
+        /^BILLING_GRACE_SECONDS=/ { next }
+        /^BILLING_POLICY=/ { next }
+
+        /^RUNNER=/ { next }
+        /^CPU_LIMIT=/ { next }
+        /^MEM_LIMIT=/ { next }
+        /^MAX_LOG_SIZE_BYTES=/ { next }
+        /^ALLOW_LARGE_LOG=/ { next }
+        /^LOG_OVERFLOW_POLICY=/ { next }
+
+        { print }
+    ' "$f" > "$tmp"
+
+    mv "$tmp" "$f"
+}
+
+_queue_resubmit_apply_current_class_defaults() {
+    local job_file="$1"
+    local id="${2:-}"
+    local class name
+
+    [[ -f "$job_file" ]] || return 0
+    [[ -z "$id" ]] && id="$(basename "$job_file" .job)"
+    name="$(_queue_job_name "$job_file" 2>/dev/null || true)"
+    class="$(_queue_class_for_job_file "$job_file" 2>/dev/null || echo DEFAULT)"
+
+    _queue_strip_resubmit_runtime_fields "$job_file"
+    _queue_append_class_defaults_to_job_file "$job_file" "$class" "$id" "$name"
+}
+
 _queue_clone_job_to_pending() {
     local src_job="$1"
     local new_id="$2"
@@ -2255,14 +2435,21 @@ _queue_clone_job_to_pending() {
             printf 'JOB_NAME=%q\n' "$JOB_NAME"
             printf 'PRIORITY=%q\n' "${PRIORITY:-10}"
             printf 'RETRIES_MAX=%q\n' "${RETRIES_MAX:-0}"
-            printf 'RETRIES_DONE=%q\n' "${RETRIES_DONE:-0}"
+            printf 'RETRIES_DONE=%q\n' "0"
             printf 'RETRY_BACKOFF=%q\n' "${RETRY_BACKOFF:-0}"
             printf 'RETRY_NOT_BEFORE_EPOCH=%q\n' "0"
-            printf 'CPU_LIMIT=%q\n' "${CPU_LIMIT:-}"
-            printf 'MEM_LIMIT=%q\n' "${MEM_LIMIT:-}"
-            printf 'MAX_LOG_SIZE_BYTES=%q\n' "${MAX_LOG_SIZE_BYTES:-${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}}"
-            printf 'ALLOW_LARGE_LOG=%q\n' "${ALLOW_LARGE_LOG:-0}"
-            printf 'RUNNER=%q\n' "${RUNNER:-${QUEUEBASH_RUNNER:-auto}}"
+            printf 'NOT_BEFORE_EPOCH=%q\n' "0"
+
+            # Resubmit intentionally does not preserve old class-derived
+            # resource/cap defaults.  The current class definition is applied
+            # after this intent-only record is written.
+            printf 'CPU_LIMIT=%q\n' ""
+            printf 'MEM_LIMIT=%q\n' ""
+            printf 'MAX_LOG_SIZE_BYTES=%q\n' "${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}"
+            printf 'ALLOW_LARGE_LOG=%q\n' "0"
+            printf 'LOG_OVERFLOW_POLICY=%q\n' "${QUEUEBASH_LOG_OVERFLOW_POLICY:-stderr-only}"
+            printf 'RUNNER=%q\n' "${QUEUEBASH_RUNNER:-auto}"
+
             [[ -n "${JOB_CLASS:-}" ]] && printf 'JOB_CLASS=%q\n' "$JOB_CLASS"
             [[ -n "${DEPENDS_AFTER_SUCCESS:-}" ]] && printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$DEPENDS_AFTER_SUCCESS"
             [[ -n "${INHERIT_ENV_FROM:-}" ]] && printf 'INHERIT_ENV_FROM=%q\n' "$INHERIT_ENV_FROM"
@@ -2288,7 +2475,9 @@ _queue_clone_job_to_pending() {
             printf ' %q' "${ON_RETRY_FAILURE[@]}"
             printf ' )\n'
         } > "$dest"
-    )
+    ) || return 1
+
+    _queue_resubmit_apply_current_class_defaults "$dest" "$new_id"
 }
 
 _queue_child_pids_recursive() {
@@ -6049,7 +6238,10 @@ EOF
                     echo "=== duplicate asset facility publishers ==="
                     _queue_asset_scan_duplicate_publishers
                     ;;
-                replace)
+                refresh)
+            _queue_classes_refresh "$@"
+            ;;
+        replace)
                     local family="${2:-}"
                     local src="${3:-}"
                     local force=0

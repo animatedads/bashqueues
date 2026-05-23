@@ -1678,3 +1678,26 @@ allow_relative=1      allow relative path assumptions
 require_cwd=/path     require a working directory to exist
 scan_depth=200        number of lines to scan
 ```
+
+
+## Class refresh
+
+Refresh class definitions from a directory of `.env` files:
+
+```bash
+queue classes refresh ./classes
+queue mgr class-refresh ./classes
+```
+
+Existing class definitions are backed up under:
+
+```text
+~/.queuebash/classes/.backup/
+```
+
+Refresh is intended for loading bundled class definitions such as `REXX_RUNAWAY.env` into a user's queue root.
+
+
+## Resubmit adopts current class
+
+When a failed/cancelled/deleted job is resubmitted, bashqueues preserves the job intent but re-applies the current class definition to the new QID. This means changed class defaults such as timeout, billing caps, CPU/memory limits, and log caps are adopted by resubmitted jobs.
