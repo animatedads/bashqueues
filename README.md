@@ -1949,3 +1949,25 @@ q/Esc/Enter   close
 ```
 
 Modal windows clear their full rectangle before drawing and redraw the panel screen when closed.
+
+
+## Exception overlays in explain
+
+`queue explain <qid>` always includes an exception overlay section:
+
+```text
+Exception overlays
+  none
+```
+
+or:
+
+```text
+Exception overlays
+  ignore:            time:window
+    reason:          operator approved daytime run
+    by:              hc3
+    created:         2026-05-23T18:09:31+01:00 (age 42s)
+```
+
+This makes the QID explanation the primary audit surface for any restriction bypass.

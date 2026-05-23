@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.9
+
+- Make `queue explain <qid>` always include an `Exception overlays` section.
+- Show each overlay with ignored key, reason, creator, created timestamp, and rough age.
+- Reuse one renderer for QID exception diagnostics so explain output is the primary audit surface.
+
+
 ## 0.14.8
 
 - Fix panel modal windows to clear their full rectangle before drawing.

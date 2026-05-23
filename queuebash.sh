@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.14.8"
+QUEUEBASH_VERSION="0.14.9"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1770,6 +1770,43 @@ _queue_exception_clear_all() {
     user="${USER:-unknown}"
     _queue_log_event "exception_cleared_all" "$id" "$id" "exceptions" "by=$user"
     echo "Cleared all exception overlays for job=$id"
+}
+
+
+_queue_exception_explain_for_job() {
+    local id="${1:-}"
+    local f
+    local now_epoch created_epoch age
+
+    [[ -n "$id" ]] || return 0
+    f="$(_queue_exception_file "$id")"
+
+    echo
+    echo "Exception overlays"
+
+    if [[ ! -f "$f" ]]; then
+        echo "  none"
+        return 0
+    fi
+
+    while IFS=$'\t' read -r key reason created_at created_by; do
+        [[ -n "$key" ]] || continue
+        [[ "$key" == \#* ]] && continue
+
+        age=""
+        if [[ -n "$created_at" ]]; then
+            now_epoch="$(date +%s 2>/dev/null || echo 0)"
+            created_epoch="$(date -d "$created_at" +%s 2>/dev/null || echo 0)"
+            if [[ "$now_epoch" =~ ^[0-9]+$ && "$created_epoch" =~ ^[0-9]+$ && "$created_epoch" -gt 0 && "$now_epoch" -ge "$created_epoch" ]]; then
+                age="$((now_epoch - created_epoch))s"
+            fi
+        fi
+
+        echo "  ignore:            $key"
+        echo "    reason:          ${reason:-not-recorded}"
+        echo "    by:              ${created_by:-unknown}"
+        echo "    created:         ${created_at:-unknown}${age:+ (age $age)}"
+    done < "$f"
 }
 
 _queue_exception_command() {
@@ -5186,11 +5223,7 @@ _queue_explain_job() {
     fi
     echo
 
-    if [[ -f "$(_queue_exception_file "$id")" ]]; then
-        echo
-        echo "Exception overlays"
-        awk -F '\t' '{ printf "  ignore: %-28s reason=%s by=%s at=%s\n", $1, $2, $4, $3 }' "$(_queue_exception_file "$id")"
-    fi
+    _queue_exception_explain_for_job "$id"
 
     echo "Dependencies"
     _queue_job_dependencies_status "$f" | sed 's/^/  /'
