@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.3
+
+- Add `queuemgr5250.py`, a curses-backed 5250-style manager with side-by-side panels, scrolling details, jobs/classes/assets/exceptions panels, and a restriction-builder panel.
+- Expose as `queue mgr 5250` and `queue mgr5250`.
+- The 5250 manager invokes existing `queue ...` commands so the shell core remains the source of truth.
+
+
 ## 0.14.2
 
 - Improve QID exception audit logging: `exception_applied` events now include the matched exception key, reason, creator, and timestamp.

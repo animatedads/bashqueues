@@ -1880,3 +1880,27 @@ full asset token    e.g. time:window:overnight-window
 During class preflight, only the matching asset gates are skipped. Each creation and application is logged as an event, and `queue explain <qid>` shows the active overlays.
 
 This is preferred over changing the job to a separate exception class because it keeps the original policy class visible while documenting exactly which restrictions were ignored.
+
+
+## 5250-style manager
+
+A curses-backed manager is available for panel-oriented workflows:
+
+```bash
+queue mgr 5250
+queue mgr5250
+```
+
+Panels:
+
+```text
+Jobs
+Classes
+Assets
+Exceptions
+Restriction Builder
+```
+
+The screen uses side-by-side panels with scrolling list/detail areas. The restriction builder shows valid asset facilities, helper hints, and selectable queue/class variables such as `${QUEUEBASH_COMMAND_ARG_1_ABSPATH}` and `${QUEUEBASH_JOB_WORKDIR}`.
+
+The manager is intentionally separate from `queuebash.sh`; it invokes existing `queue ...` commands so the queue core remains the source of truth.
