@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.14.1"
+QUEUEBASH_VERSION="0.14.2"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1635,8 +1635,13 @@ _queue_exception_is_allowed_for_asset() {
         [[ -n "$key" ]] || continue
         [[ "$key" == \#* ]] && continue
         if _queue_exception_asset_matches "$key" "$asset"; then
+            QUEUEBASH_EXCEPTION_MATCH_KEY="$key"
+            QUEUEBASH_EXCEPTION_MATCH_REASON="${reason:-not-recorded}"
+            QUEUEBASH_EXCEPTION_MATCH_BY="${created_by:-unknown}"
+            QUEUEBASH_EXCEPTION_MATCH_AT="${created_at:-unknown}"
+            export QUEUEBASH_EXCEPTION_MATCH_KEY QUEUEBASH_EXCEPTION_MATCH_REASON QUEUEBASH_EXCEPTION_MATCH_BY QUEUEBASH_EXCEPTION_MATCH_AT
             printf 'asset_exception_applied: job=%s asset=%s exception=%s reason=%s by=%s at=%s\n' \
-                "$id" "$asset" "$key" "${reason:-not-recorded}" "${created_by:-unknown}" "${created_at:-unknown}"
+                "$id" "$asset" "$QUEUEBASH_EXCEPTION_MATCH_KEY" "$QUEUEBASH_EXCEPTION_MATCH_REASON" "$QUEUEBASH_EXCEPTION_MATCH_BY" "$QUEUEBASH_EXCEPTION_MATCH_AT"
             return 0
         fi
     done < "$f"
@@ -1789,7 +1794,7 @@ _queue_asset_implied_preflight_for_class() {
     for asset in $CLASS_EXCLUSIVE_ASSETS $CLASS_SHARED_ASSETS; do
         [[ -z "$asset" ]] && continue
         if _queue_exception_is_allowed_for_asset "$asset"; then
-            _queue_log_event "exception_applied" "$(_queue_exception_job_id_from_current_context 2>/dev/null || echo unknown)" "$asset" "pending" "asset=$asset"
+            _queue_log_event "exception_applied" "$(_queue_exception_job_id_from_current_context 2>/dev/null || echo unknown)" "$asset" "pending" "asset=$asset exception=${QUEUEBASH_EXCEPTION_MATCH_KEY:-} reason=${QUEUEBASH_EXCEPTION_MATCH_REASON:-} by=${QUEUEBASH_EXCEPTION_MATCH_BY:-} at=${QUEUEBASH_EXCEPTION_MATCH_AT:-}"
             continue
         fi
         _queue_asset_implied_preflight_one "$asset"
@@ -1820,7 +1825,7 @@ _queue_asset_implied_preflight_for_class() {
         [[ -z "$spec" ]] && continue
         spec_asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
         if _queue_exception_is_allowed_for_asset "$spec_asset"; then
-            _queue_log_event "exception_applied" "$(_queue_exception_job_id_from_current_context 2>/dev/null || echo unknown)" "$spec_asset" "pending" "asset=$spec_asset"
+            _queue_log_event "exception_applied" "$(_queue_exception_job_id_from_current_context 2>/dev/null || echo unknown)" "$spec_asset" "pending" "asset=$spec_asset exception=${QUEUEBASH_EXCEPTION_MATCH_KEY:-} reason=${QUEUEBASH_EXCEPTION_MATCH_REASON:-} by=${QUEUEBASH_EXCEPTION_MATCH_BY:-} at=${QUEUEBASH_EXCEPTION_MATCH_AT:-}"
             continue
         fi
         _queue_asset_implied_preflight_spec "$spec"

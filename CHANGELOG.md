@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.2
+
+- Improve QID exception audit logging: `exception_applied` events now include the matched exception key, reason, creator, and timestamp.
+- Update bundled `OVERNIGHT_WINDOW` comment to reference QID exception overlays rather than exception classes.
+
+
 ## 0.14.1
 
 - Remove `exception classes` class entirely.
