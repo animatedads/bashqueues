@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.10.6
+
+- Fix `_queue_next_job` stdout contamination from asset/class plugin output.
+- `_queue_next_job` now captures `_queue_class_available` output and sends it to dispatch trace instead of returning it to the worker.
+- This preserves the contract that `_queue_next_job` stdout is only the selected job path.
+- Add regression test proving plugin success output cannot contaminate the selected job path.
+
+
+## 0.10.5
+
+- Add explicit diagnostics for pending->running move failures.
+- Worker now captures `mv` stderr and traces src/dst existence, directory writability, and duplicate QID records.
+- Add `queue duplicate-qids` / `queue dups` diagnostic command.
+- Add a short sleep after move failure to prevent tight spin loops on filesystem collisions.
+
+
+## 0.10.4
+
+- Fix `_queue_next_job` regression from the dispatch trace patch where a malformed no-file guard caused candidates to be skipped unconditionally.
+- Add candidate-level dispatch trace messages: candidate, retry/schedule/dependency/class skips, selected job, move pending->running, and claim acquisition.
+- Add regression test proving traced dispatch selects and runs a pending job.
+
+
+## 0.10.3
+
+- Add optional worker dispatch tracing with `QUEUEBASH_TRACE_DISPATCH=1`.
+- Add `queue dispatch-trace [N]` / `queue trace-dispatch [N]`.
+- Extend pending-job explain with a claim/lock snapshot when the job is runnable.
+- Helps diagnose the case where `queue explain` says runnable but `queue run` does not reach `[worker N] running ...`.
+
+
+## 0.10.2
+
+- Add pending-job dispatch diagnosis to `queue explain`.
+- Explain now reports dependencies, schedule/not-before blocking, class file resolution, class/resource gate result, and captured asset/preflight output.
+- Add regression tests for dependency and class asset blocker explanations.
+
+
 ## 0.10.1
 
 - Remove legacy class asset string support during development.

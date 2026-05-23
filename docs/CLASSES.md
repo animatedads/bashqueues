@@ -479,3 +479,10 @@ queue_class_exclusive_claim "github_publish:slot"
 ```
 
 This removes delimiter parsing from class definitions. Targets and parameter values may contain `:`, `,`, `=`, `/`, spaces, and other shell-safe quoted content.
+
+
+## Explain dispatch blockers
+
+`queue explain <job>` includes a dispatch decision section for pending jobs.
+
+It reports dependencies, future schedule/not-before blocks, class name and file, class/resource gate result, and asset plugin/preflight output.

@@ -1416,3 +1416,59 @@ queue_class_exclusive_claim "github_publish:slot"
 ```
 
 Legacy `CLASS_SHARED_ASSETS`, `CLASS_EXCLUSIVE_ASSETS`, and `CLASS_ASSETS` are intentionally unsupported during development.
+
+
+## Dispatch decision in explain
+
+For pending jobs, `queue explain <job>` reports why the worker is not running the job yet:
+
+```text
+Dispatch decision
+  dependencies
+  schedule/not-before state
+  class file
+  class/resource gate status
+  plugin/preflight output
+```
+
+This is the first diagnostic command to run when a job is pending but not moving.
+
+
+## Dispatch trace
+
+If `queue explain <job>` says a pending job is runnable but `queue run` does not print `[worker N] running ...`, enable dispatch tracing:
+
+```bash
+QUEUEBASH_TRACE_DISPATCH=1 queue run
+queue dispatch-trace
+```
+
+The trace records worker entry, `_queue_next_job` entry, candidate selection, and run transition points.
+
+
+## Candidate-level dispatch trace
+
+`QUEUEBASH_TRACE_DISPATCH=1 queue run` now records each pending candidate and why it was skipped or selected:
+
+```text
+candidate <job>
+skip <job> dependencies-not-satisfied
+skip <job> class-or-resource-blocked
+selected <job>
+move pending->running ok <job>
+claim acquire ok <job>
+about to run <job>
+```
+
+
+## Next-job stdout purity
+
+`_queue_next_job` has a strict contract: stdout is either one selected pending job path or empty.
+
+Asset and class plugin output is captured and written to dispatch trace as:
+
+```text
+class output <qid>: asset_check_ok: ...
+```
+
+This prevents plugin messages from contaminating the path passed to `mv pending -> running`.

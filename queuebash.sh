@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.10.1"
+QUEUEBASH_VERSION="0.10.6"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1807,37 +1807,257 @@ _queue_cleanup_stale_claims() {
 }
 
 
+
+_queue_dispatch_trace_enabled() {
+    [[ "${QUEUEBASH_TRACE_DISPATCH:-0}" == "1" || "${QUEUEBASH_TRACE_DISPATCH:-0}" == "true" ]]
+}
+
+_queue_dispatch_trace_log() {
+    local worker="${1:-?}"
+    local msg="${2:-}"
+    local root="$(_queue_root)"
+    local ts
+
+    _queue_dispatch_trace_enabled || return 0
+
+    ts="$(date -Is 2>/dev/null || date)"
+    mkdir -p "$root/workers"
+    printf '%s worker=%s %s\n' "$ts" "$worker" "$msg" >> "$root/workers/dispatch.trace"
+    printf '[worker %s trace] %s\n' "$worker" "$msg" >&2
+}
+
+_queue_dispatch_trace_show() {
+    local root="$(_queue_root)"
+    local n="${1:-120}"
+    local f="$root/workers/dispatch.trace"
+
+    if [[ ! -f "$f" ]]; then
+        echo "No dispatch trace found: $f"
+        echo "Enable with: QUEUEBASH_TRACE_DISPATCH=1 queue run"
+        return 0
+    fi
+
+    tail -n "$n" "$f"
+}
+
+_queue_pending_candidate_summary() {
+    local root="$(_queue_root)"
+    local f
+    shopt -s nullglob
+    for f in "$root/pending"/*.job; do
+        [[ -f "$f" ]] || continue
+        printf '%s %s class=%s\n' "$(basename "$f" .job)" "$(_queue_job_name "$f" 2>/dev/null || true)" "$(_queue_class_for_job_file "$f" 2>/dev/null || echo DEFAULT)"
+    done
+    shopt -u nullglob
+}
+
+_queue_claims_summary_for_explain() {
+    local root="$(_queue_root)"
+    local dir f
+
+    for dir in "$root/claims" "$root/locks" "$root/resources" "$root/class_claims"; do
+        [[ -d "$dir" ]] || continue
+        echo "  claim dir:         $dir"
+        shopt -s nullglob
+        for f in "$dir"/*; do
+            [[ -e "$f" ]] || continue
+            echo "    $(basename "$f")"
+        done
+        shopt -u nullglob
+    done
+}
+
+
+_queue_move_failure_diagnose() {
+    local src="$1"
+    local dst="$2"
+    local id="${3:-}"
+    local root="$(_queue_root)"
+
+    echo "move_failure: id=$id"
+    echo "move_failure: src=$src"
+    echo "move_failure: dst=$dst"
+
+    [[ -e "$src" ]] && echo "move_failure: src_exists=1" || echo "move_failure: src_exists=0"
+
+    if [[ -e "$dst" ]]; then
+        echo "move_failure: dst_exists=1"
+        if [[ -f "$dst" ]]; then
+            echo "move_failure: dst_type=file"
+        elif [[ -d "$dst" ]]; then
+            echo "move_failure: dst_type=directory"
+        else
+            echo "move_failure: dst_type=other"
+        fi
+    else
+        echo "move_failure: dst_exists=0"
+    fi
+
+    [[ -d "$root/running" ]] && echo "move_failure: running_dir_exists=1" || echo "move_failure: running_dir_exists=0"
+    [[ -w "$root/running" ]] && echo "move_failure: running_dir_writable=1" || echo "move_failure: running_dir_writable=0"
+    [[ -d "$root/pending" ]] && echo "move_failure: pending_dir_exists=1" || echo "move_failure: pending_dir_exists=0"
+    [[ -w "$root/pending" ]] && echo "move_failure: pending_dir_writable=1" || echo "move_failure: pending_dir_writable=0"
+
+    local state f count=0
+    for state in pending running paused done failed interrupted cancelled deleted; do
+        f="$root/$state/$id.job"
+        if [[ -e "$f" ]]; then
+            echo "move_failure: duplicate_record=$state/$id.job"
+            count=$((count + 1))
+        fi
+    done
+    echo "move_failure: duplicate_record_count=$count"
+}
+
+_queue_move_pending_to_running() {
+    local job="$1"
+    local running="$2"
+    local id="$3"
+    local worker="${4:-?}"
+    local err rc line
+
+    _queue_dispatch_trace_log "$worker" "move pending->running start $id src=$job dst=$running"
+
+    err="$(mktemp)"
+    mv "$job" "$running" 2>"$err"
+    rc="$?"
+
+    if [[ "$rc" -eq 0 ]]; then
+        rm -f "$err"
+        _queue_dispatch_trace_log "$worker" "move pending->running ok $id"
+        return 0
+    fi
+
+    _queue_dispatch_trace_log "$worker" "move pending->running failed $id rc=$rc"
+
+    if [[ -s "$err" ]]; then
+        while IFS= read -r line; do
+            _queue_dispatch_trace_log "$worker" "move stderr $id: $line"
+        done < "$err"
+    fi
+
+    while IFS= read -r line; do
+        _queue_dispatch_trace_log "$worker" "$line"
+    done < <(_queue_move_failure_diagnose "$job" "$running" "$id")
+
+    rm -f "$err"
+    return "$rc"
+}
+
+_queue_duplicate_qids_report() {
+    local root="$(_queue_root)"
+    local state f id tmp
+    tmp="$(mktemp)"
+
+    for state in pending running paused done failed interrupted cancelled deleted; do
+        shopt -s nullglob
+        for f in "$root/$state"/*.job; do
+            [[ -f "$f" ]] || continue
+            id="$(basename "$f" .job)"
+            printf '%s\t%s\t%s\n' "$id" "$state" "$f" >> "$tmp"
+        done
+        shopt -u nullglob
+    done
+
+    if [[ -s "$tmp" ]]; then
+        cut -f1 "$tmp" | sort | uniq -d | while IFS= read -r id; do
+            echo "duplicate qid: $id"
+            awk -F '\t' -v id="$id" '$1 == id { printf "  %-12s %s\n", $2, $3 }' "$tmp"
+        done
+    fi
+
+    rm -f "$tmp"
+}
+
 _queue_next_job() {
+    # Contract:
+    #   stdout MUST contain only the selected pending job path, or nothing.
+    #   Class/plugin/preflight output must never leak to stdout, because the
+    #   worker captures this function with command substitution and treats the
+    #   result as a path.
+    _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "entered _queue_next_job"
+
     local root="$(_queue_root)"
     local best=""
     local best_pri="-999999"
     local best_id=""
     local f id pri
+    local seen=0
+    local tmp class_rc line
 
+    shopt -s nullglob
     for f in "$root/pending"/*.job; do
-        [[ -e "$f" ]] || continue
+        [[ -f "$f" ]] || continue
 
-        _queue_job_retry_due "$f" || continue
-        _queue_job_schedule_due "$f" || continue
-        _queue_job_dependencies_satisfied "$f" || continue
-        _queue_class_available "$f" || continue
-
+        seen=$((seen + 1))
         id="$(basename "$f" .job)"
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "candidate $id $(_queue_job_name "$f" 2>/dev/null || true)"
+
+        if ! _queue_job_retry_due "$f"; then
+            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id retry-not-due"
+            continue
+        fi
+
+        if ! _queue_job_schedule_due "$f"; then
+            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id schedule-not-due"
+            continue
+        fi
+
+        if ! _queue_job_dependencies_satisfied "$f"; then
+            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id dependencies-not-satisfied"
+            continue
+        fi
+
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "class check start $id"
+
+        tmp="$(mktemp)"
+        if _queue_class_available "$f" >"$tmp" 2>&1; then
+            class_rc=0
+        else
+            class_rc="$?"
+        fi
+
+        if [[ -s "$tmp" ]]; then
+            while IFS= read -r line; do
+                _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "class output $id: $line"
+            done < "$tmp"
+        fi
+        rm -f "$tmp"
+
+        if [[ "$class_rc" -ne 0 ]]; then
+            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id class-or-resource-blocked rc=$class_rc"
+            continue
+        fi
+
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "class check ok $id"
+
         pri="$(_queue_job_pri "$f")"
 
         if (( pri > best_pri )); then
             best="$f"
             best_pri="$pri"
             best_id="$id"
+            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "best now $id pri=$pri"
         elif (( pri == best_pri )); then
             if [[ -z "$best_id" || "$id" < "$best_id" ]]; then
                 best="$f"
                 best_id="$id"
+                _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "best tie-break now $id pri=$pri"
             fi
         fi
     done
+    shopt -u nullglob
 
-    [[ -n "$best" ]] && printf '%s\n' "$best"
+    if [[ "$seen" -eq 0 ]]; then
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "no pending candidates found"
+    fi
+
+    if [[ -n "$best" ]]; then
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "selected $best_id pri=$best_pri"
+        printf '%s\n' "$best"
+    else
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "no runnable candidate selected"
+    fi
 }
 
 _queue_extract_dryrun() {
@@ -3383,6 +3603,166 @@ _queue_human_bytes() {
     fi
 }
 
+
+_queue_dep_token_status() {
+    local dep="$1"
+    local root="$(_queue_root)"
+    local state f name
+
+    for state in done failed cancelled interrupted running pending paused deleted; do
+        if [[ -f "$root/$state/$dep.job" ]]; then
+            printf '%s\n' "$state"
+            return 0
+        fi
+
+        shopt -s nullglob
+        for f in "$root/$state"/*.job; do
+            [[ -f "$f" ]] || continue
+            name="$(_queue_job_name "$f" 2>/dev/null || true)"
+            if [[ "$name" == "$dep" ]]; then
+                printf '%s\n' "$state"
+                shopt -u nullglob
+                return 0
+            fi
+        done
+        shopt -u nullglob
+    done
+
+    printf '%s\n' "missing"
+}
+
+_queue_file_depends_after_success() {
+    local f="$1"
+    (
+        DEPENDS_AFTER_SUCCESS=""
+        source "$f" >/dev/null 2>&1 || exit 0
+        printf '%s\n' "${DEPENDS_AFTER_SUCCESS:-}"
+    )
+}
+
+_queue_file_not_before_epoch() {
+    local f="$1"
+    (
+        NOT_BEFORE_EPOCH=0
+        RETRY_NOT_BEFORE_EPOCH=0
+        source "$f" >/dev/null 2>&1 || exit 0
+        if [[ "${RETRY_NOT_BEFORE_EPOCH:-0}" =~ ^[0-9]+$ && "${RETRY_NOT_BEFORE_EPOCH:-0}" -gt 0 ]]; then
+            printf '%s\n' "$RETRY_NOT_BEFORE_EPOCH"
+        else
+            printf '%s\n' "${NOT_BEFORE_EPOCH:-0}"
+        fi
+    )
+}
+
+_queue_class_for_job_file() {
+    local f="$1"
+    (
+        JOB_CLASS=""
+        CLASS=""
+        source "$f" >/dev/null 2>&1 || exit 0
+        printf '%s\n' "${JOB_CLASS:-${CLASS:-DEFAULT}}"
+    )
+}
+
+_queue_job_pending_dispatch_diagnose() {
+    local f="$1"
+    local root="$(_queue_root)"
+    local id name class now not_before deps dep dep_state blocked=0
+    local class_file tmp out rc
+
+    id="$(basename "$f" .job)"
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
+    class="$(_queue_class_for_job_file "$f")"
+
+    echo
+    echo "Dispatch decision"
+
+    if [[ "$(basename "$(dirname "$f")")" != "pending" ]]; then
+        echo "  status:            not pending"
+        echo "  reason:            dispatch diagnosis only applies to pending jobs"
+        return 0
+    fi
+
+    now="$(date +%s)"
+    not_before="$(_queue_file_not_before_epoch "$f")"
+    if [[ "$not_before" =~ ^[0-9]+$ && "$not_before" -gt "$now" ]]; then
+        echo "  status:            blocked"
+        echo "  reason:            scheduled for the future"
+        echo "  not_before_epoch:  $not_before"
+        if command -v date >/dev/null 2>&1; then
+            echo "  not_before_time:   $(date -d "@$not_before" -Is 2>/dev/null || true)"
+        fi
+        blocked=1
+    fi
+
+    deps="$(_queue_file_depends_after_success "$f")"
+    if [[ -n "$deps" ]]; then
+        echo "  dependencies:"
+        for dep in $deps; do
+            dep_state="$(_queue_dep_token_status "$dep")"
+            case "$dep_state" in
+                done)
+                    echo "    $dep: satisfied (done)"
+                    ;;
+                failed|cancelled|interrupted|deleted)
+                    echo "    $dep: blocked ($dep_state)"
+                    blocked=1
+                    ;;
+                missing)
+                    echo "    $dep: waiting (missing)"
+                    blocked=1
+                    ;;
+                *)
+                    echo "    $dep: waiting ($dep_state)"
+                    blocked=1
+                    ;;
+            esac
+        done
+    else
+        echo "  dependencies:      none"
+    fi
+
+    echo "  class:             ${class:-DEFAULT}"
+    class_file="$(_queue_class_file "${class:-DEFAULT}")"
+    if [[ -f "$class_file" ]]; then
+        echo "  class file:        $class_file"
+    else
+        echo "  status:            blocked"
+        echo "  reason:            class file missing"
+        echo "  class file:        $class_file"
+        blocked=1
+    fi
+
+    tmp="$(mktemp)"
+    if _queue_class_available "$f" >"$tmp" 2>&1; then
+        rc=0
+    else
+        rc="$?"
+    fi
+    out="$(cat "$tmp")"
+    rm -f "$tmp"
+
+    if [[ "$rc" -eq 0 ]]; then
+        if [[ "$blocked" -eq 0 ]]; then
+            echo "  status:            runnable"
+            echo "  reason:            no dispatch blocker detected"
+            echo
+            echo "Claim/lock snapshot"
+            _queue_claims_summary_for_explain
+        else
+            echo "  class/resource:    available"
+        fi
+    else
+        echo "  status:            blocked"
+        echo "  reason:            class/resource gate rejected job"
+        echo "  class/resource rc: $rc"
+        if [[ -n "$out" ]]; then
+            echo "  class/resource output:"
+            printf '%s\n' "$out" | sed 's/^/    /'
+        fi
+    fi
+}
+
 _queue_explain_job() {
     local f="$1"
     local root="$(_queue_root)"
@@ -3503,6 +3883,10 @@ _queue_explain_job() {
     _queue_job_dependencies_status "$f" | sed 's/^/  /'
 
     echo
+
+    if [[ "$state" == "pending" ]]; then
+        _queue_job_pending_dispatch_diagnose "$f"
+    fi
 
     echo "Cancellation model"
     if [[ "$state" == "pending" || "$state" == "paused" ]]; then
@@ -4988,6 +5372,14 @@ queue() {
             ;;
 
 
+        duplicate-qids|dups)
+            _queue_duplicate_qids_report
+            ;;
+
+        dispatch-trace|trace-dispatch)
+            _queue_dispatch_trace_show "${1:-120}"
+            ;;
+
         explain)
             local target="$1"
             [[ -z "$target" ]] && { echo "Usage: queue explain <qid-or-exact-job-name>" >&2; return 2; }
@@ -6277,6 +6669,8 @@ _queue_worker_external_move_state() {
 }
 
 _queue_worker() {
+    export QUEUEBASH_WORKER_ID="${worker_id:-${1:-?}}"
+    _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "entered worker loop"
     _queue_init
 
     local worker_id="$1"
@@ -6299,16 +6693,22 @@ _queue_worker() {
         local failed="$root/failed/$id.job"
         local log="$root/logs/$id.log"
 
-        if ! mv "$job" "$running" 2>/dev/null; then
+        if ! _queue_move_pending_to_running "$job" "$running" "$id" "${worker_id:-${1:-?}}"; then
+            # Avoid burning CPU forever on a filesystem/path collision.
+            sleep "${QUEUEBASH_MOVE_FAIL_SLEEP:-1}"
             continue
         fi
 
+        _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "claim acquire start $id"
         if ! _queue_class_claim_job "$running" "$id"; then
+            _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "claim acquire failed $id"
             mv "$running" "$root/pending/$id.job" 2>/dev/null || true
             _queue_log_event "class_blocked" "$id" "$(_queue_job_name "$root/pending/$id.job" 2>/dev/null || echo "-")" "pending" "worker=$worker_id"
             continue
         fi
+        _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "claim acquire ok $id"
 
+        _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "about to run $id"
         echo "[worker $worker_id] running $id"
         _queue_log_event "started" "$id" "$(_queue_job_name "$running")" "running" "worker=$worker_id"
 
