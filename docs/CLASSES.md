@@ -207,3 +207,59 @@ Users should add or edit plugins under:
 not by editing `queuebash.sh`.
 
 Bundled plugins are copied into the queue root only if the destination file does not already exist, so local machine-specific edits are preserved.
+
+
+## Standard network and system plugins
+
+The bundled plugin directory now includes family-aligned helper files:
+
+```text
+assets.d/net.sh
+assets.d/sys.sh
+```
+
+They install to:
+
+```text
+~/.queuebash/assets.d/net.sh
+~/.queuebash/assets.d/sys.sh
+```
+
+The filename must match the facility family:
+
+```text
+net:http_status -> assets.d/net.sh
+sys:cpu_load    -> assets.d/sys.sh
+```
+
+### Network facilities
+
+Published by `net.sh`:
+
+```text
+net:http_status
+net:tcp_endpoint
+net:interface_state
+net:interface_bandwidth
+```
+
+### System facilities
+
+Published by `sys.sh`:
+
+```text
+sys:memory_available
+sys:cpu_load
+sys:cpu_cores
+sys:iowait
+sys:process_count
+```
+
+Examples:
+
+```bash
+CLASS_SHARED_ASSETS="net:tcp_endpoint:db.internal:5432:timeout=3"
+CLASS_EXCLUSIVE_ASSETS="net:interface_state:tun0"
+CLASS_SHARED_ASSETS="sys:memory_available:0:min_gb=8"
+CLASS_SHARED_ASSETS="sys:cpu_load:0:max_load_1m=4.0"
+```

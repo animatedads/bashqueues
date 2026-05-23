@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.3
+
+- Add bundled external asset plugins `assets.d/net.sh` and `assets.d/sys.sh`.
+- Network plugin publishes `net:http_status`, `net:tcp_endpoint`, `net:interface_state`, and `net:interface_bandwidth`.
+- System plugin publishes `sys:memory_available`, `sys:cpu_load`, `sys:cpu_cores`, `sys:iowait`, and `sys:process_count`.
+- Keep helper filenames aligned with facility families: `net:* -> net.sh`, `sys:* -> sys.sh`.
+- Add regression test for external standard plugin contract publication and installation.
+
+
 ## 0.9.2
 
 - Move the standard `path` asset helper out of `queuebash.sh` into `assets.d/path.sh`.

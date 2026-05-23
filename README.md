@@ -1287,3 +1287,22 @@ assets.d/path.sh
 ```
 
 and is copied into the queue root only when missing, so site-specific edits are preserved.
+
+
+## Standard network/system asset plugins
+
+Bundled external plugins now include:
+
+```text
+assets.d/net.sh
+assets.d/sys.sh
+```
+
+List them with:
+
+```bash
+queue assets
+queue assets show net
+queue assets show sys
+queue assets validate
+```
