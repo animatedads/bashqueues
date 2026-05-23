@@ -288,3 +288,13 @@ queue_asset_check_db_mongodb_connect() {
     echo "asset_check_blocked: db:mongodb_connect failed to connect to $host:$port/$db_name (timeout=${timeout}s)"
     return 1
 }
+
+queue_asset_hints() {
+    cat <<'EOF'
+db:sqlite_accessible	target=SQLite database path	params=require_integrity=1	example=queue_class_shared_asset db sqlite_accessible "/tmp/state.db" require_integrity=1	notes=Checks SQLite database accessibility and optional integrity.
+db:postgres_connect	target=host:port/database	params=user=postgres timeout=5 query=SELECT_1	example=queue_class_shared_asset db postgres_connect "localhost:5432/postgres" user=postgres timeout=5	notes=Checks PostgreSQL connectivity.
+db:mysql_connect	target=host:port/database	params=user=root timeout=5 query=SELECT_1	example=queue_class_shared_asset db mysql_connect "localhost:3306/mysql" user=root timeout=5	notes=Checks MySQL/MariaDB connectivity.
+db:redis_connect	target=host:port	params=timeout=3 key=optional_key	example=queue_class_shared_asset db redis_connect "localhost:6379" timeout=3	notes=Checks Redis connectivity.
+db:mongodb_connect	target=mongodb URI	params=timeout=5 database=name collection=name	example=queue_class_shared_asset db mongodb_connect "mongodb://localhost:27017" timeout=5	notes=Checks MongoDB connectivity.
+EOF
+}

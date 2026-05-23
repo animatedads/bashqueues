@@ -203,3 +203,13 @@ queue_asset_check_sys_process_count() {
     echo "asset_check_blocked: sys:process_count current_process_count=$current_process_count exceeds max_processes=$max_processes"
     return 1
 }
+
+queue_asset_hints() {
+    cat <<'EOF'
+sys:cpu_load	target=system	params=max_load=4.0	example=queue_class_shared_asset sys cpu_load "system" max_load=4.0	notes=Checks system load average.
+sys:memory_available	target=system	params=min_gb=8 min_mb=512	example=queue_class_shared_asset sys memory_available "system" min_gb=8	notes=Checks available memory.
+sys:cpu_cores	target=system	params=min_idle=2	example=queue_class_shared_asset sys cpu_cores "system" min_idle=2	notes=Checks idle CPU core availability.
+sys:iowait	target=system	params=max_percent=10	example=queue_class_shared_asset sys iowait "system" max_percent=10	notes=Checks I/O wait percentage.
+sys:process_count	target=system	params=max_processes=1000	example=queue_class_shared_asset sys process_count "system" max_processes=1000	notes=Checks current process count threshold.
+EOF
+}

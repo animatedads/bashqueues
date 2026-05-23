@@ -1,5 +1,70 @@
 # Changelog
 
+## 0.12.4
+
+- Add execution caps helpers for wall timeout, billing-cycle timeout, and CPU-seconds metadata.
+- Add class defaults for `CLASS_DEFAULT_CPU_SECONDS`, `CLASS_DEFAULT_WALL_SECONDS`, `CLASS_DEFAULT_BILLING_CYCLES`, `CLASS_DEFAULT_BILLING_UNIT_SECONDS`, `CLASS_DEFAULT_BILLING_GRACE_SECONDS`, and `CLASS_DEFAULT_BILLING_POLICY`.
+- Effective timeout now uses shortest-cap-wins between explicit `TIMEOUT` and billing-cycle derived timeout.
+- `queue explain` displays an Execution caps section with cap calculation.
+- QueueManager can set billing/cap defaults with `--default-billing-*` and `--default-cpu-seconds` options.
+
+
+## 0.12.3
+
+- Enforce class/job `TIMEOUT` and `KILL_AFTER` defaults in the actual payload argv builder.
+- Payloads now launch through `timeout --signal=TERM --kill-after=<KILL_AFTER> <TIMEOUT> ...` when `TIMEOUT` is set.
+- Timeout wrapping works under systemd and direct/setsid runners.
+- Logs now include `timeout_request:` when a timeout wrapper is active.
+
+
+## 0.12.2
+
+- Fix the actual systemd-run NUL argv builder that still appended `%` to `CPU_LIMIT`, producing invalid `CPUQuota=50%%` when class defaults used `50%`.
+- The systemd runner now passes `CPUQuota=$(_queue_normalize_systemd_cpu_quota "$cpu")` in the launch argv path.
+- Extend regression coverage to scan the real builder for `CPUQuota=${cpu}%` and `CPUQuota=$cpu%` patterns.
+
+
+## 0.12.1
+
+- Fix systemd CPUQuota argv construction for class defaults such as `CLASS_DEFAULT_CPU_LIMIT=50%`.
+- `CPUQuota=50%` is now passed as a single literal percent instead of the invalid `CPUQuota=50%%`.
+- Add CPU quota normalization so both `50` and `50%` class defaults become valid systemd CPUQuota values.
+
+
+## 0.12.0
+
+- Add class default job settings copied into submitted job records.
+- QueueManager class creation can set default runner, CPU/memory limits, max log size, log policy, timeout metadata, kill-after metadata, log tag, output dir, and env prefix.
+- `queue class explain` shows class defaults; `queue explain` shows defaults inherited by a job.
+- Add bundled `REXX_RUNAWAY` class template for controlled runaway ooRexx/REXX jobs.
+
+
+## 0.11.4
+
+- Add compatibility fallback for asset hints: helpers without `queue_asset_hints` now synthesize minimal hints from `queue_asset_facilities`.
+- Fix QueueManager double-printing `No published helper hint` for unknown facilities.
+- `queue asset-hints` now remains useful against older installed local helpers until they are refreshed.
+- Invalid helpers are skipped for hint listing but still fail `queue assets validate`.
+
+
+## 0.11.3
+
+- Move QueueManager asset hints out of hard-coded manager logic and into asset helpers.
+- Add optional `queue_asset_hints` helper contract returning TSV hint metadata.
+- Add core `queue asset-hint <facility>` and `queue asset-hints` commands.
+- Populate helper-published hints for existing net, git, path, sys, db, format, runnable, and crypto families when present.
+- QueueManager now reads hints from helpers and falls back only to generic guidance.
+
+
+## 0.11.2
+
+- Add QueueManager asset hinting for common facilities.
+- Add `queue mgr hints`, `queue mgr hint <facility>`, and `queue mgr picker`.
+- Add hint display during interactive class creation.
+- Extend Asset Manager menu with hint and hint-list options.
+- Add regression tests for hint commands and manager-created classes using hinted parameters.
+
+
 ## 0.11.1
 
 - Make bare `queuemgr` route to the new lazy-loaded `queue mgr` module.

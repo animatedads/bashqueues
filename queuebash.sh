@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.11.1"
+QUEUEBASH_VERSION="0.12.4"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -982,6 +982,10 @@ _queue_class_explain() {
     echo; echo "Jobs referencing this class:"
     refs="$(grep -R -l -E "^JOB_CLASS=['\"]?${class}['\"]?$|^JOB_CLASS=${class}$" "$(_queue_root)"/{pending,running,paused,done,failed,interrupted,cancelled,deleted} 2>/dev/null || true)"
     [[ -n "$refs" ]] && echo "$refs" || echo "  none"
+    echo
+    echo "Class defaults:"
+    _queue_class_defaults_show "$class"
+
 }
 
 
@@ -1995,6 +1999,137 @@ _queue_manager_entry() {
     _queue_manager "$@"
 }
 
+
+
+_queue_normalize_systemd_cpu_quota() {
+    local v="$1"
+
+    # Accept either "50" or "50%"; systemd wants a single literal percent.
+    # Never double percent-escape because this is used as an argv element, not
+    # inside a printf format string.
+    [[ -z "$v" ]] && return 0
+
+    if [[ "$v" =~ ^[0-9]+([.][0-9]+)?%$ ]]; then
+        printf '%s\n' "$v"
+    elif [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+        printf '%s%%\n' "$v"
+    else
+        printf '%s\n' "$v"
+    fi
+}
+
+_queue_class_load_defaults_for_class() {
+    local class="${1:-DEFAULT}"
+    local class_file
+    class_file="$(_queue_class_file "$class")"
+    [[ -f "$class_file" ]] || return 0
+
+    (
+        CLASS_DEFAULT_RUNNER=""
+        CLASS_DEFAULT_CPU_LIMIT=""
+        CLASS_DEFAULT_MEM_LIMIT=""
+        CLASS_DEFAULT_MAX_LOG_SIZE_BYTES=""
+        CLASS_DEFAULT_LOG_OVERFLOW_POLICY=""
+        CLASS_DEFAULT_ALLOW_LARGE_LOG=""
+        CLASS_DEFAULT_TIMEOUT=""
+        CLASS_DEFAULT_KILL_AFTER=""
+        CLASS_DEFAULT_LOG_TAG=""
+        CLASS_DEFAULT_OUTPUT_DIR=""
+        CLASS_DEFAULT_ENV_PREFIX=""
+        CLASS_DEFAULT_CPU_SECONDS=""
+        CLASS_DEFAULT_WALL_SECONDS=""
+        CLASS_DEFAULT_BILLING_CYCLES=""
+        CLASS_DEFAULT_BILLING_UNIT_SECONDS=""
+        CLASS_DEFAULT_BILLING_GRACE_SECONDS=""
+        CLASS_DEFAULT_BILLING_POLICY=""
+
+        source "$class_file" >/dev/null 2>&1 || exit 0
+
+        [[ -n "${CLASS_DEFAULT_RUNNER:-}" ]] && printf 'RUNNER\t%s\n' "$CLASS_DEFAULT_RUNNER"
+        [[ -n "${CLASS_DEFAULT_CPU_LIMIT:-}" ]] && printf 'CPU_LIMIT\t%s\n' "$CLASS_DEFAULT_CPU_LIMIT"
+        [[ -n "${CLASS_DEFAULT_MEM_LIMIT:-}" ]] && printf 'MEM_LIMIT\t%s\n' "$CLASS_DEFAULT_MEM_LIMIT"
+        [[ -n "${CLASS_DEFAULT_MAX_LOG_SIZE_BYTES:-}" ]] && printf 'MAX_LOG_SIZE_BYTES\t%s\n' "$CLASS_DEFAULT_MAX_LOG_SIZE_BYTES"
+        [[ -n "${CLASS_DEFAULT_LOG_OVERFLOW_POLICY:-}" ]] && printf 'LOG_OVERFLOW_POLICY\t%s\n' "$CLASS_DEFAULT_LOG_OVERFLOW_POLICY"
+        [[ -n "${CLASS_DEFAULT_ALLOW_LARGE_LOG:-}" ]] && printf 'ALLOW_LARGE_LOG\t%s\n' "$CLASS_DEFAULT_ALLOW_LARGE_LOG"
+        [[ -n "${CLASS_DEFAULT_TIMEOUT:-}" ]] && printf 'TIMEOUT\t%s\n' "$CLASS_DEFAULT_TIMEOUT"
+        [[ -n "${CLASS_DEFAULT_KILL_AFTER:-}" ]] && printf 'KILL_AFTER\t%s\n' "$CLASS_DEFAULT_KILL_AFTER"
+        [[ -n "${CLASS_DEFAULT_LOG_TAG:-}" ]] && printf 'LOG_TAG\t%s\n' "$CLASS_DEFAULT_LOG_TAG"
+        [[ -n "${CLASS_DEFAULT_OUTPUT_DIR:-}" ]] && printf 'OUTPUT_DIR\t%s\n' "$CLASS_DEFAULT_OUTPUT_DIR"
+        [[ -n "${CLASS_DEFAULT_ENV_PREFIX:-}" ]] && printf 'ENV_PREFIX\t%s\n' "$CLASS_DEFAULT_ENV_PREFIX"
+        [[ -n "${CLASS_DEFAULT_CPU_SECONDS:-}" ]] && printf 'CPU_SECONDS\t%s\n' "$CLASS_DEFAULT_CPU_SECONDS"
+        [[ -n "${CLASS_DEFAULT_WALL_SECONDS:-}" ]] && printf 'WALL_SECONDS\t%s\n' "$CLASS_DEFAULT_WALL_SECONDS"
+        [[ -n "${CLASS_DEFAULT_BILLING_CYCLES:-}" ]] && printf 'BILLING_CYCLES\t%s\n' "$CLASS_DEFAULT_BILLING_CYCLES"
+        [[ -n "${CLASS_DEFAULT_BILLING_UNIT_SECONDS:-}" ]] && printf 'BILLING_UNIT_SECONDS\t%s\n' "$CLASS_DEFAULT_BILLING_UNIT_SECONDS"
+        [[ -n "${CLASS_DEFAULT_BILLING_GRACE_SECONDS:-}" ]] && printf 'BILLING_GRACE_SECONDS\t%s\n' "$CLASS_DEFAULT_BILLING_GRACE_SECONDS"
+        [[ -n "${CLASS_DEFAULT_BILLING_POLICY:-}" ]] && printf 'BILLING_POLICY\t%s\n' "$CLASS_DEFAULT_BILLING_POLICY"
+    )
+}
+
+_queue_expand_job_template() {
+    local template="$1"
+    local id="$2"
+    local name="$3"
+    local root="$(_queue_root)"
+    local out="$template"
+
+    out="${out//\$\{JOB_ID\}/$id}"
+    out="${out//\$\{JOB_NAME\}/$name}"
+    out="${out//\$\{QUEUEBASH_ROOT\}/$root}"
+    out="${out//\$\{QUEUE_ROOT\}/$root}"
+
+    printf '%s\n' "$out"
+}
+
+_queue_append_class_defaults_to_job_file() {
+    local job_file="$1"
+    local class="${2:-DEFAULT}"
+    local id="${3:-}"
+    local name="${4:-}"
+    local key value expanded
+    local applied=0
+
+    [[ -f "$job_file" ]] || return 0
+    [[ -z "$id" ]] && id="$(basename "$job_file" .job)"
+    [[ -z "$name" ]] && name="$(_queue_job_name "$job_file" 2>/dev/null || true)"
+
+    # Append defaults after submit has written its built-in values. The last
+    # assignment wins when the job file is sourced, which makes class defaults
+    # visible/auditable while still keeping the original submitted baseline.
+    while IFS=$'\t' read -r key value; do
+        [[ -n "$key" ]] || continue
+
+        case "$key" in
+            OUTPUT_DIR|ENV_PREFIX|LOG_TAG)
+                expanded="$(_queue_expand_job_template "$value" "$id" "$name")"
+                ;;
+            *)
+                expanded="$value"
+                ;;
+        esac
+
+        printf '%s=%q\n' "$key" "$expanded" >> "$job_file"
+        applied=$((applied + 1))
+    done < <(_queue_class_load_defaults_for_class "$class")
+
+    if [[ "$applied" -gt 0 ]]; then
+        printf 'CLASS_DEFAULTS_APPLIED_AT=%q\n' "$(date -Is 2>/dev/null || date)" >> "$job_file"
+        printf 'CLASS_DEFAULTS_SOURCE=%q\n' "$class" >> "$job_file"
+    fi
+}
+
+_queue_class_defaults_show() {
+    local class="${1:-DEFAULT}"
+    local any=0
+
+    while IFS=$'\t' read -r key value; do
+        [[ -n "$key" ]] || continue
+        any=1
+        printf '  %-32s %s\n' "$key" "$value"
+    done < <(_queue_class_load_defaults_for_class "$class")
+
+    [[ "$any" -eq 0 ]] && echo "  none"
+}
+
 _queue_next_job() {
     # Contract:
     #   stdout MUST contain only the selected pending job path, or nothing.
@@ -2545,6 +2680,182 @@ _queue_preflight_auto_required_files() {
 }
 
 
+
+
+_queue_duration_to_seconds() {
+    local v="${1:-}"
+
+    [[ -n "$v" ]] || return 1
+
+    case "$v" in
+        *ms)
+            # Round up milliseconds to one second for process timeout purposes.
+            local n="${v%ms}"
+            [[ "$n" =~ ^[0-9]+$ ]] || return 1
+            if (( n <= 0 )); then echo 0; else echo $(( (n + 999) / 1000 )); fi
+            ;;
+        *s)
+            local n="${v%s}"
+            [[ "$n" =~ ^[0-9]+$ ]] || return 1
+            echo "$n"
+            ;;
+        *m)
+            local n="${v%m}"
+            [[ "$n" =~ ^[0-9]+$ ]] || return 1
+            echo $(( n * 60 ))
+            ;;
+        *h)
+            local n="${v%h}"
+            [[ "$n" =~ ^[0-9]+$ ]] || return 1
+            echo $(( n * 3600 ))
+            ;;
+        *d)
+            local n="${v%d}"
+            [[ "$n" =~ ^[0-9]+$ ]] || return 1
+            echo $(( n * 86400 ))
+            ;;
+        *)
+            [[ "$v" =~ ^[0-9]+$ ]] || return 1
+            echo "$v"
+            ;;
+    esac
+}
+
+_queue_seconds_to_duration() {
+    local s="${1:-}"
+    [[ "$s" =~ ^[0-9]+$ ]] || return 1
+    printf '%ss\n' "$s"
+}
+
+_queue_caps_billing_timeout_seconds() {
+    local unit="${1:-}"
+    local cycles="${2:-}"
+    local grace="${3:-0}"
+    local unit_s grace_s
+
+    [[ -n "$unit" && -n "$cycles" ]] || return 1
+    [[ "$cycles" =~ ^[0-9]+$ ]] || return 1
+    (( cycles > 0 )) || return 1
+
+    unit_s="$(_queue_duration_to_seconds "$unit")" || return 1
+    grace_s="$(_queue_duration_to_seconds "$grace")" || grace_s=0
+
+    local total=$(( unit_s * cycles - grace_s ))
+    (( total < 1 )) && total=1
+    echo "$total"
+}
+
+_queue_caps_effective_timeout_seconds_from_values() {
+    local wall="${1:-}"
+    local billing_unit="${2:-}"
+    local billing_cycles="${3:-}"
+    local billing_grace="${4:-0}"
+
+    local best="" wall_s billing_s
+
+    if [[ -n "$wall" ]]; then
+        wall_s="$(_queue_duration_to_seconds "$wall" 2>/dev/null || true)"
+        if [[ "$wall_s" =~ ^[0-9]+$ && "$wall_s" -gt 0 ]]; then
+            best="$wall_s"
+        fi
+    fi
+
+    billing_s="$(_queue_caps_billing_timeout_seconds "$billing_unit" "$billing_cycles" "$billing_grace" 2>/dev/null || true)"
+    if [[ "$billing_s" =~ ^[0-9]+$ && "$billing_s" -gt 0 ]]; then
+        if [[ -z "$best" || "$billing_s" -lt "$best" ]]; then
+            best="$billing_s"
+        fi
+    fi
+
+    [[ -n "$best" ]] || return 1
+    echo "$best"
+}
+
+_queue_caps_effective_timeout_for_current_job() {
+    local best
+    best="$(_queue_caps_effective_timeout_seconds_from_values \
+        "${TIMEOUT:-}" \
+        "${BILLING_UNIT_SECONDS:-}" \
+        "${BILLING_CYCLES:-}" \
+        "${BILLING_GRACE_SECONDS:-0}" 2>/dev/null || true)"
+    [[ "$best" =~ ^[0-9]+$ && "$best" -gt 0 ]] || return 1
+    _queue_seconds_to_duration "$best"
+}
+
+_queue_caps_append_defaults_to_job_file() {
+    local job_file="$1"
+    local class="$2"
+    [[ -f "$job_file" ]] || return 0
+
+    local class_file
+    class_file="$(_queue_class_file "$class")"
+    [[ -f "$class_file" ]] || return 0
+
+    (
+        CLASS_DEFAULT_CPU_SECONDS=""
+        CLASS_DEFAULT_WALL_SECONDS=""
+        CLASS_DEFAULT_BILLING_CYCLES=""
+        CLASS_DEFAULT_BILLING_UNIT_SECONDS=""
+        CLASS_DEFAULT_BILLING_GRACE_SECONDS=""
+        CLASS_DEFAULT_BILLING_POLICY=""
+
+        source "$class_file" >/dev/null 2>&1 || exit 0
+
+        [[ -n "${CLASS_DEFAULT_CPU_SECONDS:-}" ]] && printf 'CPU_SECONDS=%q\n' "$CLASS_DEFAULT_CPU_SECONDS"
+        [[ -n "${CLASS_DEFAULT_WALL_SECONDS:-}" ]] && printf 'WALL_SECONDS=%q\n' "$CLASS_DEFAULT_WALL_SECONDS"
+        [[ -n "${CLASS_DEFAULT_BILLING_CYCLES:-}" ]] && printf 'BILLING_CYCLES=%q\n' "$CLASS_DEFAULT_BILLING_CYCLES"
+        [[ -n "${CLASS_DEFAULT_BILLING_UNIT_SECONDS:-}" ]] && printf 'BILLING_UNIT_SECONDS=%q\n' "$CLASS_DEFAULT_BILLING_UNIT_SECONDS"
+        [[ -n "${CLASS_DEFAULT_BILLING_GRACE_SECONDS:-}" ]] && printf 'BILLING_GRACE_SECONDS=%q\n' "$CLASS_DEFAULT_BILLING_GRACE_SECONDS"
+        [[ -n "${CLASS_DEFAULT_BILLING_POLICY:-}" ]] && printf 'BILLING_POLICY=%q\n' "$CLASS_DEFAULT_BILLING_POLICY"
+    ) >> "$job_file"
+}
+
+_queue_caps_explain_current_job() {
+    local wall="${TIMEOUT:-}"
+    local kill_after="${KILL_AFTER:-}"
+    local cpu_seconds="${CPU_SECONDS:-}"
+    local wall_seconds="${WALL_SECONDS:-}"
+    local billing_unit="${BILLING_UNIT_SECONDS:-}"
+    local billing_cycles="${BILLING_CYCLES:-}"
+    local billing_grace="${BILLING_GRACE_SECONDS:-0}"
+    local billing_policy="${BILLING_POLICY:-shortest-cap-wins}"
+
+    local wall_s="" billing_s="" effective_s="" effective=""
+
+    [[ -n "$wall" ]] && wall_s="$(_queue_duration_to_seconds "$wall" 2>/dev/null || true)"
+    billing_s="$(_queue_caps_billing_timeout_seconds "$billing_unit" "$billing_cycles" "$billing_grace" 2>/dev/null || true)"
+    effective_s="$(_queue_caps_effective_timeout_seconds_from_values "$wall" "$billing_unit" "$billing_cycles" "$billing_grace" 2>/dev/null || true)"
+    [[ "$effective_s" =~ ^[0-9]+$ ]] && effective="$(_queue_seconds_to_duration "$effective_s")"
+
+    echo "Execution caps"
+    [[ -n "$wall" ]] && echo "  wall timeout:       $wall${wall_s:+ ($wall_s seconds)}"
+    [[ -n "$kill_after" ]] && echo "  kill after:         $kill_after"
+    [[ -n "$cpu_seconds" ]] && echo "  CPU seconds:        $cpu_seconds (metadata; live CPU enforcement is future work)"
+    [[ -n "$wall_seconds" ]] && echo "  wall seconds:       $wall_seconds (metadata)"
+    if [[ -n "$billing_unit" || -n "$billing_cycles" ]]; then
+        echo "  billing unit:       ${billing_unit:-unset}"
+        echo "  billing cycles:     ${billing_cycles:-unset}"
+        echo "  billing grace:      ${billing_grace:-0}"
+        [[ "$billing_s" =~ ^[0-9]+$ ]] && echo "  billing timeout:    $(_queue_seconds_to_duration "$billing_s") ($billing_s seconds)"
+    fi
+    echo "  policy:             $billing_policy"
+    echo "  effective timeout:  ${effective:-none}"
+}
+
+_queue_emit_timeout_wrapper_argv() {
+    local timeout_value="${1:-}"
+    local kill_after="${2:-}"
+
+    [[ -n "$timeout_value" ]] || return 0
+
+    # GNU coreutils timeout syntax. The runnable class can also gate the
+    # availability of the command, but the runner emits a clear failure if a
+    # class requests TIMEOUT without timeout being installed.
+    printf '%s\0' timeout --signal=TERM
+    [[ -n "$kill_after" ]] && printf '%s\0' "--kill-after=$kill_after"
+    printf '%s\0' "$timeout_value"
+}
+
 _queue_build_payload_command() {
     # Prints NUL-separated argv for the actual process to spawn.
     # We prefer systemd-run for CPU/MEM limits. If no limits are requested,
@@ -2553,7 +2864,9 @@ _queue_build_payload_command() {
     local mem="${2:-}"
     local cwd="${3:-}"
     local runner="${4:-auto}"
-    shift 4
+    local timeout_value="${5:-}"
+    local kill_after="${6:-}"
+    shift 6
 
     if [[ "$runner" == "systemd" ]]; then
         if _queue_systemd_user_service_supported; then
@@ -2570,9 +2883,10 @@ _queue_build_payload_command() {
             done
 
             [[ -n "$cwd" ]] && printf '%s\0' --working-directory="$cwd"
-            [[ -n "$cpu" ]] && printf '%s\0' -p "CPUQuota=${cpu}%"
+            [[ -n "$cpu" ]] && printf '%s\0' -p "CPUQuota=$(_queue_normalize_systemd_cpu_quota "$cpu")"
             [[ -n "$mem" ]] && printf '%s\0' -p "MemoryMax=${mem}"
             printf '%s\0' --
+            _queue_emit_timeout_wrapper_argv "$timeout_value" "$kill_after"
             printf '%s\0' "$@"
             return 0
         fi
@@ -2581,6 +2895,7 @@ _queue_build_payload_command() {
     if command -v setsid >/dev/null 2>&1; then
         printf '%s\0' setsid --
     fi
+    _queue_emit_timeout_wrapper_argv "$timeout_value" "$kill_after"
     printf '%s\0' "$@"
 }
 
@@ -2601,13 +2916,13 @@ _queue_systemd_probe() {
     local mem="${2:-256M}"
 
     echo "Probe command:"
-    printf '  %q' systemd-run --user --pipe --wait --collect -p "CPUQuota=${cpu}%" -p "MemoryMax=${mem}" -- /bin/sh -c 'echo queuebash-systemd-probe-ok; pwd; exit 0'
+    printf '  %q' systemd-run --user --pipe --wait --collect -p "CPUQuota=$(_queue_normalize_systemd_cpu_quota "$cpu")" -p "MemoryMax=${mem}" -- /bin/sh -c 'echo queuebash-systemd-probe-ok; pwd; exit 0'
     echo
     echo
 
     systemd-run --user --pipe --wait --collect \
         --working-directory="$PWD" \
-        -p "CPUQuota=${cpu}%" \
+        -p "CPUQuota=$(_queue_normalize_systemd_cpu_quota "$cpu")" \
         -p "MemoryMax=${mem}" \
         -- /bin/sh -c 'echo queuebash-systemd-probe-ok; pwd; exit 0'
     local rc="$?"
@@ -3888,6 +4203,34 @@ _queue_explain_job() {
             -p MemoryCurrent \
             -p TasksCurrent 2>/dev/null | sed 's/^/    /' || echo "    unavailable"
     fi
+    echo
+
+    echo
+    echo "Class defaults applied"
+    (
+        CLASS_DEFAULTS_APPLIED_AT=""
+        CLASS_DEFAULTS_SOURCE=""
+        TIMEOUT=""
+        KILL_AFTER=""
+        LOG_TAG=""
+        OUTPUT_DIR=""
+        ENV_PREFIX=""
+        source "$f" >/dev/null 2>&1 || exit 0
+        echo "  source:            ${CLASS_DEFAULTS_SOURCE:-none}"
+        [[ -n "${CLASS_DEFAULTS_APPLIED_AT:-}" ]] && echo "  applied at:        $CLASS_DEFAULTS_APPLIED_AT"
+        [[ -n "${TIMEOUT:-}" ]] && echo "  timeout:           $TIMEOUT"
+        [[ -n "${KILL_AFTER:-}" ]] && echo "  kill after:        $KILL_AFTER"
+        [[ -n "${LOG_TAG:-}" ]] && echo "  log tag:           $LOG_TAG"
+        [[ -n "${OUTPUT_DIR:-}" ]] && echo "  output dir:        $OUTPUT_DIR"
+        [[ -n "${ENV_PREFIX:-}" ]] && echo "  env prefix:        $ENV_PREFIX"
+    )
+    echo
+
+    echo
+    (
+        source "$f" >/dev/null 2>&1 || exit 0
+        _queue_caps_explain_current_job
+    )
     echo
 
     echo "Log"
@@ -5257,6 +5600,8 @@ queue() {
                 printf ' )\n'
             } > "$job"
 
+            _queue_append_class_defaults_to_job_file "$job" "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$id" "$name"
+
             echo "Submitted $id : $name priority=$priority"
             if [[ "${not_before_epoch:-0}" =~ ^[0-9]+$ && "${not_before_epoch:-0}" -gt 0 ]]; then
                 echo "  scheduled for: $(date -d "@$not_before_epoch" -Is 2>/dev/null || echo "$not_before_epoch") ${schedule_label:+($schedule_label)}"
@@ -5404,6 +5749,13 @@ queue() {
 
         legacy-manager|legacy-queuemgr)
             _queue_legacy_queuemgr "$@"
+            ;;
+
+        asset-hint)
+            _queue_asset_hints_print "${1:-}"
+            ;;
+        asset-hints)
+            _queue_asset_hints_print
             ;;
 
         mgr|manager|qm|queuemgr)
@@ -6781,6 +7133,12 @@ _queue_worker() {
                         echo "WARNING: resource limits were requested but are NOT enforced in this shell/session."
                     fi
                 fi
+                if [[ -n "${TIMEOUT:-}" ]]; then
+                    echo "timeout_request: timeout=${TIMEOUT:-} effective_timeout=${effective_timeout:-none} kill_after=${KILL_AFTER:-} billing_unit=${BILLING_UNIT_SECONDS:-} billing_cycles=${BILLING_CYCLES:-} billing_grace=${BILLING_GRACE_SECONDS:-} wrapper=coreutils-timeout"
+                    if ! command -v timeout >/dev/null 2>&1; then
+                        echo "WARNING: TIMEOUT requested but command 'timeout' is not available; payload launch will fail."
+                    fi
+                fi
 
                 _queue_preflight_auto_required_files
                 preflight_rc="$?"
@@ -6794,7 +7152,8 @@ _queue_worker() {
                 {
                     printf 'RUNNER_USED=%q\n' "$runner_used"
                 } >> "$running"
-                mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${PWD_AT_SUBMIT:-$PWD}" "$runner_used" "${COMMAND[@]}")
+                effective_timeout="$(_queue_caps_effective_timeout_for_current_job 2>/dev/null || true)"
+                mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${PWD_AT_SUBMIT:-$PWD}" "$runner_used" "${effective_timeout:-}" "${KILL_AFTER:-}" "${COMMAND[@]}")
                 printf "launch_argv:"
                 printf " %q" "${payload_cmd[@]}"
                 printf "\n"
@@ -7234,6 +7593,121 @@ _queue_complete() {
 
     COMPREPLY=( $(compgen -f -- "$cur") )
     return 0
+}
+
+
+
+
+_queue_asset_hint_from_helper() {
+    local facility="$1"
+    local family helper
+    family="${facility%%:*}"
+    [[ -n "$family" && "$family" != "$facility" ]] || return 1
+
+    helper="$(_queue_asset_helper_path "$family")"
+    [[ -f "$helper" ]] || return 1
+
+    (
+        source "$helper" >/dev/null 2>&1 || exit 1
+
+        local fac target params example notes desc
+
+        # Preferred contract: helper publishes exact editor hints.
+        if declare -F queue_asset_hints >/dev/null 2>&1; then
+            while IFS=$'\t' read -r fac target params example notes; do
+                [[ "$fac" == "$facility" ]] || continue
+                echo "Facility: $fac"
+                [[ -n "$target" ]] && echo "Target:   ${target#target=}"
+                [[ -n "$params" ]] && echo "Params:   ${params#params=}"
+                [[ -n "$example" ]] && { echo "Example:"; echo "  ${example#example=}"; }
+                [[ -n "$notes" ]] && { echo "Notes:"; echo "  ${notes#notes=}"; }
+                exit 0
+            done < <(queue_asset_hints)
+        fi
+
+        # Compatibility fallback for existing installed helpers that have not
+        # been refreshed since queue_asset_hints was introduced.
+        if declare -F queue_asset_facilities >/dev/null 2>&1; then
+            while IFS= read -r line; do
+                fac="${line%%[[:space:]]*}"
+                [[ "$fac" == "$facility" ]] || continue
+                desc="${line#"$fac"}"
+                desc="${desc#"${desc%%[![:space:]]*}"}"
+
+                echo "Facility: $fac"
+                echo "Target:   see helper/plugin documentation"
+                echo "Params:   key=value parameters depend on this helper"
+                echo "Example:"
+                echo "  queue_class_shared_asset ${fac%%:*} ${fac#*:} \"TARGET\" key=value"
+                [[ -n "$desc" ]] && { echo "Notes:"; echo "  $desc"; }
+                exit 0
+            done < <(queue_asset_facilities)
+        fi
+
+        exit 3
+    )
+}
+
+_queue_asset_hints_from_helpers() {
+    local root="$(_queue_root)"
+    local helper
+    shopt -s nullglob
+    for helper in "$root/assets.d"/*.sh; do
+        [[ -f "$helper" ]] || continue
+        (
+            source "$helper" >/dev/null 2>&1 || exit 0
+
+            if declare -F queue_asset_hints >/dev/null 2>&1; then
+                queue_asset_hints
+                exit 0
+            fi
+
+            # Compatibility fallback: synthesize minimal hint records from
+            # published facilities. This keeps QueueManager useful even when
+            # local helper files pre-date the hint contract.
+            if declare -F queue_asset_facilities >/dev/null 2>&1; then
+                local line fac desc family check
+                while IFS= read -r line; do
+                    fac="${line%%[[:space:]]*}"
+                    [[ "$fac" == *:* ]] || continue
+                    desc="${line#"$fac"}"
+                    desc="${desc#"${desc%%[![:space:]]*}"}"
+                    family="${fac%%:*}"
+                    check="${fac#*:}"
+                    printf '%s\ttarget=%s\tparams=%s\texample=%s\tnotes=%s\n' \
+                        "$fac" \
+                        "see helper/plugin documentation" \
+                        "key=value parameters depend on this helper" \
+                        "queue_class_shared_asset $family $check \"TARGET\" key=value" \
+                        "$desc"
+                done < <(queue_asset_facilities)
+            fi
+        )
+    done
+    shopt -u nullglob
+}
+
+_queue_asset_hints_print() {
+    local facility="${1:-}"
+    if [[ -n "$facility" ]]; then
+        if _queue_asset_hint_from_helper "$facility"; then
+            return 0
+        fi
+        echo "No published helper hint for: $facility"
+        return 1
+    fi
+
+    _queue_asset_hints_from_helpers | awk -F '\t' '
+        NF > 0 && $1 != "" {
+            printf "%-28s", $1
+            for (i=2; i<=NF; i++) {
+                if ($i ~ /^target=/) {
+                    v=$i; sub(/^target=/, "", v); printf " target=%s", v
+                }
+            }
+            printf "\n"
+        }
+    ' | sort -u
 }
 
 

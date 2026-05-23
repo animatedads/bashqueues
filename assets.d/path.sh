@@ -98,3 +98,11 @@ queue_asset_check_path_freespace() {
     echo "asset_check_ok: path:freespace target=$target available_kb=$avail_kb required_kb=$need_kb"
     return 0
 }
+
+queue_asset_hints() {
+    cat <<'EOF'
+path:exists	target=file or directory path	params=	example=queue_class_shared_asset path exists "/tmp/input.dat"	notes=Checks that a filesystem path exists.
+path:freespace	target=directory or mount path	params=min_gb=10 min_mb=500 min_kb=1024	example=queue_class_shared_asset path freespace "/var/tmp" min_gb=5	notes=Checks available free space.
+path:mount	target=mountpoint path	params=	example=queue_class_shared_asset path mount "/mnt/evidence"	notes=Checks that path is currently a mountpoint.
+EOF
+}

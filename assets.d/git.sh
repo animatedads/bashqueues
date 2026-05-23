@@ -98,3 +98,11 @@ queue_asset_check_git_branch() {
     echo "asset_check_blocked: git:branch current branch is '$current_branch', but requires '$require_branch'"
     return 1
 }
+
+queue_asset_hints() {
+    cat <<'EOF'
+git:repo_exists	target=repository directory	params=	example=queue_class_shared_asset git repo_exists "/home/hc3/bashqueues"	notes=Checks that target is a valid Git repository.
+git:branch	target=repository directory	params=require_branch=main	example=queue_class_shared_asset git branch "/home/hc3/bashqueues" require_branch=main	notes=Checks current branch.
+git:clean_tree	target=repository directory	params=allow_untracked=0	example=queue_class_shared_asset git clean_tree "/home/hc3/bashqueues" allow_untracked=0	notes=Checks whether working tree is clean.
+EOF
+}

@@ -187,3 +187,12 @@ queue_asset_check_net_interface_bandwidth() {
     echo "asset_check_blocked: net:interface_bandwidth interface=$interface total_rate_mbps=$(( total_rate * 8 / 1000000 )) exceeds max_allowed_mbps=$(( max_rate * 8 / 1000000 )) at max_usage_percent=$max_usage_percent"
     return 1
 }
+
+queue_asset_hints() {
+    cat <<'EOF'
+net:http_status	target=URL or host, e.g. https://github.com	params=timeout=5 accept_status=200,201,204,301,302,304,307,308,403	example=queue_class_shared_asset net http_status "https://github.com" timeout=5 accept_status=200,301,302	notes=Checks that HTTP/HTTPS endpoint returns an accepted status code.
+net:tcp_endpoint	target=host:port, e.g. db.internal:5432	params=timeout=3	example=queue_class_shared_asset net tcp_endpoint "db.internal:5432" timeout=3	notes=Checks TCP connect reachability.
+net:interface_state	target=interface name, e.g. tun0	params=state=UP	example=queue_class_shared_asset net interface_state "tun0" state=UP	notes=Checks that a network interface exists and is in the requested state.
+net:interface_bandwidth	target=interface name, e.g. eth0	params=min_mbps=10	example=queue_class_shared_asset net interface_bandwidth "eth0" min_mbps=10	notes=Checks network interface bandwidth headroom where supported.
+EOF
+}

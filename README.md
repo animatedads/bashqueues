@@ -1525,3 +1525,134 @@ The old built-in REPL is kept only for development diagnostics:
 queue legacy-manager
 queue legacy-queuemgr
 ```
+
+
+## QueueManager asset hints
+
+QueueManager has built-in hints for common asset facilities:
+
+```bash
+queue mgr hints
+queue mgr hint net:http_status
+queue mgr hint git:branch
+queue mgr picker
+```
+
+During interactive class creation, type `?` at the asset-family prompt to list installed assets and hinted facilities.
+
+
+## Plugin-published asset hints
+
+Asset helpers may publish UI/editor hints with:
+
+```bash
+queue_asset_hints
+```
+
+The function emits TSV records:
+
+```text
+family:check<TAB>target=...<TAB>params=...<TAB>example=...<TAB>notes=...
+```
+
+QueueManager uses these hints for:
+
+```bash
+queue mgr hints
+queue mgr hint net:http_status
+queue mgr picker
+```
+
+
+## Hint compatibility fallback
+
+`queue asset-hints` prefers helper-published `queue_asset_hints` metadata. If an installed helper predates the hint contract, bashqueues synthesizes a minimal hint from `queue_asset_facilities` so QueueManager can still display available facilities.
+
+To get richer target/parameter hints, refresh or replace the asset helper with a version that defines `queue_asset_hints`.
+
+
+## Class default job settings
+
+Classes may define defaults copied into each job record at submit time:
+
+```bash
+CLASS_DEFAULT_RUNNER=systemd
+CLASS_DEFAULT_CPU_LIMIT=50%
+CLASS_DEFAULT_MEM_LIMIT=512M
+CLASS_DEFAULT_MAX_LOG_SIZE_BYTES=1048576
+CLASS_DEFAULT_LOG_OVERFLOW_POLICY=stderr-only
+CLASS_DEFAULT_TIMEOUT=30s
+CLASS_DEFAULT_KILL_AFTER=5s
+CLASS_DEFAULT_LOG_TAG='${JOB_NAME}.${JOB_ID}'
+CLASS_DEFAULT_OUTPUT_DIR='${QUEUEBASH_ROOT}/class_outputs/${JOB_NAME}/${JOB_ID}'
+CLASS_DEFAULT_ENV_PREFIX='${JOB_NAME}_${JOB_ID}'
+```
+
+Templates are expanded using the final `JOB_ID`, `JOB_NAME`, and `QUEUEBASH_ROOT`.
+
+QueueManager can set these with `queue mgr class-create --default-*`.
+
+
+## CPUQuota class defaults
+
+For systemd-backed jobs, class defaults may use either form:
+
+```bash
+CLASS_DEFAULT_CPU_LIMIT=50
+CLASS_DEFAULT_CPU_LIMIT=50%
+```
+
+Both are normalized to the valid systemd property:
+
+```text
+CPUQuota=50%
+```
+
+The value is passed as an argv element and is not printf-escaped.
+
+
+## Timeout enforcement
+
+If a job record contains:
+
+```bash
+TIMEOUT=30s
+KILL_AFTER=5s
+```
+
+the payload is wrapped as:
+
+```bash
+timeout --signal=TERM --kill-after=5s 30s <command...>
+```
+
+For systemd-backed jobs, this appears after the systemd `--` separator:
+
+```text
+systemd-run ... -- timeout --signal=TERM --kill-after=5s 30s rexx waiter.rex
+```
+
+
+## Execution caps and billing cycles
+
+Classes can express cost/operational caps:
+
+```bash
+CLASS_DEFAULT_TIMEOUT=30s
+CLASS_DEFAULT_KILL_AFTER=5s
+CLASS_DEFAULT_CPU_SECONDS=20
+CLASS_DEFAULT_BILLING_UNIT_SECONDS=60
+CLASS_DEFAULT_BILLING_CYCLES=1
+CLASS_DEFAULT_BILLING_GRACE_SECONDS=5
+CLASS_DEFAULT_BILLING_POLICY=shortest-cap-wins
+```
+
+Billing timeout is calculated as:
+
+```text
+billing_timeout = billing_unit_seconds * billing_cycles - billing_grace_seconds
+```
+
+The effective timeout is the shortest valid cap between explicit `TIMEOUT` and the billing-cycle timeout.
+
+`CPU_SECONDS` is currently metadata shown by `queue explain`; live CPU accounting enforcement is intended for a later systemd-monitor patch.

@@ -130,3 +130,14 @@ queue_asset_check_format_sqlite() {
     if [[ "$result" == "ok" ]]; then echo "asset_check_ok: $token"; return 0; fi
     echo "asset_check_blocked: format:sqlite corrupt or not sqlite3: $target_file"; return 1
 }
+
+queue_asset_hints() {
+    cat <<'EOF'
+format:json	target=JSON file path	params=	example=queue_class_shared_asset format json "/tmp/payload.json"	notes=Checks structurally valid JSON.
+format:xml	target=XML file path	params=	example=queue_class_shared_asset format xml "/tmp/payload.xml"	notes=Checks structurally valid XML.
+format:yaml	target=YAML file path	params=	example=queue_class_shared_asset format yaml "/tmp/config.yaml"	notes=Checks structurally valid YAML if a YAML checker is available.
+format:csv	target=CSV file path	params=strict_columns=1	example=queue_class_shared_asset format csv "/tmp/data.csv" strict_columns=1	notes=Checks CSV readability and optional column consistency.
+format:archive	target=archive file path	params=	example=queue_class_shared_asset format archive "/tmp/download.tar.gz"	notes=Checks archive integrity where supported.
+format:sqlite	target=SQLite file path	params=	example=queue_class_shared_asset format sqlite "/tmp/state.db"	notes=Runs SQLite integrity check where sqlite3 is available.
+EOF
+}
