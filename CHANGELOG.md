@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.14.1
+
+- Remove `exception classes` class entirely.
+- QID exception overlays are now the only supported override model for class restrictions.
+- Update time-window tests/docs so overrides use `queue exception add <qid> time:window --reason ...` rather than an exception class.
+
+
+## 0.14.0
+
+- Add QID exception overlays for explicitly ignoring selected class asset restrictions.
+- New commands: `queue exception add|list|clear|clear-all`.
+- Class preflight skips only explicitly listed family/facility/asset keys for that job ID and logs `exception_added` / `exception_applied` events.
+- `queue explain` shows exception overlays for the job.
+- Exception classes were removed in 0.14.1; preferred override is now a QID overlay.
+
+
+## 0.13.9
+
+- Add `time:window` asset plugin for dispatch-time restrictions.
+- Add bundled `OVERNIGHT_WINDOW` class: weekdays 18:00-05:00, weekends always allowed.
+- Add bundled `exception classes` class as explicit operator override; it deliberately omits the time restriction.
+- Time-window checks support test injection with `QUEUEBASH_TIME_NOW_EPOCH` or `now_epoch=` for deterministic tests.
+
+
+## 0.13.8
+
+- Add charged network-usage plugin support.
+- Add asset plugin `net_usage:allowance` to block class dispatch when a charged interface/counter exceeds allowance.
+- Add cap plugin `caps.d/net_usage.sh` as policy marker for per-job network usage accounting.
+- Add runtime `NET_USAGE_*` accounting fields and `mark-failed` policy for jobs exceeding per-job network byte limits.
+
+
+## 0.13.6
+
+- Add zero-dependency curses-ish QueueManager class wizard using `tput` and raw arrow-key input.
+- Wizard browses published asset facilities, displays helper hints, adds shared/exclusive assets and exclusive claims, previews record-format class files, and saves/validates classes.
+- Expose as `queue mgr class-wizard CLASS` and `queue mgr class-builder CLASS`.
+
+
 ## 0.13.5
 
 - Export job command context while sourcing class files for job preflight.

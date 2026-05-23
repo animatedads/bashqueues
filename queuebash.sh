@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.13.5"
+QUEUEBASH_VERSION="0.14.1"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1577,11 +1577,221 @@ _queue_asset_implied_preflight_one() {
     _queue_asset_implied_preflight_args "$token" "$family" "$check" "$target" "${params[@]}"
 }
 
+
+_queue_exception_dir() {
+    printf '%s\n' "$(_queue_root)/exceptions"
+}
+
+_queue_exception_file() {
+    local id="$1"
+    printf '%s/%s.env\n' "$(_queue_exception_dir)" "$id"
+}
+
+_queue_exception_job_id_from_current_context() {
+    if [[ -n "${JOB_ID:-}" ]]; then
+        printf '%s\n' "$JOB_ID"
+        return 0
+    fi
+    if [[ -n "${QUEUEBASH_CLASS_JOB_ID:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_CLASS_JOB_ID"
+        return 0
+    fi
+    return 1
+}
+
+_queue_exception_normalize_key() {
+    local key="${1:-}"
+    key="${key//[^A-Za-z0-9_:-]/_}"
+    printf '%s\n' "$key"
+}
+
+_queue_exception_asset_matches() {
+    local requested="$1"
+    local asset="$2"
+    local family="${asset%%:*}"
+    local rest="${asset#*:}"
+    local facility
+
+    facility="$family:${rest%%:*}"
+
+    [[ "$requested" == "$asset" ]] && return 0
+    [[ "$requested" == "$facility" ]] && return 0
+    [[ "$requested" == "$family" ]] && return 0
+
+    return 1
+}
+
+_queue_exception_is_allowed_for_asset() {
+    local id asset f line key reason created_at created_by
+
+    id="$(_queue_exception_job_id_from_current_context 2>/dev/null || true)"
+    [[ -n "$id" ]] || return 1
+
+    asset="$1"
+    f="$(_queue_exception_file "$id")"
+    [[ -f "$f" ]] || return 1
+
+    while IFS=$'\t' read -r key reason created_at created_by; do
+        [[ -n "$key" ]] || continue
+        [[ "$key" == \#* ]] && continue
+        if _queue_exception_asset_matches "$key" "$asset"; then
+            printf 'asset_exception_applied: job=%s asset=%s exception=%s reason=%s by=%s at=%s\n' \
+                "$id" "$asset" "$key" "${reason:-not-recorded}" "${created_by:-unknown}" "${created_at:-unknown}"
+            return 0
+        fi
+    done < "$f"
+
+    return 1
+}
+
+_queue_exception_add() {
+    local id="${1:-}"
+    local key="${2:-}"
+    shift 2 || true
+    local reason="" user created f norm arg
+
+    while (($#)); do
+        case "$1" in
+            --reason)
+                [[ $# -ge 2 ]] || { echo "queue exception add: --reason needs text" >&2; return 2; }
+                reason="$2"
+                shift 2
+                ;;
+            --reason=*)
+                reason="${1#*=}"
+                shift
+                ;;
+            *)
+                if [[ -z "$reason" ]]; then
+                    reason="$1"
+                    shift
+                else
+                    echo "queue exception add: unexpected argument: $1" >&2
+                    return 2
+                fi
+                ;;
+        esac
+    done
+
+    [[ -n "$id" && -n "$key" ]] || {
+        echo "Usage: queue exception add <qid> <family|facility|asset> --reason <text>" >&2
+        return 2
+    }
+    [[ -n "$reason" ]] || {
+        echo "queue exception add: reason is required" >&2
+        return 2
+    }
+
+    norm="$(_queue_exception_normalize_key "$key")"
+    mkdir -p "$(_queue_exception_dir)"
+    f="$(_queue_exception_file "$id")"
+    created="$(date -Is 2>/dev/null || date)"
+    user="${USER:-unknown}"
+
+    if [[ -f "$f" ]] && awk -F '\t' -v k="$norm" '$1 == k { found=1 } END { exit !found }' "$f"; then
+        echo "queue exception add: exception already exists for $id: $norm" >&2
+        return 1
+    fi
+
+    printf '%s\t%s\t%s\t%s\n' "$norm" "$reason" "$created" "$user" >> "$f"
+    _queue_log_event "exception_added" "$id" "$norm" "exceptions" "reason=$reason by=$user"
+    echo "Added exception overlay: job=$id asset=$norm"
+}
+
+_queue_exception_list() {
+    local id="${1:-}"
+    local f
+
+    [[ -n "$id" ]] || { echo "Usage: queue exception list <qid>" >&2; return 2; }
+    f="$(_queue_exception_file "$id")"
+
+    echo "=============================================================================="
+    echo "QUEUEBASH EXCEPTIONS: $id"
+    echo "=============================================================================="
+
+    if [[ ! -f "$f" ]]; then
+        echo "none"
+        return 0
+    fi
+
+    awk -F '\t' '
+        BEGIN {
+            printf "%-32s  %-20s  %-12s  %s\n", "ASSET/FACILITY", "CREATED", "BY", "REASON"
+        }
+        NF {
+            printf "%-32s  %-20s  %-12s  %s\n", $1, $3, $4, $2
+        }
+    ' "$f"
+}
+
+_queue_exception_clear() {
+    local id="${1:-}"
+    local key="${2:-}"
+    local f tmp norm user
+
+    [[ -n "$id" && -n "$key" ]] || {
+        echo "Usage: queue exception clear <qid> <family|facility|asset>" >&2
+        return 2
+    }
+
+    f="$(_queue_exception_file "$id")"
+    [[ -f "$f" ]] || { echo "queue exception clear: no exceptions for $id" >&2; return 1; }
+
+    norm="$(_queue_exception_normalize_key "$key")"
+    tmp="$(mktemp)"
+    awk -F '\t' -v k="$norm" '$1 != k' "$f" > "$tmp"
+
+    if cmp -s "$f" "$tmp"; then
+        rm -f "$tmp"
+        echo "queue exception clear: exception not found: $norm" >&2
+        return 1
+    fi
+
+    mv "$tmp" "$f"
+    user="${USER:-unknown}"
+    _queue_log_event "exception_cleared" "$id" "$norm" "exceptions" "by=$user"
+    echo "Cleared exception overlay: job=$id asset=$norm"
+}
+
+_queue_exception_clear_all() {
+    local id="${1:-}"
+    local f user
+
+    [[ -n "$id" ]] || { echo "Usage: queue exception clear-all <qid>" >&2; return 2; }
+    f="$(_queue_exception_file "$id")"
+    [[ -f "$f" ]] || { echo "queue exception clear-all: no exceptions for $id" >&2; return 1; }
+
+    rm -f "$f"
+    user="${USER:-unknown}"
+    _queue_log_event "exception_cleared_all" "$id" "$id" "exceptions" "by=$user"
+    echo "Cleared all exception overlays for job=$id"
+}
+
+_queue_exception_command() {
+    local sub="${1:-list}"
+    shift || true
+
+    case "$sub" in
+        add) _queue_exception_add "$@" ;;
+        list|show) _queue_exception_list "$@" ;;
+        clear|remove|rm) _queue_exception_clear "$@" ;;
+        clear-all|remove-all) _queue_exception_clear_all "$@" ;;
+        *)
+            echo "Usage: queue exception add|list|clear|clear-all ..." >&2
+            return 2
+            ;;
+    esac
+}
+
 _queue_asset_implied_preflight_for_class() {
     local asset rc
 
     for asset in $CLASS_EXCLUSIVE_ASSETS $CLASS_SHARED_ASSETS; do
         [[ -z "$asset" ]] && continue
+        if _queue_exception_is_allowed_for_asset "$asset"; then
+            _queue_log_event "exception_applied" "$(_queue_exception_job_id_from_current_context 2>/dev/null || echo unknown)" "$asset" "pending" "asset=$asset"
+            continue
+        fi
         _queue_asset_implied_preflight_one "$asset"
         rc="$?"
         case "$rc" in
@@ -1609,6 +1819,10 @@ _queue_asset_implied_preflight_for_class() {
     for spec in "${QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS[@]}" "${QUEUE_CLASS_SHARED_ASSET_SPECS[@]}"; do
         [[ -z "$spec" ]] && continue
         spec_asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+        if _queue_exception_is_allowed_for_asset "$spec_asset"; then
+            _queue_log_event "exception_applied" "$(_queue_exception_job_id_from_current_context 2>/dev/null || echo unknown)" "$spec_asset" "pending" "asset=$spec_asset"
+            continue
+        fi
         _queue_asset_implied_preflight_spec "$spec"
         rc="$?"
         case "$rc" in
@@ -2223,6 +2437,12 @@ _queue_class_load_defaults_for_class() {
         CLASS_DEFAULT_BILLING_UNIT_SECONDS=""
         CLASS_DEFAULT_BILLING_GRACE_SECONDS=""
         CLASS_DEFAULT_BILLING_POLICY=""
+        CLASS_DEFAULT_NET_USAGE_INTERFACE=""
+        CLASS_DEFAULT_NET_USAGE_DIRECTION=""
+        CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES=""
+        CLASS_DEFAULT_NET_USAGE_ALLOWANCE_BYTES=""
+        CLASS_DEFAULT_NET_USAGE_COUNTER_FILE=""
+        CLASS_DEFAULT_NET_USAGE_POLICY=""
 
         source "$class_file" >/dev/null 2>&1 || exit 0
 
@@ -2245,6 +2465,12 @@ _queue_class_load_defaults_for_class() {
         [[ -n "${CLASS_DEFAULT_BILLING_UNIT_SECONDS:-}" ]] && printf 'BILLING_UNIT_SECONDS\t%s\n' "$CLASS_DEFAULT_BILLING_UNIT_SECONDS"
         [[ -n "${CLASS_DEFAULT_BILLING_GRACE_SECONDS:-}" ]] && printf 'BILLING_GRACE_SECONDS\t%s\n' "$CLASS_DEFAULT_BILLING_GRACE_SECONDS"
         [[ -n "${CLASS_DEFAULT_BILLING_POLICY:-}" ]] && printf 'BILLING_POLICY\t%s\n' "$CLASS_DEFAULT_BILLING_POLICY"
+        [[ -n "${CLASS_DEFAULT_NET_USAGE_INTERFACE:-}" ]] && printf 'NET_USAGE_INTERFACE\t%s\n' "$CLASS_DEFAULT_NET_USAGE_INTERFACE"
+        [[ -n "${CLASS_DEFAULT_NET_USAGE_DIRECTION:-}" ]] && printf 'NET_USAGE_DIRECTION\t%s\n' "$CLASS_DEFAULT_NET_USAGE_DIRECTION"
+        [[ -n "${CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES:-}" ]] && printf 'NET_USAGE_LIMIT_BYTES\t%s\n' "$CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES"
+        [[ -n "${CLASS_DEFAULT_NET_USAGE_ALLOWANCE_BYTES:-}" ]] && printf 'NET_USAGE_ALLOWANCE_BYTES\t%s\n' "$CLASS_DEFAULT_NET_USAGE_ALLOWANCE_BYTES"
+        [[ -n "${CLASS_DEFAULT_NET_USAGE_COUNTER_FILE:-}" ]] && printf 'NET_USAGE_COUNTER_FILE\t%s\n' "$CLASS_DEFAULT_NET_USAGE_COUNTER_FILE"
+        [[ -n "${CLASS_DEFAULT_NET_USAGE_POLICY:-}" ]] && printf 'NET_USAGE_POLICY\t%s\n' "$CLASS_DEFAULT_NET_USAGE_POLICY"
     )
 }
 
@@ -2773,7 +2999,7 @@ _queuemgr_repl_complete() {
     first="${before%% *}"
     [[ "$before" == "$first" ]] && first=""
 
-    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail stream pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd history hist sched scheduled schedule stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel gz gzip-logs compress-logs clog clean-logs cleanlogs log-clean logs-clean q quit help ?"
+    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail stream pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd history hist exception exceptions sched scheduled schedule stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel gz gzip-logs compress-logs clog clean-logs cleanlogs log-clean logs-clean q quit help ?"
 
     local words matches
     if [[ -z "$first" ]]; then
@@ -2853,8 +3079,15 @@ _queue_append_summary_to_job() {
 
     [[ -f "$job" ]] || return 0
 
+    source "$job" >/dev/null 2>&1 || true
+    _queue_net_usage_job_finish_record "$job"
+    source "$job" >/dev/null 2>&1 || true
+    if [[ "$exit_code" -eq 0 ]] && _queue_net_usage_should_fail_current_job; then
+        exit_code=87
+    fi
+
     local started finished start_epoch finish_epoch duration log_bytes
-    started="$(grep '^RUN_STARTED_AT=' "$job" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    started="$(grep '^RUN_STARTED_AT=' "$job" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
     finished="$(date -Is)"
 
     start_epoch="$(date -d "$started" +%s 2>/dev/null || echo 0)"
@@ -2989,23 +3222,235 @@ _queue_seconds_to_duration() {
     printf '%ss\n' "$s"
 }
 
-_queue_caps_billing_timeout_seconds() {
-    local unit="${1:-}"
-    local cycles="${2:-}"
-    local grace="${3:-0}"
-    local unit_s grace_s
 
-    [[ -n "$unit" && -n "$cycles" ]] || return 1
-    [[ "$cycles" =~ ^[0-9]+$ ]] || return 1
-    (( cycles > 0 )) || return 1
+_queue_cap_refresh() {
+    local dir="${1:-}"
+    local src family dst backup ts any=0 rc=0
 
-    unit_s="$(_queue_duration_to_seconds "$unit")" || return 1
-    grace_s="$(_queue_duration_to_seconds "$grace")" || grace_s=0
+    if [[ -z "$dir" ]]; then
+        echo "Usage: queue caps refresh <directory>" >&2
+        return 2
+    fi
+    if [[ ! -d "$dir" ]]; then
+        echo "queue caps refresh: directory not found: $dir" >&2
+        return 1
+    fi
 
-    local total=$(( unit_s * cycles - grace_s ))
-    (( total < 1 )) && total=1
-    echo "$total"
+    mkdir -p "$(_queue_root)/caps.d" "$(_queue_root)/caps.d/.backup"
+    shopt -s nullglob
+    for src in "$dir"/*.sh; do
+        any=1
+        family="$(basename "$src" .sh)"
+        dst="$(_queue_root)/caps.d/${family}.sh"
+        if ! bash -n "$src" >/dev/null 2>&1; then
+            echo "queue caps refresh: syntax check failed: $src" >&2
+            rc=1
+            continue
+        fi
+        if [[ -f "$dst" ]]; then
+            ts="$(date +%Y%m%d_%H%M%S_%N)"
+            backup="$(_queue_root)/caps.d/.backup/${family}.${ts}.sh"
+            cp "$dst" "$backup"
+        else
+            backup=""
+        fi
+        echo "Refreshing cap plugin family=$family source=$src"
+        cp "$src" "$dst"
+        chmod 0700 "$dst" 2>/dev/null || true
+        echo "Replaced cap plugin: $dst"
+        [[ -n "$backup" ]] && echo "Backup: $backup"
+    done
+    shopt -u nullglob
+
+    if [[ "$any" -eq 0 ]]; then
+        echo "queue caps refresh: no .sh cap plugins found in $dir" >&2
+        return 1
+    fi
+    return "$rc"
 }
+
+_queue_cap_plugin_dirs() {
+    printf '%s\n' "$(_queue_root)/caps.d"
+    [[ -n "${QUEUEBASH_CAP_PLUGIN_SOURCE_DIR:-}" ]] && printf '%s\n' "$QUEUEBASH_CAP_PLUGIN_SOURCE_DIR"
+}
+
+_queue_cap_plugin_files() {
+    local d
+    for d in $(_queue_cap_plugin_dirs); do
+        [[ -d "$d" ]] || continue
+        shopt -s nullglob
+        printf '%s\n' "$d"/*.sh
+        shopt -u nullglob
+    done
+}
+
+_queue_cap_plugins_source_all() {
+    local f
+    for f in $(_queue_cap_plugin_files); do
+        source "$f" 2>/dev/null || echo "cap_plugin_source_failed: $f" >&2
+    done
+}
+
+_queue_cap_plugin_candidates_for_current_job() {
+    local func
+    _queue_cap_plugins_source_all
+    while IFS= read -r func; do
+        "$func" 2>/dev/null || true
+    done < <(declare -F | awk '{print $3}' | grep '^queue_cap_candidate_' | sort)
+}
+
+_queue_cap_plugins_list() {
+    local f
+    for f in $(_queue_cap_plugin_files); do
+        (
+            source "$f" 2>/dev/null || {
+                echo "INVALID helper=$(basename "$f") source_failed"
+                exit 0
+            }
+            if declare -F queue_cap_facilities >/dev/null 2>&1; then
+                queue_cap_facilities
+            else
+                echo "INVALID helper=$(basename "$f") missing queue_cap_facilities"
+            fi
+        )
+    done
+}
+
+_queue_caps_effective_timeout_seconds_from_current_job() {
+    local best="" wall_s line kind seconds plugin detail
+
+    if [[ -n "${TIMEOUT:-}" ]]; then
+        wall_s="$(_queue_duration_to_seconds "$TIMEOUT" 2>/dev/null || true)"
+        if [[ "$wall_s" =~ ^[0-9]+$ && "$wall_s" -gt 0 ]]; then
+            best="$wall_s"
+        fi
+    fi
+
+    while IFS=$'\t' read -r kind seconds plugin detail; do
+        [[ "$kind" == "timeout" ]] || continue
+        [[ "$seconds" =~ ^[0-9]+$ && "$seconds" -gt 0 ]] || continue
+        if [[ -z "$best" || "$seconds" -lt "$best" ]]; then
+            best="$seconds"
+        fi
+    done < <(_queue_cap_plugin_candidates_for_current_job)
+
+    [[ -n "$best" ]] || return 1
+    echo "$best"
+}
+
+_queue_netdev_counter_bytes() {
+    local iface="${1:-}"
+    local dir="${2:-rx_tx}"
+    local counter_file="${3:-}"
+    local base="/sys/class/net/$iface/statistics"
+    local rx tx
+
+    if [[ -n "$counter_file" ]]; then
+        cat "$counter_file" 2>/dev/null
+        return
+    fi
+
+    [[ -n "$iface" && -d "$base" ]] || return 1
+
+    rx="$(cat "$base/rx_bytes" 2>/dev/null || echo 0)"
+    tx="$(cat "$base/tx_bytes" 2>/dev/null || echo 0)"
+    [[ "$rx" =~ ^[0-9]+$ ]] || rx=0
+    [[ "$tx" =~ ^[0-9]+$ ]] || tx=0
+
+    case "$dir" in
+        rx) echo "$rx" ;;
+        tx) echo "$tx" ;;
+        rx_tx|total|*) echo $((rx + tx)) ;;
+    esac
+}
+
+_queue_parse_bytes() {
+    local v="${1:-}" n unit
+    [[ -n "$v" ]] || return 1
+    if [[ "$v" =~ ^([0-9]+)([KkMmGgTt]?[Bb]?)?$ ]]; then
+        n="${BASH_REMATCH[1]}"
+        unit="${BASH_REMATCH[2]}"
+        case "$unit" in
+            ""|B|b) echo "$n" ;;
+            K|k|KB|kb|Kb|kB) echo $((n * 1024)) ;;
+            M|m|MB|mb|Mb|mB) echo $((n * 1024 * 1024)) ;;
+            G|g|GB|gb|Gb|gB) echo $((n * 1024 * 1024 * 1024)) ;;
+            T|t|TB|tb|Tb|tB) echo $((n * 1024 * 1024 * 1024 * 1024)) ;;
+            *) return 1 ;;
+        esac
+    else
+        return 1
+    fi
+}
+
+_queue_net_usage_job_start_record() {
+    local job_file="$1"
+    local iface="${NET_USAGE_INTERFACE:-}"
+    local dir="${NET_USAGE_DIRECTION:-rx_tx}"
+    local counter_file="${NET_USAGE_COUNTER_FILE:-}"
+    local counter now
+
+    [[ -n "$iface" ]] || return 0
+    counter="$(_queue_netdev_counter_bytes "$iface" "$dir" "$counter_file" 2>/dev/null || true)"
+    [[ "$counter" =~ ^[0-9]+$ ]] || return 0
+    now="$(date -Is 2>/dev/null || date)"
+
+    {
+        printf 'NET_USAGE_INTERFACE=%q\n' "$iface"
+        printf 'NET_USAGE_DIRECTION=%q\n' "$dir"
+        [[ -n "$counter_file" ]] && printf 'NET_USAGE_COUNTER_FILE=%q\n' "$counter_file"
+        printf 'NET_USAGE_START_BYTES=%q\n' "$counter"
+        printf 'NET_USAGE_STARTED_AT=%q\n' "$now"
+    } >> "$job_file"
+}
+
+_queue_net_usage_job_finish_record() {
+    local job_file="$1"
+    local iface="${NET_USAGE_INTERFACE:-}"
+    local dir="${NET_USAGE_DIRECTION:-rx_tx}"
+    local counter_file="${NET_USAGE_COUNTER_FILE:-}"
+    local start="${NET_USAGE_START_BYTES:-}"
+    local limit="${NET_USAGE_LIMIT_BYTES:-}"
+    local policy="${NET_USAGE_POLICY:-mark-failed}"
+    local end used now limit_b exceeded=0
+
+    [[ -n "$iface" && "$start" =~ ^[0-9]+$ ]] || return 0
+    end="$(_queue_netdev_counter_bytes "$iface" "$dir" "$counter_file" 2>/dev/null || true)"
+    [[ "$end" =~ ^[0-9]+$ ]] || return 0
+    (( end >= start )) && used=$((end - start)) || used=0
+    now="$(date -Is 2>/dev/null || date)"
+
+    if [[ -n "$limit" ]]; then
+        limit_b="$(_queue_parse_bytes "$limit" 2>/dev/null || echo "$limit")"
+        if [[ "$limit_b" =~ ^[0-9]+$ && "$used" -gt "$limit_b" ]]; then
+            exceeded=1
+        fi
+    fi
+
+    {
+        printf 'NET_USAGE_END_BYTES=%q\n' "$end"
+        printf 'NET_USAGE_USED_BYTES=%q\n' "$used"
+        printf 'NET_USAGE_FINISHED_AT=%q\n' "$now"
+        [[ -n "$limit" ]] && printf 'NET_USAGE_LIMIT_BYTES=%q\n' "$limit"
+        printf 'NET_USAGE_EXCEEDED=%q\n' "$exceeded"
+        printf 'NET_USAGE_POLICY=%q\n' "$policy"
+    } >> "$job_file"
+
+    if [[ "$exceeded" -eq 1 ]]; then
+        _queue_log_event "net_usage_exceeded" "${JOB_ID:-$(basename "$job_file" .job)}" "${JOB_NAME:-}" "running" "iface=$iface used_bytes=$used limit=$limit policy=$policy"
+    fi
+}
+
+_queue_net_usage_should_fail_current_job() {
+    [[ "${NET_USAGE_EXCEEDED:-0}" == "1" ]] || return 1
+    case "${NET_USAGE_POLICY:-mark-failed}" in
+        ignore|record-only) return 1 ;;
+        mark-failed|fail|fail-job) return 0 ;;
+        *) return 0 ;;
+    esac
+}
+
+
 
 _queue_caps_effective_timeout_seconds_from_values() {
     local wall="${1:-}"
@@ -3035,11 +3480,7 @@ _queue_caps_effective_timeout_seconds_from_values() {
 
 _queue_caps_effective_timeout_for_current_job() {
     local best
-    best="$(_queue_caps_effective_timeout_seconds_from_values \
-        "${TIMEOUT:-}" \
-        "${BILLING_UNIT_SECONDS:-}" \
-        "${BILLING_CYCLES:-}" \
-        "${BILLING_GRACE_SECONDS:-0}" 2>/dev/null || true)"
+    best="$(_queue_caps_effective_timeout_seconds_from_current_job 2>/dev/null || true)"
     [[ "$best" =~ ^[0-9]+$ && "$best" -gt 0 ]] || return 1
     _queue_seconds_to_duration "$best"
 }
@@ -3077,16 +3518,12 @@ _queue_caps_explain_current_job() {
     local kill_after="${KILL_AFTER:-}"
     local cpu_seconds="${CPU_SECONDS:-}"
     local wall_seconds="${WALL_SECONDS:-}"
-    local billing_unit="${BILLING_UNIT_SECONDS:-}"
-    local billing_cycles="${BILLING_CYCLES:-}"
-    local billing_grace="${BILLING_GRACE_SECONDS:-0}"
-    local billing_policy="${BILLING_POLICY:-shortest-cap-wins}"
-
-    local wall_s="" billing_s="" effective_s="" effective=""
+    local policy="${CAP_POLICY:-shortest-cap-wins}"
+    local wall_s="" effective_s="" effective=""
+    local line kind seconds plugin detail
 
     [[ -n "$wall" ]] && wall_s="$(_queue_duration_to_seconds "$wall" 2>/dev/null || true)"
-    billing_s="$(_queue_caps_billing_timeout_seconds "$billing_unit" "$billing_cycles" "$billing_grace" 2>/dev/null || true)"
-    effective_s="$(_queue_caps_effective_timeout_seconds_from_values "$wall" "$billing_unit" "$billing_cycles" "$billing_grace" 2>/dev/null || true)"
+    effective_s="$(_queue_caps_effective_timeout_seconds_from_current_job 2>/dev/null || true)"
     [[ "$effective_s" =~ ^[0-9]+$ ]] && effective="$(_queue_seconds_to_duration "$effective_s")"
 
     echo "Execution caps"
@@ -3094,13 +3531,14 @@ _queue_caps_explain_current_job() {
     [[ -n "$kill_after" ]] && echo "  kill after:         $kill_after"
     [[ -n "$cpu_seconds" ]] && echo "  CPU seconds:        $cpu_seconds (metadata; live CPU enforcement is future work)"
     [[ -n "$wall_seconds" ]] && echo "  wall seconds:       $wall_seconds (metadata)"
-    if [[ -n "$billing_unit" || -n "$billing_cycles" ]]; then
-        echo "  billing unit:       ${billing_unit:-unset}"
-        echo "  billing cycles:     ${billing_cycles:-unset}"
-        echo "  billing grace:      ${billing_grace:-0}"
-        [[ "$billing_s" =~ ^[0-9]+$ ]] && echo "  billing timeout:    $(_queue_seconds_to_duration "$billing_s") ($billing_s seconds)"
-    fi
-    echo "  policy:             $billing_policy"
+
+    while IFS=$'\t' read -r kind seconds plugin detail; do
+        [[ "$kind" == "timeout" ]] || continue
+        [[ "$seconds" =~ ^[0-9]+$ ]] || continue
+        echo "  plugin timeout:     $(_queue_seconds_to_duration "$seconds") ($seconds seconds) source=$plugin${detail:+ $detail}"
+    done < <(_queue_cap_plugin_candidates_for_current_job)
+
+    echo "  policy:             $policy"
     echo "  effective timeout:  ${effective:-none}"
 }
 
@@ -4713,6 +5151,21 @@ _queue_explain_job() {
     )
     echo
 
+    if [[ -n "${NET_USAGE_INTERFACE:-}" || -n "${NET_USAGE_USED_BYTES:-}" || -n "${NET_USAGE_ALLOWANCE_BYTES:-}" ]]; then
+        echo
+        echo "Network usage"
+        [[ -n "${NET_USAGE_INTERFACE:-}" ]] && echo "  interface:         $NET_USAGE_INTERFACE"
+        [[ -n "${NET_USAGE_DIRECTION:-}" ]] && echo "  direction:         $NET_USAGE_DIRECTION"
+        [[ -n "${NET_USAGE_COUNTER_FILE:-}" ]] && echo "  counter file:      $NET_USAGE_COUNTER_FILE"
+        [[ -n "${NET_USAGE_ALLOWANCE_BYTES:-}" ]] && echo "  class allowance:   $NET_USAGE_ALLOWANCE_BYTES"
+        [[ -n "${NET_USAGE_LIMIT_BYTES:-}" ]] && echo "  job limit:         $NET_USAGE_LIMIT_BYTES"
+        [[ -n "${NET_USAGE_START_BYTES:-}" ]] && echo "  start bytes:       $NET_USAGE_START_BYTES"
+        [[ -n "${NET_USAGE_END_BYTES:-}" ]] && echo "  end bytes:         $NET_USAGE_END_BYTES"
+        [[ -n "${NET_USAGE_USED_BYTES:-}" ]] && echo "  used bytes:        $NET_USAGE_USED_BYTES"
+        [[ -n "${NET_USAGE_EXCEEDED:-}" ]] && echo "  exceeded:          $NET_USAGE_EXCEEDED"
+        [[ -n "${NET_USAGE_POLICY:-}" ]] && echo "  policy:            $NET_USAGE_POLICY"
+    fi
+
     echo "Log"
     printf "  %-18s %s\n" "path:" "$log_display"
     [[ -n "$log_bytes" ]] && printf "  %-18s %s (%s bytes)\n" "final size:" "$(_queue_human_bytes "$log_bytes")" "$log_bytes"
@@ -4727,6 +5180,12 @@ _queue_explain_job() {
         printf "  %-18s %s\n" "overflow:" "no"
     fi
     echo
+
+    if [[ -f "$(_queue_exception_file "$id")" ]]; then
+        echo
+        echo "Exception overlays"
+        awk -F '\t' '{ printf "  ignore: %-28s reason=%s by=%s at=%s\n", $1, $2, $4, $3 }' "$(_queue_exception_file "$id")"
+    fi
 
     echo "Dependencies"
     _queue_job_dependencies_status "$f" | sed 's/^/  /'
@@ -6250,6 +6709,10 @@ queue() {
             _queue_dispatch_trace_show "${1:-120}"
             ;;
 
+        exception|exceptions)
+            _queue_exception_command "$@"
+            ;;
+
         history|hist)
             _queue_job_history "$@"
             ;;
@@ -6601,6 +7064,14 @@ EOF
             esac
             ;;
 
+
+        cap|caps)
+            case "${1:-list}" in
+                list|facilities) _queue_cap_plugins_list ;;
+                refresh) shift; _queue_cap_refresh "$@" ;;
+                *) echo "Usage: queue caps list|refresh <directory>" >&2; return 2 ;;
+            esac
+            ;;
 
         class|classes)
             local action="${1:-list}"

@@ -1792,3 +1792,91 @@ QUEUEBASH_COMMAND_ARG_1_ABSPATH
 ```
 
 Use `${QUEUEBASH_COMMAND_ARG_1_ABSPATH:-fallback}` in class files so class-default inspection still works before a concrete job is loaded.
+
+
+## Class wizard
+
+QueueManager includes a zero-dependency terminal class builder:
+
+```bash
+queue mgr class-wizard CLASS
+queue mgr class-builder CLASS
+```
+
+It uses `tput` and raw keyboard input where available, falling back to normal prompts otherwise. The wizard browses published asset facilities, shows helper-published hints, adds record-format shared/exclusive assets, previews the class, and saves it to `~/.queuebash/classes/CLASS.env`.
+
+
+## Network usage caps
+
+Charged data links can be handled with plugins.
+
+Class/preflight gate:
+
+```bash
+queue_class_shared_asset net_usage allowance "wwan0" allowance_bytes=10G direction=rx_tx
+```
+
+Testable counter-file form:
+
+```bash
+queue_class_shared_asset net_usage allowance "charged" counter_file=/tmp/charged.bytes allowance_bytes=10G
+```
+
+Per-job runtime accounting:
+
+```bash
+CLASS_DEFAULT_NET_USAGE_INTERFACE=wwan0
+CLASS_DEFAULT_NET_USAGE_DIRECTION=rx_tx
+CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES=500M
+CLASS_DEFAULT_NET_USAGE_POLICY=mark-failed
+```
+
+Jobs record `NET_USAGE_START_BYTES`, `NET_USAGE_END_BYTES`, `NET_USAGE_USED_BYTES`, and `NET_USAGE_EXCEEDED`. `mark-failed` converts a successful payload into exit code `87` when the usage limit is exceeded.
+
+
+## Time-window class restrictions
+
+Use the `time:window` asset to prevent dispatch outside allowed periods:
+
+```bash
+queue_class_shared_asset time window "overnight-window" \
+  weekdays=mon-fri \
+  weekday_windows=18:00-05:00 \
+  weekends=sat-sun \
+  weekend_windows=always
+```
+
+Bundled class:
+
+```text
+OVERNIGHT_WINDOW
+```
+
+`OVERNIGHT_WINDOW` blocks weekday daytime dispatch. To override the restriction for a specific job, keep the job in `OVERNIGHT_WINDOW` and add a QID exception overlay:
+
+```bash
+queue exception add <qid> time:window --reason "operator-approved daytime run"
+```
+
+
+## QID exception overlays
+
+Class restrictions should normally stay inside the class. To override a restriction for one job, add an exception overlay to the QID:
+
+```bash
+queue exception add <qid> time:window --reason "operator-approved daytime run"
+queue exception list <qid>
+queue exception clear <qid> time:window
+```
+
+The exception key may be:
+
+```text
+family              e.g. time
+facility            e.g. time:window
+full asset token    e.g. time:window:overnight-window
+```
+
+During class preflight, only the matching asset gates are skipped. Each creation and application is logged as an event, and `queue explain <qid>` shows the active overlays.
+
+This is preferred over changing the job to a separate exception class because it keeps the original policy class visible while documenting exactly which restrictions were ignored.
