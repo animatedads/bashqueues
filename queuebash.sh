@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.11.0"
+QUEUEBASH_VERSION="0.11.1"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -5402,6 +5402,10 @@ queue() {
             _queue_duplicate_qids_report
             ;;
 
+        legacy-manager|legacy-queuemgr)
+            _queue_legacy_queuemgr "$@"
+            ;;
+
         mgr|manager|qm|queuemgr)
             _queue_manager_entry "$@"
             ;;
@@ -7022,7 +7026,7 @@ EOF
 }
 
 
-queuemgr() {
+_queue_legacy_queuemgr() {
     _queue_init
 
     local filter_text=""
@@ -7239,6 +7243,12 @@ _queue_assets_completion_words() {
 }
 
 complete -F _queue_complete queue
+
+
+# Compatibility wrapper: bare `queuemgr` now enters the new lazy-loaded QueueManager.
+queuemgr() {
+    queue mgr "$@"
+}
 
 _queuemgr_complete() {
     local cur prev

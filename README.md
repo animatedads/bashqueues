@@ -1503,3 +1503,25 @@ queue mgr class-create GITHUB_PUBLISH_TEST \
 ```
 
 The manager generates record-format classes only.
+
+
+## Standalone queuemgr compatibility
+
+The bare command:
+
+```bash
+queuemgr
+```
+
+now routes to the new lazy-loaded QueueManager, equivalent to:
+
+```bash
+queue mgr
+```
+
+The old built-in REPL is kept only for development diagnostics:
+
+```bash
+queue legacy-manager
+queue legacy-queuemgr
+```

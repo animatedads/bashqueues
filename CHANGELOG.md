@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.1
+
+- Make bare `queuemgr` route to the new lazy-loaded `queue mgr` module.
+- Rename the old standalone manager REPL to `_queue_legacy_queuemgr`.
+- Add explicit `queue legacy-manager` / `queue legacy-queuemgr` entry points for the old REPL during development.
+- Add regression tests for manager aliases.
+
+
 ## 0.11.0
 
 - Split QueueManager into lazily sourced `queuemgr.sh`.
