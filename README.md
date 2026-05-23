@@ -1906,3 +1906,46 @@ The screen uses side-by-side panels with scrolling list/detail areas. The restri
 The manager is intentionally separate from `queuebash.sh`; it invokes existing `queue ...` commands so the queue core remains the source of truth.
 
 If launched directly with `python3 queuemgr_panel.py`, the manager auto-discovers an adjacent `queuebash.sh` and sources it before running `queue ...` commands.
+
+The panel manager header shows the resolved `queuebash.sh` source. If it displays `NO QUEUE SOURCE`, launch from the source tree or set `QUEUEBASH_SOURCE=/path/to/queuebash.sh`.
+
+
+## Panel manager operator console
+
+The panel manager supports operator workflows:
+
+```text
+d       toggle dry-run mode
+f       filter current panel
+[ / ]   switch right-hand job tabs
+e       add QID exception overlay after showing the job class
+c       clear QID exception overlay
+x       context action
+C       clear queue buckets
+```
+
+Job detail tabs:
+
+```text
+Explain
+Class
+Exceptions
+History
+Log
+```
+
+Class and asset panels expose actions for explain, validate, refresh, delete/archive, and rollback where the corresponding `queue ...` command exists.
+
+
+### Scrollable command output
+
+Panel manager command-output windows are scrollable:
+
+```text
+Up/Down       line scroll
+PgUp/PgDn     page scroll
+Home/End      start/end
+q/Esc/Enter   close
+```
+
+Modal windows clear their full rectangle before drawing and redraw the panel screen when closed.

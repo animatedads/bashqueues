@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.14.8
+
+- Fix panel modal windows to clear their full rectangle before drawing.
+- Make command-output popups scrollable with arrow/PgUp/PgDn/Home/End and close via q/Esc/Enter.
+- Force a full screen redraw after modal close so underlying panels repaint cleanly.
+
+
+## 0.14.7
+
+- Expand panel manager into an operator console.
+- Add dry-run toggle, filters, queue clear actions, job actions, class/asset actions, and right-hand job detail tabs.
+- Exception workflow now shows the job class policy before adding a QID overlay.
+
+
+## 0.14.6
+
+- Fix panel manager population when launched directly: it now exports `QUEUEBASH_ALLOW_NONINTERACTIVE=1` and verifies that the selected `queuebash.sh` actually defines `queue` before using it.
+- Show `NO QUEUE SOURCE` and candidate source paths in-panel when no usable queue source is found.
+- Panel loaders now display queue command errors instead of empty lists.
+
+
 ## 0.14.5
 
 - Rename the curses UI to the full-screen panel manager.
