@@ -1,10 +1,24 @@
 # Changelog
 
+## 0.14.5
+
+- Rename the curses UI to the full-screen panel manager.
+- Replace user-facing commands/docs/header with `queue mgr panel` and `queue panel`.
+- Rename the manager script to `queuemgr_panel.py`.
+
+
+## 0.14.4
+
+- Fix `queue panel` top-level dispatch.
+- Make `queuemgr_panel.py` auto-discover and source adjacent `queuebash.sh` when launched directly with `python3`.
+- Show queue command errors inside the panels instead of silently displaying empty lists.
+
+
 ## 0.14.3
 
-- Add `queuemgr5250.py`, a curses-backed 5250-style manager with side-by-side panels, scrolling details, jobs/classes/assets/exceptions panels, and a restriction-builder panel.
-- Expose as `queue mgr 5250` and `queue mgr5250`.
-- The 5250 manager invokes existing `queue ...` commands so the shell core remains the source of truth.
+- Add `queuemgr_panel.py`, a curses-backed full-screen panel manager with side-by-side panels, scrolling details, jobs/classes/assets/exceptions panels, and a restriction-builder panel.
+- Expose as `queue mgr panel` and `queue panel`.
+- The panel manager invokes existing `queue ...` commands so the shell core remains the source of truth.
 
 
 ## 0.14.2

@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.14.3"
+QUEUEBASH_VERSION="0.14.5"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -6704,6 +6704,10 @@ queue() {
             ;;
         asset-hints)
             _queue_asset_hints_print
+            ;;
+
+        panel|qpanel|manager-panel)
+            _queue_manager_entry panel "$@"
             ;;
 
         mgr|manager|qm|queuemgr)
