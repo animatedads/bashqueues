@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.12.8"
+QUEUEBASH_VERSION="0.12.9"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -2705,7 +2705,7 @@ _queuemgr_repl_complete() {
     first="${before%% *}"
     [[ "$before" == "$first" ]] && first=""
 
-    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail stream pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd sched scheduled schedule stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel gz gzip-logs compress-logs clog clean-logs cleanlogs log-clean logs-clean q quit help ?"
+    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail stream pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd history hist sched scheduled schedule stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel gz gzip-logs compress-logs clog clean-logs cleanlogs log-clean logs-clean q quit help ?"
 
     local words matches
     if [[ -z "$first" ]]; then
@@ -2715,7 +2715,7 @@ _queuemgr_repl_complete() {
             st|state)
                 words="all pending running paused done failed interrupted cancelled deleted"
                 ;;
-            f|filter|n|name|s|show|t|tail|pid|pids|p|prio|priority|pause|pd|unp|unpause|unpd|os|hooks|ok|fail|c|cancel|kd|kill|d|delete|dd|df|u|undelete|ud|uf|rs|resubmit|rsd)
+            f|filter|n|name|s|show|t|tail|pid|pids|p|prio|priority|pause|pd|unp|unpause|unpd|os|hooks|ok|fail|c|cancel|kd|kill|d|delete|dd|df|u|undelete|ud|uf|rs|resubmit|rsd|history|hist)
                 words="$(_queue_job_id_and_names_for_completion)"
                 ;;
             ev|events)
@@ -4298,6 +4298,223 @@ _queue_job_pending_dispatch_diagnose() {
     fi
 }
 
+
+_queue_job_file_by_id_any_state() {
+    local id="$1"
+    local root="$(_queue_root)"
+    local st f
+
+    for st in pending running paused done failed interrupted cancelled deleted; do
+        f="$root/$st/$id.job"
+        [[ -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
+    done
+    return 1
+}
+
+_queue_job_state_for_file() {
+    local f="$1"
+    local root="$(_queue_root)"
+    local rel
+
+    rel="${f#"$root"/}"
+    printf '%s\n' "${rel%%/*}"
+}
+
+_queue_job_history_chain_ids() {
+    local start="$1"
+    local id="$start"
+    local f prev seen=" "
+
+    while [[ -n "$id" && "$seen" != *" $id "* ]]; do
+        printf '%s\n' "$id"
+        seen+="$id "
+        f="$(_queue_job_file_by_id_any_state "$id" 2>/dev/null || true)"
+        [[ -n "$f" ]] || break
+        prev="$(
+            RESUBMITTED_FROM=""
+            source "$f" >/dev/null 2>&1 || exit 0
+            printf '%s\n' "${RESUBMITTED_FROM:-}"
+        )"
+        id="$prev"
+    done | tac
+}
+
+_queue_job_history_children_ids() {
+    local start="$1"
+    local root="$(_queue_root)"
+    local st f child
+
+    for st in pending running paused done failed interrupted cancelled deleted; do
+        shopt -s nullglob
+        for f in "$root/$st"/*.job; do
+            child="$(
+                RESUBMITTED_FROM=""
+                source "$f" >/dev/null 2>&1 || exit 0
+                [[ "${RESUBMITTED_FROM:-}" == "$start" ]] && printf '%s\n' "${JOB_ID:-$(basename "$f" .job)}"
+            )"
+            [[ -n "$child" ]] && printf '%s\n' "$child"
+        done
+        shopt -u nullglob
+    done | sort -u
+}
+
+_queue_job_history_events_for_id() {
+    local id="$1"
+    local events="$(_queue_root)/events.jsonl"
+
+    [[ -f "$events" ]] || return 0
+
+    grep -F "\"job_id\":\"$id\"" "$events" 2>/dev/null | tail -20 | sed -E '
+        s/.*"ts":"([^"]*)".*"event":"([^"]*)".*"state":"([^"]*)".*"detail":"([^"]*)".*/    \1  \2  state=\3  \4/
+        t
+        s/^/    /
+    '
+}
+
+_queue_job_history_print_one() {
+    local id="$1"
+    local f state
+
+    f="$(_queue_job_file_by_id_any_state "$id" 2>/dev/null || true)"
+    if [[ -z "$f" ]]; then
+        printf '%-36s  %-11s  %s\n' "$id" "missing" "job record not found"
+        return 0
+    fi
+
+    state="$(_queue_job_state_for_file "$f")"
+
+    (
+        JOB_ID="$id"
+        JOB_NAME=""
+        COMMAND=()
+        SUBMITTED_AT=""
+        RUN_STARTED_AT=""
+        EXEC_FINISHED_AT=""
+        EXIT_CODE=""
+        DURATION_SECONDS=""
+        RESUBMITTED_FROM=""
+        RESUBMITTED_AT=""
+        RESUBMIT_NOTE=""
+        JOB_CLASS=""
+        TIMEOUT=""
+        KILL_AFTER=""
+        CLASS_DEFAULTS_SOURCE=""
+        LOG_PATH=""
+        source "$f" >/dev/null 2>&1 || exit 0
+
+        local cmd=""
+        if declare -p COMMAND >/dev/null 2>&1; then
+            printf -v cmd '%q ' "${COMMAND[@]}"
+            cmd="${cmd% }"
+        fi
+
+        printf '%-36s  %-11s  exit=%-5s  name=%s\n' \
+            "${JOB_ID:-$id}" "$state" "${EXIT_CODE:--}" "${JOB_NAME:-}"
+        [[ -n "${SUBMITTED_AT:-}" ]] && echo "    submitted:        $SUBMITTED_AT"
+        [[ -n "${RUN_STARTED_AT:-}" ]] && echo "    started:          $RUN_STARTED_AT"
+        [[ -n "${EXEC_FINISHED_AT:-}" ]] && echo "    finished:         $EXEC_FINISHED_AT"
+        [[ -n "${DURATION_SECONDS:-}" ]] && echo "    duration:         ${DURATION_SECONDS}s"
+        [[ -n "${JOB_CLASS:-}" ]] && echo "    class:            $JOB_CLASS"
+        [[ -n "${TIMEOUT:-}" ]] && echo "    timeout:          $TIMEOUT${KILL_AFTER:+ kill_after=$KILL_AFTER}"
+        [[ -n "${CLASS_DEFAULTS_SOURCE:-}" ]] && echo "    class defaults:   $CLASS_DEFAULTS_SOURCE"
+        [[ -n "${RESUBMITTED_FROM:-}" ]] && echo "    resubmitted from: $RESUBMITTED_FROM"
+        [[ -n "${RESUBMITTED_AT:-}" ]] && echo "    resubmitted at:   $RESUBMITTED_AT"
+        [[ -n "${RESUBMIT_NOTE:-}" ]] && echo "    note:             $RESUBMIT_NOTE"
+        [[ -n "$cmd" ]] && echo "    command:          $cmd"
+
+        local log_path=""
+        if [[ -n "${LOG_PATH:-}" ]]; then
+            log_path="$LOG_PATH"
+        else
+            log_path="$(_queue_log_path "${JOB_ID:-$id}" 2>/dev/null || true)"
+        fi
+        [[ -n "$log_path" ]] && echo "    log:              $log_path"
+
+        echo "    events:"
+        _queue_job_history_events_for_id "${JOB_ID:-$id}" | sed 's/^/  /'
+    )
+}
+
+_queue_job_history() {
+    local selector="${1:-}"
+    local id="" f root st
+    local -a ids
+    local child
+
+    if [[ -z "$selector" ]]; then
+        echo "Usage: queue history <job-id|name>" >&2
+        return 2
+    fi
+
+    if f="$(_queue_job_file_by_id_any_state "$selector" 2>/dev/null)"; then
+        id="$(basename "$f" .job)"
+    else
+        root="$(_queue_root)"
+        for st in pending running paused done failed interrupted cancelled deleted; do
+            shopt -s nullglob
+            for f in "$root/$st"/*.job; do
+                if ( source "$f" >/dev/null 2>&1 && [[ "${JOB_NAME:-}" == "$selector" ]] ); then
+                    id="$(basename "$f" .job)"
+                fi
+            done
+            shopt -u nullglob
+        done
+    fi
+
+    [[ -n "$id" ]] || {
+        echo "queue history: job not found: $selector" >&2
+        return 1
+    }
+
+    echo "=============================================================================="
+    echo "QUEUEBASH HISTORY: $id"
+    echo "=============================================================================="
+
+    mapfile -t ids < <(_queue_job_history_chain_ids "$id")
+    for child in $(_queue_job_history_children_ids "$id"); do
+        ids+=("$child")
+    done
+
+    local seen=" "
+    for id in "${ids[@]}"; do
+        [[ -n "$id" ]] || continue
+        [[ "$seen" == *" $id "* ]] && continue
+        seen+="$id "
+        _queue_job_history_print_one "$id"
+        echo
+    done
+}
+
+_queue_job_history_brief_for_explain() {
+    local id="$1"
+    local events="$(_queue_root)/events.jsonl"
+    local f child
+
+    echo "History"
+    if [[ -f "$events" ]]; then
+        grep -F "\"job_id\":\"$id\"" "$events" 2>/dev/null | tail -6 | sed -E '
+            s/.*"ts":"([^"]*)".*"event":"([^"]*)".*"state":"([^"]*)".*"detail":"([^"]*)".*/  \1  \2  state=\3  \4/
+            t
+            s/^/  /
+        '
+    fi
+
+    for child in $(_queue_job_history_children_ids "$id"); do
+        echo "  resubmitted to: $child"
+    done
+
+    f="$(_queue_job_file_by_id_any_state "$id" 2>/dev/null || true)"
+    if [[ -n "$f" ]]; then
+        (
+            RESUBMITTED_FROM=""
+            source "$f" >/dev/null 2>&1 || exit 0
+            [[ -n "${RESUBMITTED_FROM:-}" ]] && echo "  resubmitted from: $RESUBMITTED_FROM"
+        )
+    fi
+
+    echo "  full history: queue history $id"
+}
+
 _queue_explain_job() {
     local f="$1"
     local root="$(_queue_root)"
@@ -4450,6 +4667,10 @@ _queue_explain_job() {
     if [[ "$state" == "pending" ]]; then
         _queue_job_pending_dispatch_diagnose "$f"
     fi
+
+    echo
+    _queue_job_history_brief_for_explain "$id"
+    echo
 
     echo "Cancellation model"
     if [[ "$state" == "pending" || "$state" == "paused" ]]; then
@@ -5958,6 +6179,10 @@ queue() {
 
         dispatch-trace|trace-dispatch)
             _queue_dispatch_trace_show "${1:-120}"
+            ;;
+
+        history|hist)
+            _queue_job_history "$@"
             ;;
 
         explain)

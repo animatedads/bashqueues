@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.9
+
+- Add `queue history <job-id|name>` to show lifecycle events, exit codes, logs, resubmit links, and class/cap details for a job chain.
+- Add a compact History section to `queue explain` with a pointer to full history.
+- QueueManager exposes `hist <id|name>` alongside `ex <id|name>`.
+
+
 ## 0.12.8
 
 - Resubmitted jobs now adopt the current class definition at resubmit time.

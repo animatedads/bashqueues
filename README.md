@@ -1701,3 +1701,14 @@ Refresh is intended for loading bundled class definitions such as `REXX_RUNAWAY.
 ## Resubmit adopts current class
 
 When a failed/cancelled/deleted job is resubmitted, bashqueues preserves the job intent but re-applies the current class definition to the new QID. This means changed class defaults such as timeout, billing caps, CPU/memory limits, and log caps are adopted by resubmitted jobs.
+
+
+## Job history
+
+Show lifecycle events, dispatch attempts, resubmit links, exit codes, and logs:
+
+```bash
+queue history <job-id|name>
+```
+
+`queue explain <job>` includes a compact History section and points to the full command.
