@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.12.4"
+QUEUEBASH_VERSION="0.12.6"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1095,7 +1095,9 @@ _queue_asset_family_is_used_by_classes() {
 
 _queue_asset_refresh_from_dir() {
     local src_dir="$1" plugin family rc=0
-    [[ -n "$src_dir" && -d "$src_dir" ]] || { echo "queue assets refresh: directory not found: $src_dir" >&2; return 2; }
+    [[ -n "$src_dir" && -d "$src_dir" ]] || { echo "queue assets
+  queue asset-hints
+  queue asset-hint <facility> refresh: directory not found: $src_dir" >&2; return 2; }
     shopt -s nullglob
     for plugin in "$src_dir"/*.sh; do
         [[ -f "$plugin" ]] || continue
@@ -2036,6 +2038,8 @@ _queue_class_load_defaults_for_class() {
         CLASS_DEFAULT_LOG_TAG=""
         CLASS_DEFAULT_OUTPUT_DIR=""
         CLASS_DEFAULT_ENV_PREFIX=""
+
+        # Execution/cost caps.
         CLASS_DEFAULT_CPU_SECONDS=""
         CLASS_DEFAULT_WALL_SECONDS=""
         CLASS_DEFAULT_BILLING_CYCLES=""
@@ -2056,6 +2060,7 @@ _queue_class_load_defaults_for_class() {
         [[ -n "${CLASS_DEFAULT_LOG_TAG:-}" ]] && printf 'LOG_TAG\t%s\n' "$CLASS_DEFAULT_LOG_TAG"
         [[ -n "${CLASS_DEFAULT_OUTPUT_DIR:-}" ]] && printf 'OUTPUT_DIR\t%s\n' "$CLASS_DEFAULT_OUTPUT_DIR"
         [[ -n "${CLASS_DEFAULT_ENV_PREFIX:-}" ]] && printf 'ENV_PREFIX\t%s\n' "$CLASS_DEFAULT_ENV_PREFIX"
+
         [[ -n "${CLASS_DEFAULT_CPU_SECONDS:-}" ]] && printf 'CPU_SECONDS\t%s\n' "$CLASS_DEFAULT_CPU_SECONDS"
         [[ -n "${CLASS_DEFAULT_WALL_SECONDS:-}" ]] && printf 'WALL_SECONDS\t%s\n' "$CLASS_DEFAULT_WALL_SECONDS"
         [[ -n "${CLASS_DEFAULT_BILLING_CYCLES:-}" ]] && printf 'BILLING_CYCLES\t%s\n' "$CLASS_DEFAULT_BILLING_CYCLES"

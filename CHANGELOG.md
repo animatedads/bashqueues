@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.12.6
+
+- Add bundled `runnable:path_safe` asset facility to detect scripts with unsafe relative path assumptions.
+- Add helper-published hints for `runnable:path_safe`.
+- Update bundled `REXX_RUNAWAY` class to include a path-safety check for `waiter.rex`.
+- Improve command discoverability for asset hints and QueueManager in help output.
+
+
+## 0.12.5
+
+- Fix class-default loader so execution/cost cap defaults are emitted with other class defaults.
+- `queue classes explain` now shows `CPU_SECONDS`, `BILLING_UNIT_SECONDS`, `BILLING_CYCLES`, `BILLING_GRACE_SECONDS`, and `BILLING_POLICY` when defined.
+- New jobs now receive billing/cap defaults through the same submit-time copy path as runner/log defaults.
+
+
 ## 0.12.4
 
 - Add execution caps helpers for wall timeout, billing-cycle timeout, and CPU-seconds metadata.

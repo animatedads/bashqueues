@@ -1656,3 +1656,25 @@ billing_timeout = billing_unit_seconds * billing_cycles - billing_grace_seconds
 The effective timeout is the shortest valid cap between explicit `TIMEOUT` and the billing-cycle timeout.
 
 `CPU_SECONDS` is currently metadata shown by `queue explain`; live CPU accounting enforcement is intended for a later systemd-monitor patch.
+
+
+## runnable:path_safe
+
+`runnable:path_safe` is a preflight asset for scripts that may depend on a specific current working directory or unsafe relative paths.
+
+Example:
+
+```bash
+queue_class_shared_asset runnable path_safe "waiter.rex" \
+  allow_relative=1 \
+  require_cwd="/home/hc3/bashqueues"
+```
+
+Parameters:
+
+```text
+require_shebang=1     require the script to start with #!
+allow_relative=1      allow relative path assumptions
+require_cwd=/path     require a working directory to exist
+scan_depth=200        number of lines to scan
+```
