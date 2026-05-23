@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.15.3"
+QUEUEBASH_VERSION="0.15.8"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -2016,6 +2016,114 @@ _queue_class_export_job_context() {
     )
 }
 
+
+# -----------------------------------------------------------------------------
+# Root / user-queue safety
+# -----------------------------------------------------------------------------
+# Root may administer another user's queue files, but must not evaluate
+# user-owned queue-local code in the root process.  Queue-local class files and
+# asset helpers are executable shell code; if QUEUEBASH_ROOT belongs to another
+# user, commands that source/evaluate that code are delegated to that owner.
+
+_queue_path_owner_user() {
+    local path="${1:-}"
+    [[ -n "$path" ]] || return 1
+
+    while [[ ! -e "$path" && "$path" != "/" ]]; do
+        path="$(dirname "$path")"
+    done
+
+    stat -c '%U' "$path" 2>/dev/null || return 1
+}
+
+_queue_root_owner_user() {
+    _queue_path_owner_user "$(_queue_root)"
+}
+
+_queue_running_as_root() {
+    [[ "$(id -u 2>/dev/null || echo 99999)" == "0" ]]
+}
+
+_queue_root_is_foreign_user_queue() {
+    local owner
+    _queue_running_as_root || return 1
+    owner="$(_queue_root_owner_user 2>/dev/null || true)"
+    [[ -n "$owner" && "$owner" != "root" ]]
+}
+
+_queue_delegate_command_to_owner() {
+    local owner="$1"
+    shift
+
+    [[ -n "$owner" ]] || {
+        echo "queue user-queue safety: queue owner could not be determined" >&2
+        return 126
+    }
+
+    if command -v runuser >/dev/null 2>&1; then
+        exec runuser -u "$owner" -- bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_USER_QUEUE_DELEGATED=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue' "$(_queue_root)" "${BASH_SOURCE[0]}")$(printf ' %q' "$@")"
+    fi
+
+    if command -v sudo >/dev/null 2>&1; then
+        exec sudo -u "$owner" bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_USER_QUEUE_DELEGATED=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue' "$(_queue_root)" "${BASH_SOURCE[0]}")$(printf ' %q' "$@")"
+    fi
+
+    echo "queue user-queue safety: cannot delegate to owner=$owner; runuser/sudo not found" >&2
+    return 126
+}
+
+_queue_command_may_evaluate_queue_code() {
+    local cmd="${1:-}"
+    local sub="${2:-}"
+
+    case "$cmd" in
+        run|worker|workers|start|daemon|submit|explain)
+            return 0
+            ;;
+        class|classes)
+            case "$sub" in
+                explain|validate|refresh|replace|rollback|edit|create|class-create)
+                    return 0 ;;
+            esac
+            ;;
+        asset|assets)
+            case "$sub" in
+                explain|validate|refresh|replace|rollback|expand)
+                    return 0 ;;
+            esac
+            ;;
+        mgr|manager|qm|queuemgr|panel|qpanel|manager-panel)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+_queue_guard_foreign_user_queue_eval() {
+    local cmd="${1:-}"
+    local sub="${2:-}"
+    local owner
+    shift 2 || true
+
+    [[ "${QUEUEBASH_USER_QUEUE_DELEGATED:-0}" == "1" ]] && return 0
+    [[ "${QUEUEBASH_ALLOW_ROOT_USER_QUEUE_EVAL:-0}" == "1" ]] && return 0
+
+    _queue_command_may_evaluate_queue_code "$cmd" "$sub" || return 0
+    _queue_root_is_foreign_user_queue || return 0
+
+    owner="$(_queue_root_owner_user 2>/dev/null || true)"
+
+    if [[ "${QUEUEBASH_ROOT_USER_QUEUE_MODE:-delegate}" == "refuse" ]]; then
+        echo "queue user-queue safety: refusing to evaluate queue-local code as root" >&2
+        echo "queue user-queue safety: QUEUEBASH_ROOT=$(_queue_root) owner=$owner command=$cmd ${sub:-}" >&2
+        echo "queue user-queue safety: rerun as $owner or set QUEUEBASH_ROOT_USER_QUEUE_MODE=delegate" >&2
+        return 126
+    fi
+
+    _queue_delegate_command_to_owner "$owner" "$@"
+}
+
 _queue_class_source_with_job_context() {
     local class_file="$1"
     local job_file="$2"
@@ -2471,6 +2579,8 @@ _queue_class_load_defaults_for_class() {
         CLASS_DEFAULT_OUTPUT_DIR=""
         CLASS_DEFAULT_ENV_PREFIX=""
         CLASS_DEFAULT_WORKING_DIR=""
+        CLASS_DEFAULT_RUN_USER=""
+        CLASS_DEFAULT_SUBMIT_USER=""
 
         # Execution/cost caps.
         CLASS_DEFAULT_CPU_SECONDS=""
@@ -2500,6 +2610,8 @@ _queue_class_load_defaults_for_class() {
         [[ -n "${CLASS_DEFAULT_OUTPUT_DIR:-}" ]] && printf 'OUTPUT_DIR\t%s\n' "$CLASS_DEFAULT_OUTPUT_DIR"
         [[ -n "${CLASS_DEFAULT_ENV_PREFIX:-}" ]] && printf 'ENV_PREFIX\t%s\n' "$CLASS_DEFAULT_ENV_PREFIX"
         [[ -n "${CLASS_DEFAULT_WORKING_DIR:-}" ]] && printf 'PWD_AT_SUBMIT\t%s\n' "$CLASS_DEFAULT_WORKING_DIR"
+        [[ -n "${CLASS_DEFAULT_RUN_USER:-}" ]] && printf 'RUN_USER\t%s\n' "$CLASS_DEFAULT_RUN_USER"
+        [[ -n "${CLASS_DEFAULT_SUBMIT_USER:-}" ]] && printf 'SUBMIT_USER\t%s\n' "$CLASS_DEFAULT_SUBMIT_USER"
 
         [[ -n "${CLASS_DEFAULT_CPU_SECONDS:-}" ]] && printf 'CPU_SECONDS\t%s\n' "$CLASS_DEFAULT_CPU_SECONDS"
         [[ -n "${CLASS_DEFAULT_WALL_SECONDS:-}" ]] && printf 'WALL_SECONDS\t%s\n' "$CLASS_DEFAULT_WALL_SECONDS"
@@ -2735,6 +2847,8 @@ _queue_strip_resubmit_runtime_fields() {
         /^MAX_LOG_SIZE_BYTES=/ { next }
         /^ALLOW_LARGE_LOG=/ { next }
         /^LOG_OVERFLOW_POLICY=/ { next }
+        /^RUN_USER=/ { next }
+        /^SUBMIT_USER=/ { next }
 
         { print }
     ' "$f" > "$tmp"
@@ -3152,11 +3266,27 @@ _queue_append_summary_to_job() {
 
 _queue_systemd_user_service_supported() {
     command -v systemd-run >/dev/null 2>&1 || return 1
+    command -v systemctl >/dev/null 2>&1 || return 1
 
-    # systemd-run --user --pipe --wait --collect creates a transient user service and waits for its exit code.
+    # systemd-run --user only works when this shell can talk to the user's
+    # systemd manager over the user bus.  XDG_RUNTIME_DIR being set is not
+    # enough; su/runuser shells often inherit an unusable or inaccessible bus.
     [[ -n "${XDG_RUNTIME_DIR:-}" ]] || return 1
+    [[ -S "${XDG_RUNTIME_DIR}/bus" ]] || return 1
+
+    systemctl --user show-environment >/dev/null 2>&1 || return 1
 
     return 0
+}
+
+
+_queue_systemd_user_service_status_text() {
+    command -v systemd-run >/dev/null 2>&1 || { echo "systemd-run-not-found"; return 0; }
+    command -v systemctl >/dev/null 2>&1 || { echo "systemctl-not-found"; return 0; }
+    [[ -n "${XDG_RUNTIME_DIR:-}" ]] || { echo "xdg-runtime-dir-not-set"; return 0; }
+    [[ -S "${XDG_RUNTIME_DIR}/bus" ]] || { echo "user-bus-missing"; return 0; }
+    systemctl --user show-environment >/dev/null 2>&1 || { echo "user-bus-unusable"; return 0; }
+    echo "user-bus-ok"
 }
 
 _queue_limit_status_text() {
@@ -3598,6 +3728,49 @@ _queue_emit_timeout_wrapper_argv() {
     printf '%s\0' "$timeout_value"
 }
 
+
+_queue_current_user_name() {
+    id -un 2>/dev/null || printf '%s\n' "${USER:-}"
+}
+
+_queue_can_switch_user() {
+    local user="${1:-}"
+    [[ -n "$user" ]] || return 1
+    [[ "$user" == "$(_queue_current_user_name)" ]] && return 1
+    [[ "$(id -u 2>/dev/null || echo 99999)" == "0" ]] || return 2
+    id "$user" >/dev/null 2>&1 || return 3
+    command -v runuser >/dev/null 2>&1 || command -v sudo >/dev/null 2>&1 || return 4
+    return 0
+}
+
+_queue_emit_user_switch_prefix() {
+    local user="${1:-}"
+    [[ -n "$user" ]] || return 0
+    [[ "$user" == "$(_queue_current_user_name)" ]] && return 0
+
+    if [[ "$(id -u 2>/dev/null || echo 99999)" != "0" ]]; then
+        printf '%s\0' /bin/sh -c "echo queue run: RUN_USER=$user requires root >&2; exit 126"
+        return 1
+    fi
+
+    if ! id "$user" >/dev/null 2>&1; then
+        printf '%s\0' /bin/sh -c "echo queue run: RUN_USER=$user does not exist >&2; exit 126"
+        return 1
+    fi
+
+    if command -v runuser >/dev/null 2>&1; then
+        printf '%s\0' runuser -u "$user" --
+        return 0
+    fi
+    if command -v sudo >/dev/null 2>&1; then
+        printf '%s\0' sudo -u "$user" --
+        return 0
+    fi
+
+    printf '%s\0' /bin/sh -c "echo queue run: cannot switch to RUN_USER=$user; runuser/sudo not found >&2; exit 126"
+    return 1
+}
+
 _queue_build_payload_command() {
     # Prints NUL-separated argv for the actual process to spawn.
     # We prefer systemd-run for CPU/MEM limits. If no limits are requested,
@@ -3608,10 +3781,13 @@ _queue_build_payload_command() {
     local runner="${4:-auto}"
     local timeout_value="${5:-}"
     local kill_after="${6:-}"
-    shift 6
+    local run_user="${7:-}"
+    shift 7
 
     if [[ "$runner" == "systemd" ]]; then
-        if _queue_systemd_user_service_supported; then
+        if [[ -n "$run_user" && "$run_user" != "$(_queue_current_user_name)" && "$(id -u 2>/dev/null || echo 99999)" == "0" ]]; then
+            printf '%s\0' systemd-run --pipe --wait --collect --uid="$run_user"
+        elif _queue_systemd_user_service_supported; then
             printf '%s\0' systemd-run --user --pipe --wait --collect
 
             # systemd-run does not reliably preserve exported bash functions.
@@ -3634,6 +3810,7 @@ _queue_build_payload_command() {
         fi
     fi
 
+    _queue_emit_user_switch_prefix "$run_user"
     if command -v setsid >/dev/null 2>&1; then
         printf '%s\0' setsid --
     fi
@@ -3769,16 +3946,30 @@ _queue_print_job_table() {
     done
 }
 
+
+_queue_root_running_foreign_payload_user() {
+    local run_user="${1:-${RUN_USER:-}}"
+    [[ -n "$run_user" ]] || return 1
+    [[ "$(id -u 2>/dev/null || echo 99999)" == "0" ]] || return 1
+    [[ "$run_user" != "$(_queue_current_user_name 2>/dev/null || id -un 2>/dev/null || echo root)" ]] || return 1
+    return 0
+}
+
 _queue_runner_for_job() {
     local requested="${1:-auto}"
     local cpu="${2:-}"
     local mem="${3:-}"
+    local run_user="${4:-${RUN_USER:-}}"
 
     requested="${requested:-${QUEUEBASH_RUNNER:-auto}}"
 
     case "$requested" in
         direct) echo "direct"; return 0 ;;
         systemd)
+            if _queue_root_running_foreign_payload_user "$run_user"; then
+                echo "systemd-foreign-user-not-used"
+                return 1
+            fi
             if _queue_systemd_user_service_supported; then
                 echo "systemd"
                 return 0
@@ -3787,7 +3978,19 @@ _queue_runner_for_job() {
             return 1
             ;;
         auto|"")
-            # Prefer systemd when available, because it gives us cgroup tracking.
+            # Prefer direct when root is launching a payload as another Unix user.
+            # This avoids root trying to enter or depend on another user's
+            # systemd --user bus.  Direct+runuser is the predictable fallback
+            # for root/operator cross-user execution.
+            if _queue_root_running_foreign_payload_user "$run_user"; then
+                echo "direct"
+                return 0
+            fi
+
+            # Otherwise prefer systemd only when the current user's systemd bus
+            # is actually usable. su/runuser shells frequently have no usable
+            # user bus; auto must fall back to direct rather than selecting a
+            # doomed systemd-run --user launch.
             if _queue_systemd_user_service_supported; then
                 echo "systemd"
             else
@@ -5081,7 +5284,8 @@ _queue_explain_job() {
     fi
     cpu="$(_queue_job_var_value "$f" CPU_LIMIT)"
     mem="$(_queue_job_var_value "$f" MEM_LIMIT)"
-    runner_planned="$(_queue_runner_for_job "$runner" "$cpu" "$mem" 2>/dev/null || echo unknown)"
+    run_user="$(_queue_job_var_value "$f" RUN_USER)"
+    runner_planned="$(_queue_runner_for_job "$runner" "$cpu" "$mem" "$run_user" 2>/dev/null || echo unknown)"
     maxlog="$(_queue_job_var_value "$f" MAX_LOG_SIZE_BYTES)"
     largelog="$(_queue_job_var_value "$f" ALLOW_LARGE_LOG)"
     overflow="$(_queue_job_var_value "$f" LOG_OVERFLOW)"
@@ -6250,6 +6454,8 @@ queue() {
 
     local cmd="$1"
     shift || true
+
+    _queue_guard_foreign_user_queue_eval "$cmd" "${1:-}" "$cmd" "$@" || return "$?"
 
     case "$cmd" in
 
@@ -8137,7 +8343,7 @@ _queue_worker() {
                 echo
 
                 runner_requested="${RUNNER:-${QUEUEBASH_RUNNER:-auto}}"
-                runner_planned="$(_queue_runner_for_job "$runner_requested" "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" || true)"
+                runner_planned="$(_queue_runner_for_job "$runner_requested" "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${RUN_USER:-}" || true)"
                 limit_status="$(_queue_limit_status_text "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")"
                 [[ "$runner_planned" == "systemd" ]] && limit_status="systemd-run-user-service-pipe"
                 if [[ -n "${CPU_LIMIT:-}" || -n "${MEM_LIMIT:-}" ]]; then
@@ -8166,7 +8372,9 @@ _queue_worker() {
                     printf 'RUNNER_USED=%q\n' "$runner_used"
                 } >> "$running"
                 effective_timeout="$(_queue_caps_effective_timeout_for_current_job 2>/dev/null || true)"
-                mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${PWD_AT_SUBMIT:-$PWD}" "$runner_used" "${effective_timeout:-}" "${KILL_AFTER:-}" "${COMMAND[@]}")
+                mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${PWD_AT_SUBMIT:-$PWD}" "$runner_used" "${effective_timeout:-}" "${KILL_AFTER:-}" "${RUN_USER:-}" "${COMMAND[@]}")
+                echo "systemd_user_bus: $(_queue_systemd_user_service_status_text)"
+                if _queue_root_running_foreign_payload_user "${RUN_USER:-}"; then echo "foreign_run_user_runner_policy: root-foreign-user-auto-direct run_user=${RUN_USER:-}"; fi
                 printf "launch_argv:"
                 printf " %q" "${payload_cmd[@]}"
                 printf "\n"

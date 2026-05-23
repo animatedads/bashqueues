@@ -2048,3 +2048,120 @@ cd /home/hc3/bashqueues && queue submit publish_git --class GITHUB_PUBLISH -- ba
 ```
 
 and internally runs `queue submit` with that working directory. It does not emit `--chdir`.
+
+
+## User context and root/operator use
+
+Classes may declare default user context:
+
+```bash
+CLASS_DEFAULT_RUN_USER=appuser
+CLASS_DEFAULT_SUBMIT_USER=appuser
+```
+
+`CLASS_DEFAULT_RUN_USER` is applied to the job as `RUN_USER`, meaning the payload should execute as that Unix account. When root runs the queue worker, queuebash attempts to switch user with `runuser`/`sudo` for direct execution, or systemd `--uid` where systemd execution is available.
+
+`CLASS_DEFAULT_SUBMIT_USER` is recorded as `SUBMIT_USER` for audit/intent. The panel Task Creator also has a `submit user` field. When set, it runs the submit command as that user, for example:
+
+```bash
+runuser -u appuser -- bash -lc 'cd /home/appuser/project && queue submit nightly --class APP_NIGHTLY -- bash job.sh'
+```
+
+This is intended for root/operator workflows where one account can manage jobs for multiple user queue roots.
+
+
+## Root administering user queues safely
+
+Root can administer another user's queue files, but root must not evaluate queue-local code from that user.
+
+Safe root-side operations include file/record administration such as list, cancel/delete, and exception overlay edits.
+
+Commands that may source/evaluate queue-local code are delegated to the queue owner when `QUEUEBASH_ROOT` is owned by a non-root user. This includes:
+
+```text
+queue run
+queue submit
+queue explain
+queue classes explain/validate/refresh/replace/rollback/edit
+queue assets explain/validate/refresh/replace/rollback/expand
+queue panel
+```
+
+The delegation path is:
+
+```bash
+runuser -u <queue-owner> -- bash -lc 'export QUEUEBASH_ROOT=...; source queuebash.sh; queue ...'
+```
+
+Set this to refuse rather than delegate:
+
+```bash
+export QUEUEBASH_ROOT_USER_QUEUE_MODE=refuse
+```
+
+There is an explicit escape hatch for trusted maintenance only:
+
+```bash
+export QUEUEBASH_ALLOW_ROOT_USER_QUEUE_EVAL=1
+```
+
+The default rule is: if code needs to be evaluated, it runs as the owner of the queue, not as root.
+
+
+### Delegated submit working directory
+
+When the panel Task Creator submits as another user and no execution directory is set, it submits from that user's home directory instead of inheriting the operator's current directory:
+
+```bash
+runuser -u testu -- bash -lc 'cd "$HOME" && queue submit run_as_testu -- bash -c "echo testu"'
+```
+
+This prevents a job in `testu`'s queue from recording an inaccessible root/operator submit directory such as `/home/hc3/bashqueues`.
+
+If a specific execution directory is required, set it explicitly in Task Creator.
+
+
+## User systemd bus fallback
+
+`RUNNER=auto` prefers systemd only when the user's systemd bus is actually usable. In `su`/`runuser` shells, `XDG_RUNTIME_DIR` may exist but the user bus may still be inaccessible.
+
+Queuebash now checks:
+
+```text
+systemd-run exists
+systemctl exists
+XDG_RUNTIME_DIR is set
+XDG_RUNTIME_DIR/bus is a socket
+systemctl --user show-environment succeeds
+```
+
+If those checks fail, `RUNNER=auto` falls back to the direct runner instead of attempting `systemd-run --user`.
+
+Job logs include:
+
+```text
+systemd_user_bus: user-bus-ok
+systemd_user_bus: user-bus-unusable
+systemd_user_bus: user-bus-missing
+```
+
+
+## Root running payloads as another user
+
+When root runs a queued payload for another Unix user, `RUNNER=auto` resolves to the direct runner.
+
+This avoids depending on another user's `systemd --user` bus. The direct runner uses the root-controlled user switch path, for example `runuser`, and is the predictable cross-user fallback.
+
+Policy:
+
+```text
+root running root payload       -> normal auto behaviour
+user running own payload        -> systemd if user bus works, otherwise direct
+root running RUN_USER=someuser  -> direct
+```
+
+The job log records the policy when active:
+
+```text
+foreign_run_user_runner_policy: root-foreign-user-auto-direct run_user=someuser
+```

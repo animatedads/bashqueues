@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.15.8
+
+- Make `RUNNER=auto` resolve to `direct` when root is launching a payload as another Unix user via `RUN_USER`.
+- Explicit `RUNNER=systemd` for root-to-foreign-user payloads now reports `systemd-foreign-user-not-used` rather than attempting a fragile user-bus launch.
+- Job logs include `foreign_run_user_runner_policy: root-foreign-user-auto-direct ...` when this policy is active.
+
+
+## 0.15.7
+
+- Fix auto runner selection for `su`/`runuser` shells without a usable user systemd bus.
+- `_queue_systemd_user_service_supported` now verifies the user bus socket and `systemctl --user show-environment`, not just `XDG_RUNTIME_DIR`.
+- `RUNNER=auto` now falls back to direct when `systemd-run --user` would fail with user-bus connection errors.
+- Job logs include `systemd_user_bus: ...` for diagnostics.
+
+
+## 0.15.6
+
+- Fix panel Task Creator delegated submit working directory.
+- When `submit_user` is set and execution directory is blank, the submit command now runs from the target user's `$HOME` instead of inheriting root/operator's cwd.
+- Preview now shows `runuser -u USER -- bash -lc 'cd "$HOME" && queue submit ...'` for this case.
+
+
+## 0.15.5
+
+- Add root/user-queue safety guard.
+- If root points `QUEUEBASH_ROOT` at another user's queue, commands that may source/evaluate queue-local code are delegated to that queue owner by default.
+- Safe file administration commands remain usable by root without sourcing queue-local class or asset code.
+- Add `QUEUEBASH_ROOT_USER_QUEUE_MODE=refuse` to refuse instead of delegate, and `QUEUEBASH_ALLOW_ROOT_USER_QUEUE_EVAL=1` as an explicit escape hatch.
+
+
+## 0.15.4
+
+- Add user context model for classes and panel task submission.
+- Class defaults can now declare `CLASS_DEFAULT_RUN_USER` and `CLASS_DEFAULT_SUBMIT_USER`.
+- Job files receive `RUN_USER` / `SUBMIT_USER` defaults from class defaults.
+- Runner command construction can switch payload execution user via `runuser`/`sudo` for direct runner, and uses systemd `--uid` for root/systemd execution.
+- Panel Class Creator exposes default run/submit user fields.
+- Panel Task Creator exposes submit user and previews `runuser -u USER -- bash -lc ...` for root/operator submissions.
+
+
 ## 0.15.3
 
 - Fix Task Creator execution directory handling: remove unsupported `--chdir` submit option.
