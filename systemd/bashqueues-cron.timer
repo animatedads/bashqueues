@@ -1,0 +1,10 @@
+[Unit]
+Description=Run bashqueues cron bridge every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=1s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,8 @@
+[Unit]
+Description=bashqueues cron bridge ticker
+Documentation=man:systemd.timer(5)
+
+[Service]
+Type=oneshot
+Environment=QUEUEBASH_SOURCE=/usr/local/share/bashqueues/queuebash.sh
+ExecStart=/usr/local/libexec/bashqueues/bashqueues-cron-ticker.py
