@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SPOOL_DIR="${QUEUEBASH_CRON_SPOOL_DIR:-/var/spool/bashqueues_cron}"
+USER_NAME="${SUDO_USER:-${USER:-$(id -un)}}"
+USER_FILE="$SPOOL_DIR/$USER_NAME"
+
+usage() { echo "usage: bashqueues-crontab [-e | -l | -r]" >&2; }
+
+case "${1:-}" in
+  -e)
+    mkdir -p "$SPOOL_DIR"
+    tmp="$(mktemp)"
+    [[ -f "$USER_FILE" ]] && cp "$USER_FILE" "$tmp"
+    "${VISUAL:-${EDITOR:-vi}}" "$tmp"
+    cp "$tmp" "$USER_FILE"
+    chmod 0644 "$USER_FILE" 2>/dev/null || true
+    rm -f "$tmp"
+    echo "bashqueues crontab updated: $USER_FILE"
+    ;;
+  -l)
+    [[ -f "$USER_FILE" ]] && cat "$USER_FILE" || echo "no bashqueues crontab for $USER_NAME"
+    ;;
+  -r)
+    rm -f "$USER_FILE"
+    echo "bashqueues crontab removed: $USER_NAME"
+    ;;
+  *) usage; exit 2 ;;
+esac
