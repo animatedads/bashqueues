@@ -16,7 +16,18 @@ net:http_status	Checks that an HTTP/HTTPS endpoint returns a 2xx/3xx status code
 net:tcp_endpoint	Checks that a TCP endpoint (host:port) is reachable and responding
 net:interface_state	Checks that a network interface exists and is in UP state
 net:interface_bandwidth	Checks that a network interface has available bandwidth headroom
+net:allowance	Checks a charged network interface counter is below an allowance before dispatch
 FACILITIES
+}
+
+queue_asset_hints() {
+    cat <<'EOF'
+net:http_status	target=URL	params=timeout=5 accept_status=200,201,204,301,302,304,307,308	example=queue_class_shared_asset net http_status "https://example.com" timeout=5	notes=Blocks dispatch unless the HTTP status is acceptable.
+net:tcp_endpoint	target=host:port	params=timeout=5	example=queue_class_shared_asset net tcp_endpoint "db.example.com:5432" timeout=5	notes=Blocks dispatch unless the TCP endpoint is reachable.
+net:interface_state	target=interface name	params=none	example=queue_class_shared_asset net interface_state "wwan0"	notes=Blocks dispatch unless the interface exists and is UP.
+net:interface_bandwidth	target=interface name	params=max_usage_percent=80 sample_interval=1 max_rate_bytes_per_sec=125000000	example=queue_class_shared_asset net interface_bandwidth "eth0" max_usage_percent=80	notes=Blocks dispatch when sampled link usage exceeds the threshold.
+net:allowance	target=interface name	params=allowance_bytes=10G direction=rx_tx counter_file=/path/to/counter	example=queue_class_shared_asset net allowance "wwan0" allowance_bytes=10G direction=rx_tx	notes=Canonical charged-link allowance check. Blocks dispatch when a charged link has already exceeded its allowance.
+EOF
 }
 
 queue_asset_param() {
@@ -195,4 +206,72 @@ net:tcp_endpoint	target=host:port, e.g. db.internal:5432	params=timeout=3	exampl
 net:interface_state	target=interface name, e.g. tun0	params=state=UP	example=queue_class_shared_asset net interface_state "tun0" state=UP	notes=Checks that a network interface exists and is in the requested state.
 net:interface_bandwidth	target=interface name, e.g. eth0	params=min_mbps=10	example=queue_class_shared_asset net interface_bandwidth "eth0" min_mbps=10	notes=Checks network interface bandwidth headroom where supported.
 EOF
+}
+
+
+_queue_asset_net_allowance_parse_bytes() {
+    local v="${1:-}" n unit
+    if [[ "$v" =~ ^([0-9]+)([KkMmGgTt]?[Bb]?)?$ ]]; then
+        n="${BASH_REMATCH[1]}"
+        unit="${BASH_REMATCH[2]}"
+        case "$unit" in
+            ""|B|b) echo "$n" ;;
+            K|k|KB|kb|Kb|kB) echo $((n * 1024)) ;;
+            M|m|MB|mb|Mb|mB) echo $((n * 1024 * 1024)) ;;
+            G|g|GB|gb|Gb|gB) echo $((n * 1024 * 1024 * 1024)) ;;
+            T|t|TB|tb|Tb|tB) echo $((n * 1024 * 1024 * 1024 * 1024)) ;;
+            *) return 1 ;;
+        esac
+    else
+        return 1
+    fi
+}
+
+_queue_asset_net_allowance_counter() {
+    local iface="$1" dir="${2:-rx_tx}" counter_file="${3:-}"
+    local base="/sys/class/net/$iface/statistics" rx tx
+
+    if [[ -n "$counter_file" ]]; then
+        cat "$counter_file" 2>/dev/null
+        return
+    fi
+
+    [[ -n "$iface" && -d "$base" ]] || return 1
+
+    rx="$(cat "$base/rx_bytes" 2>/dev/null || echo 0)"
+    tx="$(cat "$base/tx_bytes" 2>/dev/null || echo 0)"
+    [[ "$rx" =~ ^[0-9]+$ ]] || rx=0
+    [[ "$tx" =~ ^[0-9]+$ ]] || tx=0
+
+    case "$dir" in
+        rx) echo "$rx" ;;
+        tx) echo "$tx" ;;
+        rx_tx|total|*) echo $((rx + tx)) ;;
+    esac
+}
+
+queue_asset_check_net_allowance() {
+    local iface="${1:-}"
+    shift || true
+
+    local allowance direction counter_file used allowance_b
+    allowance="$(queue_asset_param allowance_bytes "$@" || true)"
+    direction="$(queue_asset_param direction "$@" || echo rx_tx)"
+    counter_file="$(queue_asset_param counter_file "$@" || true)"
+
+    [[ -n "$iface" ]] || { echo "asset_check_blocked: net:allowance interface_required"; return 1; }
+    [[ -n "$allowance" ]] || { echo "asset_check_blocked: net:allowance allowance_bytes_required iface=$iface"; return 1; }
+
+    allowance_b="$(_queue_asset_net_allowance_parse_bytes "$allowance" 2>/dev/null || echo "$allowance")"
+    [[ "$allowance_b" =~ ^[0-9]+$ ]] || { echo "asset_check_blocked: net:allowance invalid_allowance=$allowance"; return 1; }
+
+    used="$(_queue_asset_net_allowance_counter "$iface" "$direction" "$counter_file" 2>/dev/null || true)"
+    [[ "$used" =~ ^[0-9]+$ ]] || { echo "asset_check_blocked: net:allowance cannot_read_counter iface=$iface"; return 1; }
+
+    if (( used > allowance_b )); then
+        echo "asset_check_blocked: net:allowance exceeded iface=$iface used_bytes=$used allowance_bytes=$allowance_b direction=$direction"
+        return 1
+    fi
+
+    echo "asset_check_ok: net:allowance iface=$iface used_bytes=$used allowance_bytes=$allowance_b direction=$direction"
 }

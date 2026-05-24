@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.15.8"
+QUEUEBASH_VERSION="0.16.24"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -230,7 +230,7 @@ EOF
 # -------------------------------------------------------------------
 
 _queue_root() {
-    echo "${QUEUEBASH_ROOT:-$HOME/.queuebash}"
+    echo "${QUEUEBASH_SELECTED_ROOT:-${QUEUEBASH_ROOT:-$HOME/.queuebash}}"
 }
 
 _queue_install_bundled_classes() {
@@ -601,6 +601,10 @@ _queue_job_dependencies_blocked() {
 
 _queue_now_epoch() {
     date +%s
+}
+
+_queue_now_iso() {
+    date -Is 2>/dev/null || date
 }
 
 _queue_parse_delay_seconds() {
@@ -2017,6 +2021,522 @@ _queue_class_export_job_context() {
 }
 
 
+
+# -----------------------------------------------------------------------------
+# User queue selection
+# -----------------------------------------------------------------------------
+_queue_home_for_user() {
+    local user="${1:-}"
+    [[ -n "$user" ]] || return 1
+    getent passwd "$user" 2>/dev/null | awk -F: '{print $6; exit}'
+}
+
+_queue_root_for_user() {
+    local user="${1:-}"
+    local home
+    home="$(_queue_home_for_user "$user")" || return 1
+    [[ -n "$home" ]] || return 1
+    printf '%s/.queuebash\n' "$home"
+}
+
+_queue_user_exists() {
+    local user="${1:-}"
+    [[ -n "$user" ]] || return 1
+    getent passwd "$user" >/dev/null 2>&1
+}
+
+_queue_select_user_queue() {
+    local user="${1:-}"
+    local user_home selected_root
+
+    _queue_user_exists "$user" || {
+        echo "queue user: no such user: $user" >&2
+        return 2
+    }
+
+    user_home="$(_queue_home_for_user "$user")" || {
+        echo "queue user: cannot determine home for user: $user" >&2
+        return 2
+    }
+    [[ -n "$user_home" ]] || {
+        echo "queue user: empty home for user: $user" >&2
+        return 2
+    }
+
+    selected_root="${user_home}/.queuebash"
+    export QUEUEBASH_SELECTED_USER="$user"
+    export QUEUEBASH_SELECTED_ROOT="$selected_root"
+    export QUEUEBASH_ROOT="$selected_root"
+    return 0
+}
+
+_queue_selected_user_for_display() {
+    if [[ -n "${QUEUEBASH_SELECTED_USER:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_SELECTED_USER"
+        return 0
+    fi
+
+    if declare -F _queue_root_owner_user >/dev/null 2>&1; then
+        _queue_root_owner_user 2>/dev/null && return 0
+    fi
+
+    id -un 2>/dev/null || printf 'unknown\n'
+}
+
+# -----------------------------------------------------------------------------
+_queue_home_for_user() {
+    local user="${1:-}"
+    [[ -n "$user" ]] || return 1
+    getent passwd "$user" 2>/dev/null | awk -F: '{print $6; exit}'
+}
+
+_queue_root_for_user() {
+    local user="${1:-}"
+    local home
+    home="$(_queue_home_for_user "$user")" || return 1
+    [[ -n "$home" ]] || return 1
+    printf '%s/.queuebash\n' "$home"
+}
+
+_queue_user_exists() {
+    local user="${1:-}"
+    [[ -n "$user" ]] || return 1
+    getent passwd "$user" >/dev/null 2>&1
+}
+
+# -----------------------------------------------------------------------------
+# Draft jobs
+# -----------------------------------------------------------------------------
+_queue_draft_dir() {
+    printf '%s/drafts\n' "$(_queue_root)"
+}
+
+_queue_draft_archive_dir() {
+    printf '%s/drafts/.archive\n' "$(_queue_root)"
+}
+
+_queue_draft_id() {
+    printf 'DRAFT-%s-%06d\n' "$(date +%Y%m%d_%H%M%S 2>/dev/null || date +%s)" "$(( RANDOM % 1000000 ))"
+}
+
+_queue_draft_file() {
+    local id="$1"
+    printf '%s/%s.env\n' "$(_queue_draft_dir)" "$id"
+}
+
+_queue_draft_init() {
+    mkdir -p "$(_queue_draft_dir)" "$(_queue_draft_archive_dir)"
+}
+
+_queue_job_file_for_id_any_state() {
+    local id="$1"
+    local state f
+    for state in pending running done failed cancelled deleted interrupted; do
+        f="$(_queue_root)/$state/$id.job"
+        [[ -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
+    done
+    return 1
+}
+
+_queue_draft_shell_quote_array_from_command_line() {
+    local command_line="$1"
+    # Best-effort fallback for explain-only command strings.
+    # shellcheck disable=SC2206
+    local parts=( $command_line )
+    printf 'COMMAND=('
+    local p
+    for p in "${parts[@]}"; do
+        printf ' %q' "$p"
+    done
+    printf ' )\n'
+}
+
+
+_queue_draft_create() {
+    local name="${1:-}"
+    local priority=10
+    local job_class=""
+    local submit_user=""
+    local pwd_at_submit=""
+    local not_before_text=""
+    local not_before_epoch=0
+    local schedule_label=""
+    local retries_max=0
+    local retry_backoff=0
+    local runner=""
+    local cpu_limit=""
+    local mem_limit=""
+    local max_log_size_bytes=""
+    local draft_id draft_file now delay_seconds
+
+    [[ -n "$name" ]] || { echo "Usage: queue draft create <name> [options] -- <command...>" >&2; return 2; }
+    shift || true
+
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --priority|-p)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --priority needs a value" >&2; return 2; }
+                priority="$2"
+                shift 2
+                ;;
+            --class|--queue-class)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: $1 needs a class name" >&2; return 2; }
+                job_class="$2"
+                shift 2
+                ;;
+            --submit-user|--user)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: $1 needs a user" >&2; return 2; }
+                submit_user="$2"
+                shift 2
+                ;;
+            --cwd|--pwd|--execution-dir)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: $1 needs a directory" >&2; return 2; }
+                pwd_at_submit="$2"
+                shift 2
+                ;;
+            --not-before)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --not-before needs a value" >&2; return 2; }
+                not_before_text="$2"
+                schedule_label="$2"
+                if [[ "$not_before_text" == @* ]]; then
+                    not_before_epoch="${not_before_text#@}"
+                elif [[ "$not_before_text" == +* ]]; then
+                    delay_seconds="$(_queue_parse_delay_seconds "${not_before_text#+}")" || {
+                        echo "queue draft create: invalid --not-before delay: $not_before_text" >&2
+                        return 2
+                    }
+                    not_before_epoch="$(( $(_queue_now_epoch) + delay_seconds ))"
+                else
+                    not_before_epoch="$(_queue_parse_at_epoch "$not_before_text")" || {
+                        echo "queue draft create: invalid --not-before: $not_before_text" >&2
+                        return 2
+                    }
+                fi
+                shift 2
+                ;;
+            --retries)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --retries needs a value" >&2; return 2; }
+                retries_max="$2"
+                shift 2
+                ;;
+            --backoff|--retry-delay)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --backoff needs a value" >&2; return 2; }
+                retry_backoff="$2"
+                shift 2
+                ;;
+            --runner)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --runner needs a value" >&2; return 2; }
+                runner="$2"
+                shift 2
+                ;;
+            --cpu)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --cpu needs a value" >&2; return 2; }
+                cpu_limit="$2"
+                shift 2
+                ;;
+            --mem|--memory)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --mem needs a value" >&2; return 2; }
+                mem_limit="$2"
+                shift 2
+                ;;
+            --max-log-size)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --max-log-size needs a value" >&2; return 2; }
+                max_log_size_bytes="$(_queue_parse_size_to_bytes "$2")"
+                [[ "$max_log_size_bytes" -gt 0 ]] || { echo "queue draft create: invalid --max-log-size: $2" >&2; return 2; }
+                shift 2
+                ;;
+            --)
+                shift
+                break
+                ;;
+            *)
+                echo "queue draft create: unexpected argument before -- : $1" >&2
+                echo "Usage: queue draft create <name> [--priority N] [--class CLASS] [--submit-user USER] [--cwd DIR] [--not-before WHEN] [--retries N] [--backoff SEC] [--runner auto|direct|systemd] [--cpu PCT] [--mem SIZE] [--max-log-size SIZE] -- <command...>" >&2
+                return 2
+                ;;
+        esac
+    done
+
+    [[ "$#" -gt 0 ]] || { echo "queue draft create: missing command after --" >&2; return 2; }
+    [[ "$priority" =~ ^-?[0-9]+$ ]] || priority=10
+    [[ "$retries_max" =~ ^[0-9]+$ ]] || retries_max=0
+    [[ "$retry_backoff" =~ ^[0-9]+$ ]] || retry_backoff=0
+
+    _queue_draft_init
+    draft_id="$(_queue_draft_id)"
+    draft_file="$(_queue_draft_file "$draft_id")"
+    now="$(_queue_now_iso)"
+
+    {
+        printf '# queuebash draft: %q\n' "$draft_id"
+        printf 'DRAFT_ID=%q\n' "$draft_id"
+        printf 'DRAFT_STATE=%q\n' "draft"
+        printf 'DRAFT_NAME=%q\n' "$name"
+        printf 'DRAFT_CREATED_AT=%q\n' "$now"
+        printf 'DRAFT_UPDATED_AT=%q\n' "$now"
+        printf 'DRAFT_SOURCE=%q\n' "panel-task-creator"
+        printf 'DRAFT_SOURCE_QUEUE_USER=%q\n' "${QUEUEBASH_SELECTED_USER:-}"
+        printf '\n'
+        printf 'JOB_NAME=%q\n' "$name"
+        printf 'PRIORITY=%q\n' "$priority"
+        printf 'JOB_CLASS=%q\n' "$job_class"
+        printf 'SUBMIT_USER=%q\n' "$submit_user"
+        printf 'PWD_AT_SUBMIT=%q\n' "$pwd_at_submit"
+        printf 'NOT_BEFORE_EPOCH=%q\n' "$not_before_epoch"
+        [[ -n "$not_before_text" ]] && printf 'NOT_BEFORE_TEXT=%q\n' "$not_before_text"
+        [[ -n "$schedule_label" ]] && printf 'SCHEDULE_LABEL=%q\n' "$schedule_label"
+        printf 'RETRIES_MAX=%q\n' "$retries_max"
+        printf 'RETRY_BACKOFF=%q\n' "$retry_backoff"
+        printf 'RUNNER=%q\n' "$runner"
+        printf 'CPU_LIMIT=%q\n' "$cpu_limit"
+        printf 'MEM_LIMIT=%q\n' "$mem_limit"
+        printf 'MAX_LOG_SIZE_BYTES=%q\n' "$max_log_size_bytes"
+        printf 'COMMAND=('
+        local part
+        for part in "$@"; do
+            printf ' %q' "$part"
+        done
+        printf ' )\n'
+    } > "$draft_file"
+
+    echo "Created draft $draft_id"
+    echo "$draft_file"
+}
+
+_queue_draft_create_from_job() {
+    local id="${1:-}"
+    local draft_id source_file draft_file now
+    [[ -n "$id" ]] || { echo "Usage: queue draft create-from-job <qid>" >&2; return 2; }
+
+    source_file="$(_queue_job_file_for_id_any_state "$id")" || {
+        echo "queue draft create-from-job: job not found: $id" >&2
+        return 1
+    }
+
+    _queue_draft_init
+    draft_id="$(_queue_draft_id)"
+    draft_file="$(_queue_draft_file "$draft_id")"
+    now="$(_queue_now_iso)"
+
+    {
+        echo "# queuebash draft: $draft_id"
+        echo "DRAFT_ID=$(printf '%q' "$draft_id")"
+        echo "DRAFT_STATE=draft"
+        echo "DRAFT_NAME=$(printf '%q' "Copy of $id")"
+        echo "DRAFT_CREATED_AT=$(printf '%q' "$now")"
+        echo "DRAFT_UPDATED_AT=$(printf '%q' "$now")"
+        echo "DRAFT_SOURCE_JOB_ID=$(printf '%q' "$id")"
+        echo "DRAFT_SOURCE_QUEUE_USER=$(printf '%q' "${QUEUEBASH_SELECTED_USER:-}")"
+        echo
+
+        awk '
+            /^JOB_ID=/ { next }
+            /^RUN_PID=/ { next }
+            /^RUN_PGID=/ { next }
+            /^RUN_STARTED_AT=/ { next }
+            /^RUN_FINISHED_AT=/ { next }
+            /^STARTED_AT=/ { next }
+            /^FINISHED_AT=/ { next }
+            /^EXIT_CODE=/ { next }
+            /^RUNNER_USED=/ { next }
+            /^SYSTEMD_UNIT=/ { next }
+            /^JOB_CLASS_CLAIMED=/ { next }
+            /^JOB_CLASS_CLAIMED_AT=/ { next }
+            /^CLASS_DEFAULTS_APPLIED_AT=/ { next }
+            /^CLASS_DEFAULTS_SOURCE=/ { print; next }
+            { print }
+        ' "$source_file"
+    } > "$draft_file"
+
+    echo "Created draft $draft_id from job $id"
+    echo "$draft_file"
+}
+
+_queue_draft_list() {
+    _queue_draft_init
+    printf '%-34s %-10s %-22s %-20s %s\n' "DRAFT_ID" "STATE" "UPDATED" "JOB_NAME" "COMMAND"
+    local f
+    for f in "$(_queue_draft_dir)"/*.env; do
+        [[ -f "$f" ]] || continue
+        (
+            DRAFT_ID=""
+            DRAFT_STATE=""
+            DRAFT_UPDATED_AT=""
+            JOB_NAME=""
+            COMMAND=()
+            # shellcheck disable=SC1090
+            source "$f" 2>/dev/null || true
+            printf '%-34s %-10s %-22s %-20s %s\n' \
+                "${DRAFT_ID:-$(basename "$f" .env)}" \
+                "${DRAFT_STATE:-draft}" \
+                "${DRAFT_UPDATED_AT:-}" \
+                "${JOB_NAME:-}" \
+                "$(_queue_shell_join "${COMMAND[@]}")"
+        )
+    done | sort
+}
+
+_queue_draft_show() {
+    local id="${1:-}"
+    local f
+    [[ -n "$id" ]] || { echo "Usage: queue draft show <draft_id>" >&2; return 2; }
+    f="$(_queue_draft_file "$id")"
+    [[ -f "$f" ]] || { echo "queue draft show: not found: $id" >&2; return 1; }
+    echo "=============================================================================="
+    echo "QUEUEBASH DRAFT: $id"
+    echo "=============================================================================="
+    sed -n '1,220p' "$f"
+}
+
+_queue_draft_set_state() {
+    local id="${1:-}"
+    local state="${2:-}"
+    local f tmp now
+    [[ -n "$id" && -n "$state" ]] || { echo "Usage: queue draft state <draft_id> <draft|ready|submitted|abandoned>" >&2; return 2; }
+    case "$state" in draft|ready|submitted|abandoned) ;; *) echo "queue draft state: invalid state: $state" >&2; return 2 ;; esac
+    f="$(_queue_draft_file "$id")"
+    [[ -f "$f" ]] || { echo "queue draft state: not found: $id" >&2; return 1; }
+    tmp="${f}.tmp.$$"
+    now="$(_queue_now_iso)"
+    awk -v st="$state" -v now="$now" '
+        BEGIN { saw_state=0; saw_updated=0 }
+        /^DRAFT_STATE=/ { print "DRAFT_STATE=" st; saw_state=1; next }
+        /^DRAFT_UPDATED_AT=/ { printf "DRAFT_UPDATED_AT=%q\n", now; saw_updated=1; next }
+        { print }
+        END {
+            if (!saw_state) print "DRAFT_STATE=" st
+            if (!saw_updated) printf "DRAFT_UPDATED_AT=%q\n", now
+        }
+    ' "$f" > "$tmp"
+    mv "$tmp" "$f"
+    echo "Draft $id state=$state"
+}
+
+_queue_draft_submit() {
+    local id="${1:-}"
+    local f job_name pri cls not_before retries backoff runner cpu mem maxlog submit_user pwd_at
+    [[ -n "$id" ]] || { echo "Usage: queue draft submit <draft_id>" >&2; return 2; }
+    f="$(_queue_draft_file "$id")"
+    [[ -f "$f" ]] || { echo "queue draft submit: not found: $id" >&2; return 1; }
+
+    (
+        DRAFT_ID=""
+        DRAFT_STATE="draft"
+        JOB_NAME=""
+        PRIORITY=10
+        JOB_CLASS=""
+        NOT_BEFORE_EPOCH=0
+        NOT_BEFORE_TEXT=""
+        RETRIES_MAX=0
+        RETRY_BACKOFF=0
+        RUNNER=""
+        CPU_LIMIT=""
+        MEM_LIMIT=""
+        MAX_LOG_SIZE_BYTES=""
+        SUBMIT_USER=""
+        PWD_AT_SUBMIT=""
+        COMMAND=()
+
+        # shellcheck disable=SC1090
+        source "$f"
+
+        if [[ "${#COMMAND[@]}" -eq 0 ]]; then
+            echo "queue draft submit: draft has no COMMAND array" >&2
+            exit 2
+        fi
+
+        job_name="${JOB_NAME:-${DRAFT_NAME:-draft_job}}"
+        job_name="${job_name// /_}"
+
+        args=(submit "$job_name" --priority "${PRIORITY:-10}")
+        [[ -n "${JOB_CLASS:-}" ]] && args+=(--class "$JOB_CLASS")
+        [[ -n "${RUNNER:-}" ]] && args+=(--runner "$RUNNER")
+        [[ -n "${CPU_LIMIT:-}" ]] && args+=(--cpu "$CPU_LIMIT")
+        [[ -n "${MEM_LIMIT:-}" ]] && args+=(--mem "$MEM_LIMIT")
+        [[ -n "${MAX_LOG_SIZE_BYTES:-}" ]] && args+=(--max-log-size "$MAX_LOG_SIZE_BYTES")
+        [[ -n "${RETRIES_MAX:-}" && "${RETRIES_MAX:-0}" != "0" ]] && args+=(--retries "$RETRIES_MAX")
+        [[ -n "${RETRY_BACKOFF:-}" && "${RETRY_BACKOFF:-0}" != "0" ]] && args+=(--backoff "$RETRY_BACKOFF")
+        if [[ -n "${NOT_BEFORE_TEXT:-}" ]]; then
+            args+=(--not-before "$NOT_BEFORE_TEXT")
+        elif [[ -n "${NOT_BEFORE_EPOCH:-}" && "${NOT_BEFORE_EPOCH:-0}" != "0" ]]; then
+            args+=(--not-before "@$NOT_BEFORE_EPOCH")
+        fi
+        args+=(-- "${COMMAND[@]}")
+
+        if [[ -n "${PWD_AT_SUBMIT:-}" ]]; then
+            cd "$PWD_AT_SUBMIT" || {
+                echo "queue draft submit: cannot cd to PWD_AT_SUBMIT=$PWD_AT_SUBMIT" >&2
+                exit 98
+            }
+        fi
+
+        if [[ -n "${SUBMIT_USER:-}" && "${SUBMIT_USER:-}" != "current" && "$(id -u 2>/dev/null || echo 99999)" == "0" ]]; then
+            exec runuser -u "$SUBMIT_USER" -- bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue' "$(_queue_root)" "${BASH_SOURCE[0]}")$(printf ' %q' "${args[@]}")"
+        fi
+
+        queue "${args[@]}"
+    )
+    local rc=$?
+    if [[ "$rc" -eq 0 ]]; then
+        _queue_draft_set_state "$id" submitted >/dev/null || true
+    fi
+    return "$rc"
+}
+
+_queue_draft_abandon() {
+    local id="${1:-}"
+    [[ -n "$id" ]] || { echo "Usage: queue draft abandon <draft_id>" >&2; return 2; }
+    _queue_draft_set_state "$id" abandoned
+}
+
+_queue_draft_command() {
+    local sub="${1:-list}"
+    shift || true
+    case "$sub" in
+        list|ls) _queue_draft_list "$@" ;;
+        show|cat|explain) _queue_draft_show "$@" ;;
+        create|new|save) _queue_draft_create "$@" ;;
+        create-from-job|copy-from-job) _queue_draft_create_from_job "$@" ;;
+        submit) _queue_draft_submit "$@" ;;
+        state) _queue_draft_set_state "$@" ;;
+        ready) _queue_draft_set_state "${1:-}" ready ;;
+        abandon) _queue_draft_abandon "$@" ;;
+        *) echo "Usage: queue draft list|show <id>|create <name> [options] -- <command...>|create-from-job <qid>|submit <id>|ready <id>|abandon <id>|state <id> <state>" >&2; return 2 ;;
+    esac
+}
+
+
+_queue_selected_user_for_display() {
+    if [[ -n "${QUEUEBASH_SELECTED_USER:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_SELECTED_USER"
+        return 0
+    fi
+    _queue_root_owner_user 2>/dev/null || id -un 2>/dev/null || printf 'unknown\n'
+}
+
+_queue_current_shell_user_for_display() {
+    id -un 2>/dev/null || whoami 2>/dev/null || printf 'unknown\n'
+}
+
+_queue_has_selected_user_context() {
+    [[ -n "${QUEUEBASH_SELECTED_USER:-}" ]]
+}
+
+_queue_print_selected_user_banner() {
+    _queue_has_selected_user_context || return 0
+
+    local selected_user selected_root shell_user
+    selected_user="$(_queue_selected_user_for_display)"
+    selected_root="$(_queue_root)"
+    shell_user="$(_queue_current_shell_user_for_display)"
+
+    if [[ "$selected_user" == "$shell_user" ]]; then
+        printf 'QUEUE USER: %s  root=%s\n' "$selected_user" "$selected_root"
+    else
+        printf 'QUEUE USER: %s  shell-user=%s  root=%s\n' "$selected_user" "$shell_user" "$selected_root"
+    fi
+}
+
 # -----------------------------------------------------------------------------
 # Root / user-queue safety
 # -----------------------------------------------------------------------------
@@ -2061,11 +2581,13 @@ _queue_delegate_command_to_owner() {
     }
 
     if command -v runuser >/dev/null 2>&1; then
-        exec runuser -u "$owner" -- bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_USER_QUEUE_DELEGATED=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue' "$(_queue_root)" "${BASH_SOURCE[0]}")$(printf ' %q' "$@")"
+        runuser -u "$owner" -- bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_USER_QUEUE_DELEGATED=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue' "$(_queue_root)" "${BASH_SOURCE[0]}")$(printf ' %q' "$@")"
+        return "$?"
     fi
 
     if command -v sudo >/dev/null 2>&1; then
-        exec sudo -u "$owner" bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_USER_QUEUE_DELEGATED=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue' "$(_queue_root)" "${BASH_SOURCE[0]}")$(printf ' %q' "$@")"
+        sudo -u "$owner" bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_USER_QUEUE_DELEGATED=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue' "$(_queue_root)" "${BASH_SOURCE[0]}")$(printf ' %q' "$@")"
+        return "$?"
     fi
 
     echo "queue user-queue safety: cannot delegate to owner=$owner; runuser/sudo not found" >&2
@@ -2092,9 +2614,9 @@ _queue_command_may_evaluate_queue_code() {
                     return 0 ;;
             esac
             ;;
-        mgr|manager|qm|queuemgr|panel|qpanel|manager-panel)
-            return 0
-            ;;
+        # The panel manager itself must remain in the operator/root shell.
+        # Panel actions that actually evaluate queue-local code invoke queue
+        # commands separately and are guarded at that point.
     esac
 
     return 1
@@ -2516,32 +3038,43 @@ _queue_duplicate_qids_report() {
 }
 
 
+
 _queue_script_dir() {
     local src="${BASH_SOURCE[0]:-$0}"
     cd "$(dirname "$src")" 2>/dev/null && pwd -P
 }
 
-_queue_manager_load() {
-    local dir mgr
-
+_queue_manager_panel_entry() {
+    local dir panel python
     dir="$(_queue_script_dir)"
-    mgr="$dir/queuemgr.sh"
+    panel="$dir/queuemgr_panel.py"
 
-    if [[ ! -f "$mgr" ]]; then
-        echo "queue manager: missing manager module: $mgr" >&2
+    if [[ ! -f "$panel" ]]; then
+        echo "queue manager: missing panel manager: $panel" >&2
         return 1
     fi
 
-    # shellcheck source=/dev/null
-    source "$mgr"
+    python="${QUEUEBASH_PYTHON:-python3}"
+    "$python" "$panel" "$@"
 }
 
 _queue_manager_entry() {
-    _queue_manager_load || return "$?"
-    _queue_manager "$@"
+    local sub="${1:-panel}"
+    case "$sub" in
+        panel|"")
+            [[ "$#" -gt 0 ]] && shift || true
+            _queue_manager_panel_entry "$@"
+            ;;
+        help|--help|-h)
+            echo "QueueManager is panel-only. Use: queue mgr"
+            ;;
+        *)
+            echo "queue manager: legacy manager subcommand removed: $sub" >&2
+            echo "Use: queue mgr" >&2
+            return 2
+            ;;
+    esac
 }
-
-
 
 _queue_normalize_systemd_cpu_quota() {
     local v="$1"
@@ -3144,54 +3677,7 @@ _queue_systemd_supported() {
     return 0
 }
 
-_queuemgr_repl_complete() {
-    local line point prefix before first cur
-    line="${READLINE_LINE:-}"
-    point="${READLINE_POINT:-0}"
-    before="${line:0:point}"
-
-    # Current token/prefix.
-    cur="${before##* }"
-    first="${before%% *}"
-    [[ "$before" == "$first" ]] && first=""
-
-    local commands="workers worker jobs r rd r2 r3 r4 r5 r6 r7 r8 s show t tail stream pid pids p prio priority pause pd unp unpause unpd os hooks ok fail c cancel kd kill d delete dd df u undelete ud uf rs resubmit rsd history hist exception exceptions sched scheduled schedule stat stats ev events f filter n name st state a all cd cf ci cid cc ccd cdel gz gzip-logs compress-logs clog clean-logs cleanlogs log-clean logs-clean q quit help ?"
-
-    local words matches
-    if [[ -z "$first" ]]; then
-        words="$commands"
-    else
-        case "$first" in
-            st|state)
-                words="all pending running paused done failed interrupted cancelled deleted"
-                ;;
-            f|filter|n|name|s|show|t|tail|pid|pids|p|prio|priority|pause|pd|unp|unpause|unpd|os|hooks|ok|fail|c|cancel|kd|kill|d|delete|dd|df|u|undelete|ud|uf|rs|resubmit|rsd|history|hist)
-                words="$(_queue_job_id_and_names_for_completion)"
-                ;;
-            ev|events)
-                words="5 10 20 50 100"
-                ;;
-            r|rd)
-                words=""
-                ;;
-            *)
-                words="$commands"
-                ;;
-        esac
-    fi
-
-    mapfile -t matches < <(compgen -W "$words" -- "$cur")
-
-    if [[ "${#matches[@]}" -eq 1 ]]; then
-        local replacement="${matches[0]}"
-        READLINE_LINE="${line:0:$((point - ${#cur}))}${replacement}${line:point}"
-        READLINE_POINT=$((point - ${#cur} + ${#replacement}))
-    elif [[ "${#matches[@]}" -gt 1 ]]; then
-        printf '\n'
-        printf '%s\n' "${matches[@]}" | column 2>/dev/null || printf '%s\n' "${matches[@]}"
-        printf 'queuemgr> %s' "$READLINE_LINE"
-    fi
-}
+# Legacy text QueueManager readline completion removed in 0.16.14.
 
 _queue_job_log_max_bytes() {
     local f="$1"
@@ -3913,6 +4399,8 @@ _queue_print_job_table() {
     local idw=6 statew=5 priw=3 namew=4 okw=2 failw=4
     local rows=()
     local f id state pri name ok fail cmd row
+
+    _queue_print_selected_user_banner
 
     for f in "$@"; do
         [[ -f "$f" ]] || continue
@@ -6208,6 +6696,13 @@ Usage:
   queue watch [--interval SEC]
   queue events [--tail N]
 
+  queue draft list
+  queue draft show <draft-id>
+  queue draft create <name> [options] -- <command...>
+  queue draft create-from-job <qid>
+  queue draft submit <draft-id>
+  queue draft ready|abandon <draft-id>
+
   queue run [--workers N] [--detach] [--dryrun]
   queue start [--workers N]
 
@@ -6442,17 +6937,49 @@ _queue_array_contains() {
 
 
 queue() {
-    _queue_init
-
-    local root="$(_queue_root)"
     local dryrun=0
 
-    if [[ "$1" == "--dryrun" || "$1" == "-n" ]]; then
+    if [[ "${1:-}" == "--dryrun" || "${1:-}" == "-n" ]]; then
         dryrun=1
         shift
     fi
 
-    local cmd="$1"
+    # User queue selection is deliberately exact and must happen before
+    # _queue_init/root capture. Otherwise `queue user hc3 list` can still
+    # initialise and read the previous/root queue.
+    case "${1:-}" in
+        --queue-user|--user-queue)
+            [[ "$#" -ge 2 ]] || { echo "Usage: queue ${1:---queue-user} USER [command] [args...]" >&2; return 2; }
+            _queue_select_user_queue "$2" || return "$?"
+            shift 2
+            if [[ "$#" -eq 0 ]]; then
+                _queue_init
+                echo "selected user: $(_queue_selected_user_for_display)"
+                echo "queue root:    $(_queue_root)"
+                [[ -n "${QUEUEBASH_SELECTED_ROOT:-}" ]] && echo "selected root: ${QUEUEBASH_SELECTED_ROOT}"
+                echo "root owner:    $(_queue_root_owner_user 2>/dev/null || echo unknown)"
+                return 0
+            fi
+            ;;
+        user)
+            [[ "$#" -ge 2 ]] || { echo "Usage: queue user USER [command] [args...]" >&2; return 2; }
+            _queue_select_user_queue "$2" || return "$?"
+            shift 2
+            if [[ "$#" -eq 0 ]]; then
+                _queue_init
+                echo "selected user: $(_queue_selected_user_for_display)"
+                echo "queue root:    $(_queue_root)"
+                [[ -n "${QUEUEBASH_SELECTED_ROOT:-}" ]] && echo "selected root: ${QUEUEBASH_SELECTED_ROOT}"
+                echo "root owner:    $(_queue_root_owner_user 2>/dev/null || echo unknown)"
+                return 0
+            fi
+            ;;
+    esac
+
+    _queue_init
+
+    local root="$(_queue_root)"
+    local cmd="${1:-}"
     shift || true
 
     _queue_guard_foreign_user_queue_eval "$cmd" "${1:-}" "$cmd" "$@" || return "$?"
@@ -6493,6 +7020,24 @@ queue() {
 
         version|--version|-V)
             echo "queuebash $QUEUEBASH_VERSION"
+            ;;
+        queue-user|queue-owner)
+            echo "selected user: $(_queue_selected_user_for_display)"
+            echo "queue root:    $(_queue_root)"
+            [[ -n "${QUEUEBASH_SELECTED_ROOT:-}" ]] && echo "selected root: ${QUEUEBASH_SELECTED_ROOT}"
+            echo "root owner:    $(_queue_root_owner_user 2>/dev/null || echo unknown)"
+            ;;
+
+        queue-users)
+            if [[ "$(id -u 2>/dev/null || echo 99999)" != "0" ]]; then
+                id -un
+            else
+                getent passwd | awk -F: '$3 >= 1000 && $6 ~ /^\/home\// {print $1 "\t" $6 "/.queuebash"}' | sort
+            fi
+            ;;
+
+        draft|drafts)
+            _queue_draft_command "$@"
             ;;
         help|--help|-h|"")
             _queue_help
@@ -6935,7 +7480,8 @@ queue() {
             ;;
 
         legacy-manager|legacy-queuemgr)
-            _queue_legacy_queuemgr "$@"
+            echo "queue: legacy manager has been removed; use: queue mgr" >&2
+            return 2
             ;;
 
         asset-hint)
@@ -6950,7 +7496,11 @@ queue() {
             ;;
 
         mgr|manager|qm|queuemgr)
-            _queue_manager_entry "$@"
+            if [[ "$#" -eq 0 || "${1:-}" == "panel" ]]; then
+                _queue_manager_entry panel "${@:2}"
+            else
+                _queue_manager_entry "$@"
+            fi
             ;;
 
         dispatch-trace|trace-dispatch)
@@ -8282,9 +8832,6 @@ _queue_worker() {
     local worker_id="$1"
     local root="$(_queue_root)"
 
-    # Enable simple readline completion inside the queue manager REPL.
-    # This temporarily binds TAB while queuemgr is active.
-    bind -x '"\t": _queuemgr_repl_complete' 2>/dev/null || true
 
     while true; do
         local job
@@ -8574,145 +9121,7 @@ _queue_worker() {
     done
 }
 
-_queuemgr_print_commands() {
-    cat <<'EOF'
-Commands:
-  Run/workers                 Inspect                     Priority/state
-  r / r4       run 1/4        s <id|name>   show          p <id|name> <pri>
-  rd / rd4     dryrun 1/4     t <id|name>   tail          pause <id|name>
-                              pid <id|name> pids
-                              m <id|name>   metrics
-                              ex <id|name>  explain
-                              dep <id|name> deps          pd <id|name>
-                                                          unp / unpd <id|name>
-
-  Hooks                       Cancel/delete               Resubmit/recovery
-  os <id|name>  show hooks    c <id|name>   cancel        rs <id|name>
-  ok <id|name> -- <cmd>       kd <id|name>  kill          rsd <id|name>
-  fail <id|name> -- <cmd>     d / dd <id|name>            h     health              hd      health --deep
-                                                          wait  waiting deps
-                                                          sched scheduled
-                              df <id|name>                hf    health --fix
-                              u / ud / uf <id|name>
-
-  Clear/history               Filters/view                General
-  cd      clear done          f <text>      text filter    help/?  show help
-  cf      clear failed        n <text>      name filter    q       quit
-  ci      clear interrupted   st <state>    state filter
-  cc      clear cancelled     a             clear filters
-  ccd     dryrun clear canc.  stat          stats
-  cdel    clear deleted       gz      compress logs      clog    clean logs       ev [N]        recent events
-EOF
-}
-
-
-_queue_legacy_queuemgr() {
-    _queue_init
-
-    local filter_text=""
-    local filter_name=""
-    local filter_state="all"
-
-    while [[ "$#" -gt 0 ]]; do
-        case "$1" in
-            --filter|-f) filter_text="$2"; shift 2 ;;
-            --name|-n) filter_name="$2"; shift 2 ;;
-            --state|-s) filter_state="$2"; shift 2 ;;
-            *) shift ;;
-        esac
-    done
-
-    while true; do
-        clear
-        echo "queue manager: $(_queue_root)"
-        echo "filters: state=$filter_state name=$filter_name filter=$filter_text"
-        echo
-
-        local args=()
-        [[ -n "$filter_state" ]] && args+=( --state "$filter_state" )
-        [[ -n "$filter_name" ]] && args+=( --name "$filter_name" )
-        [[ -n "$filter_text" ]] && args+=( --filter "$filter_text" )
-        queue list "${args[@]}"
-
-        echo
-        _queuemgr_print_commands
-        echo
-        read -e -r -p "queuemgr> " cmd arg extra rest
-
-        case "$cmd" in
-            q|quit|exit) bind '"\t": complete' 2>/dev/null || true; break ;;
-            r) queue run; read -r -p "press enter..." ;;
-            rd) queue --dryrun run; read -r -p "press enter..." ;;
-            rd[0-9]*) queue --dryrun run --workers "${cmd#rd}"; read -r -p "press enter..." ;;
-            r[0-9]*) queue run --workers "${cmd#r}"; read -r -p "press enter..." ;;
-            s|show) queue show "$arg"; read -r -p "press enter..." ;;
-            t|tail|follow) queue tail "$arg"; read -r -p "press enter..." ;;
-            pid|pids|ps) queue pids "$arg"; read -r -p "press enter..." ;;
-            m|metrics|metric|unit) queue metrics "$arg"; read -r -p "press enter..." ;;
-            ex|explain) queue explain "$arg"; read -r -p "press enter..." ;;
-            dep|deps|dependencies) queue deps "$arg"; read -r -p "press enter..." ;;
-            wait|waiting|blocked) queue waiting; read -r -p "press enter..." ;;
-            sched|scheduled|schedule) queue scheduled; read -r -p "press enter..." ;;
-            p|prio|priority) queue priority "$arg" "$extra"; read -r -p "press enter..." ;;
-            pause|hold) queue pause "$arg"; read -r -p "press enter..." ;;
-            pd|pausedry|drypause) queue --dryrun pause "$arg"; read -r -p "press enter..." ;;
-            unp|unpause|resume|release) queue unpause "$arg"; read -r -p "press enter..." ;;
-            unpd|dryunpause) queue --dryrun unpause "$arg"; read -r -p "press enter..." ;;
-            os|hooks|hook) queue hooks "$arg"; read -r -p "press enter..." ;;
-            ok|onsuccess|on-success)
-                if [[ "$extra" == "--" ]]; then
-                    # shellcheck disable=SC2086
-                    queue onsuccess "$arg" -- $rest
-                else
-                    echo "Usage: ok <id|name> -- <command...>"
-                fi
-                read -r -p "press enter..."
-                ;;
-            fail|onfailure|on-failure)
-                if [[ "$extra" == "--" ]]; then
-                    # shellcheck disable=SC2086
-                    queue onfailure "$arg" -- $rest
-                else
-                    echo "Usage: fail <id|name> -- <command...>"
-                fi
-                read -r -p "press enter..."
-                ;;
-            c|cancel) queue cancel "$arg"; read -r -p "press enter..." ;;
-            kd|kill) queue kill "$arg"; read -r -p "press enter..." ;;
-            d|del|delete) queue delete "$arg"; read -r -p "press enter..." ;;
-            dd|drydelete) queue --dryrun delete "$arg"; read -r -p "press enter..." ;;
-            df|delf|deletef) queue delete "$arg" --force; read -r -p "press enter..." ;;
-            u|undel|undelete|restore) queue undelete "$arg"; read -r -p "press enter..." ;;
-            ud|dryundelete) queue --dryrun undelete "$arg"; read -r -p "press enter..." ;;
-            uf|undelf|undeletef|restoref) queue undelete "$arg" --force; read -r -p "press enter..." ;;
-            rs|resubmit|retry) queue resubmit "$arg"; read -r -p "press enter..." ;;
-            rsd|dryresubmit|dryretry) queue --dryrun resubmit "$arg"; read -r -p "press enter..." ;;
-            ci|clear-interrupted) queue clear interrupted; read -r -p "press enter..." ;;
-            cid|dry-clear-interrupted) queue --dryrun clear interrupted; read -r -p "press enter..." ;;
-            cc|clear-cancelled) queue clear cancelled; read -r -p "press enter..." ;;
-            ccd|dry-clear-cancelled) queue --dryrun clear cancelled; read -r -p "press enter..." ;;
-            cdel|clear-deleted) queue clear deleted; read -r -p "press enter..." ;;
-            gz|gzip-logs|compress-logs) queue compress-logs; read -r -p "press enter..." ;;
-            clog|clean-logs|cleanlogs|log-clean|logs-clean) queue clean-logs --dryrun; read -r -p "press enter..." ;;
-            stat|stats) queue stats; read -r -p "press enter..." ;;
-            h|health) queue health; read -r -p "press enter..." ;;
-            hf|healthfix|health-fix) queue health --fix; read -r -p "press enter..." ;;
-            ev|events) queue events --tail "${arg:-20}"; read -r -p "press enter..." ;;
-            f|filter) filter_text="$arg" ;;
-            n|name) filter_name="$arg" ;;
-            st|state) filter_state="${arg:-all}" ;;
-            a|all) filter_text=""; filter_name=""; filter_state="all" ;;
-            cd) queue clear done; read -r -p "press enter..." ;;
-            cf) queue clear failed; read -r -p "press enter..." ;;
-            help|?)
-                _queuemgr_print_commands
-                read -r -p "press enter..."
-                ;;
-            "") ;;
-            *) echo "unknown command"; sleep 1 ;;
-        esac
-    done
-}
+# Legacy text QueueManager REPL removed in 0.16.14.
 
 # -------------------------------------------------------------------
 # Completion
@@ -8940,7 +9349,7 @@ _queue_assets_completion_words() {
 complete -F _queue_complete queue
 
 
-# Compatibility wrapper: bare `queuemgr` now enters the new lazy-loaded QueueManager.
+# Compatibility wrapper: bare `queuemgr` now routes through the panel-only QueueManager entry.
 queuemgr() {
     queue mgr "$@"
 }

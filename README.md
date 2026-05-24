@@ -1806,23 +1806,31 @@ queue mgr class-builder CLASS
 It uses `tput` and raw keyboard input where available, falling back to normal prompts otherwise. The wizard browses published asset facilities, shows helper-published hints, adds record-format shared/exclusive assets, previews the class, and saves it to `~/.queuebash/classes/CLASS.env`.
 
 
-## Network usage caps
+## Network allowance and usage caps
 
 Charged data links can be handled with plugins.
 
-Class/preflight gate:
+The canonical class/preflight gate is `net:allowance`:
 
 ```bash
-queue_class_shared_asset net_usage allowance "wwan0" allowance_bytes=10G direction=rx_tx
+queue_class_shared_asset net allowance "wwan0" allowance_bytes=10G direction=rx_tx
 ```
 
 Testable counter-file form:
 
 ```bash
-queue_class_shared_asset net_usage allowance "charged" counter_file=/tmp/charged.bytes allowance_bytes=10G
+queue_class_shared_asset net allowance "charged" counter_file=/tmp/charged.bytes allowance_bytes=10G
 ```
 
-Per-job runtime accounting:
+The older `net_usage:allowance` facility remains as deprecated compatibility for existing class files:
+
+```bash
+queue_class_shared_asset net_usage allowance "wwan0" allowance_bytes=10G direction=rx_tx
+```
+
+New class files should use `net allowance`, not `net_usage allowance`.
+
+Per-job runtime accounting still uses the `CLASS_DEFAULT_NET_USAGE_*` metadata names:
 
 ```bash
 CLASS_DEFAULT_NET_USAGE_INTERFACE=wwan0
@@ -1884,21 +1892,57 @@ This is preferred over changing the job to a separate exception class because it
 
 ## full-screen panel manager
 
+### Panel command line
+
+The full-screen panel supports type-a-command operation.  Type any printable character and the command line opens with that character already entered; press `F2` for an empty command prompt.  Commands accept first unique letters and unique substrings, then route to the correct panel and fill the relevant fields.
+
+Examples:
+
+```text
+jo
+tas
+user hc3
+user clear
+task name publish_git
+task command bash publish_to_github.sh
+task class GITHUB
+task schedule +1h
+task save
+class use GITHUB
+cla mycla hist
+panel:classes
+maint health preview
+job 1798231 history
+```
+
+In the command prompt, `*` opens contextual completions.  From Queue Users it can offer queue users plus `panel:*` jumps.  After choosing `panel:classes`, another `*` offers class names and then class actions, so the command line can be built up as `class MYCLASS history`.  Typing `cla mycla hist` directly performs the same cross-panel jump/action when the class match is unique.
+
+Completion ordering is operational: current objects and actions are listed first, while panel jumps are grouped at the bottom.  On Jobs, `*` starts with job actions such as `job QID history`; on Classes it starts with class/object actions; on Queue Users it starts with user choices.  `panel:*` entries stay available, but they no longer push the current work off the top of the popup.
+
+Panel tabs are hotkey-labelled rather than numbered, for example `[J] Jobs`, `[T] Task Creator`, and `[M] Maintenance`. Type the hotkey/command letter or any unique command prefix to move panels.
+
+Global actions are on function keys: `F1` help, `F2` command, `F3` Queue Users, `F4` Jobs, `F5` refresh, `F6` dry-run, `F7` filter, `F8` detail tab, `F10` action, and `F12`/`Esc` quit.  `F9` and `F11` are deliberately not bound because Linux desktops and terminal emulators often reserve them or make accidental mutations too easy. Job copy remains a typed command: `job FRAG copy`. Exception operations remain available as typed commands: `ex`, `exception`, `ce`, and `clear-exception`.  Because Linux terminals/window managers may reserve some keys, the typed command line remains the portable fallback.
+
+
 A curses-backed manager is available for panel-oriented workflows:
 
 ```bash
 queue mgr panel
-queue panel
 ```
 
-Panels:
+Panels are shown with hotkeys, not numbers:
 
 ```text
-Jobs
-Classes
-Assets
-Exceptions
-Restriction Builder
+[U] Queue Users
+[J] Jobs
+[D] Drafts
+[C] Classes
+[A] Assets
+[M] Maintenance
+[E] Exceptions
+[B] Restriction Builder
+[K] Class Creator
+[T] Task Creator
 ```
 
 The screen uses side-by-side panels with scrolling list/detail areas. The restriction builder shows valid asset facilities, helper hints, and selectable queue/class variables such as `${QUEUEBASH_COMMAND_ARG_1_ABSPATH}` and `${QUEUEBASH_JOB_WORKDIR}`.
@@ -1980,8 +2024,7 @@ The panel manager includes a Class Creator panel.
 Workflow:
 
 ```text
-1. Open: queue panel
-2. Go to Class Creator
+1. Open: 2. Go to Class Creator
 3. Set name/purpose/defaults
 4. Go to Restriction Builder
 5. Select a facility and add a shared/exclusive restriction to the draft
@@ -2006,13 +2049,13 @@ The panel manager includes a Task Creator panel.
 Workflow:
 
 ```text
-1. Open: queue panel
-2. Go to Task Creator
+1. Open: 2. Go to Task Creator
 3. Set name and command
 4. Select class from installed classes
 5. Set priority and optional schedule/not-before
-6. Preview or dry-run
+6. Preview, dry-run, or save as a persistent draft
 7. Submit
+8. After a successful submit the Task Creator working draft is cleared
 ```
 
 The generated command uses the existing queue submit interface:
@@ -2023,6 +2066,25 @@ cd /home/hc3/bashqueues && queue submit nightly --priority 10 --class OVERNIGHT_
 
 The Classes panel can also set the selected class into Task Creator using the `use-for-task` action.
 
+
+
+### Task Creator save-as-draft and submit clearing
+
+Task Creator has a `save` action. It stores the current task fields as a persistent draft under:
+
+```text
+$QUEUEBASH_ROOT/drafts/
+```
+
+Saving does not submit a job. It is intended for half-built operational jobs, reviewed jobs, or jobs that should be submitted later from the Drafts panel.
+
+Successful Task Creator submit clears the working Task Creator draft automatically. This prevents accidental duplicate submits after a job has already been queued. Dry-run submit does not clear the draft.
+
+The equivalent command-line form is:
+
+```bash
+queue draft create publish_git --priority 10 --class GITHUB_PUBLISH --cwd /home/hc3/bashqueues -- bash publish_to_github.sh
+```
 
 ### Task Creator job names and execution directory
 
@@ -2084,14 +2146,15 @@ queue submit
 queue explain
 queue classes explain/validate/refresh/replace/rollback/edit
 queue assets explain/validate/refresh/replace/rollback/expand
-queue panel
 ```
 
-The delegation path is:
+The delegation path runs as a child process and then returns to the original shell:
 
 ```bash
 runuser -u <queue-owner> -- bash -lc 'export QUEUEBASH_ROOT=...; source queuebash.sh; queue ...'
 ```
+
+The manager/panel launcher itself is not delegated. `queue mgr` stays in the operator/root shell and displays the selected queue context; individual panel actions that submit, explain, validate, or otherwise evaluate queue-local code are guarded when those actions run.
 
 Set this to refuse rather than delegate:
 
@@ -2165,3 +2228,193 @@ The job log records the policy when active:
 ```text
 foreign_run_user_runner_policy: root-foreign-user-auto-direct run_user=someuser
 ```
+
+
+## Managing user queues from root
+
+Root/operator can select another user's queue root from the command line. The selection-only form switches the effective queue user for the current sourced shell session:
+
+```bash
+queue --queue-user testu
+queue list
+```
+
+The equivalent shorthand is:
+
+```bash
+queue user testu
+queue list
+```
+
+The one-shot command form still works when you want to select and run a command immediately:
+
+```bash
+queue --queue-user testu list
+queue --queue-user testu exception list QID
+queue --queue-user testu delete QID
+queue user testu submit job -- echo hello
+```
+
+When a queue user has been selected, list-style output makes the context visible before the table:
+
+```text
+QUEUE USER: testu  shell-user=root  root=/home/testu/.queuebash
+JOB_ID                                    STATE  PRI  NAME         OK  FAIL  COMMAND
+```
+
+Safe administrative operations can be done directly by root. Any command that might source or evaluate queue-local class/asset code is still protected by the root/user-queue safety guard and delegated to the queue owner. Delegation is a subprocess call, not an `exec`, so after a delegated command finishes the shell remains the original operator/root shell.
+
+The panel manager has a `Queue Users` panel. Select a user there and all other panels operate on that user's queue.
+
+To go back to no selected queue owner, select the clear/current row in `Queue Users`. Optional user/delegation fields such as Task Creator `submit user` can be cleared by entering `current`, `none`, `clear`, `default`, or `-`, or by opening the `*` list and choosing `<current/default>`.
+
+`submit user` is Unix-user delegation, not queue-owner selection. Normal non-root users should leave it blank/current. The panel suppresses `runuser` when the chosen submit user is the current logged-in user; only root/operator sessions use `runuser` to submit as a different Unix account.
+
+
+## Copying a completed job into Task Creator
+
+In the panel manager, select a job on the Jobs panel and press:
+
+```text
+y
+```
+
+or use the job action:
+
+```text
+copy
+```
+
+The selected job is copied into the Task Creator draft using the existing job metadata:
+
+```text
+name
+command
+class
+priority
+execution directory / submit directory
+runner
+CPU and memory limits
+log cap
+retries and backoff
+schedule/not-before metadata where available
+```
+
+This is intended for repeat operational jobs: copy a known completed job, adjust one or two fields, preview, dry-run, then submit.
+
+
+## Persistent task drafts
+
+Queuebash supports persistent task drafts under:
+
+```text
+$QUEUEBASH_ROOT/drafts/
+```
+
+Draft commands:
+
+```bash
+queue draft list
+queue draft show DRAFT_ID
+queue draft create NAME [options] -- COMMAND...
+queue draft create-from-job QID
+queue draft ready DRAFT_ID
+queue draft submit DRAFT_ID
+queue draft abandon DRAFT_ID
+queue draft state DRAFT_ID draft|ready|submitted|abandoned
+```
+
+Draft states:
+
+```text
+draft       editable, not submitted
+ready       reviewed/approved, not submitted
+submitted   converted into a real queue job
+abandoned   retained for audit but not active
+```
+
+The panel manager has a Drafts panel. The Jobs panel copy action creates a persistent draft as well as populating the Task Creator draft.
+
+
+## Queue manager panel safety
+
+`queue mgr` and `queue mgr panel` launch the Python panel manager. The legacy numbered text menu has been removed.
+
+When `queuebash.sh` is sourced into an interactive shell, closing the panel must return to that shell. The launcher therefore calls the panel process normally and does not use `exec`, so the current shell is not replaced by the panel.
+
+The panel footer reserves separate lines for help/menu keys and status/message text.
+
+### Panel selection behaviour
+
+In the Python panel manager, command/action prompts and selectable fields accept first unique letters, numeric selection, and unique substrings. Entering `*` opens a searchable scrollable list; type part of the value, move with Up/Down, and press Enter to select. This is used for Task Creator class selection and other known-value fields.
+
+
+## Panel Maintenance view
+
+The Python QueueManager panel includes a Maintenance view for operator tidy-up work: health fixes, log rolling, log cleaning, and clearing old queue buckets.
+
+Maintenance actions are queued by default.  The panel submits them as normal jobs using the `QUEUE_MAINTENANCE` class with conservative settings and a not-before delay.  This means maintenance appears in `queue list`, is logged, is cancellable before it starts, and runs through the normal class/policy path.
+
+Typical maintenance recipes include:
+
+```bash
+queue health --fix
+queue compress-logs
+queue clean-logs --dryrun --older-than 30d --state done
+queue clean-logs --force --older-than 30d --state done
+queue clear deleted
+queue clear done
+queue clear interrupted
+queue clear cancelled
+```
+
+The panel also offers a confirmed `direct` action for urgent recovery.  Use direct execution when the queue itself needs immediate help; otherwise prefer queued maintenance.
+
+The old text QueueManager REPL has been removed.  `queue mgr`, `queue mgr panel`, `queue manager`, and `queuemgr` route to the panel manager.
+
+### Panel right-hand output modes
+
+Panel commands that inspect jobs or classes keep their output in the right-hand panel.  For example, `job 1798231 history` jumps to the matching job, switches the Jobs detail pane to History, and leaves that mode active as you move through jobs.  `class GITHUB history` does the same on the Classes panel.
+
+Jobs also support typed mutation commands. These are command-line operations, not function-key operations:
+
+```bash
+job change priority 5
+job 1798231 priority 5
+job kill
+job delete
+job undelete
+job edit
+```
+
+When the Jobs panel is active, bare actions such as `kill`, `delete`, `undelete`, `change priority 5`, and `edit` apply to the selected job. `job edit` follows the safe queue pattern: it asks for confirmation, cancels the selected job, then creates/populates a new Task Creator draft from the cancelled job so the replacement can be checked before submission.
+
+Job copy is a command, not a function key action:
+
+```bash
+job 1798231 copy
+```
+
+F9 is intentionally unbound to avoid accidental copying while navigating.
+
+### Task Creator context commands
+
+When the panel is already on Task Creator, bare task actions apply to the current task draft.
+For example, typing:
+
+```text
+submit
+```
+
+is interpreted as:
+
+```text
+task submit
+```
+
+The same current-task shorthand applies to `save`, `preview`, `dryrun`, `clear`, and task field edits.
+This keeps the editor behaviour object-oriented: `(this task) submit`, rather than forcing the operator to repeat the noun every time.
+
+### Jobs Tail right-hand pane
+
+In the panel, `job FRAG tail` selects the matching job and puts the right-hand side into **Tail** mode. Moving through jobs keeps Tail active, so the RHS remains relevant to the selected job. `job FRAG show` still uses the **Log** pane for full job/show output.

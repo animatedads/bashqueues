@@ -1,4 +1,150 @@
+## 0.16.24
+
+- Add typed Jobs panel mutation commands: `job change priority`, `job kill`, `job delete`, `job undelete`, and `job edit`.
+- Bare job actions typed while the Jobs panel is active apply to the selected job, for example `kill`, `delete`, `undelete`, `change priority 5`, and `edit`.
+- `job edit` implements the safe edit pattern: cancel the selected job first, then create/populate a new Task Creator draft from the job metadata.
+- Keep job copy command-only; function keys do not mutate jobs.
+- Add static regression coverage for job mutation command routing.
+
+## 0.16.22
+
+- Panel command line is now context-first on the Task Creator/job editor.
+- Typing `submit` while in Task Creator now means `task submit`; it submits the current task draft instead of being treated as an unrelated panel/global command.
+- The same current-task shorthand applies to `save`, `preview`, `dryrun`, `clear`, and task field edits.
+- Added regression coverage for bare `submit` from the Task Creator screen.
+
+## 0.16.21
+
+- Reorder contextual `*` command completions so current object/action commands appear first.
+- Keep `panel:*` navigation completions grouped at the bottom of the popup.
+- Add static regression coverage for completion ordering.
+
 # Changelog
+
+## 0.16.19
+
+- Add contextual `*` completion to the panel command line.  The completion list is aware of the current panel and command prefix.
+- Queue Users command completion now offers known users plus `panel:*` jumps, so an operator can navigate without leaving command-entry mode.
+- Add `panel:<name>` command routing and command-building flow, for example `panel:classes` followed by `*` for class choices/actions.
+- Add class-object action routing for abbreviated commands such as `cla mycla hist`, which jumps to Classes, selects the unique class match, and shows class history/backups.
+- Add static regression coverage for contextual command completions and class-object action routing.
+
+## 0.16.18
+
+- Add typed job fragment commands such as `job 1798231 history` and `history 1798231`; the panel switches to Jobs, selects the matching QID, moves to the History detail tab, and shows the history output.
+- Remove numeric labels from top-level panel tabs. Tabs now show portable hotkeys such as `[J] Jobs`, `[T] Task Creator`, and `[M] Maintenance`.
+- Keep number selection only inside searchable field popups where it selects list entries, not top-level panels.
+- Add static regression coverage for typed job-history navigation and hotkey-labelled tabs.
+
+## 0.16.17
+
+- Leave F11 deliberately unbound because many Linux desktops and terminal emulators reserve it for full-screen.
+- Keep exception operations on the typed command line with `ex`, `exception`, `ce`, and `clear-exception`.
+- Update the panel footer/help/docs to show F12/Esc quit and no F11 action.
+- Add regression coverage proving F11 is not advertised as an active exception key.
+
+## 0.16.15
+
+- Task Creator now has a `save` action that writes the current task fields into persistent `queue draft` storage without submitting.
+- Add `queue draft create <name> [options] -- <command...>` for panel-created drafts.
+- Successful Task Creator submit now clears the working Task Creator draft, so accidental repeat submits require deliberate re-entry or loading a draft.
+- Dry-run submits retain the working draft.
+- Draft submit now honours saved `NOT_BEFORE_TEXT` as well as saved epoch scheduling.
+- Add regression/static coverage for Task Creator save-as-draft and submit-clear behaviour.
+
+## 0.16.14
+
+- Add a panel Maintenance view for fixes, log rolling, log cleaning, and queue-bucket delete/tidy-up actions.
+- Maintenance actions default to creating normal queued jobs using the new `QUEUE_MAINTENANCE` class instead of running immediately in the operator shell.
+- Add confirmed `direct` run-now Maintenance action for urgent recovery.
+- Add editable Maintenance schedule/priority/command fields using the shared first-unique-letter/searchable-list panel behaviour.
+- Add the standard `classes/QUEUE_MAINTENANCE.env` class for serialized, bounded housekeeping jobs.
+- Physically remove the old legacy readline/text QueueManager REPL functions and obsolete completion helper.
+- Add regression/static coverage for the Maintenance panel and legacy manager removal.
+
+## 0.16.13
+
+- Fix selected user queue panel launch from root: `queue mgr` no longer delegates/replaces the operator shell just because the selected queue root is owned by another user.
+- Replace `exec runuser`/`exec sudo` in the root/user-queue safety delegation path with normal subprocess invocation so delegated commands return to the original shell.
+- Keep the safety model: commands that evaluate queue-local code still delegate to the queue owner, but the panel launcher itself remains an operator/root UI.
+- Added regression coverage for manager non-delegation and no-exec delegated user-queue commands.
+
+## 0.16.12
+
+- Panel Queue Users now includes an explicit clear/current selection to return to no selected queue owner.
+- Task Creator submit user fields now accept `current`, `none`, `clear`, `default`, `-`, or the `<current/default>` list choice to remove delegation.
+- Non-root panel sessions no longer generate `runuser` for the current user when a queue owner or submit user matches the logged-in user.
+- Non-root attempts to delegate to a different Unix user now fail with a clear diagnostic instead of producing `runuser: command not found` style failures.
+- Added regression coverage for panel queue-owner clearing and non-root runuser suppression.
+
+## 0.16.11
+
+- `queue --queue-user USER` and `queue user USER` now select the effective queue user without requiring a following command.
+- Kept `queue --queue-user USER <command>` and `queue user USER <command>` as direct one-shot command forms.
+- Added visible selected-queue context above job tables, so switched-user operation is obvious during `queue list`.
+- Added static regression coverage for sticky queue-user selection and selected-user banner output.
+
+## 0.16.10
+
+- Improved Python panel field selection behaviour.
+- Added shared panel choice resolver: exact match, number selection, first unique letters, and unique substring selection.
+- Added `*` field entry to open a searchable scrollable chooser.
+- Updated Task Creator class selection to use the shared chooser instead of a passive class popup.
+- Applied choice behaviour to action prompts and enumerated fields across jobs, drafts, classes, assets, records, runners, state filters, queue clear targets, and confirmations.
+- Added static regression coverage for the shared panel choice resolver and class-selection field behaviour.
+
+## 0.16.9
+
+- Document `net:allowance` as the canonical charged network allowance facility.
+- Keep `net_usage:allowance` as deprecated compatibility only.
+- Add `docs/ASSETS.md` and update README, class docs, and QueueManager docs for the canonical allowance naming.
+- Fix queue manager panel launch from sourced shells by removing `exec` from the panel launcher. Closing the panel now returns to the caller shell instead of replacing it.
+- Add static regression coverage for allowance naming/docs and panel launch lifecycle safety.
+
+## 0.16.8
+
+- Fix `queue user USER ...` and `queue --queue-user USER ...` root selection order by applying user selection before `_queue_init` and root capture.
+- Fix panel footer layout so menu/help keys and status/message appear on separate lines.
+- Remove accidental duplicate `queue()` selector collision if present.
+
+
+## 0.16.7
+
+- Hotfix `queue mgr` being misparsed as `queue user mgr`.
+- Restore the real `queue()` dispatcher after an accidental user-selector rename collision.
+- User queue selection now only triggers for exact forms: `--queue-user`, `--user-queue`, and `queue user USER ...`.
+- `queue mgr` and `queue mgr panel` now launch the panel manager directly.
+
+
+## 0.16.2
+
+- Fix user-queue selector source safety.
+- Normalize `_queue_select_user_queue` helper definition and remove accidental bare/truncated source-time calls.
+- Add regression test that sourcing `queuebash.sh` defines the user selector without executing it.
+
+
+## 0.16.1
+
+- Add persistent draft state under `$QUEUEBASH_ROOT/drafts`.
+- Add `queue draft list/show/create-from-job/submit/ready/abandon/state` commands.
+- Add Drafts panel to the panel manager.
+- Jobs panel copy action now also creates a persistent draft from the selected job.
+
+
+## 0.16.0
+
+- Add Jobs panel copy-to-task-draft workflow.
+- Selected jobs can now populate Task Creator with name, command, class, priority, submit directory, runner/resources, retries/backoff, and schedule metadata where available.
+- Add `y` shortcut on Jobs panel and `copy` job action.
+
+
+## 0.15.9
+
+- Add command-line user queue selection: `queue --queue-user USER ...`, `queue --user-queue USER ...`, and `queue user USER ...`.
+- Add `queue-users` and `queue-user` diagnostics.
+- Add Queue Users panel to the panel manager so root/operators can switch between user queue roots.
+- Harden panel queue source probing so inaccessible candidate sources are skipped instead of crashing.
+
 
 ## 0.15.8
 

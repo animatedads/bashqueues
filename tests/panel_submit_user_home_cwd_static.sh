@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+export REPO_ROOT="$repo_root"
 fail(){ echo "[FAIL] $1" >&2; exit 1; }
 pass(){ echo "[PASS] $1"; }
 
@@ -12,7 +13,7 @@ import ast, os, pathlib
 src = pathlib.Path(os.environ['REPO_ROOT']) / 'queuemgr_panel.py'
 text = src.read_text()
 ast.parse(text)
-assert 'delegated_default_home = bool(as_user and not cwd)' in text
+assert 'delegated_default_home = bool(delegate_user and not cwd)' in text
 assert 'cd "$HOME" && ' in text
 assert '<submit user HOME>' in text
 assert 'If submit user is set and execution directory is blank' in text

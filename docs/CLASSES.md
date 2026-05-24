@@ -241,6 +241,7 @@ net:http_status
 net:tcp_endpoint
 net:interface_state
 net:interface_bandwidth
+net:allowance
 ```
 
 ### System facilities
@@ -260,6 +261,8 @@ Examples:
 ```bash
 CLASS_SHARED_ASSETS="net:tcp_endpoint:db.internal:5432:timeout=3"
 CLASS_EXCLUSIVE_ASSETS="net:interface_state:tun0"
+queue_class_shared_asset net allowance "wwan0" allowance_bytes=10G direction=rx_tx
+queue_class_shared_asset net allowance "charged" counter_file=/tmp/charged.bytes allowance_bytes=10G
 CLASS_SHARED_ASSETS="sys:memory_available:0:min_gb=8"
 CLASS_SHARED_ASSETS="sys:cpu_load:0:max_load_1m=4.0"
 ```
@@ -486,3 +489,32 @@ This removes delimiter parsing from class definitions. Targets and parameter val
 `queue explain <job>` includes a dispatch decision section for pending jobs.
 
 It reports dependencies, future schedule/not-before blocks, class name and file, class/resource gate result, and asset plugin/preflight output.
+
+
+### Deprecated net_usage compatibility
+
+`net:allowance` is the canonical charged-link allowance facility. Existing class files using `net_usage:allowance` continue to work through `assets.d/net_usage.sh`, but new class files should use:
+
+```bash
+queue_class_shared_asset net allowance "wwan0" allowance_bytes=10G direction=rx_tx
+```
+
+Compatibility-only old form:
+
+```bash
+queue_class_shared_asset net_usage allowance "wwan0" allowance_bytes=10G direction=rx_tx
+```
+
+## QUEUE_MAINTENANCE
+
+`QUEUE_MAINTENANCE` is the standard class for panel-created housekeeping jobs such as health fixes, log rolling, log cleaning, and clearing old queue buckets.
+
+The class is intentionally serialized:
+
+```bash
+CLASS_ALLOW_PARALLEL=0
+CLASS_MAX_CONCURRENT=1
+queue_class_exclusive_claim "queue:maintenance"
+```
+
+The panel Maintenance view uses this class by default so tidy-up work is queued, logged, rate-limited, and visible before it runs.  The direct run-now path in the panel bypasses this class and should be reserved for urgent recovery.

@@ -114,10 +114,11 @@ else
 fi
 
 
-# queuemgr_print_commands smoke
-_queuemgr_print_commands >/tmp/qb_qmgr_help.txt
-grep -q 'Clear/history' /tmp/qb_qmgr_help.txt
-grep -q 'cc      clear cancelled' /tmp/qb_qmgr_help.txt
+# QueueManager legacy REPL removed smoke
+queue mgr help >/tmp/qb_qmgr_help.txt
+grep -q 'QueueManager is panel-only' /tmp/qb_qmgr_help.txt
+! type _queuemgr_print_commands >/dev/null 2>&1
+! type _queue_legacy_queuemgr >/dev/null 2>&1
 
 
 # systemd_wait_scope_regression
@@ -160,11 +161,9 @@ else
 fi
 
 
-# queuemgr_3col_smoke
-_queuemgr_print_commands >/tmp/qb_qmgr_3col.txt
-grep -q 'Run/workers' /tmp/qb_qmgr_3col.txt
-grep -q 'Resubmit/recovery' /tmp/qb_qmgr_3col.txt
-grep -q 'ci      clear interrupted' /tmp/qb_qmgr_3col.txt
+# QueueManager panel-only smoke
+queuemgr help >/tmp/qb_qmgr_panel_only.txt
+grep -q 'QueueManager is panel-only' /tmp/qb_qmgr_panel_only.txt
 
 
 # systemd_workdir_regression
