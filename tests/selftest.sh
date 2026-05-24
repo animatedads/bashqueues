@@ -18,7 +18,16 @@ queue --dryrun pause testls >/dev/null
 queue pause testls >/dev/null
 queue unpause testls >/dev/null
 
-queue run --workers 2 >/dev/null || true
+# Run enough workers to execute the deliberately failing smoke-test job before
+# resubmitting it.  This matters when the selftest itself is executed inside a
+# queued/systemd job: a two-worker pass can leave the third job still pending,
+# making `queue resubmit failer` correctly refuse to clone it.
+queue run --workers 3 >/dev/null || true
+if ! queue list --state failed | grep -q '[[:space:]]failer[[:space:]]'; then
+    echo "selftest: expected failer to be failed before resubmit" >&2
+    queue list >&2 || true
+    exit 1
+fi
 
 queue resubmit failer >/dev/null
 queue --dryrun cancel failer >/dev/null || true

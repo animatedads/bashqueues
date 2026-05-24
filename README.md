@@ -32,6 +32,31 @@ It is designed to be inspectable and recoverable using normal shell tools. The q
   - `overfiles`
   - `overdir`
 
+
+## Global shared resources
+
+`queue_class_global_*` class records coordinate scarce resources across multiple user queue roots.
+
+Examples:
+
+```bash
+queue_class_global_exclusive_claim "github:publish"
+queue_class_global_shared_claim "gpu:cuda" slots=2
+queue_class_global_shared_asset net allowance "wwan0" slots=1 allowance_bytes=10G direction=rx_tx
+```
+
+Global claims live under `${QUEUEBASH_GLOBAL_ROOT:-/var/lib/bashqueues/global}` and can be inspected with:
+
+```bash
+queue global root
+queue global claims
+queue global claim github:publish
+queue global cleanup --dryrun
+queue global health
+```
+
+The QueueManager includes a `Global Resources` panel. Existing non-global class records remain per-queue-root only. See `docs/GLOBAL_RESOURCES.md`.
+
 ## Install
 
 Clone the repository, then source `queuebash.sh` from your shell startup file:
@@ -1822,14 +1847,6 @@ Testable counter-file form:
 queue_class_shared_asset net allowance "charged" counter_file=/tmp/charged.bytes allowance_bytes=10G
 ```
 
-The older `net_usage:allowance` facility remains as deprecated compatibility for existing class files:
-
-```bash
-queue_class_shared_asset net_usage allowance "wwan0" allowance_bytes=10G direction=rx_tx
-```
-
-New class files should use `net allowance`, not `net_usage allowance`.
-
 Per-job runtime accounting still uses the `CLASS_DEFAULT_NET_USAGE_*` metadata names:
 
 ```bash
@@ -1907,6 +1924,8 @@ task name publish_git
 task command bash publish_to_github.sh
 task class GITHUB
 task schedule +1h
+task dependencies setup_job, previous_qid
+task on-success bash -c 'echo completed'
 task save
 class use GITHUB
 cla mycla hist
@@ -1940,12 +1959,11 @@ Panels are shown with hotkeys, not numbers:
 [A] Assets
 [M] Maintenance
 [E] Exceptions
-[B] Restriction Builder
 [K] Class Creator
 [T] Task Creator
 ```
 
-The screen uses side-by-side panels with scrolling list/detail areas. The restriction builder shows valid asset facilities, helper hints, and selectable queue/class variables such as `${QUEUEBASH_COMMAND_ARG_1_ABSPATH}` and `${QUEUEBASH_JOB_WORKDIR}`.
+The screen uses side-by-side panels with scrolling list/detail areas. The Restriction Builder panel is temporarily removed; class restrictions are managed through Classes/Class Creator commands and module/asset documentation.
 
 The manager is intentionally separate from `queuebash.sh`; it invokes existing `queue ...` commands so the queue core remains the source of truth.
 
@@ -1953,6 +1971,19 @@ If launched directly with `python3 queuemgr_panel.py`, the manager auto-discover
 
 The panel manager header shows the resolved `queuebash.sh` source. If it displays `NO QUEUE SOURCE`, launch from the source tree or set `QUEUEBASH_SOURCE=/path/to/queuebash.sh`.
 
+
+### Panel command-line actions for Classes and Assets
+
+The panel command line (`F2`) can operate directly on the selected class or asset. On the Classes panel, commands such as `explain`, `history`, `enable`, `disable`, `refresh`, and `use` apply to the selected class. On the Assets panel, commands such as `explain`, `hint`, `validate`, `enable`, `disable`, `refresh`, and `rollback` apply to the selected asset/plugin.
+
+Explicit forms also work from any panel, for example:
+
+```bash
+class GITHUB_PUBLISH history
+class GITHUB_PUBLISH disable
+asset net:allowance explain
+asset net:allowance disable
+```
 
 ## Panel manager operator console
 
@@ -2024,12 +2055,10 @@ The panel manager includes a Class Creator panel.
 Workflow:
 
 ```text
-1. Open: 2. Go to Class Creator
-3. Set name/purpose/defaults
-4. Go to Restriction Builder
-5. Select a facility and add a shared/exclusive restriction to the draft
-6. Return to Class Creator
-7. Preview, validate, save
+1. Open Class Creator
+2. Set name/purpose/defaults
+3. Add shared/exclusive asset records through class commands or by editing the draft
+4. Preview, validate, save
 ```
 
 Generated classes use record-format functions only:
@@ -2079,6 +2108,27 @@ $QUEUEBASH_ROOT/drafts/
 Saving does not submit a job. It is intended for half-built operational jobs, reviewed jobs, or jobs that should be submitted later from the Drafts panel.
 
 Successful Task Creator submit clears the working Task Creator draft automatically. This prevents accidental duplicate submits after a job has already been queued. Dry-run submit does not clear the draft.
+
+Task Creator also exposes operational dependency and hook fields:
+
+```text
+dependencies       after-success dependencies; comma or space separated QIDs/names
+inherit env from   inherit environment from completed jobs; also adds dependencies
+on success hook    command to run after successful completion
+on failure hook    command to run after failed completion
+on retry hook      command to run after an unsuccessful attempt before retry
+```
+
+The generated submit command uses the existing queue options:
+
+```bash
+queue submit job --after-success previous_qid --inherit-env-from setup_job \
+  --on-success bash -c 'echo done' \
+  --on-failure bash -c 'echo failed' \
+  -- bash run_job.sh
+```
+
+Saved drafts preserve those dependency and hook settings through `queue draft create` and `queue draft submit`.
 
 The equivalent command-line form is:
 
@@ -2418,3 +2468,135 @@ This keeps the editor behaviour object-oriented: `(this task) submit`, rather th
 ### Jobs Tail right-hand pane
 
 In the panel, `job FRAG tail` selects the matching job and puts the right-hand side into **Tail** mode. Moving through jobs keeps Tail active, so the RHS remains relevant to the selected job. `job FRAG show` still uses the **Log** pane for full job/show output.
+
+## Module management: classes, assets.d, and caps.d
+
+bashqueues now treats classes, asset helpers, and execution-cap helpers as manageable modules.
+
+Module families:
+
+```bash
+queue modules list
+queue modules explain class:GITHUB_PUBLISH
+queue modules explain asset:net
+queue modules explain cap:billing
+```
+
+Enable and disable operations keep the module file but move it into or out of the module family's `.disabled/` directory:
+
+```bash
+queue modules disable class GITHUB_PUBLISH
+queue modules enable class GITHUB_PUBLISH
+
+queue modules disable asset net --force
+queue modules enable asset net
+
+queue modules disable cap billing
+queue modules enable cap billing
+```
+
+The family-specific commands are also available:
+
+```bash
+queue classes disable GITHUB_PUBLISH
+queue classes enable GITHUB_PUBLISH
+queue assets disable net --force
+queue assets enable net
+queue caps disable billing
+queue caps enable billing
+```
+
+`caps.d` modules such as `billing.sh` and `net_usage.sh` are installed into the queue root during initialisation in the same way as bundled class and asset modules. The normal cap loader only sources enabled `*.sh` files, so disabled cap modules are ignored by execution-cap calculation.
+
+The panel has a Modules view for the same operations. `Tab` moves forward through panels and `Shift-Tab` moves backwards.
+
+
+### Task Creator dependency/reference fields
+
+The panel Task Creator fields `after success deps` and `inherit env from` are queue-reference fields. Press `*` while editing them to list existing queue job names/QIDs, including a clear option. This prevents an accidental literal wildcard such as `--inherit-env-from '*'`. You can still type a job name, QID fragment, or a manual comma/space-separated dependency list.
+
+
+### Class Creator hint-driven restrictions
+
+The panel Class Creator can build class restriction records from asset/cap
+hints.  Use the **add restriction** row or type commands such as:
+
+```text
+classcreator restriction net:allowance
+restriction billing
+restriction cap:net_usage
+```
+
+Each prompt supports `*` popups, unique prefixes, and unique substrings.  The
+facility hint is displayed before the record is generated, and the resulting
+record is added to the class draft only after confirmation.
+
+### Obsolete asset-side net_usage cleanup
+
+`assets.d/net_usage.sh` has been removed. Runtime network-usage accounting remains
+available through `caps.d/net_usage.sh`. Queue roots upgraded from older builds may
+still contain a stale `assets.d/net_usage.sh`; module refresh/list operations now
+prune or hide that stale asset-side copy.
+
+### Class Creator restriction prompts
+
+Class Creator can build class restrictions from asset/cap hints. The hint metadata is parsed so the panel asks the right questions for each facility instead of asking for one raw parameter line. For example `time:window` prompts for policy name, weekday set, weekday window, weekend set, and weekend window. Press `*` in any generated field to open relevant choices.
+
+### Exceptions panel with selected queue users
+
+The panel Exceptions view is selected-user aware.  In root/operator sessions such
+as:
+
+```bash
+queue --queue-user testu
+queue mgr
+```
+
+exception overlays are loaded through `queue exception list-all`, not by reading
+the operator's local `$QUEUEBASH_ROOT/exceptions` directory.  This keeps the top
+level Exceptions panel consistent with the Jobs detail `Exceptions` tab.
+
+### Exceptions panel with selected queue users
+
+The panel Exceptions view is selected-user aware.  In root/operator sessions such
+as:
+
+```bash
+queue --queue-user testu
+queue mgr
+```
+
+exception overlays are loaded through `queue exception list-all`, not by reading
+the operator's local `$QUEUEBASH_ROOT/exceptions` directory.  This keeps the top
+level Exceptions panel consistent with the Jobs detail `Exceptions` tab.
+
+### Class Creator restriction hints
+
+Class Creator uses asset/cap hints to generate field-specific setup prompts for class restrictions. `*` opens contextual choices for each field. Test-only hint parameters, such as `now_epoch=TEST` on `time:window`, are hidden from the normal production wizard.
+
+Directory filesystem checks now explain that `executable` means searchable/traversable. For `/tmp`, use `writable=1 executable=1` or just `writable=1`.
+
+
+Module commands also accept completion-expanded identities, for example:
+
+```bash
+class:CAPS_TEST explain
+asset:net explain
+cap:net_usage explain
+```
+
+In these forms the first token is the module identity and the following token is the action.
+
+## Cron bridge
+
+The optional cron bridge lets cron-shaped schedules submit bashqueues jobs instead
+of running commands directly. It is installed with:
+
+```bash
+sudo ./install-cron-bridge.sh
+```
+
+Use `bashqueues-crontab -e` for bashqueues-managed crontabs and
+`queue cron tick --dryrun` to preview due entries. See
+[`docs/CRON_BRIDGE.md`](docs/CRON_BRIDGE.md).
+

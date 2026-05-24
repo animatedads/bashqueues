@@ -14,7 +14,7 @@ ast.parse(src)
 assert 'default_run_user' in src
 assert 'default_submit_user' in src
 assert 'submit_user' in src
-assert 'as_user=d.submit_user' in src
+assert 'as_user=_normalise_optional_user(d.submit_user)' in src
 assert 'runuser -u ' in src
 print("panel AST/static checks OK")
 PY

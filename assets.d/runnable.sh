@@ -25,7 +25,7 @@ runnable:library	target=library name or path	params=	example=queue_class_shared_
 runnable:module	target=interpreter name	params=modules=requests,yaml	example=queue_class_shared_asset runnable module "python3" modules=requests,yaml	notes=Checks interpreter modules/imports.
 runnable:env_var	target=environment variable name	params=nonempty=1	example=queue_class_shared_asset runnable env_var "OPENAI_API_KEY" nonempty=1	notes=Checks environment variable presence.
 runnable:resource	target=resource token	params=	example=queue_class_shared_asset runnable resource "gpu"	notes=Checks machine-specific runtime resource.
-runnable:filesystem	target=path	params=writable=1 executable=0	example=queue_class_shared_asset runnable filesystem "/tmp" writable=1	notes=Checks filesystem capabilities.
+runnable:filesystem	target=path	params=writable=1 executable=1	example=queue_class_shared_asset runnable filesystem "/tmp" writable=1 executable=1	notes=Checks filesystem capabilities. For directories, executable means searchable/traversable; /tmp normally requires executable=1.
 EOF
 }
 

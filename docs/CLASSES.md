@@ -491,19 +491,6 @@ This removes delimiter parsing from class definitions. Targets and parameter val
 It reports dependencies, future schedule/not-before blocks, class name and file, class/resource gate result, and asset plugin/preflight output.
 
 
-### Deprecated net_usage compatibility
-
-`net:allowance` is the canonical charged-link allowance facility. Existing class files using `net_usage:allowance` continue to work through `assets.d/net_usage.sh`, but new class files should use:
-
-```bash
-queue_class_shared_asset net allowance "wwan0" allowance_bytes=10G direction=rx_tx
-```
-
-Compatibility-only old form:
-
-```bash
-queue_class_shared_asset net_usage allowance "wwan0" allowance_bytes=10G direction=rx_tx
-```
 
 ## QUEUE_MAINTENANCE
 
@@ -518,3 +505,28 @@ queue_class_exclusive_claim "queue:maintenance"
 ```
 
 The panel Maintenance view uses this class by default so tidy-up work is queued, logged, rate-limited, and visible before it runs.  The direct run-now path in the panel bypasses this class and should be reserved for urgent recovery.
+
+## Enabling and disabling classes
+
+Classes can be temporarily disabled without deleting their source file:
+
+```bash
+queue classes disable GITHUB_PUBLISH
+queue classes enable GITHUB_PUBLISH
+```
+
+Disabled class files are stored in `classes/.disabled/` and are not returned by the normal class list or selected for new jobs until re-enabled.
+
+
+## Global resource records
+
+Use explicit global records when different user queue roots must coordinate over the same physical or scarce resource.
+
+```bash
+queue_class_global_exclusive_claim "github:publish"
+queue_class_global_shared_claim "gpu:cuda" slots=2
+queue_class_global_exclusive_asset net allowance "wwan0" allowance_bytes=10G
+queue_class_global_shared_asset net allowance "wwan0" slots=1 allowance_bytes=10G direction=rx_tx
+```
+
+Existing `queue_class_shared_asset`, `queue_class_exclusive_asset`, and `queue_class_exclusive_claim` records are still local to one queue root.

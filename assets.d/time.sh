@@ -9,7 +9,7 @@ EOF
 
 queue_asset_hints() {
     cat <<'EOF'
-time:window	target=policy name	params=weekdays=mon-fri weekday_windows=18:00-05:00 weekends=sat-sun weekend_windows=always now_epoch=TEST	example=queue_class_shared_asset time window "overnight" weekdays=mon-fri weekday_windows=18:00-05:00 weekends=sat-sun weekend_windows=always	notes=Blocks dispatch outside allowed windows. Use a separate exception class to omit this restriction explicitly.
+time:window	target=policy name	params=weekdays=mon-fri weekday_windows=18:00-05:00 weekends=sat-sun weekend_windows=always	example=queue_class_shared_asset time window "overnight" weekdays=mon-fri weekday_windows=18:00-05:00 weekends=sat-sun weekend_windows=always	notes=Blocks dispatch outside allowed windows. now_epoch is a test-only asset parameter and is intentionally not offered by the Class Creator for production restrictions. Use a separate exception class to omit this restriction explicitly.
 EOF
 }
 

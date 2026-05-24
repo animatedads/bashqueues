@@ -1,3 +1,123 @@
+## 0.17.4 - Global claim blocked history detail
+
+- Global claim blocking now logs the specific claim key, mode, slots, and current holder summary.
+- Suppressed the duplicate generic `class=... reason=global_claim` event so history is not filled with low-information repeats.
+- `queue explain QID` now shows required global claims even for pending blocked jobs, including slots used and holders.
+
+## 0.17.4 - Shell class wizard helper contract
+
+- Restored the shell-side class wizard helper contract used by static and fallback tooling.
+- Added `_queue_mgr_list_facilities_compact`, `_queue_mgr_facility_family`, `_queue_mgr_facility_check`, and `_queue_mgr_wizard_render_preview`.
+- The legacy text QueueManager remains removed; these helpers only publish facility data and render record-format class text.
+
+## 0.17.4 - Publish/selftest resubmit smoke fix
+
+- Fixed global-claim empty-list iteration so ordinary classes with no `queue_class_global_*` records are not treated as blocked.
+- Fixed `tests/selftest.sh` so the deliberate `failer` job is actually driven to `failed` before `queue resubmit failer` is exercised.
+- This prevents queued publish jobs from failing when a two-worker selftest pass leaves `failer` pending.
+- No runtime queue/resubmit behaviour change intended.
+
+## 0.17.4 - Global shared resource slots
+
+- Added explicit cross-user/global resource records:
+  - `queue_class_global_exclusive_claim`
+  - `queue_class_global_shared_claim`
+  - `queue_class_global_exclusive_asset`
+  - `queue_class_global_shared_asset`
+- Added root/admin global coordination root: `${QUEUEBASH_GLOBAL_ROOT:-/var/lib/bashqueues/global}`.
+- Added global commands: `queue global root|claims|claim|cleanup|release|health`.
+- Added global claim audit events and user queue global-claim events.
+- Added Global Resources panel to QueueManager.
+- Added explicit exception bypass support for `global:claim` and `global:claim:CLAIM`.
+- Existing non-global class records remain per-queue-root only.
+
+## 0.16.37 - Module command identity/action parsing
+
+- Fixed F2 module command parsing for completion-expanded module identities such as `class:CAPS_TEST explain`.
+- Module commands now treat `class:NAME`, `asset:NAME`, and `cap:NAME` as the selected module identity, with the following word used as the action.
+- Kept `assets.d/net_usage.sh` removed; runtime net usage remains under `caps.d`.
+
+## 0.16.36 - User-context static test alignment
+
+- Updated `tests/user_context_static.sh` so it expects the current submit-user normalisation path.
+- The panel implementation already correctly calls `qrun(..., as_user=_normalise_optional_user(d.submit_user))`.
+- No runtime behaviour change intended.
+
+## 0.16.35 - Selected-user helper cleanup
+
+- Removed a duplicate generated selected-user helper block from `queuebash.sh`.
+- `queuebash.sh` now has exactly one definition each for `_queue_home_for_user`, `_queue_root_for_user`, `_queue_user_exists`, `_queue_select_user_queue`, and `queue`.
+- Added static regression coverage so duplicated dispatcher/user-helper blocks are caught before future releases.
+- No behaviour change intended; this is a hygiene patch before further operator/sysadmin workflow work.
+
+## 0.16.34 - Better Class Creator restriction hint prompts
+
+- Improved Class Creator restriction wizard prompts generated from asset/cap hints.
+- Test/internal parameters such as `now_epoch=TEST` are no longer offered as normal production class fields.
+- Updated `time:window` hints so `now_epoch` is documented as test-only rather than included in normal params.
+- Updated `runnable:filesystem` hints so directory checks explain executable/search/traverse semantics and default to `executable=1`.
+- Added static regression coverage for restriction hint quality.
+
+## 0.16.33 - Exception panel honours selected queue owner
+
+- Fixed the Exceptions panel when root/operator is viewing another queue owner.
+- The panel now loads exception overlays through `queue exception list-all` instead of reading `$QUEUEBASH_ROOT/exceptions` directly.
+- Added `queue exception list-all` / `queue exceptions list-all` for panel/global exception overlay listing.
+- The panel header now displays the selected queue owner's queue root instead of the operator process root when `--queue-user` is active.
+
+## 0.16.33 - Class Creator parameter prompts from asset/cap hints
+
+- Class Creator restriction setup now parses asset/cap hint metadata instead of asking for one generic params line.
+- A selected facility such as `time:window` now generates useful prompts for the target and each advertised key=value parameter.
+- `*` on generated restriction fields opens contextual chooser lists, including policy names, day sets, time windows, interfaces, limits, and common queue variables.
+- Optional/testing parameters such as `now_epoch=TEST` can be omitted instead of being accidentally saved into production class records.
+
+## 0.16.33 - Prune obsolete asset-side net_usage and fix module explain path
+
+- Added an explicit obsolete asset-plugin prune for `assets.d/net_usage.sh`; runtime net usage remains under `caps.d/net_usage.sh`.
+- The Modules panel defensively hides stale `asset:net_usage` entries from older queue roots.
+- Hardened `queue modules explain cap:NAME` so it reads the active module path first and only falls back to `.disabled` when the active file is absent.
+- Added regression coverage for stale asset-side `net_usage` pruning and active-module explain output.
+
+## 0.16.30 - Class Creator hint-driven restrictions
+
+- Class Creator can now build restriction records directly from asset/cap hints.
+- Added a Class Creator `add restriction` row and F2 commands such as `classcreator restriction net:allowance` and `restriction billing`.
+- Restriction prompts use the standard `*` chooser behaviour for facilities, variables, record type, and parameter examples.
+- Generated class records are appended to the Class Creator draft only after confirmation.
+- `assets.d/net_usage.sh` remains removed; `caps.d/net_usage.sh` remains the cap module location.
+
+
+## 0.16.29 - Task Creator queue-reference chooser
+
+- Task Creator dependency fields now use a queue job reference chooser.
+- `after success deps` and `inherit env from` offer existing queue job names/QIDs and an explicit clear option.
+- Entering `*` in those fields opens the chooser instead of saving a literal wildcard such as `--inherit-env-from '*'`.
+
+## 0.16.28
+
+Panel command line object actions are now available for Assets and Classes. From the Classes panel, bare F2 commands such as `explain`, `history`, `enable`, `disable`, `refresh`, and `use` apply to the selected class. From the Assets panel, bare commands such as `explain`, `hint`, `validate`, `enable`, `disable`, `refresh`, and `rollback` apply to the selected asset/plugin. Explicit cross-panel forms such as `class GITHUB_PUBLISH history`, `class GITHUB_PUBLISH disable`, `asset net:allowance explain`, and `asset net:allowance disable` work from any panel. Contextual `*` completions now list selected class/asset actions directly.
+
+## 0.16.28
+
+- Add Task Creator/job editor fields for dependencies and hooks.
+- Task Creator now supports after-success dependencies, inherited environment dependencies, on-success hooks, on-failure hooks, and on-retry-failure hooks.
+- `queue draft create` now preserves the same dependency and hook metadata, and `queue draft submit` replays it into `queue submit`.
+- Add regression coverage for task editor hook/dependency fields and draft preservation.
+
+## 0.16.25
+
+- Add panel Modules view for managing installed modules across `classes/`, `assets.d/`, and `caps.d/`.
+- Install bundled `caps.d` modules into the selected queue root alongside bundled classes and asset helpers.
+- Add enable/disable support for classes, asset plugins, and cap plugins:
+  - `queue classes enable|disable CLASS`
+  - `queue assets enable|disable FAMILY [--force]`
+  - `queue caps enable|disable FAMILY`
+  - `queue modules enable|disable class|asset|cap NAME`
+- Disabled modules are moved under `.disabled/` below the owning directory, so normal loaders skip them without deleting the file.
+- Add `queue modules list|explain|refresh` as a cross-module management surface.
+- Add Shift-Tab reverse panel navigation.
+
 ## 0.16.24
 
 - Add typed Jobs panel mutation commands: `job change priority`, `job kill`, `job delete`, `job undelete`, and `job edit`.
@@ -20,6 +140,15 @@
 - Add static regression coverage for completion ordering.
 
 # Changelog
+
+## 0.17.4
+
+- Added optional bashqueues cron bridge.
+- Added `bashqueues-cron-ticker.py`, `bashqueues-crontab`, systemd timer/service, and installer.
+- Added `queue cron root|list|tick|edit|remove`.
+- Cron entries submit queue jobs with generated `cron_<hash>` classes capped at one concurrent run.
+- The bridge does not replace `/usr/bin/crontab` by default.
+
 
 ## 0.16.19
 
@@ -989,3 +1118,11 @@ Initial public queuebash release:
 - cancel/kill
 - tail/stats/events
 - overfiles/overdir helpers
+
+
+## 0.16.36
+
+- Fixed `tests/user_context_static.sh` to assert the current normalised submit-user delegation path.
+- The implementation already correctly passes `d.submit_user` through `_normalise_optional_user(...)` before calling `qrun`.
+- No runtime behaviour change.
+

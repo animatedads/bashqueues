@@ -25,7 +25,7 @@ pass(){ echo "[PASS] $1"; }
 queue assets refresh "$repo_root/assets.d" >/dev/null
 queue caps refresh "$repo_root/caps.d" >/dev/null
 
-queue assets validate net_usage >/dev/null || fail "net_usage asset did not validate"
+queue assets validate net >/dev/null || fail "net asset did not validate"
 queue caps list | grep -q 'net_usage:job_limit' || fail "net usage cap facility not listed"
 
 counter="$tmp/counter.bytes"
@@ -35,7 +35,7 @@ cat > "$QUEUEBASH_ROOT/classes/NETOK.env" <<CLASS
 CLASS_ALLOW_PARALLEL=1
 CLASS_MAX_CONCURRENT=0
 CLASS_DEFAULT_RUNNER=direct
-queue_class_shared_asset net_usage allowance "charged" counter_file=$counter allowance_bytes=1K
+queue_class_shared_asset net allowance "charged" counter_file=$counter allowance_bytes=1K
 CLASS
 
 queue submit netok --class NETOK -- bash -c 'true' >/dev/null
@@ -44,7 +44,7 @@ job="$(grep -l '^JOB_NAME=netok$' "$QUEUEBASH_ROOT"/pending/*.job | head -1)"
     _queue_class_load_for_job "$job" >/dev/null
     _queue_asset_implied_preflight_for_class
 ) >/tmp/netok.out || fail "net allowance should pass below allowance"
-grep -q 'asset_check_ok: net_usage:allowance' /tmp/netok.out || fail "net allowance ok not reported"
+grep -q 'asset_check_ok: net:allowance' /tmp/netok.out || fail "net allowance ok not reported"
 
 echo 2000 > "$counter"
 if (
@@ -53,7 +53,7 @@ if (
 ) >/tmp/netbad.out; then
     fail "net allowance should block above allowance"
 fi
-grep -q 'asset_check_blocked: net_usage:allowance exceeded' /tmp/netbad.out || fail "net allowance exceeded not reported"
+grep -q 'asset_check_blocked: net:allowance exceeded' /tmp/netbad.out || fail "net allowance exceeded not reported"
 
 cat > "$QUEUEBASH_ROOT/classes/NETJOB.env" <<CLASS
 CLASS_ALLOW_PARALLEL=1
@@ -83,7 +83,7 @@ grep -q '^NET_USAGE_USED_BYTES=100$' "$job2" || fail "missing used bytes"
 grep -q '^NET_USAGE_EXCEEDED=1$' "$job2" || fail "missing exceeded flag"
 grep -q '^EXIT_CODE=87$' "$job2" || fail "mark-failed did not convert exit code to 87"
 
-pass "net_usage allowance asset blocks class dispatch above allowance"
+pass "net allowance asset blocks class dispatch above allowance"
 pass "net usage cap plugin is listed"
 pass "runtime net usage accounting can mark jobs failed"
 

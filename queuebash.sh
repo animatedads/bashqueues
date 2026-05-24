@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.16.24"
+QUEUEBASH_VERSION="0.17.4"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -259,9 +259,55 @@ _queue_install_bundled_classes() {
         [[ -f "$src" ]] || continue
         base="$(basename "$src")"
         dst="$root/classes/$base"
-        [[ ! -e "$dst" ]] && cp "$src" "$dst"
+        [[ ! -e "$dst" && ! -e "$root/classes/.disabled/$base" ]] && cp "$src" "$dst"
     done
     shopt -u nullglob
+}
+
+
+_queue_obsolete_asset_plugins() {
+    # Asset-side net_usage was removed. Runtime net usage accounting now lives
+    # under caps.d/net_usage.sh. Keep this explicit rather than pruning arbitrary
+    # site-local asset plugins that are not bundled with queuebash.
+    printf '%s
+' net_usage
+}
+
+_queue_prune_obsolete_asset_plugins() {
+    local root="$( _queue_root )" name active disabled obsolete_dir ts target rc=0
+    obsolete_dir="$root/assets.d/.obsolete"
+    while IFS= read -r name; do
+        [[ -n "$name" ]] || continue
+        active="$root/assets.d/$name.sh"
+        disabled="$root/assets.d/.disabled/$name.sh"
+        if [[ -e "$active" || -e "$disabled" ]]; then
+            if ! mkdir -p "$obsolete_dir" 2>/dev/null; then
+                echo "queue assets: cannot create obsolete archive directory: $obsolete_dir" >&2
+                rc=1
+                continue
+            fi
+            ts="$(date +%Y%m%d_%H%M%S_%N)"
+            if [[ -e "$active" ]]; then
+                target="$obsolete_dir/${name}.${ts}.sh"
+                if mv "$active" "$target" 2>/dev/null; then
+                    echo "Archived obsolete asset plugin: $active -> $target" >&2
+                else
+                    echo "queue assets: cannot archive obsolete asset plugin: $active" >&2
+                    rc=1
+                fi
+            fi
+            if [[ -e "$disabled" ]]; then
+                target="$obsolete_dir/${name}.${ts}.disabled.sh"
+                if mv "$disabled" "$target" 2>/dev/null; then
+                    echo "Archived obsolete disabled asset plugin: $disabled -> $target" >&2
+                else
+                    echo "queue assets: cannot archive obsolete disabled asset plugin: $disabled" >&2
+                    rc=1
+                fi
+            fi
+        fi
+    done < <(_queue_obsolete_asset_plugins)
+    return "$rc"
 }
 
 _queue_install_bundled_asset_plugins() {
@@ -286,14 +332,49 @@ _queue_install_bundled_asset_plugins() {
     [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
 
     mkdir -p "$root/assets.d"
+    _queue_prune_obsolete_asset_plugins >/dev/null 2>&1 || true
     shopt -s nullglob
     for src in "$source_dir"/*.sh; do
         [[ -f "$src" ]] || continue
         base="$(basename "$src")"
         dst="$root/assets.d/$base"
 
-        # Never overwrite local/site-edited plugins.
-        if [[ ! -e "$dst" ]]; then
+        # Never overwrite local/site-edited plugins; also respect disabled modules.
+        if [[ ! -e "$dst" && ! -e "$root/assets.d/.disabled/$base" ]]; then
+            cp "$src" "$dst"
+            chmod +x "$dst" 2>/dev/null || true
+        fi
+    done
+    shopt -u nullglob
+}
+
+_queue_install_bundled_cap_plugins() {
+    local root="$(_queue_root)"
+    local source_dir="${QUEUEBASH_CAP_PLUGIN_SOURCE_DIR:-}"
+    local src dst base script_dir
+
+    if [[ -z "$source_dir" ]]; then
+        if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+            if [[ -n "$script_dir" && -d "$script_dir/caps.d" ]]; then
+                source_dir="$script_dir/caps.d"
+            fi
+        fi
+    fi
+
+    if [[ -z "$source_dir" && -d "./caps.d" ]]; then
+        source_dir="./caps.d"
+    fi
+
+    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
+
+    mkdir -p "$root/caps.d"
+    shopt -s nullglob
+    for src in "$source_dir"/*.sh; do
+        [[ -f "$src" ]] || continue
+        base="$(basename "$src")"
+        dst="$root/caps.d/$base"
+        if [[ ! -e "$dst" && ! -e "$root/caps.d/.disabled/$base" ]]; then
             cp "$src" "$dst"
             chmod +x "$dst" 2>/dev/null || true
         fi
@@ -306,7 +387,7 @@ _queue_init() {
     local default_class="${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}"
     local default_file="$root/classes/$default_class.env"
 
-    mkdir -p "$root"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,claims/classes,claims/assets}
+    mkdir -p "$root"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,caps.d,claims/classes,claims/assets}
 
     if [[ ! -f "$default_file" ]]; then
         cat > "$default_file" <<'EOF'
@@ -319,12 +400,18 @@ CLASS_MAX_CONCURRENT=0
 #   queue_class_shared_asset family check "target" key=value
 #   queue_class_exclusive_asset family check "target" key=value
 #   queue_class_exclusive_claim "claim-token"
+#
+# Explicit cross-user/global resource claims:
+#   queue_class_global_exclusive_claim "github:publish"
+#   queue_class_global_shared_claim "gpu:cuda" slots=2
+#   queue_class_global_shared_asset net allowance "wwan0" slots=1 allowance_bytes=10G direction=rx_tx
 EOF
     fi
 
 
     _queue_install_bundled_classes
     _queue_install_bundled_asset_plugins
+    _queue_install_bundled_cap_plugins
 
 }
 
@@ -1119,6 +1206,7 @@ _queue_class_explain() {
 _queue_class_asset_reset() {
     QUEUE_CLASS_SHARED_ASSET_SPECS=()
     QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS=()
+    QUEUE_CLASS_GLOBAL_CLAIM_SPECS=()
 }
 
 _queue_class_asset_pack() {
@@ -1137,6 +1225,42 @@ queue_class_shared_asset() {
 queue_class_exclusive_asset() {
     QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS+=("$(_queue_class_asset_pack "$@")")
 }
+
+_queue_class_global_pack() {
+    local mode="$1" slots="$2" record_type="$3"
+    shift 3 || true
+    _queue_class_asset_pack "$mode" "$slots" "$record_type" "$@"
+}
+
+# Explicit cross-user/global coordination records. These do not change legacy
+# per-queue class/assets behaviour; operators opt in by using global records.
+queue_class_global_exclusive_claim() {
+    local claim="${1:-}"
+    [[ -n "$claim" ]] || return 0
+    shift || true
+    QUEUE_CLASS_GLOBAL_CLAIM_SPECS+=("$(_queue_class_global_pack exclusive 1 claim "$claim" "$@")")
+}
+
+queue_class_global_shared_claim() {
+    local claim="${1:-}"
+    [[ -n "$claim" ]] || return 0
+    shift || true
+    QUEUE_CLASS_GLOBAL_CLAIM_SPECS+=("$(_queue_class_global_pack shared 0 claim "$claim" "$@")")
+}
+
+queue_class_global_exclusive_asset() {
+    [[ "$#" -ge 3 ]] || return 0
+    QUEUE_CLASS_GLOBAL_CLAIM_SPECS+=("$(_queue_class_global_pack exclusive 1 asset "$@")")
+}
+
+queue_class_global_shared_asset() {
+    [[ "$#" -ge 3 ]] || return 0
+    QUEUE_CLASS_GLOBAL_CLAIM_SPECS+=("$(_queue_class_global_pack shared 0 asset "$@")")
+}
+
+# Friendly spellings for operators creating classes by hand.
+queue_class_global_exclusive_resource() { queue_class_global_exclusive_claim "$@"; }
+queue_class_global_shared_resource() { queue_class_global_shared_claim "$@"; }
 
 # Friendly aliases for claim-only assets.
 queue_class_shared_claim() { queue_class_shared_asset "$@"; }
@@ -1813,6 +1937,23 @@ _queue_exception_explain_for_job() {
     done < "$f"
 }
 
+_queue_exception_list_all() {
+    local dir f id count first
+    dir="$(_queue_exception_dir)"
+
+    [[ -d "$dir" ]] || return 0
+
+    for f in "$dir"/*.env; do
+        [[ -f "$f" ]] || continue
+        id="${f##*/}"
+        id="${id%.env}"
+        count="$(awk 'NF { n++ } END { print n+0 }' "$f" 2>/dev/null)"
+        first="$(awk -F '\t' 'NF { print $1 ": " $2; exit }' "$f" 2>/dev/null)"
+        printf '%s	%s	%s
+' "$id" "${count:-0}" "$first"
+    done
+}
+
 _queue_exception_command() {
     local sub="${1:-list}"
     shift || true
@@ -1820,10 +1961,11 @@ _queue_exception_command() {
     case "$sub" in
         add) _queue_exception_add "$@" ;;
         list|show) _queue_exception_list "$@" ;;
+        list-all|all|jobs) _queue_exception_list_all "$@" ;;
         clear|remove|rm) _queue_exception_clear "$@" ;;
         clear-all|remove-all) _queue_exception_clear_all "$@" ;;
         *)
-            echo "Usage: queue exception add|list|clear|clear-all ..." >&2
+            echo "Usage: queue exception add|list|list-all|clear|clear-all ..." >&2
             return 2
             ;;
     esac
@@ -2084,27 +2226,6 @@ _queue_selected_user_for_display() {
 }
 
 # -----------------------------------------------------------------------------
-_queue_home_for_user() {
-    local user="${1:-}"
-    [[ -n "$user" ]] || return 1
-    getent passwd "$user" 2>/dev/null | awk -F: '{print $6; exit}'
-}
-
-_queue_root_for_user() {
-    local user="${1:-}"
-    local home
-    home="$(_queue_home_for_user "$user")" || return 1
-    [[ -n "$home" ]] || return 1
-    printf '%s/.queuebash\n' "$home"
-}
-
-_queue_user_exists() {
-    local user="${1:-}"
-    [[ -n "$user" ]] || return 1
-    getent passwd "$user" >/dev/null 2>&1
-}
-
-# -----------------------------------------------------------------------------
 # Draft jobs
 # -----------------------------------------------------------------------------
 _queue_draft_dir() {
@@ -2167,6 +2288,11 @@ _queue_draft_create() {
     local cpu_limit=""
     local mem_limit=""
     local max_log_size_bytes=""
+    local depends_after_success=()
+    local inherit_env_from=()
+    local on_success=()
+    local on_failure=()
+    local on_retry_failure=()
     local draft_id draft_file now delay_seconds
 
     [[ -n "$name" ]] || { echo "Usage: queue draft create <name> [options] -- <command...>" >&2; return 2; }
@@ -2245,13 +2371,50 @@ _queue_draft_create() {
                 [[ "$max_log_size_bytes" -gt 0 ]] || { echo "queue draft create: invalid --max-log-size: $2" >&2; return 2; }
                 shift 2
                 ;;
+            --after-success|--after|--depends-on)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: $1 needs a QID or exact job name" >&2; return 2; }
+                depends_after_success+=( "$2" )
+                shift 2
+                ;;
+            --inherit-env-from|--inherit-env)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: $1 needs a source job QID/name" >&2; return 2; }
+                inherit_env_from+=( "$2" )
+                if ! _queue_array_contains "$2" "${depends_after_success[@]}"; then
+                    depends_after_success+=( "$2" )
+                fi
+                shift 2
+                ;;
+            --on-success)
+                shift
+                on_success=()
+                while [[ "$#" -gt 0 && "$1" != "--on-failure" && "$1" != "--on-retry-failure" && "$1" != "--on-attempt-failure" && "$1" != "--priority" && "$1" != "-p" && "$1" != "--" ]]; do
+                    on_success+=( "$1" )
+                    shift
+                done
+                ;;
+            --on-retry-failure|--on-attempt-failure)
+                shift
+                on_retry_failure=()
+                while [[ "$#" -gt 0 && "$1" != "--on-success" && "$1" != "--on-failure" && "$1" != "--on-retry-failure" && "$1" != "--on-attempt-failure" && "$1" != "--priority" && "$1" != "-p" && "$1" != "--" ]]; do
+                    on_retry_failure+=( "$1" )
+                    shift
+                done
+                ;;
+            --on-failure)
+                shift
+                on_failure=()
+                while [[ "$#" -gt 0 && "$1" != "--on-success" && "$1" != "--on-retry-failure" && "$1" != "--on-attempt-failure" && "$1" != "--priority" && "$1" != "-p" && "$1" != "--" ]]; do
+                    on_failure+=( "$1" )
+                    shift
+                done
+                ;;
             --)
                 shift
                 break
                 ;;
             *)
                 echo "queue draft create: unexpected argument before -- : $1" >&2
-                echo "Usage: queue draft create <name> [--priority N] [--class CLASS] [--submit-user USER] [--cwd DIR] [--not-before WHEN] [--retries N] [--backoff SEC] [--runner auto|direct|systemd] [--cpu PCT] [--mem SIZE] [--max-log-size SIZE] -- <command...>" >&2
+                echo "Usage: queue draft create <name> [--priority N] [--class CLASS] [--submit-user USER] [--cwd DIR] [--not-before WHEN] [--retries N] [--backoff SEC] [--runner auto|direct|systemd] [--cpu PCT] [--mem SIZE] [--max-log-size SIZE] [--after-success QID] [--inherit-env-from QID] [--on-success <cmd...>] [--on-retry-failure <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
                 return 2
                 ;;
         esac
@@ -2291,6 +2454,33 @@ _queue_draft_create() {
         printf 'CPU_LIMIT=%q\n' "$cpu_limit"
         printf 'MEM_LIMIT=%q\n' "$mem_limit"
         printf 'MAX_LOG_SIZE_BYTES=%q\n' "$max_log_size_bytes"
+        printf 'DEPENDS_AFTER_SUCCESS=('
+        local dep
+        for dep in "${depends_after_success[@]}"; do
+            printf ' %q' "$dep"
+        done
+        printf ' )\n'
+        printf 'INHERIT_ENV_FROM=('
+        for dep in "${inherit_env_from[@]}"; do
+            printf ' %q' "$dep"
+        done
+        printf ' )\n'
+        printf 'ON_SUCCESS=('
+        local hook_part
+        for hook_part in "${on_success[@]}"; do
+            printf ' %q' "$hook_part"
+        done
+        printf ' )\n'
+        printf 'ON_FAILURE=('
+        for hook_part in "${on_failure[@]}"; do
+            printf ' %q' "$hook_part"
+        done
+        printf ' )\n'
+        printf 'ON_RETRY_FAILURE=('
+        for hook_part in "${on_retry_failure[@]}"; do
+            printf ' %q' "$hook_part"
+        done
+        printf ' )\n'
         printf 'COMMAND=('
         local part
         for part in "$@"; do
@@ -2435,6 +2625,11 @@ _queue_draft_submit() {
         MAX_LOG_SIZE_BYTES=""
         SUBMIT_USER=""
         PWD_AT_SUBMIT=""
+        DEPENDS_AFTER_SUCCESS=()
+        INHERIT_ENV_FROM=()
+        ON_SUCCESS=()
+        ON_FAILURE=()
+        ON_RETRY_FAILURE=()
         COMMAND=()
 
         # shellcheck disable=SC1090
@@ -2460,6 +2655,22 @@ _queue_draft_submit() {
             args+=(--not-before "$NOT_BEFORE_TEXT")
         elif [[ -n "${NOT_BEFORE_EPOCH:-}" && "${NOT_BEFORE_EPOCH:-0}" != "0" ]]; then
             args+=(--not-before "@$NOT_BEFORE_EPOCH")
+        fi
+        local dep
+        for dep in "${DEPENDS_AFTER_SUCCESS[@]}"; do
+            [[ -n "$dep" ]] && args+=(--after-success "$dep")
+        done
+        for dep in "${INHERIT_ENV_FROM[@]}"; do
+            [[ -n "$dep" ]] && args+=(--inherit-env-from "$dep")
+        done
+        if [[ "${#ON_RETRY_FAILURE[@]}" -gt 0 ]]; then
+            args+=(--on-retry-failure "${ON_RETRY_FAILURE[@]}")
+        fi
+        if [[ "${#ON_SUCCESS[@]}" -gt 0 ]]; then
+            args+=(--on-success "${ON_SUCCESS[@]}")
+        fi
+        if [[ "${#ON_FAILURE[@]}" -gt 0 ]]; then
+            args+=(--on-failure "${ON_FAILURE[@]}")
         fi
         args+=(-- "${COMMAND[@]}")
 
@@ -2505,14 +2716,6 @@ _queue_draft_command() {
     esac
 }
 
-
-_queue_selected_user_for_display() {
-    if [[ -n "${QUEUEBASH_SELECTED_USER:-}" ]]; then
-        printf '%s\n' "$QUEUEBASH_SELECTED_USER"
-        return 0
-    fi
-    _queue_root_owner_user 2>/dev/null || id -un 2>/dev/null || printf 'unknown\n'
-}
 
 _queue_current_shell_user_for_display() {
     id -un 2>/dev/null || whoami 2>/dev/null || printf 'unknown\n'
@@ -2659,6 +2862,533 @@ _queue_class_source_with_job_context() {
     source "$class_file"
 }
 
+
+# -----------------------------------------------------------------------------
+# Global cross-user resource claims
+# -----------------------------------------------------------------------------
+# Phase 1 implementation: data-only claim state under a root/admin-owned global
+# root. Existing per-queue-root class/assets semantics are unchanged.
+
+_queue_global_root() {
+    printf '%s\n' "${QUEUEBASH_GLOBAL_ROOT:-/var/lib/bashqueues/global}"
+}
+
+_queue_global_claim_policy() {
+    printf '%s\n' "${QUEUEBASH_GLOBAL_CLAIM_POLICY:-strict}"
+}
+
+_queue_global_enabled() {
+    [[ "${QUEUEBASH_GLOBAL_CLAIMS:-1}" != "0" && "${QUEUEBASH_GLOBAL_CLAIMS:-1}" != "off" ]]
+}
+
+_queue_global_hash() {
+    local key="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s' "$key" | sha256sum | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        printf '%s' "$key" | shasum -a 256 | awk '{print $1}'
+    else
+        printf '%s' "$key" | cksum | awk '{print $1}'
+    fi
+}
+
+_queue_global_init() {
+    local root="$(_queue_global_root)"
+    mkdir -p "$root/claims" "$root/slots" "$root/.lock" 2>/dev/null || return 1
+}
+
+_queue_global_lock_file() {
+    local claim="$1" hash
+    hash="$(_queue_global_hash "$claim")"
+    printf '%s/.lock/%s.lock\n' "$(_queue_global_root)" "$hash"
+}
+
+_queue_global_claim_file() {
+    local claim="$1" hash
+    hash="$(_queue_global_hash "$claim")"
+    printf '%s/claims/%s.env\n' "$(_queue_global_root)" "$hash"
+}
+
+_queue_global_events_log() {
+    printf '%s/events.jsonl\n' "$(_queue_global_root)"
+}
+
+_queue_global_json_event() {
+    local event="$1" claim="$2" mode="$3" qid="$4" queue_user="$5" queue_root="$6" class="$7" job_name="$8" detail="${9:-}"
+    local ts log
+    _queue_global_init >/dev/null 2>&1 || return 0
+    ts="$(date -Is 2>/dev/null || date)"
+    log="$(_queue_global_events_log)"
+    {
+        printf '{"ts":"%s","event":"%s","claim":"%s","mode":"%s","qid":"%s","queue_user":"%s","queue_root":"%s","class":"%s","job_name":"%s","by_user":"%s"' \
+            "$(_queue_json_escape "$ts")" "$(_queue_json_escape "$event")" "$(_queue_json_escape "$claim")" "$(_queue_json_escape "$mode")" \
+            "$(_queue_json_escape "$qid")" "$(_queue_json_escape "$queue_user")" "$(_queue_json_escape "$queue_root")" \
+            "$(_queue_json_escape "$class")" "$(_queue_json_escape "$job_name")" "$(_queue_json_escape "$(id -un 2>/dev/null || echo unknown)")"
+        [[ -n "$detail" ]] && printf ',"detail":"%s"' "$(_queue_json_escape "$detail")"
+        printf '}\n'
+    } >> "$log" 2>/dev/null || true
+}
+
+_queue_global_slots_from_args() {
+    local default_slots="$1" arg v
+    shift || true
+    for arg in "$@"; do
+        case "$arg" in
+            slots=*) v="${arg#slots=}"; [[ "$v" =~ ^[0-9]+$ ]] && { printf '%s\n' "$v"; return 0; } ;;
+        esac
+    done
+    if [[ "$default_slots" =~ ^[0-9]+$ && "$default_slots" -gt 0 ]]; then
+        printf '%s\n' "$default_slots"
+    else
+        printf '1\n'
+    fi
+}
+
+_queue_global_spec_info() {
+    local spec="$1" mode default_slots record_type claim family check target slots
+    eval "set -- $spec"
+    [[ "$#" -ge 4 ]] || return 1
+    mode="$1"; default_slots="$2"; record_type="$3"; shift 3
+    case "$record_type" in
+        claim)
+            claim="${1:-}"
+            shift || true
+            slots="$(_queue_global_slots_from_args "$default_slots" "$@")"
+            printf '%s\t%s\t%s\t%s\t%s\n' "$mode" "$slots" "$record_type" "$claim" "$(_queue_class_asset_pack "$claim" "$@")"
+            ;;
+        asset)
+            [[ "$#" -ge 3 ]] || return 1
+            family="$1"; check="$2"; target="$3"
+            claim="${family}:${check}:${target}"
+            slots="$(_queue_global_slots_from_args "$default_slots" "$@")"
+            printf '%s\t%s\t%s\t%s\t%s\n' "$mode" "$slots" "$record_type" "$claim" "$(_queue_class_asset_pack "$@")"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+_queue_global_preflight_for_spec() {
+    local spec="$1" mode slots record_type claim packed
+    IFS=$'\t' read -r mode slots record_type claim packed < <(_queue_global_spec_info "$spec") || return 1
+    if [[ "$record_type" == "asset" ]]; then
+        eval "set -- $packed"
+        [[ "$#" -ge 3 ]] || return 1
+        local family="$1" check="$2" target="$3"
+        _queue_asset_implied_preflight_args "$claim" "$@"
+    fi
+}
+
+_queue_global_claim_exception_allows() {
+    local claim="$1"
+    if _queue_exception_is_allowed_for_asset "global:claim:$claim" >/dev/null 2>&1; then
+        return 0
+    fi
+    if _queue_exception_is_allowed_for_asset "global:claim" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
+_queue_global_claim_holder_state() {
+    local qroot="$1" qid="$2" st
+    for st in running pending paused done failed interrupted cancelled deleted; do
+        [[ -f "$qroot/$st/$qid.job" ]] && { printf '%s\n' "$st"; return 0; }
+    done
+    printf 'missing\n'
+}
+
+_queue_global_claim_compact_file() {
+    local file="$1" claim="$2" mode="$3" slots="$4" tmp now n=0 line qid qroot state
+    [[ -f "$file" ]] || return 0
+    tmp="$(mktemp)"
+    now="$(date -Is 2>/dev/null || date)"
+    {
+        printf 'CLAIM_KEY=%q\n' "$claim"
+        printf 'CLAIM_HASH=%q\n' "$(_queue_global_hash "$claim")"
+        printf 'CLAIM_MODE=%q\n' "$mode"
+        printf 'CLAIM_SLOTS_TOTAL=%q\n' "$slots"
+        printf 'CLAIM_UPDATED_AT=%q\n' "$now"
+    } > "$tmp"
+    while IFS= read -r line; do
+        [[ "$line" == HOLDER$'\t'* ]] || continue
+        qid="$(printf '%s\n' "$line" | cut -f2)"
+        qroot="$(printf '%s\n' "$line" | cut -f4)"
+        state="$(_queue_global_claim_holder_state "$qroot" "$qid")"
+        if [[ "$state" == "running" ]]; then
+            n=$((n + 1))
+            printf '%s\n' "$line" >> "$tmp"
+        else
+            _queue_global_json_event "global_claim_stale_removed" "$claim" "$mode" "$qid" "$(printf '%s\n' "$line" | cut -f3)" "$qroot" "$(printf '%s\n' "$line" | cut -f5)" "$(printf '%s\n' "$line" | cut -f6)" "state=$state"
+        fi
+    done < <(grep '^HOLDER' "$file" 2>/dev/null || true)
+    mv "$tmp" "$file"
+}
+
+_queue_global_claim_holder_count() {
+    local file="$1" n
+    n="$(grep -c '^HOLDER' "$file" 2>/dev/null)" || n=0
+    printf '%s
+' "${n:-0}"
+}
+
+_queue_global_claim_holder_summary() {
+    local claim="$1" file line qid queue_user qroot class job_name pid started state out=""
+    file="$(_queue_global_claim_file "$claim")"
+    [[ -f "$file" ]] || return 0
+    while IFS= read -r line; do
+        [[ "$line" == HOLDER$'\t'* ]] || continue
+        qid="$(printf '%s\n' "$line" | cut -f2)"
+        queue_user="$(printf '%s\n' "$line" | cut -f3)"
+        qroot="$(printf '%s\n' "$line" | cut -f4)"
+        class="$(printf '%s\n' "$line" | cut -f5)"
+        job_name="$(printf '%s\n' "$line" | cut -f6)"
+        pid="$(printf '%s\n' "$line" | cut -f7)"
+        started="$(printf '%s\n' "$line" | cut -f8)"
+        state="$(_queue_global_claim_holder_state "$qroot" "$qid" 2>/dev/null || printf unknown)"
+        [[ -n "$out" ]] && out+="; "
+        out+="holder=${queue_user}:${qid}:${job_name:-?}:state=${state}:class=${class:-?}:pid=${pid:-?}:since=${started:-?}"
+    done < <(grep '^HOLDER' "$file" 2>/dev/null || true)
+    printf '%s\n' "$out"
+}
+
+
+_queue_global_claim_has_holder() {
+    local file="$1" qid="$2" qroot="$3"
+    awk -F '\t' -v qid="$qid" -v qroot="$qroot" '$1 == "HOLDER" && $2 == qid && $4 == qroot { found=1 } END { exit found ? 0 : 1 }' "$file" 2>/dev/null
+}
+
+_queue_global_claim_available_one() {
+    local claim="$1" mode="$2" slots="$3" qid="${4:-}" qroot="${5:-}" lock file count rc=0
+    _queue_global_enabled || return 0
+    _queue_global_init || {
+        [[ "$(_queue_global_claim_policy)" == "warn" || "$(_queue_global_claim_policy)" == "off" ]] && return 0
+        return 1
+    }
+    lock="$(_queue_global_lock_file "$claim")"
+    file="$(_queue_global_claim_file "$claim")"
+    (
+        flock -x 9 || exit 1
+        [[ -f "$file" ]] || : > "$file"
+        _queue_global_claim_compact_file "$file" "$claim" "$mode" "$slots"
+        if [[ -n "$qid" && -n "$qroot" ]] && _queue_global_claim_has_holder "$file" "$qid" "$qroot"; then
+            exit 0
+        fi
+        count="$(_queue_global_claim_holder_count "$file")"
+        if [[ "$mode" == "exclusive" ]]; then
+            (( count == 0 )) || exit 2
+        else
+            (( count < slots )) || exit 3
+        fi
+        exit 0
+    ) 9>"$lock"
+    rc="$?"
+    return "$rc"
+}
+
+_queue_global_claims_available_for_job() {
+    local f="$1" id name class spec mode slots record_type claim packed rc any=0
+    id="$(basename "$f" .job)"
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
+    class="${QUEUE_CLASS_NAME:-$(_queue_class_name_for_job "$f")}" 
+    for spec in "${QUEUE_CLASS_GLOBAL_CLAIM_SPECS[@]}"; do
+        any=1
+        IFS=$'\t' read -r mode slots record_type claim packed < <(_queue_global_spec_info "$spec") || return 1
+        if _queue_global_claim_exception_allows "$claim"; then
+            _queue_log_event "exception_applied" "$id" "$claim" "pending" "asset=global:claim:$claim reason=${QUEUEBASH_EXCEPTION_MATCH_REASON:-} by=${QUEUEBASH_EXCEPTION_MATCH_BY:-}"
+            continue
+        fi
+        _queue_global_preflight_for_spec "$spec" || return 2
+        if ! _queue_global_claim_available_one "$claim" "$mode" "$slots" "$id" "$(_queue_root)"; then
+            local holders
+            holders="$(_queue_global_claim_holder_summary "$claim")"
+            _queue_log_event "global_claim_blocked" "$id" "$name" "pending" "claim=$claim mode=$mode slots=$slots${holders:+ $holders}"
+            _queue_global_json_event "global_claim_blocked" "$claim" "$mode" "$id" "$(_queue_selected_user_for_display 2>/dev/null || id -un)" "$(_queue_root)" "$class" "$name" "slots=$slots${holders:+ $holders}"
+            return 3
+        fi
+    done
+    return 0
+}
+
+_queue_global_claim_acquire_one() {
+    local claim="$1" mode="$2" slots="$3" qid="$4" qroot="$5" class="$6" job_name="$7" pid="${8:-}" lock file now count tmp
+    _queue_global_enabled || return 0
+    _queue_global_init || {
+        [[ "$(_queue_global_claim_policy)" == "warn" || "$(_queue_global_claim_policy)" == "off" ]] && return 0
+        return 1
+    }
+    lock="$(_queue_global_lock_file "$claim")"
+    file="$(_queue_global_claim_file "$claim")"
+    now="$(date -Is 2>/dev/null || date)"
+    (
+        flock -x 9 || exit 1
+        [[ -f "$file" ]] || : > "$file"
+        _queue_global_claim_compact_file "$file" "$claim" "$mode" "$slots"
+        if _queue_global_claim_has_holder "$file" "$qid" "$qroot"; then
+            exit 0
+        fi
+        count="$(_queue_global_claim_holder_count "$file")"
+        if [[ "$mode" == "exclusive" ]]; then
+            (( count == 0 )) || exit 2
+        else
+            (( count < slots )) || exit 3
+        fi
+        tmp="$(mktemp)"
+        {
+            printf 'CLAIM_KEY=%q\n' "$claim"
+            printf 'CLAIM_HASH=%q\n' "$(_queue_global_hash "$claim")"
+            printf 'CLAIM_MODE=%q\n' "$mode"
+            printf 'CLAIM_SLOTS_TOTAL=%q\n' "$slots"
+            printf 'CLAIM_CREATED_AT=%q\n' "$now"
+            printf 'CLAIM_UPDATED_AT=%q\n' "$now"
+            grep '^HOLDER' "$file" 2>/dev/null || true
+            printf 'HOLDER\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$qid" "$(_queue_selected_user_for_display 2>/dev/null || id -un)" "$qroot" "$class" "$job_name" "${pid:-$$}" "$now"
+        } > "$tmp"
+        mv "$tmp" "$file"
+        exit 0
+    ) 9>"$lock"
+}
+
+_queue_global_claims_acquire_for_job() {
+    local f="$1" id="$2" class name spec mode slots record_type claim packed acquired=()
+    class="${QUEUE_CLASS_NAME:-$(_queue_class_name_for_job "$f")}" 
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
+    for spec in "${QUEUE_CLASS_GLOBAL_CLAIM_SPECS[@]}"; do
+        IFS=$'\t' read -r mode slots record_type claim packed < <(_queue_global_spec_info "$spec") || return 1
+        if _queue_global_claim_exception_allows "$claim"; then
+            _queue_log_event "exception_applied" "$id" "$claim" "running" "asset=global:claim:$claim reason=${QUEUEBASH_EXCEPTION_MATCH_REASON:-} by=${QUEUEBASH_EXCEPTION_MATCH_BY:-}"
+            continue
+        fi
+        _queue_global_preflight_for_spec "$spec" || return 2
+        if _queue_global_claim_acquire_one "$claim" "$mode" "$slots" "$id" "$(_queue_root)" "$class" "$name" "${RUN_PID:-$$}"; then
+            acquired+=("$claim")
+            _queue_log_event "global_claim_acquired" "$id" "$name" "running" "claim=$claim mode=$mode slots=$slots"
+            _queue_global_json_event "global_claim_acquired" "$claim" "$mode" "$id" "$(_queue_selected_user_for_display 2>/dev/null || id -un)" "$(_queue_root)" "$class" "$name" "slots=$slots"
+        else
+            _queue_log_event "global_claim_blocked" "$id" "$name" "pending" "claim=$claim mode=$mode slots=$slots acquire_failed=1"
+            _queue_global_json_event "global_claim_blocked" "$claim" "$mode" "$id" "$(_queue_selected_user_for_display 2>/dev/null || id -un)" "$(_queue_root)" "$class" "$name" "slots=$slots acquire_failed=1"
+            _queue_global_release_job_claims "$id" "$(_queue_root)"
+            return 3
+        fi
+    done
+    return 0
+}
+
+_queue_global_release_job_claims() {
+    local qid="$1" qroot="${2:-$(_queue_root)}" root file lock claim mode slots tmp line changed queue_user class job_name
+    [[ -n "$qid" ]] || return 0
+    root="$(_queue_global_root)"
+    [[ -d "$root/claims" ]] || return 0
+    shopt -s nullglob
+    for file in "$root/claims"/*.env; do
+        [[ -f "$file" ]] || continue
+        claim="$(grep '^CLAIM_KEY=' "$file" 2>/dev/null | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+        mode="$(grep '^CLAIM_MODE=' "$file" 2>/dev/null | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+        slots="$(grep '^CLAIM_SLOTS_TOTAL=' "$file" 2>/dev/null | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+        [[ -n "$claim" ]] || claim="$(basename "$file" .env)"
+        [[ -n "$mode" ]] || mode="shared"
+        [[ -n "$slots" ]] || slots=1
+        lock="$root/.lock/$(basename "$file" .env).lock"
+        (
+            flock -x 9 || exit 0
+            tmp="$(mktemp)"
+            changed=0
+            grep -v '^HOLDER' "$file" > "$tmp" 2>/dev/null || true
+            while IFS= read -r line; do
+                [[ "$line" == HOLDER$'\t'* ]] || continue
+                if [[ "$(printf '%s\n' "$line" | cut -f2)" == "$qid" && "$(printf '%s\n' "$line" | cut -f4)" == "$qroot" ]]; then
+                    changed=1
+                    queue_user="$(printf '%s\n' "$line" | cut -f3)"
+                    class="$(printf '%s\n' "$line" | cut -f5)"
+                    job_name="$(printf '%s\n' "$line" | cut -f6)"
+                else
+                    printf '%s\n' "$line" >> "$tmp"
+                fi
+            done < <(grep '^HOLDER' "$file" 2>/dev/null || true)
+            if [[ "$changed" -eq 1 ]]; then
+                mv "$tmp" "$file"
+                _queue_global_json_event "global_claim_released" "$claim" "$mode" "$qid" "${queue_user:-}" "$qroot" "${class:-}" "${job_name:-}" ""
+            else
+                rm -f "$tmp"
+            fi
+            if ! grep -q '^HOLDER' "$file" 2>/dev/null; then
+                rm -f "$file" 2>/dev/null || true
+            fi
+        ) 9>"$lock"
+    done
+    shopt -u nullglob
+}
+
+_queue_global_claims_print() {
+    local root="$(_queue_global_root)" file claim mode slots count line
+    if [[ ! -d "$root/claims" ]]; then
+        echo "No global claim root found: $root"
+        return 0
+    fi
+    printf '%-32s %-10s %-9s %s\n' "CLAIM" "MODE" "USED/TOTAL" "HOLDERS"
+    shopt -s nullglob
+    for file in "$root/claims"/*.env; do
+        [[ -f "$file" ]] || continue
+        claim="$(grep '^CLAIM_KEY=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+        mode="$(grep '^CLAIM_MODE=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+        slots="$(grep '^CLAIM_SLOTS_TOTAL=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+        count="$(_queue_global_claim_holder_count "$file")"
+        printf '%-32s %-10s %s/%s\n' "${claim:-$(basename "$file" .env)}" "${mode:-?}" "$count" "${slots:-?}"
+        while IFS= read -r line; do
+            [[ "$line" == HOLDER$'\t'* ]] || continue
+            printf '  %-12s %-36s %-16s %s\n' "$(printf '%s\n' "$line" | cut -f3)" "$(printf '%s\n' "$line" | cut -f2)" "$(printf '%s\n' "$line" | cut -f5)" "$(printf '%s\n' "$line" | cut -f6)"
+        done < <(grep '^HOLDER' "$file" 2>/dev/null || true)
+    done
+    shopt -u nullglob
+}
+
+_queue_global_claim_explain() {
+    local claim="$1" file line
+    [[ -n "$claim" ]] || { echo "Usage: queue global claim CLAIM" >&2; return 2; }
+    file="$(_queue_global_claim_file "$claim")"
+    echo "GLOBAL CLAIM: $claim"
+    echo "global root:  $(_queue_global_root)"
+    echo "file:         $file"
+    if [[ ! -f "$file" ]]; then
+        echo "status:       no active holders"
+        return 0
+    fi
+    echo
+    sed 's/^/  /' "$file" | grep -v '^  HOLDER' || true
+    echo
+    echo "holders:"
+    while IFS= read -r line; do
+        [[ "$line" == HOLDER$'\t'* ]] || continue
+        printf '  qid=%s user=%s root=%s class=%s job=%s pid=%s since=%s\n' \
+            "$(printf '%s\n' "$line" | cut -f2)" "$(printf '%s\n' "$line" | cut -f3)" "$(printf '%s\n' "$line" | cut -f4)" \
+            "$(printf '%s\n' "$line" | cut -f5)" "$(printf '%s\n' "$line" | cut -f6)" "$(printf '%s\n' "$line" | cut -f7)" "$(printf '%s\n' "$line" | cut -f8)"
+    done < <(grep '^HOLDER' "$file" 2>/dev/null || true)
+}
+
+_queue_global_cleanup() {
+    local dryrun=0 root file claim mode slots before after
+    [[ "${1:-}" == "--dryrun" ]] && dryrun=1
+    root="$(_queue_global_root)"
+    [[ -d "$root/claims" ]] || { echo "No global claims root: $root"; return 0; }
+    shopt -s nullglob
+    for file in "$root/claims"/*.env; do
+        [[ -f "$file" ]] || continue
+        claim="$(grep '^CLAIM_KEY=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || basename "$file" .env)"
+        mode="$(grep '^CLAIM_MODE=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || echo shared)"
+        slots="$(grep '^CLAIM_SLOTS_TOTAL=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || echo 1)"
+        before="$(_queue_global_claim_holder_count "$file")"
+        if [[ "$dryrun" -eq 1 ]]; then
+            echo "DRYRUN global cleanup would compact: $claim holders=$before"
+        else
+            _queue_global_claim_compact_file "$file" "$claim" "$mode" "$slots"
+            after="$(_queue_global_claim_holder_count "$file")"
+            echo "global cleanup: $claim holders $before -> $after"
+        fi
+    done
+    shopt -u nullglob
+}
+
+_queue_global_force_release() {
+    local claim="$1" qid="$2" file line qroot
+    [[ -n "$claim" && -n "$qid" ]] || { echo "Usage: queue global release CLAIM QID --force" >&2; return 2; }
+    [[ "${3:-}" == "--force" ]] || { echo "queue global release requires --force" >&2; return 2; }
+    file="$(_queue_global_claim_file "$claim")"
+    [[ -f "$file" ]] || { echo "queue global release: claim not active: $claim" >&2; return 1; }
+    qroot="$(awk -F '\t' -v qid="$qid" '$1 == "HOLDER" && $2 == qid {print $4; exit}' "$file")"
+    [[ -n "$qroot" ]] || { echo "queue global release: qid not holder: $qid" >&2; return 1; }
+    _queue_global_release_job_claims "$qid" "$qroot"
+}
+
+_queue_global_health() {
+    local root="$(_queue_global_root)" rc=0
+    echo "global root: $root"
+    if [[ ! -d "$root" ]]; then
+        echo "MISSING root directory"
+        return 1
+    fi
+    for d in claims slots .lock; do
+        if [[ -d "$root/$d" ]]; then
+            echo "OK $d"
+        else
+            echo "MISSING $d"; rc=1
+        fi
+    done
+    [[ -w "$root/claims" ]] && echo "claims writable: yes" || echo "claims writable: no"
+    return "$rc"
+}
+
+_queue_global_command() {
+    local sub="${1:-claims}"
+    shift || true
+    case "$sub" in
+        root) _queue_global_root ;;
+        claims|list) _queue_global_claims_print ;;
+        claim|explain) _queue_global_claim_explain "${1:-}" ;;
+        cleanup) _queue_global_cleanup "$@" ;;
+        release) _queue_global_force_release "$@" ;;
+        health) _queue_global_health ;;
+        *) echo "Usage: queue global root|claims|claim CLAIM|cleanup [--dryrun]|release CLAIM QID --force|health" >&2; return 2 ;;
+    esac
+}
+
+_queue_global_explain_for_job() {
+    local f="$1" id="$2" root="$(_queue_global_root)" file line found=0 claim mode slots qid qroot
+    local spec record_type packed status count holders
+    echo "Global resource claims"
+    [[ -d "$root/claims" ]] || { echo "  none"; return 0; }
+
+    # First show any claims already held by this job.
+    shopt -s nullglob
+    for file in "$root/claims"/*.env; do
+        [[ -f "$file" ]] || continue
+        claim="$(grep '^CLAIM_KEY=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || basename "$file" .env)"
+        mode="$(grep '^CLAIM_MODE=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || echo shared)"
+        slots="$(grep '^CLAIM_SLOTS_TOTAL=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || echo 1)"
+        while IFS= read -r line; do
+            [[ "$line" == HOLDER$'\t'* ]] || continue
+            qid="$(printf '%s\n' "$line" | cut -f2)"
+            qroot="$(printf '%s\n' "$line" | cut -f4)"
+            if [[ "$qid" == "$id" && "$qroot" == "$(_queue_root)" ]]; then
+                found=1
+                echo "  $claim"
+                echo "    mode:        $mode"
+                echo "    status:      acquired"
+                echo "    slots:       $slots"
+                echo "    global root: $root"
+            fi
+        done < <(grep '^HOLDER' "$file" 2>/dev/null || true)
+    done
+    shopt -u nullglob
+
+    # Then show global claims required by the class even when this job is pending
+    # and blocked before it ever acquired a holder record.
+    if _queue_class_load_for_job "$f" >/dev/null 2>&1; then
+        for spec in "${QUEUE_CLASS_GLOBAL_CLAIM_SPECS[@]}"; do
+            IFS=$'\t' read -r mode slots record_type claim packed < <(_queue_global_spec_info "$spec") || continue
+            [[ -n "$claim" ]] || continue
+            if _queue_global_claim_exception_allows "$claim"; then
+                status="bypassed by exception"
+            elif _queue_global_claim_available_one "$claim" "$mode" "$slots" "$id" "$(_queue_root)"; then
+                status="available / waiting to acquire"
+            else
+                status="blocked: global resource slot unavailable"
+            fi
+            count="$(_queue_global_claim_holder_count "$(_queue_global_claim_file "$claim")")"
+            holders="$(_queue_global_claim_holder_summary "$claim")"
+            echo "  $claim"
+            echo "    mode:        $mode"
+            echo "    status:      $status"
+            echo "    slots used:  ${count:-0}/${slots:-1}"
+            echo "    global root: $root"
+            if [[ -n "$holders" ]]; then
+                echo "    holders:     $holders"
+            fi
+            found=1
+        done
+    fi
+
+    [[ "$found" -eq 0 ]] && echo "  none"
+}
+
 _queue_class_load_for_job() {
     local f="$1" class file root default_file
     root="$(_queue_root)"
@@ -2741,6 +3471,7 @@ _queue_class_available() {
 
         _queue_asset_implied_preflight_for_class || exit 23
         _queue_class_dynamic_preflight "$f" || exit 24
+        _queue_global_claims_available_for_job "$f" || exit 25
         exit 0
     )
     rc="$?"
@@ -2748,6 +3479,7 @@ _queue_class_available() {
         case "$rc" in
             23) _queue_log_event "resource_blocked" "$id" "$name" "pending" "class=$class reason=asset_preflight" ;;
             24) _queue_log_event "resource_blocked" "$id" "$name" "pending" "class=$class reason=preflight" ;;
+            25) : ;; # global claim helper already logged the claim key and holder summary
             10|11|12|13) _queue_log_event "class_blocked" "$id" "$name" "pending" "class=$class rc=$rc" ;;
             *) _queue_log_event "class_blocked" "$id" "$name" "pending" "class=$class rc=$rc" ;;
         esac
@@ -2852,6 +3584,8 @@ _queue_class_claim_job() {
         _queue_log_event "class_claimed" "$id" "$(_queue_job_name "$f")" "running" "class=$class"
         return 0
     fi
+    _queue_class_release_claims "$id" 2>/dev/null || true
+    _queue_global_release_job_claims "$id" "$root" 2>/dev/null || true
     return 1
 }
 
@@ -2860,6 +3594,7 @@ _queue_class_release_claims() {
     root="$(_queue_root)"
     [[ -z "$id" ]] && return 0
     rm -rf "$root/claims/classes/"*".$id.claim" "$root/claims/assets/"*".$id.claim" 2>/dev/null || true
+    _queue_global_release_job_claims "$id" "$root" 2>/dev/null || true
 }
 
 _queue_cleanup_stale_claims() {
@@ -3884,6 +4619,7 @@ _queue_seconds_to_duration() {
 _queue_cap_refresh() {
     local dir="${1:-}"
     local src family dst backup ts any=0 rc=0
+    local root cap_dir backup_dir
 
     if [[ -z "$dir" ]]; then
         echo "Usage: queue caps refresh <directory>" >&2
@@ -3894,12 +4630,27 @@ _queue_cap_refresh() {
         return 1
     fi
 
-    mkdir -p "$(_queue_root)/caps.d" "$(_queue_root)/caps.d/.backup"
+    root="$(_queue_root)"
+    cap_dir="$root/caps.d"
+    backup_dir="$cap_dir/.backup"
+
+    if ! mkdir -p "$cap_dir" "$backup_dir"; then
+        echo "queue caps refresh: cannot create cap directory or backup directory under: $cap_dir" >&2
+        echo "queue caps refresh: check ownership/permissions for selected queue root: $root" >&2
+        return 1
+    fi
+    if [[ ! -d "$cap_dir" || ! -w "$cap_dir" || ! -d "$backup_dir" || ! -w "$backup_dir" ]]; then
+        echo "queue caps refresh: cap directory is not writable: $cap_dir" >&2
+        echo "queue caps refresh: backup directory is not writable: $backup_dir" >&2
+        echo "queue caps refresh: check ownership/permissions for selected queue root: $root" >&2
+        return 1
+    fi
+
     shopt -s nullglob
     for src in "$dir"/*.sh; do
         any=1
         family="$(basename "$src" .sh)"
-        dst="$(_queue_root)/caps.d/${family}.sh"
+        dst="$cap_dir/${family}.sh"
         if ! bash -n "$src" >/dev/null 2>&1; then
             echo "queue caps refresh: syntax check failed: $src" >&2
             rc=1
@@ -3907,13 +4658,21 @@ _queue_cap_refresh() {
         fi
         if [[ -f "$dst" ]]; then
             ts="$(date +%Y%m%d_%H%M%S_%N)"
-            backup="$(_queue_root)/caps.d/.backup/${family}.${ts}.sh"
-            cp "$dst" "$backup"
+            backup="$backup_dir/${family}.${ts}.sh"
+            if ! cp "$dst" "$backup"; then
+                echo "queue caps refresh: failed to back up existing cap plugin: $dst" >&2
+                rc=1
+                continue
+            fi
         else
             backup=""
         fi
         echo "Refreshing cap plugin family=$family source=$src"
-        cp "$src" "$dst"
+        if ! cp "$src" "$dst"; then
+            echo "queue caps refresh: failed to replace cap plugin: $dst" >&2
+            rc=1
+            continue
+        fi
         chmod 0700 "$dst" 2>/dev/null || true
         echo "Replaced cap plugin: $dst"
         [[ -n "$backup" ]] && echo "Backup: $backup"
@@ -5900,6 +6659,9 @@ _queue_explain_job() {
         [[ -n "${NET_USAGE_POLICY:-}" ]] && echo "  policy:            $NET_USAGE_POLICY"
     fi
 
+    _queue_global_explain_for_job "$f" "$id"
+    echo
+
     echo "Log"
     printf "  %-18s %s\n" "path:" "$log_display"
     [[ -n "$log_bytes" ]] && printf "  %-18s %s (%s bytes)\n" "final size:" "$(_queue_human_bytes "$log_bytes")" "$log_bytes"
@@ -6650,6 +7412,78 @@ _queue_restore_print_non_deleted_matches() {
     return 1
 }
 
+
+_queue_cron_spool_dir() { printf '%s\n' "${QUEUEBASH_CRON_SPOOL_DIR:-/var/spool/bashqueues_cron}"; }
+_queue_cron_system_dir() { printf '%s\n' "${QUEUEBASH_CRON_SYSTEM_DIR:-/etc/bashqueues_cron.d}"; }
+_queue_cron_state_dir() { printf '%s\n' "${QUEUEBASH_CRON_STATE_DIR:-/var/lib/bashqueues/cron}"; }
+_queue_cron_ticker_path() {
+    local here
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    for p in \
+        "${QUEUEBASH_CRON_TICKER:-}" \
+        "$here/bin/bashqueues-cron-ticker.py" \
+        "$here/bashqueues-cron-ticker.py" \
+        "/usr/local/libexec/bashqueues/bashqueues-cron-ticker.py" \
+        "/usr/local/bin/bashqueues-cron-ticker.py"; do
+        [[ -n "$p" && -x "$p" ]] && { printf '%s\n' "$p"; return 0; }
+    done
+    command -v bashqueues-cron-ticker.py 2>/dev/null || true
+}
+_queue_cron_command() {
+    local action="${1:-status}"
+    case "$action" in
+        root|roots)
+            echo "spool:  $(_queue_cron_spool_dir)"
+            echo "system: $(_queue_cron_system_dir)"
+            echo "state:  $(_queue_cron_state_dir)"
+            ;;
+        list|ls|status|"")
+            local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" f any=0
+            echo "=== user bashqueues crontabs ==="
+            if [[ -d "$d" ]]; then
+                for f in "$d"/*; do [[ -f "$f" ]] || continue; any=1; echo "$(basename "$f")  $f"; done
+            fi
+            [[ "$any" -eq 1 ]] || echo "No user bashqueues crontabs."
+            any=0
+            echo
+            echo "=== system bashqueues cron.d ==="
+            if [[ -d "$d2" ]]; then
+                for f in "$d2"/*; do [[ -f "$f" ]] || continue; any=1; echo "$(basename "$f")  $f"; done
+            fi
+            [[ "$any" -eq 1 ]] || echo "No system bashqueues cron.d files."
+            ;;
+        tick)
+            shift
+            local ticker
+            ticker="$(_queue_cron_ticker_path)"
+            [[ -n "$ticker" ]] || { echo "queue cron tick: bashqueues-cron-ticker.py not found" >&2; return 127; }
+            "$ticker" "$@"
+            ;;
+        edit)
+            shift
+            local target_user="${1:-$(id -un 2>/dev/null || echo unknown)}" d f tmp
+            d="$(_queue_cron_spool_dir)"; mkdir -p "$d" || return 1
+            f="$d/$target_user"; tmp="$(mktemp)" || return 1
+            [[ -f "$f" ]] && cp "$f" "$tmp"
+            "${VISUAL:-${EDITOR:-vi}}" "$tmp"
+            cp "$tmp" "$f" && chmod 0644 "$f" 2>/dev/null || true
+            rm -f "$tmp"
+            echo "Updated bashqueues crontab: $f"
+            ;;
+        remove|rm|delete)
+            shift
+            local target_user="${1:-$(id -un 2>/dev/null || echo unknown)}" f
+            f="$(_queue_cron_spool_dir)/$target_user"
+            rm -f "$f"
+            echo "Removed bashqueues crontab: $target_user"
+            ;;
+        *)
+            echo "Usage: queue cron root|list|tick [--dryrun]|edit [user]|remove [user]" >&2
+            return 2
+            ;;
+    esac
+}
+
 _queue_help() {
     cat <<'EOF'
 Usage:
@@ -6698,7 +7532,7 @@ Usage:
 
   queue draft list
   queue draft show <draft-id>
-  queue draft create <name> [options] -- <command...>
+  queue draft create <name> [options] [--after-success QID] [--on-success <cmd...>] -- <command...>
   queue draft create-from-job <qid>
   queue draft submit <draft-id>
   queue draft ready|abandon <draft-id>
@@ -6936,6 +7770,130 @@ _queue_array_contains() {
 }
 
 
+# -------------------------------------------------------------------
+# Module enable/disable helpers
+# -------------------------------------------------------------------
+
+_queue_module_valid_kind() {
+    case "${1:-}" in class|classes|asset|assets|cap|caps) return 0 ;; *) return 1 ;; esac
+}
+
+_queue_module_normal_kind() {
+    case "${1:-}" in
+        class|classes) echo class ;;
+        asset|assets) echo asset ;;
+        cap|caps) echo cap ;;
+        *) return 1 ;;
+    esac
+}
+
+_queue_module_paths() {
+    local kind="$1" name="$2" root="$(_queue_root)" active disabled
+    case "$kind" in
+        class) active="$root/classes/$name.env"; disabled="$root/classes/.disabled/$name.env" ;;
+        asset) active="$root/assets.d/$name.sh"; disabled="$root/assets.d/.disabled/$name.sh" ;;
+        cap) active="$root/caps.d/$name.sh"; disabled="$root/caps.d/.disabled/$name.sh" ;;
+        *) return 1 ;;
+    esac
+    printf '%s	%s
+' "$active" "$disabled"
+}
+
+_queue_module_status() {
+    local kind="$1" name="$2" paths active disabled
+    paths="$(_queue_module_paths "$kind" "$name")" || return 1
+    active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"
+    if [[ -e "$active" ]]; then echo enabled; return 0; fi
+    if [[ -e "$disabled" ]]; then echo disabled; return 0; fi
+    echo missing; return 1
+}
+
+_queue_module_disable() {
+    local kind="$(_queue_module_normal_kind "${1:-}")" name="${2:-}" force="${3:-}" paths active disabled ddir used
+    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue modules disable class|asset|cap NAME [--force]" >&2; return 2; }
+    paths="$(_queue_module_paths "$kind" "$name")" || return 2
+    active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"; ddir="$(dirname "$disabled")"
+    [[ -f "$active" ]] || { [[ -f "$disabled" ]] && { echo "$kind module already disabled: $name"; return 0; }; echo "queue modules disable: not found: $kind $name" >&2; return 1; }
+    if [[ "$kind" == "asset" && "$force" != "--force" ]]; then
+        used="$(_queue_asset_family_is_used_by_classes "$name" || true)"
+        if [[ -n "$used" ]]; then
+            echo "queue modules disable: refusing to disable asset used by classes; use --force to override" >&2
+            echo "$used" >&2
+            return 3
+        fi
+    fi
+    mkdir -p "$ddir"
+    mv "$active" "$disabled" || return 1
+    echo "Disabled $kind module: $name"
+    echo "Moved to: $disabled"
+    _queue_log_event "module_disabled" "$name" "$name" "${kind}s" "path=$active disabled=$disabled" 2>/dev/null || true
+}
+
+_queue_module_enable() {
+    local kind="$(_queue_module_normal_kind "${1:-}")" name="${2:-}" paths active disabled
+    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue modules enable class|asset|cap NAME" >&2; return 2; }
+    paths="$(_queue_module_paths "$kind" "$name")" || return 2
+    active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"
+    [[ ! -f "$active" ]] || { echo "$kind module already enabled: $name"; return 0; }
+    [[ -f "$disabled" ]] || { echo "queue modules enable: disabled module not found: $kind $name" >&2; return 1; }
+    case "$kind" in
+        class) _queue_class_validate_file "$name" "$disabled" || return $? ;;
+        asset) _queue_asset_replace_validate_source "$name" "$disabled" || return $? ;;
+        cap) bash -n "$disabled" || return 3 ;;
+    esac
+    mv "$disabled" "$active" || return 1
+    chmod +x "$active" 2>/dev/null || true
+    echo "Enabled $kind module: $name"
+    echo "Restored to: $active"
+    _queue_log_event "module_enabled" "$name" "$name" "${kind}s" "path=$active" 2>/dev/null || true
+}
+
+_queue_modules_list() {
+    local root="$(_queue_root)" f name
+    _queue_prune_obsolete_asset_plugins >/dev/null 2>&1 || true
+    mkdir -p "$root/classes/.disabled" "$root/assets.d/.disabled" "$root/caps.d/.disabled"
+    for f in "$root/classes"/*.env; do [[ -f "$f" ]] && printf 'class\t%s\tenabled\t%s\n' "$(basename "$f" .env)" "$f"; done
+    for f in "$root/classes/.disabled"/*.env; do [[ -f "$f" ]] && printf 'class\t%s\tdisabled\t%s\n' "$(basename "$f" .env)" "$f"; done
+    for f in "$root/assets.d"/*.sh; do [[ -f "$f" ]] && printf 'asset\t%s\tenabled\t%s\n' "$(basename "$f" .sh)" "$f"; done
+    for f in "$root/assets.d/.disabled"/*.sh; do [[ -f "$f" ]] && printf 'asset\t%s\tdisabled\t%s\n' "$(basename "$f" .sh)" "$f"; done
+    for f in "$root/caps.d"/*.sh; do [[ -f "$f" ]] && printf 'cap\t%s\tenabled\t%s\n' "$(basename "$f" .sh)" "$f"; done
+    for f in "$root/caps.d/.disabled"/*.sh; do [[ -f "$f" ]] && printf 'cap\t%s\tdisabled\t%s\n' "$(basename "$f" .sh)" "$f"; done
+    return 0
+}
+
+_queue_modules_explain() {
+    local spec="${1:-}" kind name paths active disabled status
+    [[ "$spec" == *:* ]] || { echo "Usage: queue modules explain class:NAME|asset:NAME|cap:NAME" >&2; return 2; }
+    kind="$(_queue_module_normal_kind "${spec%%:*}")" || { echo "queue modules explain: invalid kind: ${spec%%:*}" >&2; return 2; }
+    name="${spec#*:}"
+    paths="$(_queue_module_paths "$kind" "$name")" || return 2
+    active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"; status="$(_queue_module_status "$kind" "$name" 2>/dev/null || echo missing)"
+    echo "MODULE EXPLAIN: $kind:$name"
+    echo "kind:      $kind"
+    echo "name:      $name"
+    echo "status:    $status"
+    echo "active:    $active"
+    echo "disabled:  $disabled"
+    echo
+    case "$kind" in
+        class) [[ -f "$active" ]] && _queue_class_explain "$name" || { [[ -f "$disabled" ]] && sed 's/^/  /' "$disabled" || true; } ;;
+        asset) [[ -f "$active" ]] && _queue_asset_explain "$name" || { [[ -f "$disabled" ]] && sed 's/^/  /' "$disabled" || true; } ;;
+        cap)
+            local src=""
+            if [[ -f "$active" ]]; then
+                src="$active"
+            elif [[ -f "$disabled" ]]; then
+                src="$disabled"
+            fi
+            if [[ -n "$src" ]]; then
+                echo "Contents:"
+                sed 's/^/  /' "$src" || true
+            fi
+            ;;
+    esac
+}
+
+
 queue() {
     local dryrun=0
 
@@ -7036,6 +7994,12 @@ queue() {
             fi
             ;;
 
+        cron|crontab|cron-bridge)
+            _queue_cron_command "$@"
+            ;;
+        global|globals)
+            _queue_global_command "$@"
+            ;;
         draft|drafts)
             _queue_draft_command "$@"
             ;;
@@ -7745,6 +8709,7 @@ EOF
             ;;
 
 
+
         asset-refresh)
             local src_dir="${1:-}"
             [[ -n "$src_dir" ]] || { echo "Usage: queue asset-refresh <directory>" >&2; return 2; }
@@ -7838,6 +8803,16 @@ EOF
                     [[ -n "$family" ]] || { echo "Usage: queue assets undelete <family> [archive-file]" >&2; return 2; }
                     _queue_asset_undelete_plugin "$family" "$archive"; return "$?"
                     ;;
+                disable)
+                    local family="${2:-}"; local force="${3:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue assets disable <family> [--force]" >&2; return 2; }
+                    _queue_module_disable asset "$family" "$force"; return "$?"
+                    ;;
+                enable)
+                    local family="${2:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue assets enable <family>" >&2; return 2; }
+                    _queue_module_enable asset "$family"; return "$?"
+                    ;;
                 archives)
                     _queue_asset_list_archives "${2:-}"; return 0
                     ;;
@@ -7846,7 +8821,7 @@ EOF
                     ;;
                 expand)
                     echo "asset subcommands:"
-                    echo "  list show validate duplicates dupes replace rollback backups refresh delete archive undelete unarchive archives explain expand"
+                    echo "  list show validate duplicates dupes replace rollback backups refresh delete archive undelete unarchive enable disable archives explain expand"
                     echo
                     echo "asset families:"
                     local root="${QUEUEBASH_ROOT:-$HOME/.queuebash}"
@@ -7856,7 +8831,7 @@ EOF
                     return 0
                     ;;
                 *)
-                    echo "Usage: queue assets list|show <family>|validate|duplicates|replace <family> <plugin.sh> [--force]|rollback <family> [backup-file]|backups [family]|refresh <directory>|delete <family>|undelete <family> [archive-file]|archives [family]|explain <family|family:check>|expand" >&2
+                    echo "Usage: queue assets list|show <family>|validate|duplicates|replace <family> <plugin.sh> [--force]|rollback <family> [backup-file]|backups [family]|refresh <directory>|delete <family>|undelete <family> [archive-file]|enable <family>|disable <family> [--force]|archives [family]|explain <family|family:check>|expand" >&2
                     return 2
                     ;;
             esac
@@ -7866,8 +8841,42 @@ EOF
         cap|caps)
             case "${1:-list}" in
                 list|facilities) _queue_cap_plugins_list ;;
+                show|explain)
+                    local family="${2:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue caps explain <family>" >&2; return 2; }
+                    _queue_modules_explain "cap:$family"
+                    ;;
                 refresh) shift; _queue_cap_refresh "$@" ;;
-                *) echo "Usage: queue caps list|refresh <directory>" >&2; return 2 ;;
+                disable)
+                    local family="${2:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue caps disable <family>" >&2; return 2; }
+                    _queue_module_disable cap "$family"; return "$?"
+                    ;;
+                enable)
+                    local family="${2:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue caps enable <family>" >&2; return 2; }
+                    _queue_module_enable cap "$family"; return "$?"
+                    ;;
+                *) echo "Usage: queue caps list|explain <family>|refresh <directory>|enable <family>|disable <family>" >&2; return 2 ;;
+            esac
+            ;;
+
+        module|modules)
+            case "${1:-list}" in
+                list|"") _queue_modules_list | sort ;;
+                explain|show) shift; _queue_modules_explain "$@" ;;
+                enable) shift; _queue_module_enable "$@" ;;
+                disable) shift; _queue_module_disable "$@" ;;
+                refresh)
+                    local kind="${2:-}" dir="${3:-}"
+                    case "$kind" in
+                        class|classes) _queue_classes_refresh "$dir" ;;
+                        asset|assets) _queue_asset_refresh_from_dir "$dir" ;;
+                        cap|caps) _queue_cap_refresh "$dir" ;;
+                        *) echo "Usage: queue modules refresh class|asset|cap <directory>" >&2; return 2 ;;
+                    esac
+                    ;;
+                *) echo "Usage: queue modules list|explain <kind:name>|enable kind name|disable kind name [--force]|refresh kind <directory>" >&2; return 2 ;;
             esac
             ;;
 
@@ -7934,10 +8943,12 @@ EOF
                 backups) _queue_class_backups "${2:-}" ;;
                 delete|archive) local cname="${2:-}"; [[ -n "$cname" ]] || { echo "Usage: queue class delete <class>" >&2; return 2; }; _queue_class_delete "$cname" ;;
                 undelete|unarchive) local cname="${2:-}" archive="${3:-}"; [[ -n "$cname" ]] || { echo "Usage: queue class undelete <class> [archive-file]" >&2; return 2; }; _queue_class_undelete "$cname" "$archive" ;;
+                disable) local cname="${2:-}"; [[ -n "$cname" ]] || { echo "Usage: queue classes disable <class>" >&2; return 2; }; _queue_module_disable class "$cname" ;;
+                enable) local cname="${2:-}"; [[ -n "$cname" ]] || { echo "Usage: queue classes enable <class>" >&2; return 2; }; _queue_module_enable class "$cname" ;;
                 archives) _queue_class_archives "${2:-}" ;;
                 explain) _queue_class_explain "${2:-}" ;;
-                expand) echo "class subcommands:"; echo "  list show init edit validate replace refresh rollback backups delete archive undelete unarchive archives explain expand"; echo; echo "classes:"; _queue_class_list_names | sed 's/^/  /' ;;
-                *) echo "Usage: queue class list|show <class>|init <class>|edit <class>|validate [class]|replace <class> <file.env> [--force]|refresh <directory>|rollback <class> [backup-file]|backups [class]|delete <class>|undelete <class> [archive-file]|archives [class]|explain <class>|expand" >&2; return 2 ;;
+                expand) echo "class subcommands:"; echo "  list show init edit validate replace refresh rollback backups delete archive undelete unarchive enable disable archives explain expand"; echo; echo "classes:"; _queue_class_list_names | sed 's/^/  /' ;;
+                *) echo "Usage: queue class list|show <class>|init <class>|edit <class>|validate [class]|replace <class> <file.env> [--force]|refresh <directory>|rollback <class> [backup-file]|backups [class]|delete <class>|undelete <class> [archive-file]|enable <class>|disable <class>|archives [class]|explain <class>|expand" >&2; return 2 ;;
             esac
             ;;
 
@@ -9343,8 +10354,102 @@ _queue_asset_hints_print() {
 
 
 _queue_assets_completion_words() {
-    printf '%s\n' "list show validate duplicates dupes replace rollback backups refresh delete archive undelete unarchive archives explain expand"
+    printf '%s\n' "list show validate duplicates dupes replace rollback backups refresh delete archive undelete unarchive enable disable archives explain expand"
 }
+
+# Shell-side class wizard helper functions.
+#
+# The Python QueueManager Class Creator is the primary interactive class editor,
+# but these helpers remain as a stable, source-able shell contract for tests,
+# fallback tooling, and non-curses environments.  They deliberately only publish
+# data and render record-format class text; they do not run the old legacy
+# QueueManager menu.
+_queue_mgr_list_facilities_compact() {
+    local root helper src_dir
+    local -a dirs=()
+
+    # Test harnesses can point QUEUEBASH_PLUGIN_SOURCE_DIR at a fixture tree.
+    if [[ -n "${QUEUEBASH_PLUGIN_SOURCE_DIR:-}" ]]; then
+        dirs+=("$QUEUEBASH_PLUGIN_SOURCE_DIR/assets.d")
+        dirs+=("$QUEUEBASH_PLUGIN_SOURCE_DIR")
+    fi
+
+    root="$(_queue_root 2>/dev/null || printf '%s' "${QUEUEBASH_ROOT:-$HOME/.queuebash}")"
+    dirs+=("$root/assets.d")
+    dirs+=("${BASH_SOURCE[0]%/*}/assets.d")
+
+    (
+        shopt -s nullglob
+        local seen_dir=""
+        for src_dir in "${dirs[@]}"; do
+            [[ -d "$src_dir" ]] || continue
+            case ":$seen_dir:" in *:"$src_dir":*) continue ;; esac
+            seen_dir="$seen_dir:$src_dir"
+
+            for helper in "$src_dir"/*.sh; do
+                [[ -f "$helper" ]] || continue
+                (
+                    source "$helper" >/dev/null 2>&1 || exit 0
+                    if declare -F queue_asset_facilities >/dev/null 2>&1; then
+                        queue_asset_facilities | awk '{print $1}'
+                    fi
+                )
+            done
+        done
+    ) | awk 'NF && $1 ~ /^[A-Za-z_][A-Za-z0-9_]*:[A-Za-z_][A-Za-z0-9_]*$/ { print $1 }' | sort -u
+}
+
+_queue_mgr_facility_family() {
+    local facility="${1:-}"
+    [[ "$facility" == *:* ]] || return 1
+    printf '%s\n' "${facility%%:*}"
+}
+
+_queue_mgr_facility_check() {
+    local facility="${1:-}"
+    [[ "$facility" == *:* ]] || return 1
+    printf '%s\n' "${facility#*:}"
+}
+
+_queue_mgr_wizard_render_preview() {
+    local class_name="${1:-}"
+    local allow_parallel="${2:-1}"
+    local max_concurrent="${3:-0}"
+    local defaults_file="${4:-}"
+    shift 4 2>/dev/null || true
+
+    [[ -n "$class_name" ]] || { echo "class wizard: class name required" >&2; return 2; }
+    _queue_class_valid_name "$class_name" || { echo "class wizard: invalid class name: $class_name" >&2; return 2; }
+    [[ "$allow_parallel" =~ ^[01]$ ]] || { echo "class wizard: CLASS_ALLOW_PARALLEL must be 0 or 1" >&2; return 2; }
+    [[ "$max_concurrent" =~ ^[0-9]+$ ]] || { echo "class wizard: CLASS_MAX_CONCURRENT must be numeric" >&2; return 2; }
+
+    printf '# bashqueues class: %s\n' "$class_name"
+    printf '#\n'
+    printf '# Generated by queue mgr class wizard helpers.\n'
+    printf '#\n'
+    printf 'CLASS_ALLOW_PARALLEL=%s\n' "$allow_parallel"
+    printf 'CLASS_MAX_CONCURRENT=%s\n' "$max_concurrent"
+
+    if [[ -n "$defaults_file" && -f "$defaults_file" ]]; then
+        local line
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            case "$line" in
+                ''|'#'*) continue ;;
+                CLASS_DEFAULT_*=*) printf '%s\n' "$line" ;;
+            esac
+        done < "$defaults_file"
+    fi
+
+    if [[ "$#" -gt 0 ]]; then
+        printf '\n'
+        local record
+        for record in "$@"; do
+            [[ -n "$record" ]] || continue
+            printf '%s\n' "$record"
+        done
+    fi
+}
+
 
 complete -F _queue_complete queue
 

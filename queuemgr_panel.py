@@ -4,6 +4,7 @@ from __future__ import annotations
 import curses
 import getpass
 import os
+import pwd
 import re
 import shlex
 import subprocess
@@ -13,6 +14,22 @@ from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple
 
 QUEUE_ROOT = os.environ.get("QUEUEBASH_ROOT", os.path.expanduser("~/.queuebash"))
+
+
+def selected_queue_root_display(queue_user: str) -> str:
+    """Return the queue root shown in the panel header.
+
+    The Python process may have QUEUEBASH_ROOT from the operator shell
+    while qrun() is operating on --queue-user.  The header should describe
+    the selected queue owner, not the operator process root.
+    """
+    user = (queue_user or "").strip()
+    if not user:
+        return QUEUE_ROOT
+    try:
+        return str(Path(pwd.getpwnam(user).pw_dir) / ".queuebash")
+    except Exception:
+        return f"~{user}/.queuebash"
 
 
 def _candidate_queue_sources() -> list[str]:
@@ -294,12 +311,37 @@ class ClassDraft:
         if self.default_submit_user:
             lines.append("CLASS_DEFAULT_SUBMIT_USER=" + self.default_submit_user)
         lines.append("")
-        lines.extend(self.records or ["# Add restrictions/claims with the Restriction Builder."])
+        lines.extend(self.records or ["# Add asset restriction/claim records here, or use class commands to populate them."])
         lines.append("")
         return "\n".join(lines)
 
     def class_name(self) -> str:
         return (self.name or "NEW_CLASS").strip().upper().replace("-", "_").replace(" ", "_")
+
+
+def split_list_field(text: str) -> List[str]:
+    """Split comma/space separated job references entered in a panel field."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    # Commas are natural for dependency lists; shlex still preserves quoted names.
+    text = text.replace(",", " ")
+    try:
+        return [x for x in shlex.split(text) if x]
+    except ValueError:
+        return [x for x in text.split() if x]
+
+
+def split_hook_command(text: str) -> List[str]:
+    """Split a hook command field using shell-like quoting."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    try:
+        return shlex.split(text)
+    except ValueError:
+        # Keep the panel usable if the operator is mid-editing quotes.
+        return [text]
 
 
 @dataclass
@@ -317,6 +359,11 @@ class TaskDraft:
     cpu_limit: str = ""
     mem_limit: str = ""
     max_log_size: str = ""
+    dependencies: str = ""
+    inherit_env_from: str = ""
+    on_success: str = ""
+    on_failure: str = ""
+    on_retry_failure: str = ""
 
     def normalized_name(self) -> str:
         # UI-friendly: "publish git" becomes "publish_git".
@@ -351,6 +398,24 @@ class TaskDraft:
             args.extend(["--mem", self.mem_limit])
         if self.max_log_size:
             args.extend(["--max-log-size", self.max_log_size])
+        for dep in split_list_field(self.dependencies):
+            args.extend(["--after-success", dep])
+        for dep in split_list_field(self.inherit_env_from):
+            args.extend(["--inherit-env-from", dep])
+        # Keep on-retry before on-success: the queue submit parser stops
+        # on-success when it sees on-failure, but not on-retry.
+        retry_hook = split_hook_command(self.on_retry_failure)
+        success_hook = split_hook_command(self.on_success)
+        failure_hook = split_hook_command(self.on_failure)
+        if retry_hook:
+            args.append("--on-retry-failure")
+            args.extend(retry_hook)
+        if success_hook:
+            args.append("--on-success")
+            args.extend(success_hook)
+        if failure_hook:
+            args.append("--on-failure")
+            args.extend(failure_hook)
         args.append("--")
         args.extend(shlex.split(self.command or "true"))
         return args
@@ -380,6 +445,24 @@ class TaskDraft:
             args.extend(["--mem", self.mem_limit])
         if self.max_log_size:
             args.extend(["--max-log-size", self.max_log_size])
+        for dep in split_list_field(self.dependencies):
+            args.extend(["--after-success", dep])
+        for dep in split_list_field(self.inherit_env_from):
+            args.extend(["--inherit-env-from", dep])
+        # Keep on-retry before on-success: the queue submit parser stops
+        # on-success when it sees on-failure, but not on-retry.
+        retry_hook = split_hook_command(self.on_retry_failure)
+        success_hook = split_hook_command(self.on_success)
+        failure_hook = split_hook_command(self.on_failure)
+        if retry_hook:
+            args.append("--on-retry-failure")
+            args.extend(retry_hook)
+        if success_hook:
+            args.append("--on-success")
+            args.extend(success_hook)
+        if failure_hook:
+            args.append("--on-failure")
+            args.extend(failure_hook)
         args.append("--")
         args.extend(shlex.split(self.command or "true"))
         return args
@@ -565,6 +648,29 @@ def load_jobs(app: "PanelManager") -> List[Item]:
     return app.apply_job_filters(items)
 
 
+def queue_job_reference_choices(app: "PanelManager") -> List[str]:
+    """Return queue job names/QIDs suitable for dependency-style fields.
+
+    The Task Creator dependency fields are queue references, not shell globs.
+    A typed/star chooser must therefore offer existing queue names and QIDs,
+    plus an explicit clear option, instead of allowing `*` to become a literal
+    `--inherit-env-from '*'` submit argument.
+    """
+    choices: List[str] = ["<clear>"]
+    seen = {"<clear>"}
+    for item in load_jobs(app):
+        if item.key == "__error__":
+            continue
+        name = (item.fields.get("name") or "").strip()
+        if name and name not in seen:
+            choices.append(name)
+            seen.add(name)
+        if item.key and item.key not in seen:
+            choices.append(item.key)
+            seen.add(item.key)
+    return choices
+
+
 def detail_job(app: "PanelManager", item: Optional[Item]) -> str:
     if item is None:
         return "No jobs."
@@ -674,16 +780,90 @@ def detail_asset(app: "PanelManager", item: Optional[Item]) -> str:
     return "\n".join(["=== HINT ===", hint, "", "=== EXPLAIN ===", explain])
 
 
-def load_exceptions(app: "PanelManager") -> List[Item]:
-    d = Path(QUEUE_ROOT) / "exceptions"
+def load_modules(app: "PanelManager") -> List[Item]:
+    rc, out = qrun(["modules", "list"])
+    if rc != 0:
+        return error_items("modules", rc, out)
     items: List[Item] = []
-    if d.is_dir():
-        for f in sorted(d.glob("*.env")):
-            try:
-                count = len([x for x in f.read_text(errors="ignore").splitlines() if x.strip()])
-            except OSError:
-                count = 0
-            items.append(Item(f.stem, f.stem, f"{count} overlay(s)"))
+    for line in split_lines(out):
+        parts = line.split("\t")
+        if len(parts) >= 4:
+            kind, name, status, path = parts[0], parts[1], parts[2], parts[3]
+            # asset-side net_usage was removed; runtime net usage now lives in caps.d.
+            # Hide stale queue-root copies defensively even before a refresh/prune runs.
+            if kind == "asset" and name == "net_usage":
+                continue
+            key = f"{kind}:{name}"
+            label = f"{kind:<5} {name:<24} {status}"
+            items.append(Item(key, label, path, {"kind": kind, "name": name, "status": status, "path": path}))
+    if app.module_filter:
+        f = app.module_filter.lower()
+        items = [it for it in items if f in it.key.lower() or f in it.label.lower() or f in it.meta.lower()]
+    return items
+
+
+def detail_module(app: "PanelManager", item: Optional[Item]) -> str:
+    if item is None:
+        return "No modules."
+    if item.key == "__error__":
+        return item.meta
+    _, out = qrun(["modules", "explain", item.key])
+    return out or f"No detail for {item.key}"
+
+
+def load_global_resources(app: "PanelManager") -> List[Item]:
+    rc, out = qrun(["global", "claims"])
+    if rc != 0:
+        return error_items("global", rc, out)
+    items: List[Item] = []
+    current: Optional[Item] = None
+    for line in split_lines(out):
+        if not line or line.startswith("CLAIM") or line.startswith("No global"):
+            continue
+        if not line.startswith(" "):
+            parts = line.split()
+            if len(parts) >= 3:
+                claim, mode, used = parts[0], parts[1], parts[2]
+                current = Item(claim, f"{claim:<32} {mode:<10} {used:<8}", "", {"claim": claim, "mode": mode, "used": used})
+                items.append(current)
+        elif current is not None:
+            current.meta = (current.meta + "\n" + line.strip()).strip()
+    return items
+
+
+def detail_global_resource(app: "PanelManager", item: Optional[Item]) -> str:
+    if item is None:
+        return "No active global claims."
+    if item.key == "__error__":
+        return item.meta
+    _, out = qrun(["global", "claim", item.key])
+    return out or f"No detail for global claim {item.key}"
+
+
+def load_exceptions(app: "PanelManager") -> List[Item]:
+    """Load exception overlays through the queue command, not by local path.
+
+    In root/operator sessions the panel may be showing another user's queue via
+    --queue-user.  Reading Path(QUEUE_ROOT)/exceptions directly can therefore
+    look in /root/.queuebash while the Jobs pane and qrun() are correctly using
+    the selected user's queue root.  Use `queue exception list-all` so the
+    selected queue owner is honoured consistently.
+    """
+    rc, out = qrun(["exception", "list-all"])
+    if rc != 0:
+        return error_items("exceptions", rc, out)
+    items: List[Item] = []
+    for line in split_lines(out):
+        if not line.strip():
+            continue
+        parts = line.split("	", 2)
+        qid = parts[0].strip()
+        count = parts[1].strip() if len(parts) > 1 else "?"
+        summary = parts[2].strip() if len(parts) > 2 else ""
+        if not qid:
+            continue
+        label = f"{qid:<42} {count:>3} overlay(s)"
+        items.append(Item(qid, label, summary, {"count": count, "summary": summary}))
     return items
 
 
@@ -744,6 +924,7 @@ def load_class_draft(app: "PanelManager") -> List[Item]:
         Item("default_log_cap", f"default log cap   {d.default_log_cap or '-'}"),
         Item("default_run_user", f"default run user  {d.default_run_user or '<current>'}"),
         Item("default_submit_user", f"default submit user {d.default_submit_user or '<current>'}"),
+        Item("add_restriction", "add restriction   build from asset/cap hint"),
         Item("records", f"records           {len(d.records)}"),
         Item("preview", "preview generated class"),
         Item("validate", "validate draft"),
@@ -759,7 +940,8 @@ def detail_class_draft(app: "PanelManager", item: Optional[Item]) -> str:
     help_text = [
         "=== CLASS CREATOR ===",
         "Enter/x edits selected field or performs selected action.",
-        "Use Restriction Builder to add shared/exclusive asset records.",
+        "Use Add restriction to build class records from asset/cap hints.",
+        "In restriction prompts, * opens relevant lists: facilities, variables, and modes.",
         "Generated output is record-format only.",
         "",
         "=== SELECTED ===",
@@ -787,6 +969,11 @@ def load_task_draft(app: "PanelManager") -> List[Item]:
         Item("cpu_limit", f"CPU override         {d.cpu_limit or '-'}"),
         Item("mem_limit", f"memory override      {d.mem_limit or '-'}"),
         Item("max_log_size", f"log cap override     {d.max_log_size or '-'}"),
+        Item("dependencies", f"after success deps    {d.dependencies or '-'}"),
+        Item("inherit_env_from", f"inherit env from     {d.inherit_env_from or '-'}"),
+        Item("on_success", f"on success hook      {d.on_success or '-'}"),
+        Item("on_failure", f"on failure hook      {d.on_failure or '-'}"),
+        Item("on_retry_failure", f"on retry hook        {d.on_retry_failure or '-'}"),
         Item("preview", "preview queue submit command"),
         Item("dryrun", "dry-run submit"),
         Item("save", "save as persistent draft"),
@@ -809,6 +996,8 @@ def detail_task_draft(app: "PanelManager", item: Optional[Item]) -> str:
         "Execution directory is used as PWD_AT_SUBMIT.",
         "If submit user is set and execution directory is blank, submit from that user's HOME.",
         "Scheduling uses queue submit --not-before syntax.",
+        "Dependencies use queue submit --after-success / --inherit-env-from.",
+        "Hooks use queue submit --on-success / --on-failure / --on-retry-failure.",
         "Examples: 2026-05-23T22:00:00+01:00, +2h, tomorrow 18:00",
         "",
         "=== SUBMIT PREVIEW ===",
@@ -1027,6 +1216,7 @@ class PanelManager:
         self.job_text_filter = ""
         self.class_filter = ""
         self.asset_filter = ""
+        self.module_filter = ""
         self.detail_tab_index = 0
         self.class_detail_mode = "explain"
         self.menu_line = "Type command/hotkey or * list  F1 Help  F2 Cmd  F3 Users  F4 Jobs  F5 Refresh  F6 Dry-run  F7 Filter  F8 Detail  F10 Action  F12/Esc Quit"
@@ -1036,10 +1226,11 @@ class PanelManager:
             ViewState("jobs", "Jobs", load_jobs, detail_job),
             ViewState("drafts", "Drafts", load_drafts, detail_draft),
             ViewState("classes", "Classes", load_classes, detail_class),
+            ViewState("modules", "Modules", load_modules, detail_module),
+            ViewState("global", "Global Resources", load_global_resources, detail_global_resource),
             ViewState("assets", "Assets", load_assets, detail_asset),
             ViewState("maintenance", "Maintenance", load_maintenance, detail_maintenance),
             ViewState("exceptions", "Exceptions", load_exceptions, detail_exception),
-            ViewState("builder", "Restriction Builder", load_restriction_builder, detail_restriction_builder),
             ViewState("classdraft", "Class Creator", load_class_draft, detail_class_draft),
             ViewState("taskdraft", "Task Creator", load_task_draft, detail_task_draft),
         ]
@@ -1048,10 +1239,11 @@ class PanelManager:
             "jobs": "J",
             "drafts": "D",
             "classes": "C",
+            "modules": "O",
+            "global": "G",
             "assets": "A",
             "maintenance": "M",
             "exceptions": "E",
-            "builder": "B",
             "classdraft": "K",
             "taskdraft": "T",
         }
@@ -1105,12 +1297,20 @@ class PanelManager:
             self.safe_addstr(y, x + 2, f" {title} ", curses.A_BOLD)
 
     def draw_tabs(self, y: int) -> None:
+        _, w = self.stdscr.getmaxyx()
         x = 2
         for i, v in enumerate(self.views):
             hotkey = self.view_hotkeys.get(v.name, "?")
             label = f" [{hotkey}] {v.title} "
-            self.safe_addstr(y, x, label, curses.A_REVERSE | curses.A_BOLD if i == self.active else curses.A_NORMAL)
+            remaining = w - x - 1
+            if remaining <= 1:
+                break
+            shown = label[:remaining]
+            attr = curses.A_REVERSE | curses.A_BOLD if i == self.active else curses.A_NORMAL
+            self.safe_addstr(y, x, shown, attr)
             x += len(label) + 1
+        if x < w - 1:
+            self.safe_addstr(y, x, " " * max(0, w - x - 1))
 
     def draw_detail_tabs(self, y: int, x: int, w: int) -> None:
         xx = x
@@ -1134,15 +1334,14 @@ class PanelManager:
         PANEL_QUEUE_USER = self.queue_user
         self.stdscr.erase()
         h, w = self.stdscr.getmaxyx()
-        self.safe_addstr(0, 2, "QUEUEBASH PANEL MANAGER", curses.A_BOLD)
         src_label = Path(QUEUE_SOURCE).name if QUEUE_SOURCE else "NO QUEUE SOURCE"
         mode = "DRY-RUN" if self.dry_run else "LIVE"
         owner = self.queue_user or "default"
-        self.safe_addstr(0, 28, f"src: {src_label}  mode: {mode}  owner: {owner}", curses.A_BOLD if self.dry_run else curses.A_NORMAL)
-        self.safe_addstr(0, max(2, w - len(QUEUE_ROOT) - 8), f"root: {QUEUE_ROOT}")
+        header = f"QUEUEBASH PANEL MANAGER   src: {src_label}  mode: {mode}  owner: {owner}  root: {selected_queue_root_display(self.queue_user)}"
+        self.safe_addstr(0, 2, header[: max(0, w - 4)], curses.A_BOLD if self.dry_run else curses.A_NORMAL)
         self.draw_tabs(1)
 
-        filter_line = f"state={self.job_state_filter} text={self.job_text_filter or '-'} class={self.class_filter or '-'} asset={self.asset_filter or '-'}"
+        filter_line = f"state={self.job_state_filter} text={self.job_text_filter or '-'} class={self.class_filter or '-'} asset={self.asset_filter or '-'} module={self.module_filter or '-'}"
         self.safe_addstr(2, 2, filter_line[: w - 4])
 
         left_w = max(38, w // 2)
@@ -1276,6 +1475,31 @@ class PanelManager:
                 return default
         return raw
 
+    def edit_job_reference_field(self, prompt: str, current: str = "", supplied: str = "") -> str:
+        """Edit a dependency/inherited-env job-reference field.
+
+        These fields refer to queue jobs by job name or QID.  They should use
+        the same chooser behaviour as other fields, but with queue jobs as the
+        choice list and an explicit clear option.  A bare `*` opens the list; it
+        must not be stored as a literal wildcard.
+        """
+        choices = queue_job_reference_choices(self)
+        clear_tokens = {"", "<clear>", "<current/default>", "<current>", "<none>", "<default>", "-", "none", "current", "default", "clear", "unset", "no", "off"}
+        raw = supplied.strip() if supplied is not None else ""
+        if raw == "*":
+            picked = self.select_from_list(prompt + " queue reference", choices, current or "<clear>")
+            return "" if picked.strip().casefold() in clear_tokens else picked
+        if raw:
+            if raw.casefold() in clear_tokens:
+                return ""
+            resolved, diagnostic = resolve_unique_choice(raw, choices)
+            if resolved:
+                return "" if resolved.strip().casefold() in clear_tokens else resolved
+            # Preserve manually-entered comma/space separated dependency lists.
+            return raw
+        picked = self.prompt_choice(prompt + " queue reference", choices, current, allow_free=True)
+        return "" if picked.strip().casefold() in clear_tokens else picked
+
     def select_from_list(self, title: str, choices: Sequence[str], default: str = "") -> str:
         """Scrollable/searchable chooser used by '*' field entry.
 
@@ -1362,9 +1586,10 @@ class PanelManager:
             "drafts": ["drafts", "draft", "dr"],
             "classes": ["classes", "class", "cls", "cl"],
             "assets": ["assets", "asset", "as"],
+            "modules": ["modules", "module", "mods", "mod", "caps", "cap", "plugins", "plugin", "mo"],
+            "global": ["global", "globals", "global resources", "resources", "claims", "claim", "gr", "g"],
             "maintenance": ["maintenance", "maint", "fixes", "fix", "tidy", "tidyup", "cleanup", "clean", "logs", "m"],
             "exceptions": ["exceptions", "exception", "exc", "ex"],
-            "builder": ["builder", "restriction", "restrictions", "rb"],
             "classdraft": ["classcreator", "class creator", "classdraft", "newclass", "cc"],
             "taskdraft": ["taskcreator", "task creator", "taskdraft", "task", "newtask", "tc", "submitter"],
         }
@@ -1459,7 +1684,7 @@ class PanelManager:
         norm_head = normalize_panel_token(head)
 
         def class_action_choices(prefix: str) -> None:
-            for action in ["explain", "show", "validate", "edit", "history", "backups", "rollback", "delete", "use"]:
+            for action in ["explain", "show", "validate", "enable", "disable", "edit", "history", "backups", "rollback", "delete", "use"]:
                 add(f"{prefix} {action}")
 
         # No command yet: show useful current-object commands first, then user
@@ -1475,6 +1700,18 @@ class PanelManager:
                 cur = self.view.current()
                 if cur and cur.key != "__error__":
                     class_action_choices(f"class {cur.key}")
+                    for action in ["explain", "show", "validate", "enable", "disable", "edit", "history", "rollback", "delete", "refresh", "use"]:
+                        add(action)
+                return finish(include_users=True, include_panels=True)
+            if self.view.name == "assets":
+                for it in self.view.items:
+                    if it.key != "__error__":
+                        add(f"asset {it.key}")
+                cur = self.view.current()
+                if cur and cur.key != "__error__":
+                    for action in ["explain", "hint", "validate", "enable", "disable", "delete", "refresh", "rollback"]:
+                        add(f"asset {cur.key} {action}")
+                        add(action)
                 return finish(include_users=True, include_panels=True)
             if self.view.name == "jobs":
                 cur = self.view.current()
@@ -1483,6 +1720,13 @@ class PanelManager:
                         add(f"job {cur.key} {action}")
                     for action in ["history", "show", "tail", "explain", "exception", "change priority", "kill", "delete", "undelete", "edit", "copy", "cancel", "resubmit"]:
                         add(f"job {action}")
+                return finish(include_users=True, include_panels=True)
+            if self.view.name == "modules":
+                for it in self.view.items:
+                    if it.key != "__error__":
+                        add(f"module {it.key} explain")
+                        add(f"module {it.key} enable")
+                        add(f"module {it.key} disable")
                 return finish(include_users=True, include_panels=True)
             if self.view.name == "maintenance":
                 for it in self.view.items:
@@ -1495,6 +1739,14 @@ class PanelManager:
                 for field in ["name", "command", "class", "priority", "schedule", "runner", "preview", "dryrun", "save", "submit", "clear"]:
                     add(f"task {field}")
                 return finish(include_users=True, include_panels=True)
+            if self.view.name == "classdraft":
+                for field in ["name", "purpose", "restriction", "record", "records", "preview", "validate", "save", "clear"]:
+                    add(f"classcreator {field}")
+                    add(field)
+                for it in load_assets(self):
+                    if it.key != "__error__":
+                        add(f"classcreator restriction {it.key}")
+                return finish(include_users=True, include_panels=True)
             return finish(include_users=True, include_panels=True)
 
         # If a panel jump has been chosen, '*' should list the objects/actions
@@ -1504,6 +1756,70 @@ class PanelManager:
             if self.switch_view(target):
                 self.view.refresh(self)
                 return self.command_completion_choices("")
+            return finish(include_users=False, include_panels=True)
+
+        global_heads = ["global", "globals", "claim", "claims", "resource", "resources"]
+        global_resolved, _ = resolve_unique_choice(head, global_heads)
+        if global_resolved:
+            add("global claims")
+            add("global health")
+            add("global cleanup --dryrun")
+            gv = next((v for v in self.views if v.name == "global"), None)
+            if gv and not gv.items:
+                gv.refresh(self)
+            if gv:
+                for it in gv.items:
+                    if it.key != "__error__":
+                        add(f"global claim {it.key}")
+            return finish(include_users=True, include_panels=True)
+
+        module_heads = ["module", "modules", "mod", "mods", "plugin", "plugins", "cap", "caps"]
+        module_resolved, _ = resolve_unique_choice(head, module_heads)
+        if module_resolved:
+            mods_view = next((v for v in self.views if v.name == "modules"), None)
+            if mods_view and not mods_view.items:
+                mods_view.refresh(self)
+            prefix_parts = parts[1:] if module_resolved not in {"cap", "caps"} else ["cap", *parts[1:]]
+            if not prefix_parts:
+                if mods_view:
+                    for it in mods_view.items:
+                        if it.key != "__error__":
+                            add(f"module {it.key} explain")
+                            add(f"module {it.key} enable")
+                            add(f"module {it.key} disable")
+                add("module refresh class classes")
+                add("module refresh asset assets.d")
+                add("module refresh cap caps.d")
+                return finish(include_users=False, include_panels=True)
+            target = " ".join(prefix_parts)
+            if mods_view:
+                n = normalize_panel_token(target)
+                for it in mods_view.items:
+                    if it.key != "__error__" and n and (n in normalize_panel_token(it.key) or n in normalize_panel_token(it.label)):
+                        add(f"module {it.key} explain")
+                        add(f"module {it.key} enable")
+                        add(f"module {it.key} disable")
+            return finish(include_users=False, include_panels=True)
+
+        classcreator_heads = ["classcreator", "class-creator", "classdraft", "newclass", "cc", "restriction", "restrict"]
+        classcreator_resolved, _ = resolve_unique_choice(head, classcreator_heads, {"res": "restriction", "restr": "restriction"})
+        if classcreator_resolved:
+            fields = ["name", "purpose", "restriction", "record", "records", "preview", "validate", "save", "clear"]
+            if len(parts) == 1:
+                for f in fields:
+                    add(f"classcreator {f}")
+                for it in load_assets(self):
+                    if it.key != "__error__":
+                        add(f"classcreator restriction {it.key}")
+            else:
+                wants_restriction = any(normalize_panel_token(x) in {"restriction", "restrict", "asset"} for x in parts[1:]) or classcreator_resolved in {"restriction", "restrict"}
+                if wants_restriction:
+                    for it in load_assets(self):
+                        if it.key != "__error__":
+                            add(f"classcreator restriction {it.key}")
+                    for it in load_modules(self):
+                        if it.key.startswith("cap:"):
+                            add(f"classcreator restriction {it.key}")
             return finish(include_users=False, include_panels=True)
 
         # class <partial> *  -> class <resolved-class>
@@ -1528,9 +1844,35 @@ class PanelManager:
                 class_action_choices(f"class {resolved_class}")
             else:
                 action_text = " ".join(parts[2:])
-                action_choices = ["explain", "show", "validate", "edit", "history", "backups", "rollback", "delete", "use"]
+                action_choices = ["explain", "show", "validate", "enable", "disable", "edit", "history", "backups", "rollback", "delete", "use"]
                 resolved_action, _ = resolve_unique_choice(action_text, action_choices, {"hist": "history", "h": "history"})
                 add(f"class {resolved_class} {resolved_action or action_text}")
+            return finish(include_users=False, include_panels=True)
+
+        asset_heads = ["asset", "assets", "facility", "facilities"]
+        asset_resolved, _ = resolve_unique_choice(head, asset_heads)
+        if asset_resolved:
+            assets = [it.key for it in load_assets(self) if it.key != "__error__"]
+            if len(parts) == 1:
+                for aname in assets:
+                    add(f"asset {aname}")
+                return finish(include_users=False, include_panels=True)
+            target = parts[1]
+            resolved_asset, _ = resolve_unique_choice(target, assets)
+            if not resolved_asset:
+                n = normalize_panel_token(target)
+                for aname in assets:
+                    if n and n in normalize_panel_token(aname):
+                        add(f"asset {aname}")
+                return finish(include_users=False, include_panels=True)
+            actions = ["explain", "hint", "validate", "enable", "disable", "delete", "refresh", "rollback"]
+            if len(parts) == 2:
+                for action in actions:
+                    add(f"asset {resolved_asset} {action}")
+            else:
+                action_text = " ".join(parts[2:])
+                resolved_action, _ = resolve_unique_choice(action_text, actions, {"x": "explain", "h": "hint", "on": "enable", "off": "disable"})
+                add(f"asset {resolved_asset} {resolved_action or action_text}")
             return finish(include_users=False, include_panels=True)
 
         job_heads = ["job", "jobs", "qid", "history", "hist", "show", "tail", "explain"]
@@ -1581,6 +1923,27 @@ class PanelManager:
                 for it in load_classes(self):
                     if it.key != "__error__":
                         add(f"task class {it.key}")
+            return finish(include_users=False, include_panels=True)
+
+        classcreator_heads = ["classcreator", "class-creator", "classdraft", "newclass", "cc", "restriction", "restrict"]
+        classcreator_resolved, _ = resolve_unique_choice(head, classcreator_heads, {"res": "restriction", "restr": "restriction"})
+        if classcreator_resolved:
+            fields = ["name", "purpose", "restriction", "record", "records", "preview", "validate", "save", "clear"]
+            if len(parts) == 1:
+                for f in fields:
+                    add(f"classcreator {f}")
+                for it in load_assets(self):
+                    if it.key != "__error__":
+                        add(f"classcreator restriction {it.key}")
+            else:
+                wants_restriction = any(normalize_panel_token(x) in {"restriction", "restrict", "asset"} for x in parts[1:]) or classcreator_resolved in {"restriction", "restrict"}
+                if wants_restriction:
+                    for it in load_assets(self):
+                        if it.key != "__error__":
+                            add(f"classcreator restriction {it.key}")
+                    for it in load_modules(self):
+                        if it.key.startswith("cap:"):
+                            add(f"classcreator restriction {it.key}")
             return finish(include_users=False, include_panels=True)
 
         return finish(include_users=True, include_panels=True)
@@ -1669,6 +2032,21 @@ class PanelManager:
             self.status = "Use F12/Esc to quit the panel"
             return
 
+        # Classes/Assets panel object context: bare typed actions act on the selected object.
+        if self.view.name == "classes":
+            class_context_heads = ["select", "explain", "show", "validate", "enable", "disable", "edit", "delete", "refresh", "rollback", "history", "backups", "use"]
+            class_context_resolved, _ = resolve_unique_choice(head, class_context_heads, {"hist": "history", "h": "history", "cat": "show", "on": "enable", "off": "disable"})
+            if class_context_resolved:
+                self.execute_class_command([head] + tail)
+                return
+
+        if self.view.name == "assets":
+            asset_context_heads = ["select", "explain", "hint", "show", "validate", "enable", "disable", "delete", "refresh", "rollback"]
+            asset_context_resolved, _ = resolve_unique_choice(head, asset_context_heads, {"x": "explain", "h": "hint", "cat": "show", "on": "enable", "off": "disable"})
+            if asset_context_resolved:
+                self.execute_asset_command([head] + tail)
+                return
+
         # Jobs panel object context: bare typed actions act on the selected job.
         # Examples on Jobs: "kill", "delete", "undelete", "change priority 5", "edit".
         if self.view.name == "jobs":
@@ -1709,6 +2087,28 @@ class PanelManager:
                 self.execute_task_command(parts)
                 return
 
+        # Class Creator context: bare typed commands apply to the current
+        # class draft, including hint-driven restriction building.
+        if self.view.name == "classdraft":
+            classdraft_context_actions = [
+                "name", "purpose", "allow-parallel", "parallel", "max-concurrent",
+                "runner", "timeout", "kill-after", "cpu", "memory", "log",
+                "run-user", "submit-user", "restriction", "restrict", "asset",
+                "record", "records", "preview", "validate", "save", "clear",
+            ]
+            classdraft_aliases = {
+                "n": "name", "p": "purpose", "ap": "allow-parallel",
+                "mc": "max-concurrent", "r": "runner", "t": "timeout",
+                "ka": "kill-after", "mem": "memory", "maxlog": "log",
+                "ru": "run-user", "su": "submit-user", "res": "restriction",
+                "restr": "restriction", "a": "asset", "rec": "record",
+                "pv": "preview", "v": "validate", "s": "save", "reset": "clear",
+            }
+            classdraft_context, _ = resolve_unique_choice(head, classdraft_context_actions, classdraft_aliases)
+            if classdraft_context:
+                self.execute_classdraft_command([head] + tail)
+                return
+
         user_heads = ["user", "users", "owner", "queue-user", "queueuser"]
         user_resolved, _ = resolve_unique_choice(head, user_heads)
         if user_resolved:
@@ -1729,6 +2129,34 @@ class PanelManager:
         if task_resolved:
             self.switch_view("task")
             self.execute_task_command(tail)
+            return
+
+        asset_heads = ["asset", "assets", "facility", "facilities"]
+        asset_resolved, _ = resolve_unique_choice(head, asset_heads)
+        if asset_resolved:
+            self.execute_asset_command(tail)
+            return
+
+        global_heads = ["global", "globals", "claim", "claims", "resource", "resources"]
+        global_resolved, _ = resolve_unique_choice(head, global_heads)
+        if global_resolved:
+            self.execute_global_command(tail if global_resolved not in {"claim", "claims"} else [global_resolved, *tail])
+            return
+
+        module_heads = ["module", "modules", "mod", "mods", "plugin", "plugins", "cap", "caps"]
+        module_resolved, _ = resolve_unique_choice(head, module_heads)
+        if module_resolved:
+            self.execute_module_command(tail if module_resolved not in {"cap", "caps"} else ["cap", *tail])
+            return
+
+        classcreator_heads = ["classcreator", "class-creator", "classdraft", "newclass", "cc", "restriction", "restrict"]
+        classcreator_resolved, _ = resolve_unique_choice(head, classcreator_heads, {"res": "restriction", "restr": "restriction"})
+        if classcreator_resolved:
+            self.switch_view("classdraft")
+            if classcreator_resolved in {"restriction", "restrict"}:
+                self.execute_classdraft_command([classcreator_resolved] + tail)
+            else:
+                self.execute_classdraft_command(tail)
             return
 
         class_heads = ["class", "classes", "cls"]
@@ -1932,8 +2360,8 @@ class PanelManager:
             self.status = "Task Creator"
             return
         d = self.task_draft
-        field_choices = ["name", "command", "class", "priority", "submit-user", "user", "directory", "cwd", "schedule", "not-before", "retries", "backoff", "runner", "cpu", "memory", "mem", "log", "preview", "dryrun", "save", "submit", "clear"]
-        aliases = {"n":"name", "cmd":"command", "c":"class", "cls":"class", "p":"priority", "pri":"priority", "su":"submit-user", "submituser":"submit-user", "u":"user", "dir":"directory", "pwd":"cwd", "when":"schedule", "nb":"not-before", "r":"retries", "retry":"retries", "b":"backoff", "run":"runner", "m":"memory", "maxlog":"log", "logcap":"log", "pv":"preview", "dr":"dryrun", "s":"save", "go":"submit", "sub":"submit", "reset":"clear"}
+        field_choices = ["name", "command", "class", "priority", "submit-user", "user", "directory", "cwd", "schedule", "not-before", "retries", "backoff", "runner", "cpu", "memory", "mem", "log", "dependencies", "depends", "after", "inherit-env", "inherit", "on-success", "on-failure", "on-retry-failure", "hook-success", "hook-failure", "hook-retry", "preview", "dryrun", "save", "submit", "clear"]
+        aliases = {"n":"name", "cmd":"command", "c":"class", "cls":"class", "p":"priority", "pri":"priority", "su":"submit-user", "submituser":"submit-user", "u":"user", "dir":"directory", "pwd":"cwd", "when":"schedule", "nb":"not-before", "r":"retries", "retry":"retries", "b":"backoff", "run":"runner", "m":"memory", "maxlog":"log", "logcap":"log", "dep":"dependencies", "deps":"dependencies", "depends":"dependencies", "after":"dependencies", "after-success":"dependencies", "inherit":"inherit-env", "inheritenv":"inherit-env", "env":"inherit-env", "success":"on-success", "onsuccess":"on-success", "failure":"on-failure", "onfailure":"on-failure", "retryhook":"on-retry-failure", "onretry":"on-retry-failure", "attempt":"on-retry-failure", "pv":"preview", "dr":"dryrun", "s":"save", "go":"submit", "sub":"submit", "reset":"clear"}
         field, _ = resolve_unique_choice(parts[0], field_choices, aliases)
         if not field:
             classes = [it.key for it in load_classes(self) if it.key != "__error__"]
@@ -1966,6 +2394,11 @@ class PanelManager:
         elif field == "cpu": d.cpu_limit = value or self.prompt("CPU override, e.g. 50%", d.cpu_limit)
         elif field in {"memory", "mem"}: d.mem_limit = value or self.prompt("Memory override, e.g. 512M", d.mem_limit)
         elif field == "log": d.max_log_size = value or self.prompt("Max log size bytes", d.max_log_size)
+        elif field in {"dependencies", "depends", "after"}: d.dependencies = self.edit_job_reference_field("After-success dependencies", d.dependencies, value)
+        elif field in {"inherit-env", "inherit"}: d.inherit_env_from = self.edit_job_reference_field("Inherit env from", d.inherit_env_from, value)
+        elif field in {"on-success", "hook-success"}: d.on_success = value or self.prompt("On-success hook command", d.on_success)
+        elif field in {"on-failure", "hook-failure"}: d.on_failure = value or self.prompt("On-failure hook command", d.on_failure)
+        elif field in {"on-retry-failure", "hook-retry"}: d.on_retry_failure = value or self.prompt("On-retry-failure hook command", d.on_retry_failure)
         elif field == "preview": self.popup("Task submit preview", d.render_command())
         elif field == "dryrun": self.popup("Task dry-run submit", "DRY-RUN: would run:\n\n" + d.render_command())
         elif field == "save": self.run_task_save_from_command()
@@ -2018,7 +2451,7 @@ class PanelManager:
             cla mycl hist
         should jump directly to the selected class and requested output.
         """
-        action_choices = ["explain", "show", "validate", "edit", "delete", "refresh", "rollback", "use", "history", "backups"]
+        action_choices = ["explain", "show", "validate", "enable", "disable", "edit", "delete", "refresh", "rollback", "use", "history", "backups"]
         action, _ = resolve_unique_choice(action, action_choices, {"hist": "history", "h": "history", "cat": "show"})
         action = action or "select"
         if action == "select":
@@ -2035,6 +2468,17 @@ class PanelManager:
             self.class_detail_mode = "history" if action == "backups" else action
             self.view.detail_scroll = 0
             self.status = f"Selected class {class_name}; right panel mode: {self.class_detail_mode}"
+            return
+        if action == "enable":
+            rc, out = qrun(["classes", "enable", class_name], dry_run=self.dry_run)
+            self.status = out.splitlines()[-1] if out else f"class enable rc={rc}"
+            self.refresh_current()
+            return
+        if action == "disable":
+            if self.confirm(f"disable class {class_name}?"):
+                rc, out = qrun(["classes", "disable", class_name], dry_run=self.dry_run)
+                self.status = out.splitlines()[-1] if out else f"class disable rc={rc}"
+                self.refresh_current()
             return
         if action == "edit":
             rc, out = qrun(["classes", "edit", class_name], dry_run=self.dry_run)
@@ -2057,13 +2501,121 @@ class PanelManager:
             return
         self.status = f"Unknown class action: {action}"
 
+    def execute_global_command(self, parts: Sequence[str]) -> None:
+        self.switch_view("global")
+        if not parts:
+            self.view.refresh(self)
+            self.status = "Global resources"
+            return
+        action = parts[0].lower()
+        if action in {"claims", "list"}:
+            self.view.refresh(self)
+            self.status = "Global claims refreshed"
+            return
+        if action in {"claim", "explain", "show"}:
+            if len(parts) < 2:
+                self.status = "Usage: global claim CLAIM"
+                return
+            claim = " ".join(parts[1:])
+            self.select_item_by_text(self.view, claim)
+            self.status = f"Global claim: {claim}"
+            return
+        if action == "cleanup":
+            args = ["global", "cleanup"] + list(parts[1:])
+            rc, out = qrun(args, dry_run=self.dry_run)
+            self.status = one_line(out) if rc == 0 else f"global cleanup failed: {one_line(out)}"
+            self.view.refresh(self)
+            return
+        if action == "health":
+            rc, out = qrun(["global", "health"], dry_run=self.dry_run)
+            self.status = one_line(out) if rc == 0 else f"global health failed: {one_line(out)}"
+            self.view.refresh(self)
+            return
+        self.status = "Usage: global claims|claim CLAIM|cleanup [--dryrun]|health"
+
+    def execute_module_command(self, parts: Sequence[str]) -> None:
+        self.switch_view("modules")
+        self.view.refresh(self)
+        if not parts:
+            return
+        actions = ["enable", "disable", "explain", "show", "refresh"]
+        action_aliases = {"on": "enable", "off": "disable", "e": "enable", "d": "disable", "x": "explain"}
+        # Forms:
+        #   module asset net disable
+        #   module disable asset net
+        #   cap net_usage disable
+        #   modules refresh caps caps.d
+        first_action, _ = resolve_unique_choice(parts[0], actions, action_aliases)
+        if first_action:
+            action = first_action
+            rest = list(parts[1:])
+        else:
+            action = ""
+            rest = list(parts)
+        if action == "refresh":
+            kind = rest[0] if rest else ""
+            directory = rest[1] if len(rest) > 1 else {"class": "classes", "classes": "classes", "asset": "assets.d", "assets": "assets.d", "cap": "caps.d", "caps": "caps.d"}.get(kind, "")
+            if not kind or not directory:
+                self.status = "Usage: module refresh class|asset|cap <directory>"; return
+            rc, out = qrun(["modules", "refresh", kind, directory], dry_run=self.dry_run)
+            self.popup("Module refresh", out[:12000] if out else f"refresh rc={rc}")
+            self.refresh_current()
+            return
+
+        kind = ""
+        target = ""
+        if len(rest) >= 2 and rest[0].casefold() in {"class", "classes", "asset", "assets", "cap", "caps"}:
+            kind = {"classes": "class", "assets": "asset", "caps": "cap"}.get(rest[0].casefold(), rest[0].casefold())
+            target = rest[1]
+            if not action and len(rest) >= 3:
+                action, _ = resolve_unique_choice(rest[2], actions, action_aliases)
+        elif rest and ":" in rest[0]:
+            # Completion entries often expand to forms such as:
+            #   class:CAPS_TEST explain
+            #   cap:net_usage disable
+            # Treat the first token as the module identity and the following
+            # token as an optional action, instead of searching for the whole
+            # string as one target.
+            maybe_kind, maybe_target = rest[0].split(":", 1)
+            if maybe_kind.casefold() in {"class", "asset", "cap"} and maybe_target:
+                kind = maybe_kind.casefold()
+                target = maybe_target
+                if not action and len(rest) >= 2:
+                    action, _ = resolve_unique_choice(rest[1], actions, action_aliases)
+            else:
+                target = " ".join(rest)
+        else:
+            target = " ".join(rest)
+        if not action:
+            action = "explain"
+        search = f"{kind}:{target}" if kind and target else target
+        if search and self.select_item_by_text(self.view, search):
+            item = self.view.current()
+            if not item: return
+            kind = item.fields.get("kind", item.key.split(":", 1)[0])
+            name = item.fields.get("name", item.key.split(":", 1)[1] if ":" in item.key else item.key)
+            if action in {"explain", "show"}:
+                self.status = f"Selected module {kind}:{name}"
+                return
+            if action == "enable":
+                rc, out = qrun(["modules", "enable", kind, name], dry_run=self.dry_run)
+                self.status = out.splitlines()[-1] if out else f"enable rc={rc}"
+                self.refresh_current(); return
+            if action == "disable":
+                if self.confirm(f"disable {kind}:{name}?"):
+                    rc, out = qrun(["modules", "disable", kind, name], dry_run=self.dry_run)
+                    self.status = out.splitlines()[-1] if out else f"disable rc={rc}"
+                    self.refresh_current()
+                return
+        self.status = f"Module not found uniquely: {' '.join(parts)}"
+
     def execute_class_command(self, parts: Sequence[str]) -> None:
         self.switch_view("classes")
         self.view.refresh(self)
         if not parts:
             return
-        action_words = ["use", "select", "explain", "show", "validate", "edit", "delete", "refresh", "rollback", "history", "hist", "backups"]
-        action_aliases = {"h": "history", "hist": "history", "cat": "show"}
+        action_words = ["use", "select", "explain", "show", "validate", "enable", "disable", "edit", "delete", "refresh", "rollback", "history", "hist", "backups"]
+        action_aliases = {"h": "history", "hist": "history", "cat": "show", "on": "enable", "off": "disable"}
 
         # Accept both forms:
         #   class explain MYCLASS
@@ -2072,6 +2624,10 @@ class PanelManager:
         if first_action and len(parts) >= 2:
             action = first_action
             target = " ".join(parts[1:])
+        elif first_action and len(parts) == 1 and self.view.name == "classes":
+            action = first_action
+            cur = self.view.current()
+            target = cur.key if cur and cur.key != "__error__" else ""
         else:
             target = parts[0]
             if len(parts) >= 2:
@@ -2086,6 +2642,103 @@ class PanelManager:
             self.perform_class_command_action(action, class_name)
         elif target:
             self.status = f"Class not found uniquely: {target}"
+
+    def perform_asset_command_action(self, action: str, asset_key: str) -> None:
+        """Perform an asset action selected from typed command entry.
+
+        Asset actions are available from F2/typed commands just like class
+        actions.  Non-mutating inspect actions update the right-hand pane where
+        possible or show bounded output.  Mutating actions respect dry-run and
+        confirmation semantics.
+        """
+        actions = ["select", "explain", "hint", "show", "validate", "enable", "disable", "delete", "refresh", "rollback"]
+        action, _ = resolve_unique_choice(action or "select", actions, {"x": "explain", "h": "hint", "cat": "show", "on": "enable", "off": "disable"})
+        action = action or "select"
+        family = asset_key.split(":", 1)[0]
+        if action == "select":
+            self.status = f"Selected asset {asset_key}"
+            return
+        if action in {"explain", "show"}:
+            _, out = qrun(["assets", "explain", asset_key])
+            self.popup(f"Asset explain: {asset_key}", out[:12000])
+            self.status = f"asset {asset_key} explain"
+            return
+        if action == "hint":
+            _, out = qrun(["asset-hint", asset_key])
+            self.popup(f"Asset hint: {asset_key}", out[:12000])
+            self.status = f"asset {asset_key} hint"
+            return
+        if action == "validate":
+            rc, out = qrun(["assets", "validate", family])
+            self.popup(f"Asset validate: {family}", out[:12000] if out else f"validate rc={rc}")
+            self.status = f"asset {family} validate rc={rc}"
+            return
+        if action == "enable":
+            rc, out = qrun(["assets", "enable", family], dry_run=self.dry_run)
+            self.status = out.splitlines()[-1] if out else f"asset enable rc={rc}"
+            self.refresh_current()
+            return
+        if action == "disable":
+            if self.confirm(f"disable asset plugin {family}?"):
+                rc, out = qrun(["assets", "disable", family], dry_run=self.dry_run)
+                self.status = out.splitlines()[-1] if out else f"asset disable rc={rc}"
+                self.refresh_current()
+            return
+        if action == "delete":
+            if self.confirm(f"archive asset plugin {family}?"):
+                rc, out = qrun(["assets", "delete", family], dry_run=self.dry_run)
+                self.status = out.splitlines()[-1] if out else f"asset delete rc={rc}"
+                self.refresh_current()
+            return
+        if action == "refresh":
+            d = self.prompt_choice("Directory", ["assets.d"], "assets.d", allow_free=True)
+            rc, out = qrun(["assets", "refresh", d], dry_run=self.dry_run)
+            self.popup("Asset refresh", out[:12000] if out else f"refresh rc={rc}")
+            self.refresh_current()
+            return
+        if action == "rollback":
+            rc, out = qrun(["assets", "rollback", family], dry_run=self.dry_run)
+            self.popup(f"Asset rollback: {family}", out[:12000] if out else f"rollback rc={rc}")
+            self.status = f"asset {family} rollback rc={rc}"
+            return
+        self.status = f"Unknown asset action: {action}"
+
+    def execute_asset_command(self, parts: Sequence[str]) -> None:
+        self.switch_view("assets")
+        self.view.refresh(self)
+        if not parts:
+            return
+        action_words = ["select", "explain", "hint", "show", "validate", "enable", "disable", "delete", "refresh", "rollback"]
+        action_aliases = {"x": "explain", "h": "hint", "cat": "show", "on": "enable", "off": "disable"}
+
+        # Accept both forms:
+        #   asset explain net:allowance
+        #   asset net:allowance disable
+        #   on Assets panel: disable
+        first_action, _ = resolve_unique_choice(parts[0], action_words, action_aliases)
+        if first_action and len(parts) >= 2:
+            action = first_action
+            target = " ".join(parts[1:])
+        elif first_action and len(parts) == 1 and self.view.name == "assets":
+            action = first_action
+            cur = self.view.current()
+            target = cur.key if cur and cur.key != "__error__" else ""
+        else:
+            target = parts[0]
+            if len(parts) >= 2:
+                action, _ = resolve_unique_choice(parts[1], action_words, action_aliases)
+                action = action or "select"
+            else:
+                action = "select"
+
+        if target and self.select_item_by_text(self.view, target):
+            current = self.view.current()
+            asset_key = current.key if current else target
+            self.perform_asset_command_action(action, asset_key)
+        elif target:
+            self.status = f"Asset not found uniquely: {target}"
+        else:
+            self.status = "No asset selected"
 
     def execute_maintenance_command(self, parts: Sequence[str]) -> None:
         self.switch_view("maintenance")
@@ -2207,8 +2860,10 @@ class PanelManager:
             self.job_text_filter = self.prompt("Job text filter", self.job_text_filter)
         elif self.view.name == "classes":
             self.class_filter = self.prompt("Class filter", self.class_filter)
-        elif self.view.name in {"assets", "builder"}:
+        elif self.view.name == "assets":
             self.asset_filter = self.prompt("Asset/facility filter", self.asset_filter)
+        elif self.view.name == "modules":
+            self.module_filter = self.prompt("Module filter", self.module_filter)
         self.view.refresh(self)
 
     def maintenance_submit_args(self, recipe: MaintenanceRecipe, args: Sequence[str]) -> List[str]:
@@ -2447,7 +3102,7 @@ class PanelManager:
         it = self.view.current()
         if not it or it.key == "__error__":
             return
-        action = self.prompt_choice("Class action", ["explain", "edit", "validate", "delete", "refresh", "rollback", "use-for-task"])
+        action = self.prompt_choice("Class action", ["explain", "edit", "validate", "enable", "disable", "delete", "refresh", "rollback", "use-for-task"])
         if action == "explain":
             _, out = qrun(["classes", "explain", it.key])
             self.popup("Class explain", out[:8000])
@@ -2457,6 +3112,13 @@ class PanelManager:
         elif action == "validate":
             rc, out = qrun(["classes", "validate", it.key])
             self.popup("Class validate", out[:8000])
+        elif action == "enable":
+            rc, out = qrun(["classes", "enable", it.key], dry_run=self.dry_run)
+            self.status = out.splitlines()[-1] if out else f"enable rc={rc}"
+        elif action == "disable":
+            if self.confirm(f"disable class {it.key}?"):
+                rc, out = qrun(["classes", "disable", it.key], dry_run=self.dry_run)
+                self.status = out.splitlines()[-1] if out else f"disable rc={rc}"
         elif action == "delete":
             if self.confirm(f"archive class {it.key}?"):
                 rc, out = qrun(["classes", "delete", it.key], dry_run=self.dry_run)
@@ -2478,12 +3140,40 @@ class PanelManager:
                     break
         self.refresh_current()
 
+    def module_action(self) -> None:
+        it = self.view.current()
+        if not it or it.key == "__error__":
+            return
+        kind = it.fields.get("kind", it.key.split(":", 1)[0])
+        name = it.fields.get("name", it.key.split(":", 1)[1] if ":" in it.key else it.key)
+        status = it.fields.get("status", "")
+        choices = ["explain", "enable", "disable", "refresh"]
+        action = self.prompt_choice("Module action", choices)
+        if action == "explain":
+            _, out = qrun(["modules", "explain", f"{kind}:{name}"])
+            self.popup("Module explain", out[:12000])
+        elif action == "enable":
+            rc, out = qrun(["modules", "enable", kind, name], dry_run=self.dry_run)
+            self.status = out.splitlines()[-1] if out else f"enable rc={rc}"
+            self.refresh_current()
+        elif action == "disable":
+            if self.confirm(f"disable {kind}:{name}?"):
+                rc, out = qrun(["modules", "disable", kind, name], dry_run=self.dry_run)
+                self.status = out.splitlines()[-1] if out else f"disable rc={rc}"
+                self.refresh_current()
+        elif action == "refresh":
+            default_dir = {"class": "classes", "asset": "assets.d", "cap": "caps.d"}.get(kind, ".")
+            d = self.prompt_choice("Refresh from directory", [default_dir], default_dir, allow_free=True)
+            rc, out = qrun(["modules", "refresh", kind, d], dry_run=self.dry_run)
+            self.popup("Module refresh", out[:12000] if out else f"refresh rc={rc}")
+            self.refresh_current()
+
     def asset_action(self) -> None:
         it = self.view.current()
         if not it or it.key == "__error__":
             return
         family = it.key.split(":", 1)[0]
-        action = self.prompt_choice("Asset action", ["explain", "hint", "validate", "delete", "refresh", "rollback"])
+        action = self.prompt_choice("Asset action", ["explain", "hint", "validate", "enable", "disable", "delete", "refresh", "rollback"])
         if action == "explain":
             _, out = qrun(["assets", "explain", it.key])
             self.popup("Asset explain", out[:8000])
@@ -2493,6 +3183,13 @@ class PanelManager:
         elif action == "validate":
             _, out = qrun(["assets", "validate", family])
             self.popup("Asset validate", out[:8000])
+        elif action == "enable":
+            rc, out = qrun(["assets", "enable", family], dry_run=self.dry_run)
+            self.status = out.splitlines()[-1] if out else f"enable rc={rc}"
+        elif action == "disable":
+            if self.confirm(f"disable asset plugin {family}?"):
+                rc, out = qrun(["assets", "disable", family], dry_run=self.dry_run)
+                self.status = out.splitlines()[-1] if out else f"disable rc={rc}"
         elif action == "delete":
             if self.confirm(f"archive asset plugin {family}?"):
                 rc, out = qrun(["assets", "delete", family], dry_run=self.dry_run)
@@ -2556,6 +3253,16 @@ class PanelManager:
             d.mem_limit = self.prompt("Memory override, e.g. 512M", d.mem_limit)
         elif key == "max_log_size":
             d.max_log_size = self.prompt("Max log size bytes", d.max_log_size)
+        elif key == "dependencies":
+            d.dependencies = self.edit_job_reference_field("After-success dependencies", d.dependencies)
+        elif key == "inherit_env_from":
+            d.inherit_env_from = self.edit_job_reference_field("Inherit env from", d.inherit_env_from)
+        elif key == "on_success":
+            d.on_success = self.prompt("On-success hook command", d.on_success)
+        elif key == "on_failure":
+            d.on_failure = self.prompt("On-failure hook command", d.on_failure)
+        elif key == "on_retry_failure":
+            d.on_retry_failure = self.prompt("On-retry-failure hook command", d.on_retry_failure)
         elif key == "preview":
             self.popup("Task submit preview", d.render_command())
         elif key == "dryrun":
@@ -2602,6 +3309,440 @@ class PanelManager:
                 self.task_draft = TaskDraft()
         self.refresh_current()
 
+    def class_restriction_variable_choices(self) -> List[str]:
+        """Common variables used when building class restrictions.
+
+        These are deliberately offered through the same '*' chooser as other
+        fields so operators can build safe class records without remembering
+        every variable name.
+        """
+        return [
+            "${QUEUEBASH_COMMAND_0}",
+            "${QUEUEBASH_COMMAND_ARG_1}",
+            "${QUEUEBASH_COMMAND_ARG_1_ABSPATH}",
+            "${QUEUEBASH_COMMAND_ARG_2}",
+            "${QUEUEBASH_JOB_WORKDIR}",
+            "${PWD_AT_SUBMIT}",
+            "${JOB_NAME}",
+            "${JOB_ID}",
+            "${QUEUEBASH_ROOT}",
+            "*",
+        ]
+
+    def class_restriction_facility_choices(self) -> List[str]:
+        """Return selectable asset/cap facilities for class restriction records."""
+        choices: List[str] = []
+        for it in load_assets(self):
+            if it.key and it.key != "__error__":
+                choices.append(it.key)
+        # caps.d modules can be class-relevant even when they are not normal
+        # asset facilities.  Include them as cap:<family> so the operator can
+        # discover billing/net_usage from the same chooser.
+        for it in load_modules(self):
+            if it.key.startswith("cap:") and it.key not in choices:
+                choices.append(it.key)
+        return choices
+
+    def class_restriction_hint(self, facility: str) -> str:
+        """Return best-effort hint text for a selected class facility."""
+        if facility.startswith("cap:"):
+            _, out = qrun(["modules", "explain", facility])
+            return out or f"No cap hint available for {facility}"
+        _, hint = qrun(["asset-hint", facility])
+        if not hint:
+            _, hint = qrun(["assets", "explain", facility])
+        return hint or f"No asset hint available for {facility}"
+
+    def parse_class_restriction_hint(self, facility: str, hint: str) -> dict[str, str]:
+        """Extract target/params/example/notes from asset/cap hint text.
+
+        Asset plugins publish hints as tab-delimited records such as::
+
+            time:window target=policy name params=weekdays=mon-fri ...
+
+        The CLI may also render those records as a human-readable block with
+        ``Target:``, ``Params:``, ``Example:``, and ``Notes:`` lines.  The panel
+        needs the structured fields so Class Creator can ask useful questions
+        instead of dumping a single free-text params prompt.
+        """
+        meta: dict[str, str] = {"facility": facility, "target": "", "params": "", "example": "", "notes": ""}
+        lines = hint.splitlines()
+
+        # Raw queue_asset_hints line.
+        for line in lines:
+            if not line.strip():
+                continue
+            if not line.startswith(facility):
+                continue
+            for part in line.split("\t")[1:]:
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    meta[k.strip().casefold()] = v.strip()
+            break
+
+        # Pretty CLI block.
+        current = ""
+        for raw in lines:
+            line = raw.strip()
+            low = line.casefold()
+            if low.startswith("target:"):
+                current = "target"
+                meta[current] = line.split(":", 1)[1].strip()
+            elif low.startswith("params:"):
+                current = "params"
+                meta[current] = line.split(":", 1)[1].strip()
+            elif low.startswith("example:"):
+                current = "example"
+                meta[current] = line.split(":", 1)[1].strip()
+            elif low.startswith("notes:"):
+                current = "notes"
+                meta[current] = line.split(":", 1)[1].strip()
+            elif current in {"example", "notes"} and line:
+                meta[current] = (meta[current] + "\n" + line).strip()
+
+        return meta
+
+    def class_restriction_target_choices(self, facility: str, target_hint: str) -> List[str]:
+        """Contextual target choices for the Class Creator restriction wizard."""
+        low = target_hint.casefold()
+        choices: List[str] = []
+        if "policy" in low:
+            choices.extend(["overnight", "business-hours", "weekend", "weekday", "always", "maintenance-window"])
+        if "interface" in low:
+            choices.extend(["eth0", "wlan0", "wwan0", "tun0", "ppp0"])
+        if "url" in low:
+            choices.extend(["https://github.com", "https://example.com", "${QUEUEBASH_COMMAND_ARG_1}"])
+        if "host:port" in low:
+            choices.extend(["localhost:5432", "localhost:3306", "localhost:6379", "db.internal:5432"])
+        if "path" in low or "directory" in low or "file" in low or "repository" in low:
+            choices.extend(["${QUEUEBASH_COMMAND_ARG_1_ABSPATH}", "${QUEUEBASH_JOB_WORKDIR}", "${PWD_AT_SUBMIT}", "/home/hc3/bashqueues", "/tmp"])
+        if "system" in low:
+            choices.append("system")
+        if "command" in low or "interpreter" in low:
+            choices.extend(["bash", "python3", "rexx", "git", "curl"])
+        choices.extend(self.class_restriction_variable_choices())
+        seen: set[str] = set()
+        out: List[str] = []
+        for c in choices:
+            if c and c not in seen:
+                seen.add(c)
+                out.append(c)
+        return out
+
+    def class_restriction_param_is_internal(self, key: str, default: str, facility: str) -> bool:
+        """Return True for hint parameters that are test/internal controls.
+
+        These may legitimately exist in asset methods for unit tests or forced
+        replay, but the Class Creator must not offer them in the normal
+        operator wizard.  A real class should not accidentally contain values
+        like ``now_epoch=TEST`` simply because the hint advertised a test hook.
+        """
+        k = key.casefold().replace("-", "_")
+        d = default.casefold()
+        return k in {"now_epoch", "counter_file", "test_epoch", "mock", "debug"} or d in {"test", "__test__"}
+
+    def class_restriction_param_label(self, key: str, default: str, facility: str, target: str = "") -> str:
+        """Human prompt for a generated restriction parameter."""
+        k = key.casefold().replace("-", "_")
+        if k == "weekdays":
+            return "Weekday set"
+        if k == "weekday_windows":
+            return "Weekday allowed time window(s)"
+        if k == "weekends":
+            return "Weekend day set"
+        if k == "weekend_windows":
+            return "Weekend allowed time window(s)"
+        if k == "writable":
+            return "Must be writable? 1=yes 0=no"
+        if k == "executable":
+            return "Must be executable/traversable? 1=yes 0=no"
+        if k == "readable":
+            return "Must be readable? 1=yes 0=no"
+        if k == "allowance_bytes":
+            return "Network allowance bytes"
+        if k == "direction":
+            return "Network direction"
+        if k == "require_executable":
+            return "Script must be executable? 1=yes 0=no"
+        if k == "validate_syntax":
+            return "Validate syntax before dispatch? 1=yes 0=no"
+        if k == "nonempty":
+            return "Environment variable must be non-empty? 1=yes 0=no"
+        if k == "min_version":
+            return "Minimum version"
+        if k == "modules":
+            return "Required module/import list"
+        return key
+
+    def class_restriction_param_default(self, key: str, default: str, facility: str, target: str = "") -> str:
+        """Safe default for a generated restriction parameter."""
+        k = key.casefold().replace("-", "_")
+        if self.class_restriction_param_is_internal(key, default, facility):
+            return ""
+        # Directories need the execute/search bit to be traversable.  For /tmp
+        # the normal safe gate is writable=1 executable=1, not executable=0.
+        if facility == "runnable:filesystem" and k == "executable" and target:
+            if target.endswith("/") or target in {"/tmp", "${QUEUEBASH_JOB_WORKDIR}", "${PWD_AT_SUBMIT}"} or "directory" in target.casefold():
+                return "1"
+        return "" if default.casefold() in {"none", "optional", "<omit>"} else default
+
+    def class_restriction_param_choices(self, key: str, default: str, facility: str, target: str = "") -> List[str]:
+        """Contextual values for an individual key=value restriction parameter."""
+        k = key.casefold().replace("-", "_")
+        choices: List[str] = []
+        safe_default = self.class_restriction_param_default(key, default, facility, target)
+        if safe_default:
+            choices.append(safe_default)
+        if k in {"writable", "executable", "readable", "require_executable", "validate_syntax", "nonempty", "allow_relative", "require_shebang"}:
+            choices.extend(["1", "0"])
+        elif k in {"weekdays", "days"}:
+            choices.extend(["mon-fri", "mon-thu", "mon,tue,wed,thu,fri", "fri", "none"])
+        elif k in {"weekends"}:
+            choices.extend(["sat-sun", "sat", "sun", "none"])
+        elif "window" in k or k in {"hours"}:
+            choices.extend(["09:00-17:00", "05:00-18:00", "18:00-05:00", "00:00-06:00", "always", "never"])
+        elif k in {"direction"}:
+            choices.extend(["rx_tx", "rx", "tx"])
+        elif k in {"allowance_bytes", "limit", "max_bytes"}:
+            choices.extend(["1G", "5G", "10G", "25G", "100G"])
+        elif "timeout" in k:
+            choices.extend(["3", "5", "10", "30", "60"])
+        elif "status" in k:
+            choices.extend(["200,201,204,301,302,304,307,308", "200,301,302", "200,403"])
+        elif k.startswith("min_") or k.startswith("max_"):
+            choices.extend(["1", "5", "10", "50", "80", "100"])
+        elif k in {"state"}:
+            choices.extend(["UP", "DOWN"])
+        elif k in {"mode"}:
+            choices.extend(["read", "write", "execute"])
+        elif k in {"query"}:
+            choices.extend(["SELECT_1", "SELECT 1"])
+        elif k in {"user"}:
+            choices.extend(["postgres", "root", "${USER}"])
+        elif k in {"require_cwd"}:
+            choices.extend(["${QUEUEBASH_JOB_WORKDIR}", "${PWD_AT_SUBMIT}", "/home/hc3/bashqueues"])
+        choices.append("<omit>")
+        seen: set[str] = set()
+        out: List[str] = []
+        for c in choices:
+            if c and c not in seen:
+                seen.add(c)
+                out.append(c)
+        return out
+
+    def class_restriction_param_specs(self, params_hint: str) -> List[tuple[str, str]]:
+        """Return ``[(param_name, default_value), ...]`` from hint params text."""
+        specs: List[tuple[str, str]] = []
+        text = (params_hint or "").strip()
+        if not text or text.casefold() in {"none", "n/a", "-"}:
+            return specs
+        try:
+            tokens = shlex.split(text)
+        except ValueError:
+            tokens = text.split()
+        for token in tokens:
+            if "=" not in token:
+                continue
+            key, value = token.split("=", 1)
+            key = key.strip()
+            if key:
+                specs.append((key, value.strip()))
+        return specs
+
+    def prompt_class_restriction_params(self, facility: str, params_hint: str, target: str = "") -> str:
+        """Ask one useful prompt per advertised hint parameter.
+
+        ``*`` on every generated parameter prompt opens a relevant chooser.
+        Blank/clear/omit skips optional parameters.  Test/internal controls
+        such as ``now_epoch=TEST`` are deliberately hidden from the normal
+        wizard so production class records do not inherit test hooks.
+        """
+        specs = self.class_restriction_param_specs(params_hint)
+        if not specs:
+            return ""
+        rendered: List[str] = []
+        skipped: List[str] = []
+        for key, default in specs:
+            if self.class_restriction_param_is_internal(key, default, facility):
+                skipped.append(key)
+                continue
+            prompt_default = self.class_restriction_param_default(key, default, facility, target)
+            choices = self.class_restriction_param_choices(key, default, facility, target)
+            prompt_label = self.class_restriction_param_label(key, default, facility, target)
+            value = self.prompt_choice(f"{prompt_label} [{key}=] (* choices; blank omit)", choices, prompt_default, allow_free=True)
+            if value.strip().casefold() in {"", "<omit>", "omit", "none", "clear", "-"}:
+                continue
+            rendered.append(f"{key}={shlex.quote(value)}")
+        if skipped:
+            self.status = "Skipped test/internal restriction params: " + ", ".join(skipped)
+        return " ".join(rendered)
+
+    def build_class_restriction_record(self, supplied_facility: str = "") -> str:
+        """Hint-driven class restriction builder.
+
+        Class Creator uses the asset/cap hint contract to generate the wizard:
+        facility -> target prompt -> parameter prompts.  This means a
+        ``time:window`` restriction automatically asks for a policy name,
+        weekdays, weekday windows, weekends, and weekend windows, while
+        ``net:allowance`` asks for interface/direction/allowance-style fields.
+        Every generated field still supports ``*`` selection, unique prefixes,
+        and unique substrings.
+        """
+        facilities = self.class_restriction_facility_choices()
+        if not facilities:
+            self.status = "No asset/cap facilities are available"
+            return ""
+
+        if supplied_facility:
+            resolved, diagnostic = resolve_unique_choice(supplied_facility, facilities)
+            if not resolved:
+                self.status = diagnostic or f"Facility not found uniquely: {supplied_facility}"
+                return ""
+            facility = resolved
+        else:
+            facility = self.prompt_choice("Facility/restriction (* list)", facilities, "", allow_free=False)
+            if not facility:
+                self.status = "No facility selected"
+                return ""
+
+        hint = self.class_restriction_hint(facility)
+        hint_meta = self.parse_class_restriction_hint(facility, hint)
+        self.popup(f"Hint for {facility}", hint[:12000])
+
+        if facility.startswith("cap:"):
+            cap = facility.split(":", 1)[1]
+            mode = self.prompt_choice("Cap record type", ["require", "note"], "require")
+            if mode == "note":
+                return f"# cap:{cap} available; add the relevant cap configuration for this class"
+            return f"queue_class_requires_cap {shlex.quote(cap)}"
+
+        family, _, check = facility.partition(":")
+        mode = self.prompt_choice("Restriction type", ["shared", "exclusive", "claim"], "shared", aliases={"s":"shared", "x":"exclusive", "e":"exclusive", "c":"claim"})
+        if mode == "claim":
+            claim = self.prompt_choice("Exclusive claim token (* variables)", self.class_restriction_variable_choices(), "", allow_free=True)
+            if not claim:
+                self.status = "Claim token required"
+                return ""
+            return f"queue_class_exclusive_claim {shlex.quote(claim)}"
+
+        target_hint = hint_meta.get("target", "") or "target"
+        target_choices = self.class_restriction_target_choices(facility, target_hint)
+        target = self.prompt_choice(f"Target: {target_hint}", target_choices, "", allow_free=True)
+        if not target:
+            self.status = "Restriction target required"
+            return ""
+
+        params = self.prompt_class_restriction_params(facility, hint_meta.get("params", ""), target)
+        if not params:
+            examples = [
+                hint_meta.get("params", ""),
+                "allowance_bytes=10G direction=rx_tx",
+                "path=${QUEUEBASH_COMMAND_ARG_1_ABSPATH}",
+                "",
+            ]
+            params = self.prompt_choice("Additional params key=value... (* examples; blank none)", examples, "", allow_free=True)
+            if params.strip().casefold() in {"*", "<omit>", "omit", "none"}:
+                params = ""
+
+        func = "queue_class_exclusive_asset" if mode == "exclusive" else "queue_class_shared_asset"
+        record = f"{func} {shlex.quote(family)} {shlex.quote(check)} {shlex.quote(target)}"
+        if params:
+            record += " " + params
+        return record
+
+    def add_class_restriction_from_hints(self, supplied_facility: str = "") -> None:
+        record = self.build_class_restriction_record(supplied_facility)
+        if not record:
+            return
+        if self.confirm("Add generated restriction to this class draft?"):
+            self.class_draft.records.append(record)
+            self.status = "Added restriction to Class Creator draft"
+            self.refresh_current()
+        else:
+            self.popup("Generated class restriction", record)
+
+    def execute_classdraft_command(self, parts: Sequence[str]) -> None:
+        """Typed command support for Class Creator.
+
+        Examples:
+          classcreator restriction net:allowance
+          restriction net allowance
+          record add
+          save
+        """
+        self.switch_view("classdraft")
+        if not parts:
+            return
+        head = parts[0]
+        tail = list(parts[1:])
+        actions = [
+            "name", "purpose", "allow-parallel", "parallel", "max-concurrent",
+            "runner", "timeout", "kill-after", "cpu", "memory", "log",
+            "run-user", "submit-user", "restriction", "restrict", "asset",
+            "record", "records", "preview", "validate", "save", "clear",
+        ]
+        aliases = {
+            "n": "name", "p": "purpose", "ap": "allow-parallel", "mc": "max-concurrent",
+            "r": "runner", "t": "timeout", "ka": "kill-after", "mem": "memory",
+            "maxlog": "log", "ru": "run-user", "su": "submit-user",
+            "res": "restriction", "restr": "restriction", "a": "asset", "rec": "record",
+            "pv": "preview", "v": "validate", "s": "save", "reset": "clear",
+        }
+        action, _ = resolve_unique_choice(head, actions, aliases)
+        action = action or head
+        d = self.class_draft
+        value = " ".join(tail).strip()
+        if action == "name":
+            d.name = (value or self.prompt("Class name", d.name)).upper().replace("-", "_").replace(" ", "_")
+        elif action == "purpose":
+            d.purpose = value or self.prompt("Purpose", d.purpose)
+        elif action in {"allow-parallel", "parallel"}:
+            d.allow_parallel = value or self.prompt_choice("Allow parallel", ["0", "1", "yes", "no"], d.allow_parallel or "1")
+            if d.allow_parallel == "yes": d.allow_parallel = "1"
+            if d.allow_parallel == "no": d.allow_parallel = "0"
+        elif action == "max-concurrent":
+            d.max_concurrent = value or self.prompt("Max concurrent 0=unlimited", d.max_concurrent or "0")
+        elif action == "runner":
+            d.default_runner = value or self.prompt_choice("Default runner", ["auto", "direct", "systemd"], d.default_runner or "auto")
+        elif action == "timeout":
+            d.default_timeout = value or self.prompt("Default timeout, e.g. 30s", d.default_timeout)
+        elif action == "kill-after":
+            d.default_kill_after = value or self.prompt("Kill after, e.g. 5s", d.default_kill_after)
+        elif action == "cpu":
+            d.default_cpu_limit = value or self.prompt("CPU limit, e.g. 50%", d.default_cpu_limit)
+        elif action == "memory":
+            d.default_mem_limit = value or self.prompt("Memory limit, e.g. 512M", d.default_mem_limit)
+        elif action == "log":
+            d.default_log_cap = value or self.prompt("Max log size bytes", d.default_log_cap)
+        elif action == "run-user":
+            users = [it.key for it in load_queue_users(self) if it.key != "__error__"]
+            d.default_run_user = _normalise_optional_user(value or self.prompt_choice("Default payload/run user", users, d.default_run_user, allow_free=True))
+        elif action == "submit-user":
+            users = [it.key for it in load_queue_users(self) if it.key != "__error__"]
+            d.default_submit_user = _normalise_optional_user(value or self.prompt_choice("Default queue submit/owner user", users, d.default_submit_user, allow_free=True))
+        elif action in {"restriction", "restrict", "asset"}:
+            self.add_class_restriction_from_hints(value)
+            return
+        elif action in {"record", "records"}:
+            if value:
+                d.records.append(value)
+                self.status = "Added raw class record"
+            else:
+                self.edit_class_draft_records()
+                return
+        elif action == "preview":
+            self.popup("Class draft preview", d.render())
+        elif action == "validate":
+            self.validate_class_draft()
+        elif action == "save":
+            self.save_class_draft()
+        elif action == "clear":
+            if self.confirm("Clear class draft?"):
+                self.class_draft = ClassDraft()
+        else:
+            self.status = f"Unknown Class Creator command: {' '.join(parts)}"
+        self.refresh_current()
+
     def class_creator_action(self) -> None:
         item = self.view.current()
         if not item:
@@ -2640,6 +3781,9 @@ class PanelManager:
         elif key == "default_submit_user":
             users = [it.key for it in load_queue_users(self) if it.key != "__error__"]
             d.default_submit_user = _normalise_optional_user(self.prompt_choice("Default queue submit/owner user", users, d.default_submit_user, allow_free=True))
+        elif key == "add_restriction":
+            self.add_class_restriction_from_hints()
+            return
         elif key == "records":
             self.edit_class_draft_records()
         elif key == "preview":
@@ -2807,10 +3951,10 @@ class PanelManager:
             self.class_action()
         elif self.view.name == "assets":
             self.asset_action()
+        elif self.view.name == "modules":
+            self.module_action()
         elif self.view.name == "maintenance":
             self.maintenance_action()
-        elif self.view.name == "builder":
-            self.builder_action()
         elif self.view.name == "classdraft":
             self.class_creator_action()
         elif self.view.name == "taskdraft":
@@ -2824,7 +3968,8 @@ class PanelManager:
             "",
             "Navigation:",
             "  Queue Users panel selects which user queue root the UI manages",
-            "  Tab             switch panel",
+            "  Tab             switch panel forward",
+            "  Shift-Tab       switch panel backward",
             "  Up/Down         move list",
             "  PgUp/PgDn       scroll list",
             "  Left/Right      scroll detail",
@@ -2834,13 +3979,18 @@ class PanelManager:
             "  Type a command anywhere; the first key opens the command line",
             "  Commands accept first unique letters or unique substrings",
             "  Examples: jo, tas, task class GITHUB, task name publish_git",
+            "  Examples: task dependencies setup_job, task on-success bash -c 'echo ok'",
             "  Examples: job 1798231 history, job change priority 5, job kill, job edit",
             "  Examples: user hc3, user clear",
             "  Examples: cla MYCLASS hist, class MYCLASS use, maint health queue",
+            "  Examples: module asset net disable, cap billing enable",
+            "  Global: global claims, global claim github:publish, global cleanup --dryrun",
+            "  Examples: classcreator restriction net:allowance, restriction billing",
             "  Type * in the command line for contextual completions",
             "",
             "Function keys and hotkeys:",
             "  Panel tabs show hotkeys, for example [J] Jobs and [T] Task Creator",
+            "  Restriction Builder is temporarily removed; use Classes/Class Creator/module commands instead",
             "  Type the hotkey or any unique command prefix to move panels",
             "  F1 Help         F2 command line      F3 Queue Users",
             "  F4 Jobs         F5 Refresh           F6 Dry-run",
@@ -2895,6 +4045,8 @@ class PanelManager:
                 #   ex / exception
                 #   ce / clear-exception
                 self.status = "F11 is not bound; type ex/exception or ce/clear-exception"
+            elif k in (curses.KEY_BTAB, 353):
+                self.active = (self.active - 1) % len(self.views)
             elif k == 9:
                 self.active = (self.active + 1) % len(self.views)
             elif k == curses.KEY_UP:
