@@ -5,7 +5,7 @@ cd "$repo_root"
 fail(){ echo "[FAIL] $1" >&2; exit 1; }
 pass(){ echo "[PASS] $1"; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.25"' queuebash.sh || fail "version not 0.17.20"
+grep -q 'QUEUEBASH_VERSION="0.17.51"' queuebash.sh || fail "version not 0.17.20"
 ! grep -q 'ViewState("builder"' queuemgr_panel.py || fail "Restriction Builder view still registered"
 ! grep -q '"builder": "B"' queuemgr_panel.py || fail "Restriction Builder hotkey still registered"
 ! grep -q '"builder": \[' queuemgr_panel.py || fail "Restriction Builder command alias still registered"

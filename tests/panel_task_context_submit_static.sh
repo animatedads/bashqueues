@@ -13,7 +13,7 @@ changelog="CHANGELOG.md"
 qdoc="docs/QUEUEMGR.md"
 readme="README.md"
 
-grep -q 'QUEUEBASH_VERSION="0.17.25"' "$q" || fail "queuebash version not 0.17.20"
+grep -q 'QUEUEBASH_VERSION="0.17.51"' "$q" || fail "queuebash version not 0.17.20"
 grep -q '## 0.16.33' "$changelog" || fail "CHANGELOG missing 0.16.33 entry"
 
 grep -q 'if self.view.name == "taskdraft"' "$panel" || fail "panel does not perform Task Creator context-first command handling"

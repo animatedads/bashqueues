@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.50"
+QUEUEBASH_VERSION="0.17.51"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -2057,7 +2057,7 @@ _queue_security_exception_guidance_for_job() {
 
         local any=0 violation="${RUNTIME_CAP_VIOLATION:-}" cmd log_tail port probe_asset probe_line sandbox_reason=""
         cmd="$(_queue_security_guidance_command_for_current_job)"
-        [[ -n "$log_file" && -f "$log_file" ]] && log_tail="$(tail -80 "$log_file" 2>/dev/null || true)"
+        [[ -n "$log_file" && -f "$log_file" ]] && log_tail="$(_queue_log_tail_text "$log_file" 80 2>/dev/null || true)"
 
         echo
         echo "Security exception guidance"
@@ -8174,6 +8174,16 @@ _queue_log_tail() {
     fi
 }
 
+_queue_log_tail_text() {
+    local path="$1"
+    local lines="${2:-120}"
+
+    # Use text-safe output for command substitution callers.  Some compressed
+    # logs can contain NUL bytes from payload output; bash warns when NULs
+    # appear in command substitution, which pollutes queue explain.
+    _queue_log_tail "$path" "$lines" | tr -d '\000'
+}
+
 _queue_maybe_gzip_log() {
     local id="$1"
     local job="$2"
@@ -9802,8 +9812,159 @@ _queue_cron_next_hint() {
     printf 'next run: calculated by bashqueues-cron.timer/tick at minute boundaries\n'
 }
 
+
+_queue_cron_trim() {
+    local s="$1"
+    s="${s#${s%%[![:space:]]*}}"
+    s="${s%${s##*[![:space:]]}}"
+    printf '%s\n' "$s"
+}
+
+_queue_cron_comment_directive_value() {
+    local raw="$1" key="$2" body
+    body="$(_queue_cron_trim "$raw")"
+    [[ "$body" == \#* ]] || return 1
+    body="${body#\#}"
+    body="$(_queue_cron_trim "$body")"
+    case "$body" in
+        ${key}[[:space:]]*) printf '%s\n' "$(_queue_cron_trim "${body#${key}}")"; return 0 ;;
+        bashqueues-${key}[[:space:]]*) printf '%s\n' "$(_queue_cron_trim "${body#bashqueues-${key}}")"; return 0 ;;
+        bashqueues_${key}[[:space:]]*) printf '%s\n' "$(_queue_cron_trim "${body#bashqueues_${key}}")"; return 0 ;;
+    esac
+    return 1
+}
+
+_queue_cron_is_assignment_line() {
+    local line="$(_queue_cron_trim "$1")"
+    [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]
+}
+
+_queue_cron_is_entry_line() {
+    local raw="$1" line macro rest a b c d e cmd
+    line="${raw%%#*}"
+    line="$(_queue_cron_trim "$line")"
+    [[ -z "$line" ]] && return 1
+    [[ "$line" == \#* ]] && return 1
+    _queue_cron_is_assignment_line "$line" && return 1
+    if [[ "$line" == @* ]]; then
+        macro="${line%%[[:space:]]*}"
+        [[ "$macro" == "@reboot" ]] && return 0
+        rest="${line#${macro}}"; rest="$(_queue_cron_trim "$rest")"
+        [[ -n "$rest" ]]
+        return $?
+    fi
+    read -r a b c d e cmd <<< "$line"
+    [[ -n "${a:-}" && -n "${b:-}" && -n "${c:-}" && -n "${d:-}" && -n "${e:-}" && -n "${cmd:-}" ]]
+}
+
+_queue_cron_class_for_entry() {
+    local file="$1" wanted="$2" n=0 raw val active=""
+    [[ -f "$file" ]] || return 1
+    while IFS= read -r raw || [[ -n "$raw" ]]; do
+        if val="$(_queue_cron_comment_directive_value "$raw" class 2>/dev/null)"; then
+            active="$val"
+            continue
+        fi
+        if _queue_cron_is_entry_line "$raw"; then
+            n=$((n+1))
+            if [[ "$n" -eq "$wanted" ]]; then
+                printf '%s\n' "$active"
+                return 0
+            fi
+        fi
+    done < "$file"
+    return 1
+}
+
+_queue_cron_set_class_file() {
+    local file="$1" entry_no="$2" class_name="$3" tmp n=0 i raw prev j clear=0 target_i=-1 directive_i=-1
+    [[ "$entry_no" =~ ^[0-9]+$ && "$entry_no" -gt 0 ]] || { echo "queue cron class: entry number must be a positive integer" >&2; return 2; }
+    [[ -f "$file" ]] || { echo "queue cron class: no bashqueues crontab: $file" >&2; return 1; }
+    if [[ "$class_name" == "--clear" || "$class_name" == "clear" || "$class_name" == "none" || "$class_name" == "default" ]]; then
+        clear=1
+    elif [[ ! "$class_name" =~ ^[A-Za-z0-9_.:-]+$ ]]; then
+        echo "queue cron class: invalid class name: $class_name" >&2
+        return 2
+    fi
+    mapfile -t _cron_lines < "$file"
+    for i in "${!_cron_lines[@]}"; do
+        raw="${_cron_lines[$i]}"
+        if _queue_cron_is_entry_line "$raw"; then
+            n=$((n+1))
+            if [[ "$n" -eq "$entry_no" ]]; then
+                target_i="$i"
+                break
+            fi
+        fi
+    done
+    if [[ "$target_i" -lt 0 ]]; then
+        echo "queue cron class: entry $entry_no not found in $file" >&2
+        return 1
+    fi
+    j=$((target_i-1))
+    while [[ "$j" -ge 0 ]]; do
+        prev="${_cron_lines[$j]}"
+        [[ -z "$(_queue_cron_trim "$prev")" ]] && { j=$((j-1)); continue; }
+        if _queue_cron_comment_directive_value "$prev" class >/dev/null 2>&1; then
+            directive_i="$j"
+        fi
+        break
+    done
+    tmp="$(mktemp)" || return 1
+    for i in "${!_cron_lines[@]}"; do
+        if [[ "$i" -eq "$target_i" && "$directive_i" -lt 0 && "$clear" -ne 1 ]]; then
+            printf '#class %s\n' "$class_name" >> "$tmp"
+        fi
+        if [[ "$i" -eq "$directive_i" ]]; then
+            if [[ "$clear" -ne 1 ]]; then
+                printf '#class %s\n' "$class_name" >> "$tmp"
+            fi
+            continue
+        fi
+        printf '%s\n' "${_cron_lines[$i]}" >> "$tmp"
+    done
+    if ! cp "$tmp" "$file" 2>/dev/null; then
+        rm -f "$tmp"
+        echo "queue cron class: cannot write bashqueues crontab: $file" >&2
+        return 1
+    fi
+    chmod 0600 "$file" 2>/dev/null || true
+    rm -f "$tmp"
+    if [[ "$clear" -eq 1 ]]; then
+        echo "Cleared bashqueues class directive for cron entry $entry_no: $file"
+    else
+        echo "Set bashqueues class for cron entry $entry_no to $class_name: $file"
+    fi
+}
+
+_queue_cron_set_class_command() {
+    local current_user target_user entry_no class_name d f
+    current_user="$(id -un 2>/dev/null || echo unknown)"
+    target_user="${QUEUEBASH_SELECTED_USER:-$current_user}"
+    if [[ "${1:-}" == "--user" ]]; then
+        target_user="${2:-}"; shift 2 || true
+    elif [[ "${1:-}" != "" && ! "${1:-}" =~ ^[0-9]+$ ]]; then
+        target_user="$1"; shift || true
+    fi
+    entry_no="${1:-}"; class_name="${2:-}"
+    if [[ -z "$entry_no" || -z "$class_name" ]]; then
+        echo "Usage: queue cron class [USER] ENTRY CLASS|--clear" >&2
+        return 2
+    fi
+    if [[ "$current_user" != "root" && "$target_user" != "$current_user" ]]; then
+        echo "queue cron class: only root may edit another user's bashqueues crontab" >&2
+        return 1
+    fi
+    if [[ ! "$target_user" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+        echo "queue cron class: invalid user name: $target_user" >&2
+        return 2
+    fi
+    d="$(_queue_cron_spool_dir)"; f="$d/$target_user"
+    _queue_cron_set_class_file "$f" "$entry_no" "$class_name"
+}
+
 _queue_cron_explain_file() {
-    local owner="$1" file="$2" line raw min hour dom mon dow cmd class h desc n=0
+    local owner="$1" file="$2" line raw min hour dom mon dow cmd class h desc n=0 active_class="" active_auth="" val generated_class
     [[ -f "$file" ]] || { echo "No bashqueues crontab for $owner: $file" >&2; return 1; }
     if [[ ! -r "$file" ]]; then
         echo "=== cron for $owner ==="
@@ -9815,10 +9976,19 @@ _queue_cron_explain_file() {
     echo "=== cron for $owner ==="
     echo "file: $file"
     while IFS= read -r raw || [[ -n "$raw" ]]; do
+        if val="$(_queue_cron_comment_directive_value "$raw" class 2>/dev/null)"; then
+            active_class="$val"
+            continue
+        fi
+        if val="$(_queue_cron_comment_directive_value "$raw" authorisation 2>/dev/null)" || val="$(_queue_cron_comment_directive_value "$raw" authorization 2>/dev/null)"; then
+            active_auth="$val"
+            continue
+        fi
         line="${raw%%#*}"
         line="${line#${line%%[![:space:]]*}}"
         line="${line%${line##*[![:space:]]}}"
         [[ -z "$line" ]] && continue
+        _queue_cron_is_assignment_line "$line" && continue
         if [[ "$line" == @* ]]; then
             local macro rest
             macro="${line%%[[:space:]]*}"
@@ -9856,7 +10026,8 @@ _queue_cron_explain_file() {
             fi
         fi
         n=$((n+1))
-        class="$(_queue_cron_stable_class "$owner" "$cmd")"
+        generated_class="$(_queue_cron_stable_class "$owner" "$cmd")"
+        class="${active_class:-$generated_class}"
         h="$(_queue_cron_entry_hash "$owner" "$cmd")"
         desc="$(_queue_cron_line_description "$min" "$hour" "$dom" "$mon" "$dow")"
         echo
@@ -9865,8 +10036,17 @@ _queue_cron_explain_file() {
         echo "  meaning:  $desc"
         echo "  user:     $owner"
         echo "  command:  $cmd"
-        echo "  submits:  queue user $owner submit $class --class $class -- bash -lc $(printf '%q' "$cmd")"
-        echo "  class:    $class"
+        if [[ -n "$active_auth" ]]; then
+            echo "  submits:  queue user $owner submit $generated_class --class $class --authorisation $active_auth -- bash -lc $(printf '%q' "$cmd")"
+        else
+            echo "  submits:  queue user $owner submit $generated_class --class $class -- bash -lc $(printf '%q' "$cmd")"
+        fi
+        if [[ -n "$active_class" ]]; then
+            echo "  class:    $class (explicit #class; generated name would be $generated_class)"
+        else
+            echo "  class:    $class (generated)"
+        fi
+        [[ -n "$active_auth" ]] && echo "  auth:     $active_auth (explicit #authorisation)"
         echo "  hash:     ${h:0:16}"
         echo "  state:    one queue job per matching minute; duplicate ticks are suppressed by state markers"
     done < "$file"
@@ -9977,6 +10157,10 @@ _queue_cron_command() {
             [[ -n "$ticker" ]] || { echo "queue cron tick: bashqueues-cron-ticker.py not found" >&2; return 127; }
             "$ticker" "$@"
             ;;
+        class|set-class)
+            shift
+            _queue_cron_set_class_command "$@"
+            ;;
         edit)
             shift
             local current_user target_user d f tmp
@@ -10018,7 +10202,7 @@ _queue_cron_command() {
             echo "Removed bashqueues crontab: $target_user"
             ;;
         *)
-            echo "Usage: queue cron root|list [--all]|explain [user|--all|system]|show [user]|preview [--now ISO]|tick [--dryrun]|edit [user]|remove [user]" >&2
+            echo "Usage: queue cron root|list [--all]|explain [user|--all|system]|class [USER] ENTRY CLASS|--clear|show [user]|preview [--now ISO]|tick [--dryrun]|edit [user]|remove [user]" >&2
             return 2
             ;;
     esac

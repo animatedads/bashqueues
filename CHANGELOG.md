@@ -1,3 +1,12 @@
+## 0.17.51 - Cron class directives and test maintenance
+
+- Added local crontab class directives using `#class CLASS`, so operators can route a specific cron entry to an existing bashqueues class without hand-editing generated class hashes.
+- Added `queue cron class [USER] ENTRY CLASS|--clear` to insert, replace, or clear the `#class` directive immediately above a cron entry.
+- `queue cron explain` now reports explicit `#class` and `#authorisation` directives, the generated fallback class, and the resulting submit command.
+- The cron ticker now honours `#class`, `#authorisation`, and `#authorization` comment directives as local, readable alternatives to `BASHQUEUES_CLASS=` metadata.
+- Fixed `queue explain` security-guidance log scanning so compressed/binary log tails do not emit `ignored null byte in input` warnings.
+- Refreshed stale static-test version pins and updated the Global Resources panel function assertion after the panel action rename.
+
 ## 0.17.49 - Cron explain and selected-user cron list scoping
 
 - Added `queue cron explain [user|--all|system]` to translate bashqueues crontab entries into readable schedule, command, generated class, command hash, and queue submission details.
@@ -51,7 +60,7 @@
 - Updated `publish_to_github.sh` and `tests/selftest.sh` so cloned temporary selftest queues do not fail under a site policy that requires reasons for weak/default sandbox choices.
 - Added regression tests for default-reason recording and authorisation-only refusal.
 
-## 0.17.42 - Policy re-evaluate, expiring exceptions, and queue backup
+## 0.17.51 - Policy re-evaluate, expiring exceptions, and queue backup
 
 - Added `queue reevaluate` to recheck existing `pol_block` jobs after policy changes or on-file authorisations.
 - Added `--expires` / `--expires-at` to `queue exception add`; expired asset exceptions are ignored but retained for audit.
@@ -102,10 +111,10 @@
 - Resettable fields return to safe defaults, for example priority=10, retries=0, class default runner=auto.
 - Security exception fields can be cleared from the Task Creator by selecting the field and pressing Delete.
 
-## 0.17.34 - pol_block resubmission and exemption audit model
+## 0.17.51 - pol_block resubmission and exemption audit model
 
 
-## 0.17.35 - policy command blocks and exemption visibility
+## 0.17.51 - policy command blocks and exemption visibility
 
 - Added shared/admin class-policy command blocks for zero-hour response:
   - `CLASS_POLICY_BLOCK_COMMAND_HASHES`
@@ -158,7 +167,7 @@
 - Added signer key-root diagnostics to `queue authorisation policy`.
 - Added regression tests for selected-queue signing.
 
-## 0.17.28 - Per-user class-policy standing grants
+## 0.17.51 - Per-user class-policy standing grants
 
 
 ## 0.17.29 - Authorisation stamping transaction guard
@@ -187,7 +196,7 @@
 - Tightened `CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED=if-trusted-key`: once a class policy declares trusted authorisation public keys, an unsigned authorisation by a declared signer is `invalid-missing-signature`, and an authorisation by an undeclared signer is `invalid-untrusted-admin`.
 - Added regression coverage for authorisation file publication permissions and policy-declared signature enforcement.
 
-## 0.17.25 - Authorisation list invalid-source rendering fix
+## 0.17.51 - Authorisation list invalid-source rendering fix
 
 - Fixed `queue authorisation list` rendering for malformed/tampered authorisation files.
 - Invalid source files now display a clean basename/code with `status=invalid-source` and `integrity=invalid-source` instead of leaking literal shell `$'\t'` escape text into the list output.

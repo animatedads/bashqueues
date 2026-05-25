@@ -13,7 +13,7 @@ pass() { echo "[PASS] $*"; }
 bash -n "$q" || fail "queuebash syntax failed"
 python3 -m py_compile "$panel" || fail "panel syntax failed"
 
-grep -q 'QUEUEBASH_VERSION="0.17.25"' "$q" || fail "queuebash version not 0.17.20"
+grep -q 'QUEUEBASH_VERSION="0.17.51"' "$q" || fail "queuebash version not 0.17.20"
 ! grep -q '^_queuemgr_print_commands()' "$q" || fail "legacy _queuemgr_print_commands still present"
 ! grep -q '^_queue_legacy_queuemgr()' "$q" || fail "legacy _queue_legacy_queuemgr still present"
 ! grep -q '^_queuemgr_repl_complete()' "$q" || fail "legacy _queuemgr_repl_complete still present"

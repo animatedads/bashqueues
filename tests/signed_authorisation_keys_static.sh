@@ -6,7 +6,7 @@ from pathlib import Path
 q = Path('queuebash.sh').read_text()
 pol = Path('policies.d/class-statement/default.env').read_text()
 doc = Path('docs/CLASS_POLICY_STATEMENT.md').read_text()
-assert 'QUEUEBASH_VERSION="0.17.28"' in q
+assert 'QUEUEBASH_VERSION="0.17.51"' in q
 assert '_queue_authorisation_keygen()' in q
 assert 'openssl genpkey -algorithm ED25519' in q
 assert 'queue keygen authorisation' in q

@@ -387,6 +387,18 @@ def _parse_cron_assignment(line: str) -> Optional[Tuple[str, str]]:
     return m.group(1), m.group(2).strip().strip('"').strip("'")
 
 
+def _parse_comment_directive(line: str) -> Optional[Tuple[str, str]]:
+    """Parse local bashqueues cron directives, for example: #class NIGHTLY."""
+    stripped = line.strip()
+    if not stripped.startswith("#"):
+        return None
+    body = stripped[1:].strip()
+    m = re.match(r"(?i)^(?:bashqueues[-_])?(class|authorisation|authorization)\s+(.+?)\s*$", body)
+    if not m:
+        return None
+    return m.group(1).lower(), m.group(2).strip().strip('"').strip("'")
+
+
 def iter_user_crons(spool: Path) -> Iterable[Tuple[str, Path, int, str, List[str], str, Optional[str]]]:
     if not spool.exists():
         return
@@ -399,7 +411,17 @@ def iter_user_crons(spool: Path) -> Iterable[Tuple[str, Path, int, str, List[str
         with path.open(errors="replace") as f:
             for n, line in enumerate(f, 1):
                 stripped = line.strip()
-                if not stripped or stripped.startswith("#"):
+                if not stripped:
+                    continue
+                directive = _parse_comment_directive(stripped)
+                if directive:
+                    key, value = directive
+                    if key == "class":
+                        active_class = value or None
+                    elif key in ("authorisation", "authorization"):
+                        active_authorisation = value or None
+                    continue
+                if stripped.startswith("#"):
                     continue
                 assignment = _parse_cron_assignment(stripped)
                 if assignment:
@@ -430,7 +452,17 @@ def iter_system_crons(system_dir: Path) -> Iterable[Tuple[str, Path, int, str, L
         with path.open(errors="replace") as f:
             for n, line in enumerate(f, 1):
                 stripped = line.strip()
-                if not stripped or stripped.startswith("#"):
+                if not stripped:
+                    continue
+                directive = _parse_comment_directive(stripped)
+                if directive:
+                    key, value = directive
+                    if key == "class":
+                        active_class = value or None
+                    elif key in ("authorisation", "authorization"):
+                        active_authorisation = value or None
+                    continue
+                if stripped.startswith("#"):
                     continue
                 assignment = _parse_cron_assignment(stripped)
                 if assignment:

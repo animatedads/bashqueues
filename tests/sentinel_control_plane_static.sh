@@ -4,7 +4,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
-grep -q 'QUEUEBASH_VERSION="0.17.42"' queuebash.sh || fail "version not bumped"
+grep -q 'QUEUEBASH_VERSION="0.17.51"' queuebash.sh || fail "version not bumped"
 grep -q '_queue_sentinel_command' queuebash.sh || fail "sentinel command missing"
 grep -q '_queue_sentinel_tick' queuebash.sh || fail "sentinel tick missing"
 grep -q '_queue_sentinel_eval_deadlines' queuebash.sh || fail "sentinel deadline evaluator missing"

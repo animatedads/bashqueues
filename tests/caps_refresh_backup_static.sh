@@ -5,7 +5,7 @@ cd "$repo_root"
 fail(){ echo "[FAIL] $1" >&2; exit 1; }
 pass(){ echo "[PASS] $1"; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.25"' queuebash.sh || fail "version not 0.17.20"
+grep -q 'QUEUEBASH_VERSION="0.17.51"' queuebash.sh || fail "version not 0.17.20"
 grep -q 'backup_dir="$cap_dir/.backup"' queuebash.sh || fail "cap refresh does not set explicit backup_dir"
 grep -q 'mkdir -p "$cap_dir" "$backup_dir"' queuebash.sh || fail "cap refresh does not create caps.d and .backup"
 grep -q 'cannot create cap directory or backup directory' queuebash.sh || fail "cap refresh lacks mkdir failure diagnostic"

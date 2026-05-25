@@ -52,12 +52,49 @@ bashqueues-crontab -r
 
 queue cron root
 queue cron list
+queue cron explain [user|--all|system]
+queue cron class [USER] ENTRY CLASS
+queue cron class [USER] ENTRY --clear
 queue cron show hc3
 queue cron preview --now 2026-05-24T20:00:00
 queue cron tick --dryrun
 queue cron edit hc3
 queue cron remove hc3
 ```
+
+
+## Per-entry class routing
+
+Cron entries can be routed to a named bashqueues class with a local comment directive
+immediately above the entry:
+
+```cron
+#class GITHUB_PUBLISH
+15 14 * * * /home/hc3/bashqueues/publish_to_github.sh
+```
+
+This is easier for operators to read than generated `cron_<hash>` class names.  The
+ticker submits the entry with `--class GITHUB_PUBLISH` and does not overwrite that
+class.
+
+Use the helper command to add, replace, or clear the directive without hand-editing:
+
+```bash
+queue cron class 1 GITHUB_PUBLISH
+queue cron class 1 --clear
+sudo queue user testu cron class 1 TESTU_BATCH
+```
+
+`queue cron explain` shows both the explicit class and the generated fallback class.
+The older assignment form remains supported for compatibility:
+
+```cron
+BASHQUEUES_CLASS=GITHUB_PUBLISH
+15 14 * * * /home/hc3/bashqueues/publish_to_github.sh
+```
+
+A local command-bound authorisation can similarly be declared with `#authorisation CODE`
+when a cron entry must use a class below the active crontab minimum.
 
 ## Installation
 

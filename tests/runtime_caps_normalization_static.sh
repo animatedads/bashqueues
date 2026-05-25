@@ -5,7 +5,7 @@ python3 - <<'PY'
 from pathlib import Path
 src = Path('queuebash.sh').read_text()
 cap = Path('caps.d/runtime.sh').read_text()
-assert 'QUEUEBASH_VERSION="0.17.25"' in src
+assert 'QUEUEBASH_VERSION="0.17.51"' in src
 assert '_queue_runtime_caps_normalise()' in src
 assert 'caps="${caps//_/-}"' in src
 assert '_queue_runtime_caps_unknown_list()' in src

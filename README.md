@@ -2714,6 +2714,7 @@ sudo ./install-cron-bridge.sh
 
 Use `bashqueues-crontab -e` or `queue cron edit` for bashqueues-managed crontabs,
 `queue cron explain [user]` to translate entries into readable schedule/submission details,
+`queue cron class ENTRY CLASS` to route an entry to a named queue class,
 and `queue cron tick --dryrun` to preview due entries. See
 [`docs/CRON_BRIDGE.md`](docs/CRON_BRIDGE.md).
 
@@ -2785,18 +2786,23 @@ The exception is visible in `queue explain` under Exception overlays.
 
 ### Cron bridge class routing
 
-The cron bridge accepts `BASHQUEUES_CLASS=` as stateful crontab metadata:
+The cron bridge accepts readable `#class` directives or `BASHQUEUES_CLASS=` as stateful crontab metadata:
 
 ```cron
-BASHQUEUES_CLASS=cron_standard
+#class cron_standard
 */5 * * * * /opt/jobs/poll-local-service.sh
 
-BASHQUEUES_CLASS=
+# Clear a local class by using: queue cron class ENTRY --clear
 0 * * * * /opt/jobs/local-cache-clear.sh
+
+# Assignment form remains supported for compatibility.
+BASHQUEUES_CLASS=cron_standard
+15 * * * * /opt/jobs/legacy-style.sh
 ```
 
-When set, the ticker submits to the named class and does not overwrite it. When
-unset, it creates a conservative generated `cron_<hash>` class with
+When set, the ticker submits to the named class and does not overwrite it. Use
+`queue cron class 1 NIGHTLY_BATCH` to insert or update the `#class` line for
+the first active entry in your bashqueues crontab. When unset, it creates a conservative generated `cron_<hash>` class with
 `CLASS_MAX_CONCURRENT=1`, strict sandboxing, and basic runtime caps.
 
 ### Security policy files
@@ -3032,7 +3038,7 @@ The Global Resources panel exposes claims, explain, cleanup dry-run, cleanup, an
 
 Typed command entry preserves the first printable key that opened the command prompt, so typing `e` followed by `xpl` becomes `expl` rather than losing the initial `e`.
 
-### 0.17.42 operations additions
+### 0.17.51 operations additions
 
 - `queue reevaluate [--all|QID]` rechecks `pol_block` jobs after a policy change or new command-bound authorisation.
 - `queue exception add QID ASSET --reason TEXT --expires +2h` creates time-limited asset exceptions.
