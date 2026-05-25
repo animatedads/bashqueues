@@ -6,7 +6,7 @@ from pathlib import Path
 q = Path('queuebash.sh').read_text()
 cron = Path('bin/bashqueues-cron-ticker.py').read_text()
 pol = Path('policies.d/class-statement/default.env').read_text()
-assert 'QUEUEBASH_VERSION="0.17.26"' in q
+assert 'QUEUEBASH_VERSION="0.17.28"' in q
 assert 'class-statement' in q
 assert '_queue_submit_policy_check()' in q
 assert '--reason)' in q

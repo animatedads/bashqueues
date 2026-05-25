@@ -380,6 +380,9 @@ class TaskDraft:
     retry_backoff: str = ""
     runner: str = ""
     sandbox_level: str = ""
+    security_reason: str = ""
+    authorisation_code: str = ""
+    no_security_exemption_required: bool = False
     cpu_limit: str = ""
     mem_limit: str = ""
     max_log_size: str = ""
@@ -418,6 +421,10 @@ class TaskDraft:
             args.extend(["--runner", self.runner])
         if self.sandbox_level:
             args.extend(["--sandbox", self.sandbox_level])
+        if self.security_reason:
+            args.extend(["--reason", self.security_reason])
+        if self.authorisation_code:
+            args.extend(["--authorisation", self.authorisation_code])
         if self.cpu_limit:
             args.extend(["--cpu", self.cpu_limit])
         if self.mem_limit:
@@ -467,6 +474,10 @@ class TaskDraft:
             args.extend(["--runner", self.runner])
         if self.sandbox_level:
             args.extend(["--sandbox", self.sandbox_level])
+        if self.security_reason:
+            args.extend(["--reason", self.security_reason])
+        if self.authorisation_code:
+            args.extend(["--authorisation", self.authorisation_code])
         if self.cpu_limit:
             args.extend(["--cpu", self.cpu_limit])
         if self.mem_limit:
@@ -998,6 +1009,9 @@ def load_task_draft(app: "PanelManager") -> List[Item]:
         Item("retry_backoff", f"retry backoff        {d.retry_backoff or '-'}"),
         Item("runner", f"runner override      {d.runner or '-'}"),
         Item("sandbox_level", f"sandbox override     {d.sandbox_level or '-'}"),
+        Item("security_reason", f"security reason      {d.security_reason or '-'}"),
+        Item("authorisation", f"authorisation code   {d.authorisation_code or '<auto/on-file>'}"),
+        Item("no_security_exemption", f"security exemption   {'not required' if d.no_security_exemption_required else 'auto/required by policy'}"),
         Item("cpu_limit", f"CPU override         {d.cpu_limit or '-'}"),
         Item("mem_limit", f"memory override      {d.mem_limit or '-'}"),
         Item("max_log_size", f"log cap override     {d.max_log_size or '-'}"),
@@ -2449,8 +2463,8 @@ class PanelManager:
             self.status = "Task Creator"
             return
         d = self.task_draft
-        field_choices = ["name", "command", "class", "priority", "submit-user", "user", "directory", "cwd", "schedule", "not-before", "retries", "backoff", "runner", "sandbox", "cpu", "memory", "mem", "log", "dependencies", "depends", "after", "inherit-env", "inherit", "on-success", "on-failure", "on-retry-failure", "hook-success", "hook-failure", "hook-retry", "preview", "dryrun", "save", "submit", "clear"]
-        aliases = {"n":"name", "cmd":"command", "c":"class", "cls":"class", "p":"priority", "pri":"priority", "su":"submit-user", "submituser":"submit-user", "u":"user", "dir":"directory", "pwd":"cwd", "when":"schedule", "nb":"not-before", "r":"retries", "retry":"retries", "b":"backoff", "run":"runner", "sb":"sandbox", "sand":"sandbox", "m":"memory", "maxlog":"log", "logcap":"log", "dep":"dependencies", "deps":"dependencies", "depends":"dependencies", "after":"dependencies", "after-success":"dependencies", "inherit":"inherit-env", "inheritenv":"inherit-env", "env":"inherit-env", "success":"on-success", "onsuccess":"on-success", "failure":"on-failure", "onfailure":"on-failure", "retryhook":"on-retry-failure", "onretry":"on-retry-failure", "attempt":"on-retry-failure", "pv":"preview", "dr":"dryrun", "s":"save", "go":"submit", "sub":"submit", "reset":"clear"}
+        field_choices = ["name", "command", "class", "priority", "submit-user", "user", "directory", "cwd", "schedule", "not-before", "retries", "backoff", "runner", "sandbox", "security-reason", "reason", "authorisation", "authorization", "auth", "no-security-exemption", "no-exemption", "cpu", "memory", "mem", "log", "dependencies", "depends", "after", "inherit-env", "inherit", "on-success", "on-failure", "on-retry-failure", "hook-success", "hook-failure", "hook-retry", "preview", "dryrun", "save", "submit", "clear"]
+        aliases = {"n":"name", "cmd":"command", "c":"class", "cls":"class", "p":"priority", "pri":"priority", "su":"submit-user", "submituser":"submit-user", "u":"user", "dir":"directory", "pwd":"cwd", "when":"schedule", "nb":"not-before", "r":"retries", "retry":"retries", "b":"backoff", "run":"runner", "sb":"sandbox", "sand":"sandbox", "sec":"security-reason", "why":"reason", "authcode":"authorisation", "noex":"no-security-exemption", "m":"memory", "maxlog":"log", "logcap":"log", "dep":"dependencies", "deps":"dependencies", "depends":"dependencies", "after":"dependencies", "after-success":"dependencies", "inherit":"inherit-env", "inheritenv":"inherit-env", "env":"inherit-env", "success":"on-success", "onsuccess":"on-success", "failure":"on-failure", "onfailure":"on-failure", "retryhook":"on-retry-failure", "onretry":"on-retry-failure", "attempt":"on-retry-failure", "pv":"preview", "dr":"dryrun", "s":"save", "go":"submit", "sub":"submit", "reset":"clear"}
         field, _ = resolve_unique_choice(parts[0], field_choices, aliases)
         if not field:
             classes = [it.key for it in load_classes(self) if it.key != "__error__"]
@@ -2481,6 +2495,21 @@ class PanelManager:
         elif field == "backoff": d.retry_backoff = value or self.prompt("Retry backoff", d.retry_backoff)
         elif field == "runner": d.runner = value or self.prompt_choice("Runner override", ["auto", "direct", "systemd"], d.runner, allow_free=True)
         elif field == "sandbox": d.sandbox_level = value or self.prompt_choice("Sandbox override", self.sandbox_policy_choices(), d.sandbox_level, allow_free=True)
+        elif field in {"security-reason", "reason"}:
+            d.security_reason = value or self.prompt("Security exception reason (description-approved)", d.security_reason)
+            if d.security_reason:
+                d.authorisation_code = ""
+                d.no_security_exemption_required = False
+        elif field in {"authorisation", "authorization", "auth"}:
+            d.authorisation_code = value or self.prompt("Authorisation code (blank means use any valid on-file code)", d.authorisation_code)
+            if d.authorisation_code:
+                d.security_reason = ""
+                d.no_security_exemption_required = False
+        elif field in {"no-security-exemption", "no-exemption"}:
+            d.security_reason = ""
+            d.authorisation_code = ""
+            d.no_security_exemption_required = True
+            self.status = "Task Creator: no security exemption requested; policy may still require one"
         elif field == "cpu": d.cpu_limit = value or self.prompt("CPU override, e.g. 50%", d.cpu_limit)
         elif field in {"memory", "mem"}: d.mem_limit = value or self.prompt("Memory override, e.g. 512M", d.mem_limit)
         elif field == "log": d.max_log_size = value or self.prompt("Max log size bytes", d.max_log_size)
@@ -3437,6 +3466,21 @@ class PanelManager:
             d.runner = self.prompt_choice("Runner override", ["auto", "direct", "systemd"], d.runner, allow_free=True)
         elif key == "sandbox_level":
             d.sandbox_level = self.prompt_choice("Sandbox override", self.sandbox_policy_choices(), d.sandbox_level, allow_free=True)
+        elif key == "security_reason":
+            d.security_reason = self.prompt("Security exception reason (description-approved)", d.security_reason)
+            if d.security_reason:
+                d.authorisation_code = ""
+                d.no_security_exemption_required = False
+        elif key == "authorisation":
+            d.authorisation_code = self.prompt("Authorisation code (blank means use any valid on-file code)", d.authorisation_code)
+            if d.authorisation_code:
+                d.security_reason = ""
+                d.no_security_exemption_required = False
+        elif key == "no_security_exemption":
+            d.security_reason = ""
+            d.authorisation_code = ""
+            d.no_security_exemption_required = True
+            self.status = "Task Creator: no security exemption requested; policy may still require one"
         elif key == "cpu_limit":
             d.cpu_limit = self.prompt("CPU override, e.g. 50%", d.cpu_limit)
         elif key == "mem_limit":

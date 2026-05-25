@@ -200,3 +200,54 @@ generated cron class is used instead.
 With `CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="if-trusted-key"`, the policy file is the trust list. If it declares one or more `CLASS_POLICY_AUTHORISATION_SIGNER_<NAME>_PUBLIC_KEY_*` entries, then an authorisation from a declared signer must carry a valid signature over the queue root, authorising admin, authorised user, command hash, expiry, and reason hash. An unsigned record from a declared signer is reported as `invalid-missing-signature`; a record from a signer not present in the policy trust list is reported as `invalid-untrusted-admin`.
 
 Authorisation records are published read-only/readable after creation so root can issue an approval into a selected user's queue without leaving an unreadable `0640 root:root` record behind.
+
+### Inspecting the active authorisation trust policy
+
+Use:
+
+```bash
+queue authorisation policy
+```
+
+This reports the active class-statement file, the signature mode, and the trusted signer suffixes discovered from `CLASS_POLICY_AUTHORISATION_SIGNER_<NAME>_PUBLIC_KEY_*` variables.
+
+Creation-time enforcement is deliberately strict. If the policy declares a public key for an admin, `queue authorisation generate` and `queue authorise QID` require a matching private-key signature immediately. They do not create an unsigned authorisation record that is known in advance to be invalid. If a trust list exists and an admin is not declared in it, authorisation creation is refused for that admin.
+
+## Per-user standing grants
+
+The shared policy can also delegate standing exception rights to specific queue
+users.  This is for operational roles where the exception is normal for that
+role, not a one-off approval.
+
+Example:
+
+```bash
+CLASS_POLICY_USER_WEBADMINS_ALLOW_ADD_PORTS="80 1080 8080"
+```
+
+With this in `/etc/bashqueues/policies.d/class-statement/default.env`, the
+`webadmins` queue user may submit with `--add-port 80`, `--add-port 1080`, or
+`--add-port 8080` without a per-command authorisation.  A different user, for
+example `dba`, still needs the normal reason or signed command-bound
+authorisation.
+
+Supported per-user grant suffixes:
+
+```text
+ALLOW_SANDBOX_OVERRIDES
+ALLOW_SECCOMP_ALLOWS
+ALLOW_DROP_CAPS
+ALLOW_ADD_PORTS
+ALLOW_SANDBOX_POLICIES
+ALLOW_SECCOMP_POLICIES
+```
+
+Command-specific grants can narrow a standing allowance to a known command hash:
+
+```bash
+CLASS_POLICY_USER_WEBADMINS_COMMAND_0123456789ABCDEF_ALLOW_ADD_PORTS="8080"
+```
+
+The command hash may be the full SHA256 used by queue authorisations or the
+first 16 hex characters.  User names are upper-cased and non-alphanumerics are
+converted to underscores in variable names.

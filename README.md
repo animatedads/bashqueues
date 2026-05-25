@@ -6,6 +6,29 @@ Queues for Bash, because good job management means everything should use Queues.
 
 It is designed to be inspectable and recoverable using normal shell tools. The queue lives in `~/.queuebash` by default.
 
+
+### Policy-blocked jobs
+
+Jobs that are contrary to the active shared/admin class-policy statement at execution time and do not have a valid standing grant or command-bound authorisation move to `pol_block`. This is a terminal state, not a retryable failure. The worker performs this check before class claims, asset preflight, dynamic preflight, global claims, or payload launch.
+
+After an admin issues a valid authorisation for the exact command, the command may be resubmitted with `--authorisation CODE`. The same command-bound code can be reused for unlimited resubmissions of that exact command until it expires.
+
+See `docs/POLICY_BLOCKED.md`.
+
+### Per-user class-policy standing grants
+
+The shared class-policy statement can delegate narrow exception values to specific
+queue users.  For example, a site policy in
+`/etc/bashqueues/policies.d/class-statement/default.env` may contain:
+
+```bash
+CLASS_POLICY_USER_WEBADMINS_ALLOW_ADD_PORTS="80 1080 8080"
+```
+
+A `webadmins` queue user can then submit with `--add-port 80` without a
+per-command authorisation, while another user such as `dba` still needs the
+normal `--reason` or signed `--authorisation` path.
+
 ## Features
 
 - Pure Bash, no daemon, no database.
@@ -2820,6 +2843,14 @@ for example `/etc/bashqueues/policies.d/class-statement/default.env`:
 
 ```bash
 CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="if-trusted-key"
+
+Inspect the active authorisation trust policy with:
+
+```bash
+queue authorisation policy
+```
+
+When a site policy declares a public key for an admin, new authorisations by that admin must be signed at creation time. For example, if `/etc/bashqueues/policies.d/class-statement/default.env` declares `CLASS_POLICY_AUTHORISATION_SIGNER_ROOT_PUBLIC_KEY_*`, then `root` authorisations require a matching queue-local private key and cannot silently fall back to unsigned records. If any trust-list keys are present, an undeclared admin is not trusted to create authorisations unless that admin's public key is also present in the policy.
 CLASS_POLICY_AUTHORISATION_SIGNER_ROOT_PUBLIC_KEY_SHA256="..."
 CLASS_POLICY_AUTHORISATION_SIGNER_ROOT_PUBLIC_KEY_PEM_B64="..."
 CLASS_POLICY_AUTHORISATION_SIGNER_HC3_PUBLIC_KEY_SHA256="..."
@@ -2881,3 +2912,45 @@ for example `queue --queue-user hc3 authorise QID --reason "..."`, the authorisa
 is recorded as `admin=root` and `user=hc3`.  The target user is the selected queue
 owner, not a stale `SUBMIT_USER` field from the job record.
 
+
+
+
+### 0.17.30 authorisation signer key-root fix
+
+Signed authorisations now separate the selected queue root from the signer key root.
+When root switches into another user's queue with `queue --queue-user hc3`, authorisation records
+and job stamps are still written into `/home/hc3/.queuebash`, but root's private signing key is read
+from root's own key store, for example `/root/.queuebash/keys/private/root.ed25519.pem`.
+
+`queue authorisation policy` reports the active signing key root to make this visible during debugging.
+
+### 0.17.29 authorisation stamping guard
+
+`queue authorise QID` now validates the candidate authorisation against the active class-policy signature requirements before publishing the authorisation record or appending `SECURITY_AUTHORISATION_CODE` to the job file.
+
+### 0.17.31 authorisation keygen selected-user key-root fix
+
+When an operator such as `root` is working against another user's queue with `queue --queue-user hc3`, authorisation files and job stamps are written to the selected queue, but signing keys are operator-owned. `queue keygen` and `queue authorise` now both use the signer/operator identity key root, so root uses `/root/.queuebash/keys` rather than `/home/hc3/.queuebash/keys`.
+
+### Policy-block test policy
+
+A validation-only policy is included at `policies.d/class-statement/policyblock-test.env`.
+When installed as a shared/admin class-policy statement and selected with
+`QUEUEBASH_CLASS_POLICY_STATEMENT=policyblock-test`, jobs submitted with
+`--class POLICYBLOCKED` move directly to the terminal `pol_block` state unless
+they have a valid command-bound authorisation. See `docs/POLICYBLOCK_TEST.md`.
+
+### pol_block and security exemptions
+
+Jobs blocked by a shared/admin class-policy statement now move to the terminal `pol_block` state. They do not retry and do not run preflight checks or payloads. After a valid command-bound authorisation exists, the same command can be resubmitted repeatedly until the authorisation expires. Exemptions are logged as `policy-approved`, `description-approved`, or `code-approved`.
+
+### Emergency policy command blocks
+
+Shared/admin class-policy statements can block commands by exact command hash,
+command word, or shell-glob pattern before claims, preflight, or payload launch.
+This is intended for rapid zero-hour response, including cron-submitted jobs.
+See `docs/POLICY_COMMAND_BLOCKS.md`.
+
+Jobs that run under a standing grant, reason, or valid command-bound
+authorisation are still logged as security exemptions and shown by
+`queue explain`.

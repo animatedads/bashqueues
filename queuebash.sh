@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.26"
+QUEUEBASH_VERSION="0.17.35"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -269,8 +269,7 @@ _queue_obsolete_asset_plugins() {
     # Asset-side net_usage was removed. Runtime net usage accounting now lives
     # under caps.d/net_usage.sh. Keep this explicit rather than pruning arbitrary
     # site-local asset plugins that are not bundled with queuebash.
-    printf '%s
-' net_usage
+    printf '%s\n' net_usage
 }
 
 _queue_prune_obsolete_asset_plugins() {
@@ -423,7 +422,7 @@ _queue_init() {
     local default_class="${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}"
     local default_file="$root/classes/$default_class.env"
 
-    mkdir -p "$root"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,caps.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets}
+    mkdir -p "$root"/{pending,running,paused,done,failed,pol_block,policy_blocked,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,caps.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets}
 
     if [[ ! -f "$default_file" ]]; then
         cat > "$default_file" <<'EOF'
@@ -479,7 +478,7 @@ _queue_job_pri() {
 _queue_job_id_and_names_for_completion() {
     local root="$(_queue_root)"
     local state f id name
-    for state in pending running paused done failed interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
         for f in "$root/$state"/*.job; do
             [[ -e "$f" ]] || continue
             id="$(basename "$f" .job)"
@@ -502,7 +501,7 @@ _queue_find_jobs() {
 
     [[ -z "$needle" ]] && return 1
 
-    for state in pending running paused done failed interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
         for f in "$root/$state"/*.job; do
             [[ -e "$f" ]] || continue
             id="$(basename "$f" .job)"
@@ -1218,7 +1217,7 @@ _queue_class_explain() {
     echo "class file:       $f"
     if [[ -f "$f" ]]; then echo "exists:           yes"; echo; echo "Contents:"; sed 's/^/  /' "$f"; echo; echo "Validation:"; _queue_class_validate_file "$(basename "$f" .env)" "$f" && echo "  OK" || true; else echo "exists:           no"; fi
     echo; echo "Jobs referencing this class:"
-    refs="$(grep -R -l -E "^JOB_CLASS=['\"]?${class}['\"]?$|^JOB_CLASS=${class}$" "$(_queue_root)"/{pending,running,paused,done,failed,interrupted,cancelled,deleted} 2>/dev/null || true)"
+    refs="$(grep -R -l -E "^JOB_CLASS=['\"]?${class}['\"]?$|^JOB_CLASS=${class}$" "$(_queue_root)"/{pending,running,paused,done,failed,pol_block,policy_blocked,interrupted,cancelled,deleted} 2>/dev/null || true)"
     [[ -n "$refs" ]] && echo "$refs" || echo "  none"
     echo
     echo "Class defaults:"
@@ -2143,6 +2142,7 @@ _queue_exception_explain_for_job() {
     local any_job_exception=0
     local sandbox_override seccomp_allow drop_cap add_port
     local sandbox_from seccomp_profile caps_from ports_from
+    local exemption_type exemption_detail exemption_code exemption_action
 
     if [[ -n "$jobf" && -f "$jobf" ]]; then
         sandbox_override="$(_queue_job_var_value "$jobf" EXCEPTION_SANDBOX_OVERRIDE 2>/dev/null || true)"
@@ -2153,6 +2153,10 @@ _queue_exception_explain_for_job() {
         seccomp_profile="$(_queue_job_var_value "$jobf" SECCOMP_POLICY_NAME 2>/dev/null || true)"
         caps_from="$(_queue_job_var_value "$jobf" RUNTIME_CAPS 2>/dev/null || true)"
         ports_from="$(_queue_job_var_value "$jobf" RUNTIME_CAP_PORTS 2>/dev/null || true)"
+        exemption_type="$(_queue_job_var_value "$jobf" SECURITY_EXEMPTION_TYPE 2>/dev/null || true)"
+        exemption_detail="$(_queue_job_var_value "$jobf" SECURITY_EXEMPTION_DETAIL 2>/dev/null || true)"
+        exemption_code="$(_queue_job_var_value "$jobf" SECURITY_AUTHORISATION_CODE 2>/dev/null || true)"
+        exemption_action="$(_queue_job_var_value "$jobf" SECURITY_EXEMPTION_ACTION 2>/dev/null || true)"
     else
         # Fallback for callers that deliberately source a job before calling this helper.
         sandbox_override="${EXCEPTION_SANDBOX_OVERRIDE:-}"
@@ -2163,6 +2167,10 @@ _queue_exception_explain_for_job() {
         seccomp_profile="${SECCOMP_POLICY_NAME:-}"
         caps_from="${RUNTIME_CAPS:-}"
         ports_from="${RUNTIME_CAP_PORTS:-}"
+        exemption_type="${SECURITY_EXEMPTION_TYPE:-}"
+        exemption_detail="${SECURITY_EXEMPTION_DETAIL:-}"
+        exemption_code="${SECURITY_AUTHORISATION_CODE:-}"
+        exemption_action="${SECURITY_EXEMPTION_ACTION:-}"
     fi
 
     if [[ -n "$sandbox_override" ]]; then
@@ -2179,6 +2187,13 @@ _queue_exception_explain_for_job() {
     fi
     if [[ -n "$add_port" ]]; then
         echo "  runtime ports:     ADDED '$add_port'${ports_from:+ to $ports_from}"
+        any_job_exception=1
+    fi
+    if [[ -n "$exemption_type" ]]; then
+        echo "  exemption:         $exemption_type"
+        [[ -n "$exemption_action" ]] && echo "    action:          $exemption_action"
+        [[ -n "$exemption_detail" ]] && echo "    detail:          $exemption_detail"
+        [[ -n "$exemption_code" ]] && echo "    authorisation:   $exemption_code"
         any_job_exception=1
     fi
 
@@ -2522,7 +2537,7 @@ _queue_draft_init() {
 _queue_job_file_for_id_any_state() {
     local id="$1"
     local state f
-    for state in pending running done failed cancelled deleted interrupted; do
+    for state in pending running done failed pol_block policy_blocked cancelled deleted interrupted; do
         f="$(_queue_root)/$state/$id.job"
         [[ -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
     done
@@ -3308,8 +3323,7 @@ _queue_global_claim_compact_file() {
 _queue_global_claim_holder_count() {
     local file="$1" n
     n="$(grep -c '^HOLDER' "$file" 2>/dev/null)" || n=0
-    printf '%s
-' "${n:-0}"
+    printf '%s\n' "${n:-0}"
 }
 
 _queue_global_claim_holder_summary() {
@@ -3983,7 +3997,7 @@ _queue_move_failure_diagnose() {
     [[ -w "$root/pending" ]] && echo "move_failure: pending_dir_writable=1" || echo "move_failure: pending_dir_writable=0"
 
     local state f count=0
-    for state in pending running paused done failed interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
         f="$root/$state/$id.job"
         if [[ -e "$f" ]]; then
             echo "move_failure: duplicate_record=$state/$id.job"
@@ -4033,7 +4047,7 @@ _queue_duplicate_qids_report() {
     local state f id tmp
     tmp="$(mktemp)"
 
-    for state in pending running paused done failed interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
         shopt -s nullglob
         for f in "$root/$state"/*.job; do
             [[ -f "$f" ]] || continue
@@ -4462,6 +4476,10 @@ _queue_clone_job_to_pending() {
             printf 'RUNNER=%q\n' "${QUEUEBASH_RUNNER:-auto}"
 
             [[ -n "${JOB_CLASS:-}" ]] && printf 'JOB_CLASS=%q\n' "$JOB_CLASS"
+            [[ -n "${SECURITY_AUTHORISATION_CODE:-}" ]] && printf 'SECURITY_AUTHORISATION_CODE=%q\n' "$SECURITY_AUTHORISATION_CODE"
+            [[ -n "${SECURITY_EXCEPTION_REASON:-}" ]] && printf 'SECURITY_EXCEPTION_REASON=%q\n' "$SECURITY_EXCEPTION_REASON"
+            [[ -n "${SECURITY_EXEMPTION_TYPE:-}" ]] && printf 'SECURITY_EXEMPTION_TYPE=%q\n' "$SECURITY_EXEMPTION_TYPE"
+            [[ -n "${SECURITY_EXEMPTION_DETAIL:-}" ]] && printf 'SECURITY_EXEMPTION_DETAIL=%q\n' "$SECURITY_EXEMPTION_DETAIL"
             [[ -n "${DEPENDS_AFTER_SUCCESS:-}" ]] && printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$DEPENDS_AFTER_SUCCESS"
             [[ -n "${INHERIT_ENV_FROM:-}" ]] && printf 'INHERIT_ENV_FROM=%q\n' "$INHERIT_ENV_FROM"
             printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
@@ -5406,6 +5424,61 @@ _queue_command_hash_from_args() {
     printf '%s' "$raw" | sha256sum | awk '{print $1}'
 }
 
+_queue_command_shell_words_from_args() {
+    # Human-readable, shell-escaped representation of an argv array.  Used only
+    # for policy diagnostics and glob-style emergency command blocks; the
+    # cryptographic binding remains _queue_command_hash_from_args.
+    local raw=""
+    if [[ "$#" -gt 0 ]]; then
+        printf -v raw '%q ' "$@"
+        raw="${raw% }"
+    fi
+    printf '%s
+' "$raw"
+}
+
+_queue_policy_hash_value_in_list() {
+    local hash="${1:-}" list="${2:-}" item
+    [[ -n "$hash" && -n "$list" ]] || return 1
+    for item in $list; do
+        item="${item//,/}"
+        [[ -n "$item" ]] || continue
+        if [[ "${hash,,}" == "${item,,}" || "${hash:0:${#item},,}" == "${item,,}" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+_queue_policy_command_word_in_list() {
+    local argv0="${1:-}" list="${2:-}" item base
+    [[ -n "$argv0" && -n "$list" ]] || return 1
+    base="$(basename -- "$argv0" 2>/dev/null || printf '%s' "$argv0")"
+    for item in $list; do
+        item="${item//,/}"
+        [[ -n "$item" ]] || continue
+        if [[ "${argv0,,}" == "${item,,}" || "${base,,}" == "${item,,}" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+_queue_policy_command_pattern_matches() {
+    local rendered="${1:-}" patterns="${2:-}" pat
+    [[ -n "$rendered" && -n "$patterns" ]] || return 1
+    # Patterns are shell globs separated by newlines or semicolons.  This allows
+    # an emergency /etc policy to block a family such as '*exiftool*' quickly,
+    # while command-hash blocks remain the preferred exact mechanism.
+    while IFS= read -r pat; do
+        [[ -n "$pat" ]] || continue
+        [[ "$rendered" == $pat ]] && return 0
+    done < <(printf '%s
+' "$patterns" | tr ';' '
+')
+    return 1
+}
+
 
 _queue_authorisation_key_name_ok() {
     [[ "${1:-}" =~ ^[A-Za-z0-9_.@+-]{1,64}$ ]]
@@ -5419,14 +5492,86 @@ _queue_authorisation_key_suffix() {
     printf '%s\n' "$s"
 }
 
+_queue_authorisation_actor_user() {
+    id -un 2>/dev/null || printf '%s\n' "${USER:-unknown}"
+}
+
+_queue_authorisation_actor_queue_root() {
+    local actor actor_root selected_root_owner selected_user active_root
+    if [[ -n "${QUEUEBASH_AUTHORISATION_KEY_ROOT:-}" ]]; then
+        # Test/admin escape hatch: points at the keys directory itself.
+        dirname "${QUEUEBASH_AUTHORISATION_KEY_ROOT%/}"
+        return 0
+    fi
+
+    actor="$(_queue_authorisation_actor_user)"
+    actor_root="$(_queue_root_for_user "$actor" 2>/dev/null || true)"
+    active_root="$(_queue_root)"
+    selected_user="${QUEUEBASH_SELECTED_USER:-}"
+
+    # Key management belongs to the operator/signer identity, not to a foreign
+    # selected target queue.  Root using `queue --queue-user hc3 ...` must manage
+    # and read /root/.queuebash/keys, while the job and authorisation record live
+    # in /home/hc3/.queuebash.
+    if [[ -n "$actor_root" ]]; then
+        if [[ -n "$selected_user" && "$selected_user" != "$actor" ]]; then
+            printf '%s\n' "$actor_root"
+            return 0
+        fi
+        selected_root_owner="$(_queue_root_owner_user 2>/dev/null || true)"
+        if [[ -n "$selected_root_owner" && "$selected_root_owner" != "$actor" && "$active_root" != "$actor_root" ]]; then
+            printf '%s\n' "$actor_root"
+            return 0
+        fi
+    fi
+
+    # Preserve ordinary single-user/test behaviour where QUEUEBASH_ROOT is an
+    # explicit temporary queue root and there is no foreign selected user.
+    printf '%s\n' "$active_root"
+}
+
 _queue_authorisation_key_root() {
-    printf '%s\n' "$(_queue_root)/keys"
+    if [[ -n "${QUEUEBASH_AUTHORISATION_KEY_ROOT:-}" ]]; then
+        printf '%s\n' "${QUEUEBASH_AUTHORISATION_KEY_ROOT%/}"
+        return 0
+    fi
+    printf '%s/keys\n' "$(_queue_authorisation_actor_queue_root)"
+}
+
+_queue_authorisation_signer_key_root() {
+    local signer="${1:-}" signer_root actor
+    # Signing keys belong to the signer/admin identity, not to the selected
+    # target queue.  Root authorising hc3's queue must therefore read
+    # /root/.queuebash/keys/private/root.ed25519.pem, not
+    # /home/hc3/.queuebash/keys/private/root.ed25519.pem.
+    if [[ -n "${QUEUEBASH_AUTHORISATION_KEY_ROOT:-}" ]]; then
+        printf '%s\n' "${QUEUEBASH_AUTHORISATION_KEY_ROOT%/}"
+        return 0
+    fi
+    actor="$(_queue_authorisation_actor_user)"
+    if [[ -z "$signer" || "$signer" == "$actor" ]]; then
+        _queue_authorisation_key_root
+        return 0
+    fi
+    signer_root="$(_queue_root_for_user "$signer" 2>/dev/null || true)"
+    if [[ -n "$signer_root" ]]; then
+        printf '%s/keys\n' "$signer_root"
+        return 0
+    fi
+    _queue_authorisation_key_root
 }
 
 _queue_authorisation_private_key_file() {
     local name="${1:-}"
     _queue_authorisation_key_name_ok "$name" || return 1
     printf '%s/private/%s.ed25519.pem\n' "$(_queue_authorisation_key_root)" "$name"
+}
+
+_queue_authorisation_signer_private_key_file() {
+    local signer="${1:-}" name="${2:-}"
+    [[ -n "$name" ]] || name="$signer"
+    _queue_authorisation_key_name_ok "$name" || return 1
+    printf '%s/private/%s.ed25519.pem\n' "$(_queue_authorisation_signer_key_root "$signer")" "$name"
 }
 
 _queue_authorisation_public_key_file() {
@@ -5577,11 +5722,67 @@ _queue_authorisation_signature_requirement() {
     printf '%s\n' "${CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED:-if-trusted-key}"
 }
 
+_queue_authorisation_policy_file_path() {
+    local name="${1:-$(_queue_security_policy_statement_name)}"
+    _queue_policy_file class-statement "$name" 2>/dev/null || true
+}
+
+_queue_authorisation_signature_admin_requirement() {
+    # Prints one of:
+    #   required      policy requires this admin's authorisation to be signed
+    #   optional      unsigned legacy authorisation is allowed
+    #   untrusted     policy has a trust list and this admin is not on it
+    #   no-public-key signature is mandatory but no public key is declared for this admin
+    #   invalid-mode  policy mode is not recognised
+    local admin="${1:-}" mode pub_b64
+    mode="$(_queue_authorisation_signature_requirement)"
+    pub_b64="$(_queue_authorisation_policy_public_key_b64 "$admin")"
+    case "${mode,,}" in
+        off|none|legacy) echo "optional"; return 0 ;;
+        always|required)
+            [[ -n "$pub_b64" ]] && { echo "required"; return 0; }
+            echo "no-public-key"; return 1
+            ;;
+        if-trusted-key|if-trusted-keys|trusted|auto|"")
+            [[ -n "$pub_b64" ]] && { echo "required"; return 0; }
+            if _queue_authorisation_policy_has_any_public_keys; then
+                echo "untrusted"
+                return 1
+            fi
+            echo "optional"
+            return 0
+            ;;
+        *) echo "invalid-mode"; return 1 ;;
+    esac
+}
+
+_queue_authorisation_policy_show() {
+    local file mode signers suffix sha_var has_any="no"
+    file="$(_queue_authorisation_policy_file_path)"
+    mode="$(_queue_authorisation_signature_requirement)"
+    _queue_authorisation_policy_has_any_public_keys && has_any="yes"
+    echo "class_policy_statement: ${QUEUEBASH_CLASS_POLICY_STATEMENT:-default}"
+    echo "policy_file: ${file:-not-found}"
+    echo "signature_required: $mode"
+    echo "signing_key_root: $(_queue_authorisation_key_root)"
+    echo "trusted_public_keys_present: $has_any"
+    signers="$(_queue_authorisation_policy_signers_list 2>/dev/null || true)"
+    if [[ -z "$signers" ]]; then
+        echo "trusted_signers: none"
+        return 0
+    fi
+    echo "trusted_signers: $signers"
+    for suffix in $signers; do
+        sha_var="CLASS_POLICY_AUTHORISATION_SIGNER_${suffix}_PUBLIC_KEY_SHA256"
+        echo "signer_${suffix}: public_sha=${!sha_var:-}"
+    done
+}
+
 _queue_authorisation_sign_fields() {
     local code="$1" admin="$2" user="$3" cmd_hash="$4" created="$5" expires="$6" reason="$7" key_name="$8"
     local priv payload sig sig_b64 payload_sha
     [[ -n "$key_name" ]] || key_name="$admin"
-    priv="$(_queue_authorisation_private_key_file "$key_name")" || return 1
+    priv="$(_queue_authorisation_signer_private_key_file "$admin" "$key_name")" || return 1
     [[ -f "$priv" ]] || return 1
     command -v openssl >/dev/null 2>&1 || return 1
     payload="$(mktemp)" || return 1
@@ -5703,7 +5904,7 @@ _queue_authorisation_generate_code() {
 }
 
 _queue_authorisation_generate() {
-    local admin="" user="" reason="" expires="never" code="" key_name="" command=() cmd_hash file created sign_line sig_key sig_payload_sha sig_b64
+    local admin="" user="" reason="" expires="never" code="" key_name="" command=() cmd_hash file created sign_line sig_key sig_payload_sha sig_b64 sig_need integrity tmpfile
     while [[ "$#" -gt 0 ]]; do
         case "$1" in
             --admin) admin="${2:-}"; shift 2 ;;
@@ -5731,6 +5932,19 @@ _queue_authorisation_generate() {
     created="$(date -Is 2>/dev/null || date)"
     sign_line="$(_queue_authorisation_sign_fields "$code" "$admin" "$user" "$cmd_hash" "$created" "$expires" "$reason" "$key_name" 2>/dev/null || true)"
     IFS=$'\t' read -r sig_key sig_payload_sha sig_b64 <<< "$sign_line"
+    sig_need="$(_queue_authorisation_signature_admin_requirement "$admin" 2>/dev/null || true)"
+    case "$sig_need" in
+        required)
+            [[ -n "$sig_b64" ]] || { echo "queue authorisation generate: policy requires a valid signature for admin '$admin' but no matching private key could sign this authorisation" >&2; return 1; }
+            ;;
+        untrusted)
+            echo "queue authorisation generate: admin '$admin' is not trusted by the active class policy statement" >&2; return 1 ;;
+        no-public-key)
+            echo "queue authorisation generate: policy requires signed authorisations but declares no public key for admin '$admin'" >&2; return 1 ;;
+        invalid-mode)
+            echo "queue authorisation generate: invalid CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED mode" >&2; return 1 ;;
+    esac
+    tmpfile="$(mktemp "$(_queue_authorisation_dir)/.${code}.candidate.XXXXXX")" || { echo "queue authorisation generate: unable to create candidate file" >&2; return 1; }
     {
         printf 'AUTHORISATION_CODE=%q\n' "$code"
         printf 'AUTHORISATION_ADMIN=%q\n' "$admin"
@@ -5745,7 +5959,23 @@ _queue_authorisation_generate() {
         [[ -n "$sig_payload_sha" ]] && printf 'AUTHORISATION_SIGNATURE_PAYLOAD_SHA256=%q\n' "$sig_payload_sha"
         [[ -n "$sig_b64" ]] && printf 'AUTHORISATION_SIGNATURE_B64=%q\n' "$sig_b64"
         printf 'AUTHORISATION_COMMAND=('; printf ' %q' "${command[@]}"; printf ' )\n'
-    } > "$file"
+    } > "$tmpfile" || { rm -f "$tmpfile"; echo "queue authorisation generate: failed to create authorisation candidate" >&2; return 1; }
+    integrity="$(_queue_authorisation_file_status "$tmpfile" 2>/dev/null || true)"
+    if [[ "$integrity" != "valid-signed" && "$integrity" != "valid-unsigned" ]]; then
+        rm -f "$tmpfile"
+        if [[ "$integrity" == "invalid-missing-signature" && "$sig_need" == "required" ]]; then
+            echo "queue authorisation generate: policy requires a valid signature for admin '$admin' but no matching private key could sign this authorisation" >&2
+        else
+            echo "queue authorisation generate: refused to create invalid authorisation candidate: ${integrity:-invalid}" >&2
+        fi
+        return 1
+    fi
+    if [[ "$sig_need" == "required" && "$integrity" != "valid-signed" ]]; then
+        rm -f "$tmpfile"
+        echo "queue authorisation generate: policy requires a valid signature for admin '$admin' but no matching private key could sign this authorisation" >&2
+        return 1
+    fi
+    mv "$tmpfile" "$file" || { rm -f "$tmpfile"; echo "queue authorisation generate: failed to publish authorisation file" >&2; return 1; }
     _queue_authorisation_publish_file_permissions "$file"
     echo "authorisation: $code"
     echo "queue:         $(_queue_root)"
@@ -5780,6 +6010,55 @@ _queue_authorisation_validate() {
         sig_status="$(_queue_authorisation_verify_signature_loaded)" || { echo "queue $reason_context: authorisation $code signature check failed: $sig_status" >&2; exit 16; }
         exit 0
     )
+}
+
+
+_queue_authorisation_find_valid_for_command() {
+    # Prints the first valid, active, unexpired authorisation code in the selected
+    # queue that matches USER and the exact command argv supplied after USER.
+    local user="${1:-}" f code
+    shift || true
+    [[ -n "$user" && "$#" -gt 0 ]] || return 1
+    shopt -s nullglob
+    for f in "$(_queue_authorisation_dir)"/*.env; do
+        [[ -r "$f" ]] || continue
+        code="$(basename "$f" .env)"
+        if _queue_authorisation_validate "$code" "$user" auto "$@" >/dev/null 2>&1; then
+            shopt -u nullglob
+            printf '%s\n' "$code"
+            return 0
+        fi
+    done
+    shopt -u nullglob
+    return 1
+}
+
+_queue_job_append_security_exemption() {
+    local jobf="${1:-}" type="${2:-}" detail="${3:-}" code="${4:-}"
+    local id state action
+    [[ -n "$jobf" && -f "$jobf" && -n "$type" ]] || return 0
+    case "$type" in
+        code-approved) action="run_with_authorisation" ;;
+        description-approved) action="run_with_reason" ;;
+        policy-approved) action="run_with_policy_grant" ;;
+        *) action="run_with_exemption" ;;
+    esac
+    {
+        printf '
+# Security exemption recorded at %q
+' "$(date -Is 2>/dev/null || date)"
+        printf 'SECURITY_EXEMPTION_TYPE=%q
+' "$type"
+        [[ -n "$detail" ]] && printf 'SECURITY_EXEMPTION_DETAIL=%q
+' "$detail"
+        [[ -n "$code" ]] && printf 'SECURITY_AUTHORISATION_CODE=%q
+' "$code"
+        printf 'SECURITY_EXEMPTION_ACTION=%q
+' "$action"
+    } >> "$jobf" 2>/dev/null || true
+    id="$(basename "$jobf" .job)"
+    state="$(basename "$(dirname "$jobf")")"
+    _queue_log_event "security_exemption" "$id" "$(_queue_job_name "$jobf" 2>/dev/null || echo -)" "$state" "type=$type action=$action${code:+ code=$code}${detail:+ detail=$detail}" 2>/dev/null || true
 }
 
 _queue_authorisation_file_status() {
@@ -5865,7 +6144,7 @@ _queue_authorisation_from_job_command() {
 }
 
 _queue_authorise_job() {
-    local qid="${1:-}" reason="" admin="" user="" expires="never" code="" key_name="" jobf cmd_hash file created before_owner after_owner sign_line sig_key sig_payload_sha sig_b64
+    local qid="${1:-}" reason="" admin="" user="" expires="never" code="" key_name="" jobf cmd_hash file created before_owner after_owner sign_line sig_key sig_payload_sha sig_b64 sig_need integrity tmpfile
     shift || true
     while [[ "$#" -gt 0 ]]; do
         case "$1" in
@@ -5901,7 +6180,20 @@ _queue_authorise_job() {
     created="$(date -Is 2>/dev/null || date)"
     sign_line="$(_queue_authorisation_sign_fields "$code" "$admin" "$user" "$cmd_hash" "$created" "$expires" "$reason" "$key_name" 2>/dev/null || true)"
     IFS=$'\t' read -r sig_key sig_payload_sha sig_b64 <<< "$sign_line"
+    sig_need="$(_queue_authorisation_signature_admin_requirement "$admin" 2>/dev/null || true)"
+    case "$sig_need" in
+        required)
+            [[ -n "$sig_b64" ]] || { echo "queue authorise: policy requires a valid signature for admin '$admin' but no matching private key could sign this authorisation" >&2; return 1; }
+            ;;
+        untrusted)
+            echo "queue authorise: admin '$admin' is not trusted by the active class policy statement" >&2; return 1 ;;
+        no-public-key)
+            echo "queue authorise: policy requires signed authorisations but declares no public key for admin '$admin'" >&2; return 1 ;;
+        invalid-mode)
+            echo "queue authorise: invalid CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED mode" >&2; return 1 ;;
+    esac
     mkdir -p "$(dirname "$file")"
+    tmpfile="$(mktemp "$(_queue_authorisation_dir)/.${code}.candidate.XXXXXX")" || { echo "queue authorise: unable to create authorisation candidate" >&2; return 1; }
     (
         COMMAND=()
         # shellcheck disable=SC1090
@@ -5921,8 +6213,24 @@ _queue_authorise_job() {
             [[ -n "$sig_payload_sha" ]] && printf 'AUTHORISATION_SIGNATURE_PAYLOAD_SHA256=%q\n' "$sig_payload_sha"
             [[ -n "$sig_b64" ]] && printf 'AUTHORISATION_SIGNATURE_B64=%q\n' "$sig_b64"
             printf 'AUTHORISATION_COMMAND=('; printf ' %q' "${COMMAND[@]}"; printf ' )\n'
-        } > "$file"
-    ) || { rm -f "$file"; echo "queue authorise: failed to create authorisation file" >&2; return 1; }
+        } > "$tmpfile"
+    ) || { rm -f "$tmpfile"; echo "queue authorise: failed to create authorisation candidate" >&2; return 1; }
+    integrity="$(_queue_authorisation_file_status "$tmpfile" 2>/dev/null || true)"
+    if [[ "$integrity" != "valid-signed" && "$integrity" != "valid-unsigned" ]]; then
+        rm -f "$tmpfile"
+        if [[ "$integrity" == "invalid-missing-signature" && "$sig_need" == "required" ]]; then
+            echo "queue authorise: policy requires a valid signature for admin '$admin' but no matching private key could sign this authorisation" >&2
+        else
+            echo "queue authorise: refused to stamp invalid authorisation candidate: ${integrity:-invalid}" >&2
+        fi
+        return 1
+    fi
+    if [[ "$sig_need" == "required" && "$integrity" != "valid-signed" ]]; then
+        rm -f "$tmpfile"
+        echo "queue authorise: policy requires a valid signature for admin '$admin' but no matching private key could sign this authorisation" >&2
+        return 1
+    fi
+    mv "$tmpfile" "$file" || { rm -f "$tmpfile"; echo "queue authorise: failed to publish authorisation file" >&2; return 1; }
     _queue_authorisation_publish_file_permissions "$file"
 
     before_owner="$(stat -c '%u:%g' "$jobf" 2>/dev/null || true)"
@@ -5946,16 +6254,94 @@ _queue_authorise_job() {
     echo "job_file: $jobf"
 }
 
+
+_queue_class_policy_user_suffix() {
+    local s="${1:-}"
+    s="${s^^}"
+    s="${s//[^A-Z0-9]/_}"
+    [[ -n "$s" ]] || s="UNKNOWN"
+    printf '%s\n' "$s"
+}
+
+_queue_class_policy_values_all_in_list() {
+    # $1 = requested values, comma/space separated. $2 = allowed values, comma/space separated.
+    local requested="${1:-}" allowed=" ${2//,/ } " v
+    requested="${requested//,/ }"
+    [[ -n "${requested// /}" ]] || return 0
+    for v in $requested; do
+        [[ " $allowed " == *" $v "* || " $allowed " == *" * "* || " $allowed " == *" all "* ]] || return 1
+    done
+    return 0
+}
+
+_queue_class_policy_user_grant_values() {
+    # Prints standing and command-specific grant values for a user and grant name.
+    # Grant names intentionally match policy suffixes such as ALLOW_ADD_PORTS.
+    local user="${1:-}" grant="${2:-}" cmd_hash="${3:-}" us hs var out=""
+    us="$(_queue_class_policy_user_suffix "$user")"
+    hs="${cmd_hash^^}"
+    hs="${hs//[^A-Z0-9]/_}"
+    for var in \
+        "CLASS_POLICY_USER_${us}_${grant}" \
+        "CLASS_POLICY_USER_${us}_GENERAL_${grant}" \
+        "CLASS_POLICY_USER_ALL_${grant}" \
+        "CLASS_POLICY_USER_ALL_GENERAL_${grant}"; do
+        [[ -n "${!var:-}" ]] && out+=" ${!var}"
+    done
+    if [[ -n "$hs" ]]; then
+        for var in \
+            "CLASS_POLICY_USER_${us}_COMMAND_${hs}_${grant}" \
+            "CLASS_POLICY_USER_${us}_COMMAND_${hs:0:16}_${grant}" \
+            "CLASS_POLICY_USER_ALL_COMMAND_${hs}_${grant}" \
+            "CLASS_POLICY_USER_ALL_COMMAND_${hs:0:16}_${grant}"; do
+            [[ -n "${!var:-}" ]] && out+=" ${!var}"
+        done
+    fi
+    printf '%s\n' "${out# }"
+}
+
+_queue_class_policy_user_grant_covers() {
+    local user="${1:-}" grant="${2:-}" requested="${3:-}" cmd_hash="${4:-}" values
+    [[ -n "${requested//,/}" ]] || return 0
+    values="$(_queue_class_policy_user_grant_values "$user" "$grant" "$cmd_hash")"
+    [[ -n "$values" ]] || return 1
+    _queue_class_policy_values_all_in_list "$requested" "$values"
+}
+
+_queue_class_policy_user_exception_grants_cover() {
+    local user="$1" sandbox_override="$2" seccomp_allow="$3" drop_cap="$4" add_port="$5" cmd_hash="$6"
+    [[ -z "$sandbox_override" ]] || _queue_class_policy_user_grant_covers "$user" ALLOW_SANDBOX_OVERRIDES "$sandbox_override" "$cmd_hash" || return 1
+    [[ -z "$seccomp_allow" ]] || _queue_class_policy_user_grant_covers "$user" ALLOW_SECCOMP_ALLOWS "$seccomp_allow" "$cmd_hash" || return 1
+    [[ -z "$drop_cap" ]] || _queue_class_policy_user_grant_covers "$user" ALLOW_DROP_CAPS "$drop_cap" "$cmd_hash" || return 1
+    [[ -z "$add_port" ]] || _queue_class_policy_user_grant_covers "$user" ALLOW_ADD_PORTS "$add_port" "$cmd_hash" || return 1
+    return 0
+}
+
+_queue_class_policy_user_weak_policy_grant_covers() {
+    local user="$1" sandbox_level="$2" seccomp_profile="$3" cmd_hash="$4" weak_sandbox_reason="$5" weak_seccomp_reason="$6"
+    if [[ -n "$weak_sandbox_reason" ]] && _queue_security_policy_value_in_list "$sandbox_level" "$weak_sandbox_reason"; then
+        _queue_class_policy_user_grant_covers "$user" ALLOW_SANDBOX_POLICIES "$sandbox_level" "$cmd_hash" || return 1
+    fi
+    if [[ -n "$weak_seccomp_reason" ]] && _queue_security_policy_value_in_list "$seccomp_profile" "$weak_seccomp_reason"; then
+        _queue_class_policy_user_grant_covers "$user" ALLOW_SECCOMP_POLICIES "$seccomp_profile" "$cmd_hash" || return 1
+    fi
+    return 0
+}
+
 _queue_submit_policy_check() {
     local class="$1" submit_user="$2" reason="$3" auth_code="$4" sandbox_level="$5" seccomp_profile="$6" exception_sandbox="$7" exception_seccomp="$8" exception_drop="$9" exception_port="${10}"
     shift 10 || true
-    local allowed_sandbox allowed_seccomp exception_requires_reason weak_sandbox_reason weak_seccomp_reason mode=none s
+    local allowed_sandbox allowed_seccomp exception_requires_reason weak_sandbox_reason weak_seccomp_reason mode=none cmd_hash auto_code grant_detail=""
+    QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE=""
+    QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL=""
+    QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE=""
     _queue_security_policy_statement_source >/dev/null 2>&1 || return 0
     allowed_sandbox="${CLASS_POLICY_USER_SANDBOX_POLICIES:-}"
     allowed_seccomp="${CLASS_POLICY_USER_SECCOMP_POLICIES:-}"
     exception_requires_reason="${CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE:-reason-or-authorisation}"
     weak_sandbox_reason="${CLASS_POLICY_SANDBOX_REASON_REQUIRED:-off}"
     weak_seccomp_reason="${CLASS_POLICY_SECCOMP_REASON_REQUIRED:-off}"
+    cmd_hash="$(_queue_command_hash_from_args "$@")"
 
     if [[ -n "$allowed_sandbox" && -n "$sandbox_level" ]]; then
         _queue_security_policy_value_in_list "$sandbox_level" "$allowed_sandbox" || { echo "queue submit: sandbox policy '$sandbox_level' is not in user-selectable range: $allowed_sandbox" >&2; return 2; }
@@ -5965,10 +6351,25 @@ _queue_submit_policy_check() {
     fi
 
     if [[ -n "$exception_sandbox$exception_seccomp$exception_drop$exception_port" ]]; then
+        if _queue_class_policy_user_exception_grants_cover "$submit_user" "$exception_sandbox" "$exception_seccomp" "$exception_drop" "$exception_port" "$cmd_hash"; then
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="policy-approved"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="standing policy grant covers requested exception overlay"
+            return 0
+        fi
         mode="$exception_requires_reason"
     elif [[ -n "$weak_sandbox_reason" ]] && _queue_security_policy_value_in_list "$sandbox_level" "$weak_sandbox_reason"; then
+        if _queue_class_policy_user_weak_policy_grant_covers "$submit_user" "$sandbox_level" "$seccomp_profile" "$cmd_hash" "$weak_sandbox_reason" "$weak_seccomp_reason"; then
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="policy-approved"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="standing policy grant covers weak sandbox/seccomp selection"
+            return 0
+        fi
         mode="${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"
     elif [[ -n "$weak_seccomp_reason" ]] && _queue_security_policy_value_in_list "$seccomp_profile" "$weak_seccomp_reason"; then
+        if _queue_class_policy_user_weak_policy_grant_covers "$submit_user" "$sandbox_level" "$seccomp_profile" "$cmd_hash" "$weak_sandbox_reason" "$weak_seccomp_reason"; then
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="policy-approved"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="standing policy grant covers weak sandbox/seccomp selection"
+            return 0
+        fi
         mode="${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"
     fi
 
@@ -5976,19 +6377,203 @@ _queue_submit_policy_check() {
         none|off|"") return 0 ;;
         reason)
             [[ -n "$reason" ]] || { echo "queue submit: this security policy requires --reason TEXT" >&2; return 2; }
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="description-approved"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="$reason"
             ;;
         authorisation|authorization)
-            [[ -n "$auth_code" ]] || { echo "queue submit: this security policy requires --authorisation CODE" >&2; return 2; }
+            if [[ -z "$auth_code" ]]; then
+                auto_code="$(_queue_authorisation_find_valid_for_command "$submit_user" "$@" 2>/dev/null || true)"
+                [[ -n "$auto_code" ]] || { echo "queue submit: this security policy requires --authorisation CODE" >&2; return 2; }
+                auth_code="$auto_code"
+                QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE="$auto_code"
+            fi
             _queue_authorisation_validate "$auth_code" "$submit_user" submit "$@" || return $?
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="code-approved"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="command-bound authorisation $auth_code"
             ;;
         reason-or-authorisation|reason-or-authorization|either)
-            if [[ -z "$reason" ]]; then
-                [[ -n "$auth_code" ]] || { echo "queue submit: this security exception requires --reason TEXT or --authorisation CODE" >&2; return 2; }
+            if [[ -n "$reason" ]]; then
+                QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="description-approved"
+                QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="$reason"
+            else
+                if [[ -z "$auth_code" ]]; then
+                    auto_code="$(_queue_authorisation_find_valid_for_command "$submit_user" "$@" 2>/dev/null || true)"
+                    [[ -n "$auto_code" ]] || { echo "queue submit: this security exception requires --reason TEXT or --authorisation CODE" >&2; return 2; }
+                    auth_code="$auto_code"
+                    QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE="$auto_code"
+                fi
                 _queue_authorisation_validate "$auth_code" "$submit_user" submit "$@" || return $?
+                QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="code-approved"
+                QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="command-bound authorisation $auth_code"
             fi
             ;;
         *) echo "queue submit: invalid class policy requirement mode: $mode" >&2; return 2 ;;
     esac
+}
+
+_queue_job_policy_execution_check() {
+    # Worker-side policy gate.  This is deliberately earlier than class claims,
+    # asset preflight, dynamic preflight, global claims and payload launch.
+    # If a job is contrary to the active class-policy statement, it must have a
+    # standing grant or a valid command-bound authorisation.  A submit-time
+    # --reason is audit text only at execution time; it is not permission to run
+    # once an admin/site policy is present.
+    local jobf="${1:-}"
+    [[ -f "$jobf" ]] || { echo "job file not found"; return 1; }
+    (
+        JOB_CLASS=""; SUBMIT_USER=""; SANDBOX_LEVEL=""; SECCOMP_PROFILE=""
+        EXCEPTION_SANDBOX_OVERRIDE=""; EXCEPTION_SECCOMP_ALLOW=""; EXCEPTION_DROP_CAP=""; EXCEPTION_ADD_PORT=""
+        SECURITY_AUTHORISATION_CODE=""; SECURITY_EXCEPTION_REASON=""; SECURITY_EXEMPTION_TYPE=""; SECURITY_EXEMPTION_DETAIL=""
+        COMMAND=()
+        # shellcheck disable=SC1090
+        source "$jobf" >/dev/null 2>&1 || { echo "job file could not be sourced for policy check"; exit 1; }
+        local policy_file policy_origin
+        policy_file="$(_queue_policy_file class-statement "$(_queue_security_policy_statement_name)" 2>/dev/null || true)"
+        [[ -n "$policy_file" && -f "$policy_file" ]] || exit 0
+        policy_origin="$(_queue_policy_origin "$policy_file" 2>/dev/null || echo unknown)"
+        # The terminal execution gate is for shared/admin policy, normally
+        # /etc/bashqueues/policies.d/class-statement/default.env.  Bundled policy
+        # remains submit-time guidance/default behaviour unless promoted into the
+        # shared/admin policy location.
+        [[ "$policy_origin" == "shared" || "${QUEUEBASH_POLICY_BLOCK_ENFORCE:-}" == "1" ]] || exit 0
+        _queue_security_policy_statement_source >/dev/null 2>&1 || exit 0
+        [[ "${#COMMAND[@]}" -gt 0 ]] || { echo "job has no COMMAND array for policy check"; exit 1; }
+
+        local submit_user cmd_hash command_text argv0 allowed_sandbox allowed_seccomp weak_sandbox weak_seccomp block_classes block_hashes block_words block_patterns contrary details auth_out
+        local sandbox_level seccomp_profile
+        submit_user="${SUBMIT_USER:-${QUEUEBASH_SELECTED_USER:-}}"
+        [[ -n "$submit_user" ]] || submit_user="$(_queue_root_owner_user 2>/dev/null || true)"
+        [[ -n "$submit_user" ]] || submit_user="$(id -un 2>/dev/null || echo unknown)"
+        cmd_hash="$(_queue_command_hash_from_args "${COMMAND[@]}")"
+        command_text="$(_queue_command_shell_words_from_args "${COMMAND[@]}")"
+        argv0="${COMMAND[0]:-}"
+        sandbox_level="${SANDBOX_LEVEL:-off}"
+        seccomp_profile="${SECCOMP_PROFILE:-off}"
+        allowed_sandbox="${CLASS_POLICY_USER_SANDBOX_POLICIES:-}"
+        allowed_seccomp="${CLASS_POLICY_USER_SECCOMP_POLICIES:-}"
+        weak_sandbox="${CLASS_POLICY_SANDBOX_REASON_REQUIRED:-off}"
+        weak_seccomp="${CLASS_POLICY_SECCOMP_REASON_REQUIRED:-off}"
+        block_classes="${CLASS_POLICY_BLOCK_CLASS_NAMES:-}"
+        block_hashes="${CLASS_POLICY_BLOCK_COMMAND_HASHES:-}"
+        block_words="${CLASS_POLICY_BLOCK_COMMAND_WORDS:-${CLASS_POLICY_BLOCK_COMMAND_NAMES:-}}"
+        block_patterns="${CLASS_POLICY_BLOCK_COMMAND_PATTERNS:-}"
+        contrary=0
+        details=()
+        local required_mode="none" req_mode
+        _queue_policy_gate_raise_requirement() {
+            case "${1:-}" in
+                authorisation|authorization) required_mode="authorisation" ;;
+                reason)
+                    [[ "$required_mode" != "authorisation" ]] && required_mode="reason" ;;
+                reason-or-authorisation|reason-or-authorization|either)
+                    [[ "$required_mode" == "none" ]] && required_mode="reason-or-authorisation" ;;
+            esac
+        }
+
+        if [[ -n "$block_classes" && -n "${JOB_CLASS:-}" ]]; then
+            if _queue_security_policy_value_in_list "${JOB_CLASS}" "$block_classes"; then
+                if ! _queue_class_policy_user_grant_covers "$submit_user" ALLOW_BLOCKED_CLASSES "${JOB_CLASS}" "$cmd_hash"; then
+                    contrary=1
+                    _queue_policy_gate_raise_requirement "${CLASS_POLICY_BLOCK_CLASS_REQUIRE:-authorisation}"
+                    details+=("class '${JOB_CLASS}' is policy-blocked by CLASS_POLICY_BLOCK_CLASS_NAMES")
+                else
+                    _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers blocked class ${JOB_CLASS}" ""
+                fi
+            fi
+        fi
+        if [[ -n "$block_hashes" ]] && _queue_policy_hash_value_in_list "$cmd_hash" "$block_hashes"; then
+            if ! _queue_class_policy_user_grant_covers "$submit_user" ALLOW_BLOCKED_COMMAND_HASHES "$cmd_hash" "$cmd_hash"; then
+                contrary=1
+                _queue_policy_gate_raise_requirement "${CLASS_POLICY_BLOCK_COMMAND_REQUIRE:-authorisation}"
+                details+=("command hash '${cmd_hash:0:16}' is policy-blocked by CLASS_POLICY_BLOCK_COMMAND_HASHES")
+            else
+                _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers blocked command hash ${cmd_hash:0:16}" ""
+            fi
+        fi
+        if [[ -n "$block_words" ]] && _queue_policy_command_word_in_list "$argv0" "$block_words"; then
+            if ! _queue_class_policy_user_grant_covers "$submit_user" ALLOW_BLOCKED_COMMAND_WORDS "$argv0" "$cmd_hash"; then
+                contrary=1
+                _queue_policy_gate_raise_requirement "${CLASS_POLICY_BLOCK_COMMAND_REQUIRE:-authorisation}"
+                details+=("command word '${argv0}' is policy-blocked by CLASS_POLICY_BLOCK_COMMAND_WORDS")
+            else
+                _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers blocked command word $argv0" ""
+            fi
+        fi
+        if [[ -n "$block_patterns" ]] && _queue_policy_command_pattern_matches "$command_text" "$block_patterns"; then
+            if ! _queue_class_policy_user_grant_covers "$submit_user" ALLOW_BLOCKED_COMMAND_PATTERNS "$command_text" "$cmd_hash"; then
+                contrary=1
+                _queue_policy_gate_raise_requirement "${CLASS_POLICY_BLOCK_COMMAND_REQUIRE:-authorisation}"
+                details+=("command '$command_text' is policy-blocked by CLASS_POLICY_BLOCK_COMMAND_PATTERNS")
+            else
+                _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers blocked command pattern" ""
+            fi
+        fi
+
+        if [[ -n "$allowed_sandbox" && -n "$sandbox_level" ]]; then
+            if ! _queue_security_policy_value_in_list "$sandbox_level" "$allowed_sandbox"; then
+                contrary=1; _queue_policy_gate_raise_requirement "authorisation"; details+=("sandbox policy '$sandbox_level' is outside selectable range '$allowed_sandbox'")
+            fi
+        fi
+        if [[ -n "$allowed_seccomp" && -n "$seccomp_profile" ]]; then
+            if ! _queue_security_policy_value_in_list "$seccomp_profile" "$allowed_seccomp"; then
+                contrary=1; _queue_policy_gate_raise_requirement "authorisation"; details+=("seccomp policy '$seccomp_profile' is outside selectable range '$allowed_seccomp'")
+            fi
+        fi
+        if [[ -n "${EXCEPTION_SANDBOX_OVERRIDE:-}${EXCEPTION_SECCOMP_ALLOW:-}${EXCEPTION_DROP_CAP:-}${EXCEPTION_ADD_PORT:-}" ]]; then
+            if ! _queue_class_policy_user_exception_grants_cover "$submit_user" "${EXCEPTION_SANDBOX_OVERRIDE:-}" "${EXCEPTION_SECCOMP_ALLOW:-}" "${EXCEPTION_DROP_CAP:-}" "${EXCEPTION_ADD_PORT:-}" "$cmd_hash"; then
+                contrary=1
+                _queue_policy_gate_raise_requirement "${CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE:-reason-or-authorisation}"
+                [[ -n "${EXCEPTION_SANDBOX_OVERRIDE:-}" ]] && details+=("sandbox override ${EXCEPTION_SANDBOX_OVERRIDE}")
+                [[ -n "${EXCEPTION_SECCOMP_ALLOW:-}" ]] && details+=("seccomp allow ${EXCEPTION_SECCOMP_ALLOW}")
+                [[ -n "${EXCEPTION_DROP_CAP:-}" ]] && details+=("drop runtime cap ${EXCEPTION_DROP_CAP}")
+                [[ -n "${EXCEPTION_ADD_PORT:-}" ]] && details+=("add runtime port ${EXCEPTION_ADD_PORT}")
+            else
+                _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers requested exception overlay" ""
+            fi
+        fi
+        if [[ -n "$weak_sandbox" ]] && _queue_security_policy_value_in_list "$sandbox_level" "$weak_sandbox"; then
+            if ! _queue_class_policy_user_weak_policy_grant_covers "$submit_user" "$sandbox_level" "$seccomp_profile" "$cmd_hash" "$weak_sandbox" "$weak_seccomp"; then
+                contrary=1; _queue_policy_gate_raise_requirement "${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"; details+=("weak sandbox policy '$sandbox_level'")
+            else
+                _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers weak sandbox policy $sandbox_level" ""
+            fi
+        fi
+        if [[ -n "$weak_seccomp" ]] && _queue_security_policy_value_in_list "$seccomp_profile" "$weak_seccomp"; then
+            if ! _queue_class_policy_user_weak_policy_grant_covers "$submit_user" "$sandbox_level" "$seccomp_profile" "$cmd_hash" "$weak_sandbox" "$weak_seccomp"; then
+                contrary=1; _queue_policy_gate_raise_requirement "${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"; details+=("weak seccomp policy '$seccomp_profile'")
+            else
+                _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers weak seccomp policy $seccomp_profile" ""
+            fi
+        fi
+
+        [[ "$contrary" -eq 0 ]] && exit 0
+
+        if [[ -n "${SECURITY_AUTHORISATION_CODE:-}" ]]; then
+            if auth_out="$(_queue_authorisation_validate "$SECURITY_AUTHORISATION_CODE" "$submit_user" policy "${COMMAND[@]}" 2>&1)"; then
+                _queue_job_append_security_exemption "$jobf" "code-approved" "command-bound authorisation $SECURITY_AUTHORISATION_CODE" "$SECURITY_AUTHORISATION_CODE"
+                exit 0
+            fi
+            printf 'policy-contrary job has invalid authorisation %s for user %s: %s\n' "$SECURITY_AUTHORISATION_CODE" "$submit_user" "$auth_out"
+        else
+            if [[ -n "${SECURITY_EXCEPTION_REASON:-}" && ( "$required_mode" == "reason" || "$required_mode" == "reason-or-authorisation" || "$required_mode" == "none" ) ]]; then
+                _queue_job_append_security_exemption "$jobf" "description-approved" "$SECURITY_EXCEPTION_REASON" ""
+                exit 0
+            fi
+            local found_auth
+            found_auth="$(_queue_authorisation_find_valid_for_command "$submit_user" "${COMMAND[@]}" 2>/dev/null || true)"
+            if [[ -n "$found_auth" ]]; then
+                _queue_job_append_security_exemption "$jobf" "code-approved" "on-file command-bound authorisation $found_auth" "$found_auth"
+                exit 0
+            fi
+            printf 'policy-contrary job has no SECURITY_AUTHORISATION_CODE and no on-file command-bound authorisation for user %s\n' "$submit_user"
+        fi
+        printf 'policy details:'
+        local d
+        for d in "${details[@]}"; do printf ' %s;' "$d"; done
+        printf '\n'
+        printf 'resubmit this command with a valid, unexpired, command-bound authorisation; the same authorisation may be reused for resubmissions of this exact command until it expires\n'
+        exit 1
+    )
 }
 
 # Backward-compatible literals kept for static tests/docs: queue policies edit sandbox|seccomp NAME; queue policies create sandbox|seccomp NAME
@@ -7763,7 +8348,7 @@ _queue_dep_token_status() {
     local root="$(_queue_root)"
     local state f name
 
-    for state in done failed cancelled interrupted running pending paused deleted; do
+    for state in done failed pol_block policy_blocked cancelled interrupted running pending paused deleted; do
         if [[ -f "$root/$state/$dep.job" ]]; then
             printf '%s\n' "$state"
             return 0
@@ -7923,7 +8508,7 @@ _queue_job_file_by_id_any_state() {
     local root="$(_queue_root)"
     local st f
 
-    for st in pending running paused done failed interrupted cancelled deleted; do
+    for st in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
         f="$root/$st/$id.job"
         [[ -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
     done
@@ -7963,7 +8548,7 @@ _queue_job_history_children_ids() {
     local root="$(_queue_root)"
     local st f child
 
-    for st in pending running paused done failed interrupted cancelled deleted; do
+    for st in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
         shopt -s nullglob
         for f in "$root/$st"/*.job; do
             child="$(
@@ -8069,7 +8654,7 @@ _queue_job_history() {
         id="$(basename "$f" .job)"
     else
         root="$(_queue_root)"
-        for st in pending running paused done failed interrupted cancelled deleted; do
+        for st in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
             shopt -s nullglob
             for f in "$root/$st"/*.job; do
                 if ( source "$f" >/dev/null 2>&1 && [[ "${JOB_NAME:-}" == "$selector" ]] ); then
@@ -8409,7 +8994,7 @@ _queue_log_job_state_for_id() {
     local id="$1"
     local root="$(_queue_root)"
     local state
-    for state in pending running paused done failed interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
         if [[ -f "$root/$state/$id.job" ]]; then
             printf '%s\n' "$state"
             return 0
@@ -8422,7 +9007,7 @@ _queue_log_job_name_for_id() {
     local id="$1"
     local root="$(_queue_root)"
     local state
-    for state in pending running paused done failed interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
         if [[ -f "$root/$state/$id.job" ]]; then
             _queue_job_name "$root/$state/$id.job"
             return 0
@@ -8453,7 +9038,7 @@ _queue_log_job_file_for_id() {
     local id="$1"
     local root="$(_queue_root)"
     local state
-    for state in pending running paused done failed interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
         if [[ -f "$root/$state/$id.job" ]]; then
             printf '%s\n' "$root/$state/$id.job"
             return 0
@@ -8560,7 +9145,7 @@ _queue_clean_logs() {
                 [[ "$verbose" -eq 1 ]] && echo "SKIP state=$state not $state_filter: $path"
             elif [[ -z "$state_filter" && "$include_all" -ne 1 ]]; then
                 case "$state" in
-                    done|failed|interrupted|cancelled|deleted|orphan) ;;
+                    done|failed|pol_block|policy_blocked|interrupted|cancelled|deleted|orphan) ;;
                     *) eligible=0; [[ "$verbose" -eq 1 ]] && echo "SKIP unsafe state=$state: $path" ;;
                 esac
             fi
@@ -8606,7 +9191,7 @@ _queue_clean_logs() {
 # -------------------------------------------------------------------
 
 _queue_health_state_dirs() {
-    printf '%s\n' pending running paused done failed interrupted cancelled deleted logs workers outputs streams
+    printf '%s\n' pending running paused done failed pol_block policy_blocked interrupted cancelled deleted logs workers outputs streams
 }
 
 _queue_health_has_command() {
@@ -8738,7 +9323,7 @@ _queue_health_dependency_exists_any_state() {
 
     [[ -z "$token" ]] && return 1
 
-    for state in pending running paused done failed interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
         [[ -f "$root/$state/$token.job" ]] && return 0
         for f in "$root/$state"/*.job; do
             [[ -e "$f" ]] || continue
@@ -9017,7 +9602,7 @@ _queue_restore_print_non_deleted_matches() {
     local root="$(_queue_root)"
     local state f id name any=0
 
-    for state in pending running paused done failed interrupted cancelled; do
+    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled; do
         for f in "$root/$state"/*.job; do
             [[ -e "$f" ]] || continue
             id="$(basename "$f" .job)"
@@ -9145,8 +9730,8 @@ Usage:
   queue [--dryrun] <command...>
   queue submit <name> [--dryrun] [--priority N|-p N] [--on-success <cmd...>] [--on-retry-failure <cmd...>] [--on-failure <cmd...>] -- <command...>
 
-  queue list [--state all|pending|running|paused|done|failed|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
-  queue ls   [--state all|pending|running|paused|done|failed|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
+  queue list [--state all|pending|running|paused|done|failed|pol_block|policy_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
+  queue ls   [--state all|pending|running|paused|done|failed|pol_block|policy_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
   queue find <text>
   queue show <qid|exact-job-name> [--tail N|--full]
   queue tail <qid|exact-job-name>
@@ -9369,7 +9954,7 @@ _queue_bind_submit_reference_to_qid() {
     [[ -z "$token" ]] && return 1
 
     # Already a visible QID.
-    for state in pending running paused done failed interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
         if [[ -f "$root/$state/$token.job" ]]; then
             printf '%s\n' "$token"
             return 0
@@ -9667,6 +10252,7 @@ queue() {
                 generate|gen|new) shift; _queue_authorisation_generate "$@" ;;
                 job|stamp|authorise|authorize) shift; _queue_authorise_job "$@" ;;
                 list|ls|"") _queue_authorisation_list ;;
+                policy|trust|trusted) _queue_authorisation_policy_show ;;
                 show)
                     shift
                     local acode="${1:-}" afile
@@ -9676,7 +10262,7 @@ queue() {
                     sed -n '1,120p' "$afile"
                     echo "AUTHORISATION_FILE_INTEGRITY=$(_queue_authorisation_file_status "$afile" 2>/dev/null || true)"
                     ;;
-                *) echo "Usage: queue authorisation generate|job|list|show" >&2; return 2 ;;
+                *) echo "Usage: queue authorisation generate|job|list|show|policy" >&2; return 2 ;;
             esac
             ;;
         generate)
@@ -9959,8 +10545,14 @@ queue() {
                 fi
             done
 
-            local submit_user="$(id -un 2>/dev/null || echo unknown)"
+            local submit_user="${QUEUEBASH_SELECTED_USER:-$(id -un 2>/dev/null || echo unknown)}"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE=""
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL=""
+            QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE=""
             _queue_submit_policy_check "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$submit_user" "$security_reason" "$authorisation_code" "$sandbox_level" "$seccomp_profile" "$exception_sandbox_override" "$exception_seccomp_allow" "$exception_drop_cap" "$exception_add_port" "$@" || return $?
+            if [[ -z "$authorisation_code" && -n "${QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE:-}" ]]; then
+                authorisation_code="$QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE"
+            fi
 
             local id="$(_queue_id)"
             local job="$root/pending/$id.job"
@@ -10120,7 +10712,7 @@ queue() {
             done
 
             local state f id name pri line
-            for state in pending running paused done failed interrupted cancelled deleted; do
+            for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
                 [[ "$filter_state" != "all" && "$filter_state" != "$state" ]] && continue
 
                 for f in "$root/$state"/*.job; do
@@ -10864,7 +11456,7 @@ EOF
             echo "------------------------"
 
             local state f name submitted count total=0
-            for state in pending running paused done failed interrupted cancelled deleted; do
+            for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
                 count=0
                 for f in "$root/$state"/*.job; do
                     [[ -e "$f" ]] || continue
@@ -11460,7 +12052,7 @@ EOF
 
             if [[ -z "$target" ]]; then
                 echo "Usage: queue resubmit <qid-or-exact-job-name> [--force] [--dryrun] [--note TEXT]" >&2
-                echo "Resubmit clones failed job(s) into pending with new QID(s), preserving the failed originals." >&2
+                echo "Resubmit clones failed/interrupted/pol_block job(s) into pending with new QID(s), preserving the failed originals." >&2
                 return 2
             fi
 
@@ -11479,7 +12071,7 @@ EOF
             while IFS= read -r f; do
                 all_matches+=( "$f" )
                 state="$(basename "$(dirname "$f")")"
-                [[ "$state" == "failed" || "$state" == "interrupted" ]] && matches+=( "$f" )
+                [[ "$state" == "failed" || "$state" == "interrupted" || "$state" == "pol_block" || "$state" == "policy_blocked" ]] && matches+=( "$f" )
             done < <(_queue_find_jobs "$target")
 
             if [[ "${#all_matches[@]}" -eq 0 ]]; then
@@ -11488,7 +12080,7 @@ EOF
             fi
 
             if [[ "${#matches[@]}" -eq 0 ]]; then
-                echo "queue resubmit: matching job(s) found, but none are in failed or interrupted state:" >&2
+                echo "queue resubmit: matching job(s) found, but none are in failed, interrupted, or pol_block state:" >&2
                 _queue_print_matches "${all_matches[@]}"
                 return 1
             fi
@@ -11513,7 +12105,7 @@ EOF
                 new_id="$(_queue_id)"
 
                 if [[ "$local_dryrun" -eq 1 ]]; then
-                    echo "DRYRUN: would resubmit failed/interrupted job:"
+                    echo "DRYRUN: would resubmit failed/interrupted/pol_block job:"
                     echo "  from:     $src_id"
                     echo "  new id:   $new_id"
                     echo "  name:     $name"
@@ -11529,9 +12121,9 @@ EOF
             done
 
             if [[ "$local_dryrun" -eq 1 ]]; then
-                echo "DRYRUN: would resubmit $count failed/interrupted job(s)."
+                echo "DRYRUN: would resubmit $count failed/interrupted/pol_block job(s)."
             else
-                echo "Resubmitted $count failed/interrupted job(s)."
+                echo "Resubmitted $count failed/interrupted/pol_block job(s)."
             fi
             ;;
 
@@ -11660,7 +12252,7 @@ EOF
             local local_dryrun="$dryrun"
             [[ "${2:-}" == "--dryrun" || "${2:-}" == "-n" ]] && local_dryrun=1
             case "$what" in
-                done|failed|paused|interrupted|cancelled|deleted)
+                done|failed|pol_block|policy_blocked|paused|interrupted|cancelled|deleted)
                     if [[ "$local_dryrun" -eq 1 ]]; then
                         echo "DRYRUN: would clear $what jobs:"
                         find "$root/$what" -maxdepth 1 -type f -name '*.job' -printf '  %f\n' 2>/dev/null
@@ -11672,14 +12264,14 @@ EOF
                 all)
                     if [[ "$local_dryrun" -eq 1 ]]; then
                         echo "DRYRUN: would clear all jobs and logs:"
-                        find "$root"/{pending,running,paused,done,failed,deleted,logs} -maxdepth 1 -type f -printf '  %p\n' 2>/dev/null
+                        find "$root"/{pending,running,paused,done,failed,pol_block,policy_blocked,deleted,logs} -maxdepth 1 -type f -printf '  %p\n' 2>/dev/null
                     else
-                        rm -f "$root"/{pending,running,paused,done,failed,cancelled,deleted}/*.job
+                        rm -f "$root"/{pending,running,paused,done,failed,pol_block,policy_blocked,cancelled,deleted}/*.job
                         rm -f "$root/logs"/*.log
                         echo "Cleared all jobs and logs"
                     fi
                     ;;
-                *) echo "Usage: queue clear done|failed|paused|interrupted|cancelled|deleted|all [--dryrun]" >&2; return 2 ;;
+                *) echo "Usage: queue clear done|failed|pol_block|policy_blocked|paused|interrupted|cancelled|deleted|all [--dryrun]" >&2; return 2 ;;
             esac
             ;;
 
@@ -11695,7 +12287,7 @@ _queue_worker_external_move_state() {
     local id="$1"
     local root="$(_queue_root)"
     local state
-    for state in cancelled deleted interrupted paused done failed pending; do
+    for state in cancelled deleted interrupted paused done failed pol_block policy_blocked pending; do
         if [[ -f "$root/$state/$id.job" ]]; then
             printf '%s\n' "$state"
             return 0
@@ -11724,11 +12316,46 @@ _queue_worker() {
         local running="$root/running/$id.job"
         local done="$root/done/$id.job"
         local failed="$root/failed/$id.job"
+        local policy_blocked="$root/pol_block/$id.job"
         local log="$root/logs/$id.log"
 
         if ! _queue_move_pending_to_running "$job" "$running" "$id" "${worker_id:-${1:-?}}"; then
             # Avoid burning CPU forever on a filesystem/path collision.
             sleep "${QUEUEBASH_MOVE_FAIL_SLEEP:-1}"
+            continue
+        fi
+
+        local policy_reason=""
+        if ! policy_reason="$(_queue_job_policy_execution_check "$running" 2>&1)"; then
+            _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "policy blocked $id: $policy_reason"
+            {
+                echo "=== queue job $id : $(_queue_job_name "$running" 2>/dev/null || echo -) ==="
+                echo "pol_block: $(date -Is)"
+                echo "state: pol_block"
+                echo "worker: $worker_id"
+                echo
+                echo "POLICY_BLOCKED"
+                echo "$policy_reason"
+                echo
+                echo "No class claims, asset preflight checks, dynamic preflight checks, global claims, or payload launch were attempted."
+            } > "$log" 2>&1
+            {
+                printf '
+# Policy blocked by worker at %q
+' "$(date -Is 2>/dev/null || date)"
+                printf 'POLICY_BLOCKED=1
+'
+                printf 'POLICY_BLOCKED_AT=%q
+' "$(date -Is 2>/dev/null || date)"
+                printf 'POLICY_BLOCKED_REASON=%q
+' "$policy_reason"
+            } >> "$running"
+            _queue_append_summary_to_job "$running" 78 "$log"
+            mkdir -p "$root/pol_block"
+            mv "$running" "$policy_blocked"
+            _queue_job_stream_temp_cleanup "$id"
+            _queue_log_event "pol_block" "$id" "$(_queue_job_name "$policy_blocked" 2>/dev/null || echo -)" "pol_block" "worker=$worker_id"
+            echo "[worker $worker_id] pol_block $id"
             continue
         fi
 
@@ -12063,7 +12690,7 @@ _queue_complete() {
 
         list|ls)
             if [[ "$prev" == "--state" || "$prev" == "-s" ]]; then
-                COMPREPLY=( $(compgen -W "all pending running paused done failed interrupted cancelled deleted" -- "$cur") )
+                COMPREPLY=( $(compgen -W "all pending running paused done failed pol_block policy_blocked interrupted cancelled deleted" -- "$cur") )
                 return 0
             fi
             COMPREPLY=( $(compgen -W "--state -s --name -n --filter -f" -- "$cur") )
@@ -12361,7 +12988,7 @@ _queuemgr_complete() {
 
     case "$prev" in
         --state|-s)
-            COMPREPLY=( $(compgen -W "all pending running paused done failed interrupted cancelled deleted" -- "$cur") )
+            COMPREPLY=( $(compgen -W "all pending running paused done failed pol_block policy_blocked interrupted cancelled deleted" -- "$cur") )
             return 0
             ;;
         --filter|-f|--name|-n)

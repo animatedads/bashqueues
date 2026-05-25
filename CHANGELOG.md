@@ -1,3 +1,81 @@
+## 0.17.34 - pol_block resubmission and exemption audit model
+
+
+## 0.17.35 - policy command blocks and exemption visibility
+
+- Added shared/admin class-policy command blocks for zero-hour response:
+  - `CLASS_POLICY_BLOCK_COMMAND_HASHES`
+  - `CLASS_POLICY_BLOCK_COMMAND_WORDS`
+  - `CLASS_POLICY_BLOCK_COMMAND_PATTERNS`
+  - `CLASS_POLICY_BLOCK_COMMAND_REQUIRE`
+- Worker policy gate now blocks matching commands before claims, preflight, or payload launch.
+- Jobs that run because of a standing grant, reason, or valid authorisation now log a `security_exemption` event.
+- `queue explain` now shows exemption type/action/detail/authorisation for completed jobs, including `run_with_authorisation`.
+- Queue Manager Task Creator F10/Enter now edits security reason, authorisation code, and no-exemption fields.
+- Added docs for emergency policy command blocks.
+
+- Renamed the new policy-block terminal state to `pol_block` for screen-friendly Queue Manager display, while retaining legacy `policy_blocked` directory compatibility for existing jobs.
+- `queue resubmit` now accepts jobs in `pol_block` / legacy `policy_blocked` as well as `failed` and `interrupted`.
+- Resubmitted jobs preserve security authorisation/exemption fields so an authorised policy-blocked command can be resubmitted after approval.
+- Submit and worker policy gates now look for any valid on-file command-bound authorisation for the same user and exact command hash; the user does not have to paste the code again until it expires.
+- Added explicit exemption audit categories:
+  - `policy-approved` for standing policy/user grants,
+  - `description-approved` for policy-permitted reason text,
+  - `code-approved` for command-bound authorisation codes.
+- Queue Manager Task Creator now exposes security reason, authorisation code, and “no security exemption requested” controls.
+
+## 0.17.33 - Policy-block test class policy
+
+- Added `policies.d/class-statement/policyblock-test.env`, a validation-only shared policy statement that policy-blocks jobs using class name `POLICYBLOCKED`.
+- Added `classes/POLICYBLOCKED.env` as a harmless test class for validating the `policy_blocked` terminal state.
+- Worker policy gate now supports `CLASS_POLICY_BLOCK_CLASS_NAMES` and reports the blocked class in the policy-block reason.
+- Added docs and regression tests for the policy-block test hook.
+
+## 0.17.32 - Policy-blocked terminal state
+
+- Added `policy_blocked` as a terminal queue state for jobs that are contrary to the active shared/admin class-policy statement at execution time and do not have a valid standing grant or command-bound authorisation.
+- Worker-side policy checking now happens before class claims, asset preflight, dynamic preflight, global claims, or payload launch.
+- Policy-blocked jobs are not retried; they must be resubmitted after a valid authorisation exists for the exact command.
+- Valid command-bound authorisations can be reused for unlimited resubmissions of the same command until expiry.
+- Added regression coverage for policy-blocked state handling and authorisation reuse.
+
+## 0.17.31 - Authorisation keygen selected-user key-root fix
+
+- Fixed `queue keygen` while operating on a selected foreign queue so it creates the operator/signer key under the operator identity root, not the selected target queue root.
+- Reinforced authorisation signing key lookup so root authorising hc3 jobs uses `/root/.queuebash/keys`, while authorisation records and job stamps remain in `/home/hc3/.queuebash`.
+- Added regression coverage for keygen/signing separation in selected-user mode.
+
+## 0.17.30 - Authorisation signer key-root fix
+
+- Fixed signed authorisation lookup when an operator/root shell is switched to another user's queue with `queue --queue-user USER`.
+- Authorisation files and job stamping still target the selected queue root.
+- Signing private keys now belong to the authorising admin/signer identity, not the selected target queue.
+- For example, root authorising a job in hc3's queue signs with `/root/.queuebash/keys/private/root.ed25519.pem`, not `/home/hc3/.queuebash/keys/private/root.ed25519.pem`.
+- Added signer key-root diagnostics to `queue authorisation policy`.
+- Added regression tests for selected-queue signing.
+
+## 0.17.28 - Per-user class-policy standing grants
+
+
+## 0.17.29 - Authorisation stamping transaction guard
+
+- Hardened `queue authorise QID` so it builds an authorisation candidate, validates it against the active class-policy signature rules, and only then publishes the authorisation file and stamps the job.
+- A policy-required signature failure now refuses the operation with `queue authorise: policy requires a valid signature for admin ...` and leaves the job file untouched.
+- Hardened `queue authorisation generate` with the same candidate validation path.
+- Added regression coverage for refusing invalid signed-policy candidates before stamping jobs.
+
+- Added shared class-policy per-user grants for standing delegated security exceptions.
+- The active class policy can now allow specific users to use narrow exception values without a per-command authorisation, for example permitting web administrators to add ports 80, 1080, and 8080 while requiring DBAs to obtain an authorisation for the same ports.
+- Added command-specific grant variables keyed by full command hash or the first 16 hex characters.
+- Added regression tests for user-specific port grants.
+
+## 0.17.27 - Authorisation trust-list generation hardening
+
+- Added `queue authorisation policy` to show the active class policy statement path, signature mode, and policy-declared trusted authorisation signers.
+- Hardened `queue authorisation generate` and `queue authorise QID`: if the active class policy declares a trusted public key for an admin, a matching private-key signature is now mandatory at creation time rather than allowing an unsigned record that later lists as invalid.
+- When a policy trust list exists, undeclared admins are now rejected at authorisation creation time instead of creating unusable authorisation files.
+- Added regression coverage for policy trust-list diagnostics and creation-time rejection of unsigned/untrusted authorisations.
+
 ## 0.17.26 - Authorisation readability and signature policy enforcement
 
 - Fixed root-created authorisation records in a selected user's queue so they are published read-only/readable (`0444` fallback `0644`) instead of inheriting root-only permissions such as `0640 root:root`.
@@ -304,6 +382,15 @@ Panel command line object actions are now available for Assets and Classes. From
 - Add static regression coverage for completion ordering.
 
 # Changelog
+
+## 0.17.30 - Authorisation signer key-root fix
+
+- Fixed signed authorisation lookup when an operator/root shell is switched to another user's queue with `queue --queue-user USER`.
+- Authorisation files and job stamping still target the selected queue root.
+- Signing private keys now belong to the authorising admin/signer identity, not the selected target queue.
+- For example, root authorising a job in hc3's queue signs with `/root/.queuebash/keys/private/root.ed25519.pem`, not `/home/hc3/.queuebash/keys/private/root.ed25519.pem`.
+- Added signer key-root diagnostics to `queue authorisation policy`.
+- Added regression tests for selected-queue signing.
 
 ## 0.17.4
 
