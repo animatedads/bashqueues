@@ -1,10 +1,68 @@
-## 0.17.18
+## 0.17.26 - Authorisation readability and signature policy enforcement
+
+- Fixed root-created authorisation records in a selected user's queue so they are published read-only/readable (`0444` fallback `0644`) instead of inheriting root-only permissions such as `0640 root:root`.
+- `queue authorisation list` now distinguishes unreadable records as `invalid-unreadable` instead of hiding the underlying permission problem behind a generic source failure.
+- Tightened `CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED=if-trusted-key`: once a class policy declares trusted authorisation public keys, an unsigned authorisation by a declared signer is `invalid-missing-signature`, and an authorisation by an undeclared signer is `invalid-untrusted-admin`.
+- Added regression coverage for authorisation file publication permissions and policy-declared signature enforcement.
+
+## 0.17.25 - Authorisation list invalid-source rendering fix
+
+- Fixed `queue authorisation list` rendering for malformed/tampered authorisation files.
+- Invalid source files now display a clean basename/code with `status=invalid-source` and `integrity=invalid-source` instead of leaking literal shell `$'\t'` escape text into the list output.
+- Added regression coverage for mixed valid and invalid authorisation records.
+
+## 0.17.24 - Selected-user authorisation target fix
+
+- Fixed `queue authorise QID` when root/operator authorises a job inside a selected user's queue.
+- Existing-job authorisations now default the authorised target user from `QUEUEBASH_SELECTED_USER` / queue root owner before falling back to the job `SUBMIT_USER` field.
+- This preserves the intended split: `admin=root`, `user=<queue owner>` for root approvals in another user's queue.
+- Added a smoke regression proving a root-submitted job in an `hc3` selected queue receives `AUTHORISATION_USER=hc3`, not `root`.
+
+## 0.17.23 - Signed policy authorisations and key generation
+
+- Added `queue keygen authorisation NAME` for Ed25519 authorisation signing keypairs.
+- Added `queue keys list` and `queue keys show NAME` for queue-local public key inspection.
+- Class policy statements can now declare trusted authorisation public keys per admin/user via `CLASS_POLICY_AUTHORISATION_SIGNER_<NAME>_PUBLIC_KEY_*`.
+- Added `CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED` with `off`, `if-trusted-key`, and `always` modes.
+- Authorisation records can now carry an Ed25519 signature over queue root, authorising admin, authorised user, exact command hash, expiry, and reason hash.
+- `queue authorisation list` / `show` now report signed integrity status such as `valid-signed`, `valid-unsigned`, `invalid-payload-hash`, or `invalid-signature`.
+
+## 0.17.22 - Job authorisation stamping and validity checks
+
+- Added `queue authorise <qid>` / `queue authorize <qid>` for stamping a queue-local authorisation directly onto an existing job record.
+- `queue authorise` appends to the existing `.job` file, preserving the file owner/group instead of rewriting the job through a root-owned temporary file.
+- Added Queue Manager job action and typed job command support for authorising the selected job.
+- `queue authorisation list` now reports authorisation file integrity as `valid` or an invalid reason such as `invalid-command-hash`.
+- `queue authorisation show CODE` now includes `AUTHORISATION_FILE_INTEGRITY=...`.
+- Submit and cron authorisation checks now reject tampered authorisation files whose stored command array no longer matches the stored command hash.
+
+## 0.17.21 - Class policy statement and command-bound authorisations
+
+- Added a central class policy statement under `policies.d/class-statement/default.env`.
+- `queue submit` now enforces policy-governed justification for security exception overlays.
+- Added `--reason TEXT` and `--authorisation CODE` support for `--sandbox-override`, `--seccomp-allow`, `--drop-cap`, and `--add-port`.
+- Added queue-local short authorisations via `queue generate authorisation` / `queue authorisation generate`.
+- Authorisation codes are case-insensitive, no more than five letters/numbers, queue specific, and bound to the exact command hash.
+- The cron bridge now checks requested `BASHQUEUES_CLASS` against the crontab minimum security floor; weak explicit classes require a matching `BASHQUEUES_AUTHORISATION`, otherwise cron falls back to the generated safe class.
+- Added docs and regression tests for class policy statements, reason enforcement, authorisations, and cron minimum handling.
+
+## 0.17.20 - Security exception guidance in explain
+
+- Added a `Security exception guidance` section to `queue explain`.
+- Runtime security failures now suggest the narrowest relevant submit-time exception, such as `--drop-cap no-network-tools`, `--drop-cap no-network-sockets`, `--drop-cap only-local-sockets`, `--drop-cap no-spawn-shell`, or `--add-port PORT`.
+- Sandbox network failures now suggest `--sandbox-override off` when the command/log indicates networking was blocked by `network-none` or `strict`.
+- Seccomp-looking failures now suggest a narrow `--seccomp-allow` starting point, with `@debug` only when that is the likely blocked syscall group.
+- Pending class/asset preflight failures now show the exact `queue exception add <qid> <asset> --reason ...` command for a job-local exception overlay.
+- Pending `queue explain` now displays effective execution caps after exception overlays, matching worker launch behaviour.
+- Added static and smoke regression tests for security exception guidance.
 
 ## 0.17.19 - Exception overlay explain visibility
 
 - Fixed `queue explain` so submit-time security exceptions are visible in the `Exception overlays` section.
 - `--sandbox-override`, `--seccomp-allow`, `--drop-cap`, and `--add-port` are now reported from the job record, not only from already-sourced shell variables.
 - Added a static regression test for security exception overlay visibility.
+
+## 0.17.18 - Queue Manager class edit safety
 
 - Fixed Queue Manager class edit action so it no longer calls interactive `queue classes edit` through `qrun()`.
 - Class edit from the panel now loads the selected class into Class Creator for noninteractive preview/validate/save editing.

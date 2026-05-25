@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 q=queuebash.sh
 
-grep -q 'QUEUEBASH_VERSION="0.17.19"' "$q" || fail "version not 0.17.19"
+grep -q 'QUEUEBASH_VERSION="0.17.25"' "$q" || fail "version not 0.17.20"
 grep -q 'CLASS_DEFAULT_SECCOMP_PROFILE' "$q" || fail "class seccomp default not loaded"
 grep -q 'CLASS_DEFAULT_SECCOMP_ALLOW' "$q" || fail "class seccomp allow default not loaded"
 grep -q 'SystemCallArchitectures=native' policies.d/seccomp/docker-default.env || fail "systemd seccomp architecture policy missing"

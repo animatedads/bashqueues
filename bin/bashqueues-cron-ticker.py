@@ -18,7 +18,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 DEFAULT_USER_SPOOL = "/var/spool/bashqueues_cron"
 DEFAULT_SYSTEM_DIR = "/etc/bashqueues_cron.d"
@@ -131,15 +131,160 @@ def source_for_user(user: str) -> str:
     return ""
 
 
+def _parse_env_assignments(path: Path) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    if not path.exists():
+        return out
+    rx = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
+    for line in path.read_text(errors="replace").splitlines():
+        m = rx.match(line.strip())
+        if not m:
+            continue
+        key, value = m.group(1), m.group(2).strip()
+        if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+            value = value[1:-1]
+        out[key] = value
+    return out
+
+
+def _queue_root_for_user(user: str) -> Path:
+    return Path(os.environ.get("QUEUEBASH_ROOT", str(Path(user_home(user)) / ".queuebash")))
+
+
+def _bundled_policy_root(qsrc: str) -> Optional[Path]:
+    if not qsrc:
+        return None
+    base = Path(qsrc).resolve().parent
+    return base / "policies.d"
+
+
+def _class_statement(user: str, qsrc: str) -> Dict[str, str]:
+    name = os.environ.get("QUEUEBASH_CLASS_POLICY_STATEMENT", "default")
+    roots = [
+        Path(os.environ.get("QUEUEBASH_SHARED_POLICY_ROOT", "/etc/bashqueues/policies.d")),
+        _queue_root_for_user(user) / "policies.d",
+    ]
+    bundled = _bundled_policy_root(qsrc)
+    if bundled is not None:
+        roots.append(bundled)
+    for root in roots:
+        f = root / "class-statement" / f"{name}.env"
+        if f.exists():
+            return _parse_env_assignments(f)
+    return {}
+
+
+def _security_sandbox_rank(level: str) -> int:
+    return {"off": 0, "none": 0, "restrict-egress": 1, "queue-default": 1, "network-none": 2, "strict": 3}.get(level.lower(), 0)
+
+
+def _security_seccomp_rank(profile: str) -> int:
+    return {"off": 0, "none": 0, "docker-default": 1, "queue-default": 1, "strict": 2}.get(profile.lower(), 0)
+
+
+def _class_defaults_for_user(user: str, qsrc: str, class_name: str) -> Dict[str, str]:
+    root = _queue_root_for_user(user)
+    candidates = [root / "classes" / f"{class_name}.env"]
+    if qsrc:
+        candidates.append(Path(qsrc).resolve().parent / "classes" / f"{class_name}.env")
+    for f in candidates:
+        if f.exists():
+            return _parse_env_assignments(f)
+    return {}
+
+
+def _command_hash(command: str) -> str:
+    try:
+        raw = subprocess.check_output(["bash", "-c", "printf '%q ' \"$@\"", "--", "bash", "-lc", command], text=True)
+    except Exception:
+        raw = "bash -lc " + shlex.quote(command) + " "
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _normalise_auth_code(code: Optional[str]) -> Optional[str]:
+    if not code:
+        return None
+    code = code.upper()
+    if not re.match(r"^[A-Z0-9]{1,5}$", code):
+        return None
+    return code
+
+
+def _authorisation_file_command_hash(path: Path) -> Optional[str]:
+    """Return the hash implied by AUTHORISATION_COMMAND in an auth file.
+
+    This is deliberately separate from AUTHORISATION_COMMAND_SHA256.  If an
+    operator forcibly edits the command array in the file, the file no longer
+    sums and the authorisation must not be accepted.
+    """
+    if not path.exists():
+        return None
+    script = """
+AUTHORISATION_COMMAND=()
+source "$1" >/dev/null 2>&1 || exit 10
+[[ "${#AUTHORISATION_COMMAND[@]}" -gt 0 ]] || exit 11
+printf '%q ' "${AUTHORISATION_COMMAND[@]}"
+"""
+    try:
+        raw = subprocess.check_output(["bash", "-c", script, "--", str(path)], text=True)
+    except Exception:
+        return None
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _authorisation_valid_for_command(user: str, command: str, code: Optional[str]) -> bool:
+    code = _normalise_auth_code(code)
+    if not code:
+        return False
+    f = _queue_root_for_user(user) / "authorisations" / f"{code}.env"
+    data = _parse_env_assignments(f)
+    if not data:
+        return False
+    if data.get("AUTHORISATION_STATUS", "active").lower() != "active":
+        return False
+    au = data.get("AUTHORISATION_USER", "")
+    if au and au != "*" and au != user:
+        return False
+    stored = data.get("AUTHORISATION_COMMAND_SHA256", "")
+    if not stored or _authorisation_file_command_hash(f) != stored:
+        return False
+    return stored == _command_hash(command)
+
+
+def _cron_class_below_minimum(user: str, qsrc: str, class_name: str) -> bool:
+    statement = _class_statement(user, qsrc)
+    min_sb = statement.get("CLASS_POLICY_CRON_MIN_SANDBOX_LEVEL", "strict")
+    min_sc = statement.get("CLASS_POLICY_CRON_MIN_SECCOMP_PROFILE", "off")
+    defaults = _class_defaults_for_user(user, qsrc, class_name)
+    sb = defaults.get("CLASS_DEFAULT_SANDBOX_LEVEL", "off")
+    sc = defaults.get("CLASS_DEFAULT_SECCOMP_PROFILE", "off")
+    return _security_sandbox_rank(sb) < _security_sandbox_rank(min_sb) or _security_seccomp_rank(sc) < _security_seccomp_rank(min_sc)
+
+
+def _resolve_cron_class(user: str, command: str, cron_source: str, line_no: int, qsrc: str, explicit_class: Optional[str], auth_code: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    if not explicit_class:
+        return None, None
+    if not _cron_class_below_minimum(user, qsrc, explicit_class):
+        return explicit_class, None
+    if _authorisation_valid_for_command(user, command, auth_code):
+        return explicit_class, auth_code
+    print(
+        f"WARN {cron_source}:{line_no}: requested class {explicit_class!r} is below crontab minimum and no command-bound authorisation matched; using generated safe cron class",
+        file=sys.stderr,
+    )
+    return None, None
+
+
 def _shell_single_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
-def dispatch(user: str, command: str, cron_source: str, line_no: int, dryrun: bool = False, explicit_class: Optional[str] = None) -> int:
+def dispatch(user: str, command: str, cron_source: str, line_no: int, dryrun: bool = False, explicit_class: Optional[str] = None, auth_code: Optional[str] = None) -> int:
     cname = stable_name(user, command)
     qname = cname
-    target_class = explicit_class or cname
     qsrc = source_for_user(user)
+    explicit_class, auth_code = _resolve_cron_class(user, command, cron_source, line_no, qsrc, explicit_class, auth_code)
+    target_class = explicit_class or cname
     home = user_home(user)
     class_body = f"""# bashqueues generated cron bridge class: {cname}
 # Source: {cron_source}:{line_no}
@@ -162,9 +307,11 @@ CLASS_DEFAULT_RUNTIME_CAP_INTERVAL=1
 
     if explicit_class:
         # Explicit classes are operator/user managed.  Do not overwrite them.
-        script_lines.append(
-            "queue submit " + shlex.quote(qname) + " --priority 10 --class " + shlex.quote(target_class) + " -- bash -lc " + shlex.quote(command)
-        )
+        submit = "queue submit " + shlex.quote(qname) + " --priority 10 --class " + shlex.quote(target_class)
+        if auth_code:
+            submit += " --authorisation " + shlex.quote(auth_code)
+        submit += " -- bash -lc " + shlex.quote(command)
+        script_lines.append(submit)
     else:
         quoted_body = _shell_single_quote(class_body)
         script_lines.extend([
@@ -248,6 +395,7 @@ def iter_user_crons(spool: Path) -> Iterable[Tuple[str, Path, int, str, List[str
             continue
         user = path.name
         active_class: Optional[str] = None
+        active_authorisation: Optional[str] = None
         with path.open(errors="replace") as f:
             for n, line in enumerate(f, 1):
                 stripped = line.strip()
@@ -258,6 +406,8 @@ def iter_user_crons(spool: Path) -> Iterable[Tuple[str, Path, int, str, List[str
                     key, value = assignment
                     if key == "BASHQUEUES_CLASS":
                         active_class = value or None
+                    elif key in ("BASHQUEUES_AUTHORISATION", "BASHQUEUES_AUTHORIZATION"):
+                        active_authorisation = value or None
                     continue
                 expanded = expand_cron_macro(stripped, path, n, system=False)
                 if expanded is None:
@@ -266,7 +416,7 @@ def iter_user_crons(spool: Path) -> Iterable[Tuple[str, Path, int, str, List[str
                 if len(parts) != 6:
                     print(f"WARN invalid user cron {path}:{n}: expected 6 fields", file=sys.stderr)
                     continue
-                yield user, path, n, stripped, parts[:5], parts[5], active_class
+                yield user, path, n, stripped, parts[:5], parts[5], active_class, active_authorisation
 
 
 def iter_system_crons(system_dir: Path) -> Iterable[Tuple[str, Path, int, str, List[str], str, Optional[str]]]:
@@ -276,6 +426,7 @@ def iter_system_crons(system_dir: Path) -> Iterable[Tuple[str, Path, int, str, L
         if not path.is_file() or path.name.startswith("."):
             continue
         active_class: Optional[str] = None
+        active_authorisation: Optional[str] = None
         with path.open(errors="replace") as f:
             for n, line in enumerate(f, 1):
                 stripped = line.strip()
@@ -286,6 +437,8 @@ def iter_system_crons(system_dir: Path) -> Iterable[Tuple[str, Path, int, str, L
                     key, value = assignment
                     if key == "BASHQUEUES_CLASS":
                         active_class = value or None
+                    elif key in ("BASHQUEUES_AUTHORISATION", "BASHQUEUES_AUTHORIZATION"):
+                        active_authorisation = value or None
                     continue
                 expanded = expand_cron_macro(stripped, path, n, system=True)
                 if expanded is None:
@@ -294,7 +447,7 @@ def iter_system_crons(system_dir: Path) -> Iterable[Tuple[str, Path, int, str, L
                 if len(parts) != 7:
                     print(f"WARN invalid system cron {path}:{n}: expected 7 fields", file=sys.stderr)
                     continue
-                yield parts[5], path, n, stripped, parts[:5], parts[6], active_class
+                yield parts[5], path, n, stripped, parts[:5], parts[6], active_class, active_authorisation
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -317,14 +470,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     state_dir = Path(ns.state_dir)
     rc = 0
     entries = list(iter_user_crons(Path(ns.spool_dir))) + list(iter_system_crons(Path(ns.system_dir)))
-    for user, path, line_no, raw_line, parts, command, explicit_class in entries:
+    for user, path, line_no, raw_line, parts, command, explicit_class, auth_code in entries:
         try:
             if not should_run(parts, dt):
                 continue
             rid = run_id(str(path), user, line_no, raw_line, minute_key)
             if already_dispatched(state_dir, rid, ns.dryrun):
                 continue
-            drc = dispatch(user, command, f"{path}", line_no, dryrun=ns.dryrun, explicit_class=explicit_class)
+            drc = dispatch(user, command, f"{path}", line_no, dryrun=ns.dryrun, explicit_class=explicit_class, auth_code=auth_code)
             rc = rc or drc
         except Exception as e:
             print(f"ERROR {path}:{line_no}: {e}", file=sys.stderr)

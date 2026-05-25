@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.19"' queuebash.sh || fail "version not 0.17.19"
+grep -q 'QUEUEBASH_VERSION="0.17.25"' queuebash.sh || fail "version not 0.17.20"
 grep -q 'local sandbox_level="${QUEUEBASH_SANDBOX_LEVEL:-off}"' queuebash.sh || fail "sandbox_level is not initialised with safe default"
 grep -q "SANDBOX_LEVEL=%q" queuebash.sh || fail "job record does not persist SANDBOX_LEVEL"
 

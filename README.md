@@ -2744,7 +2744,7 @@ CLASS_DEFAULT_SECCOMP_PROFILE=docker-default
 queue submit example --sandbox network-none -- command
 ```
 
-See `docs/SECURITY_POLICIES.md`.
+See `docs/SECURITY_POLICIES.md`. See also `docs/SECURITY_EXCEPTION_GUIDANCE.md`.
 
 
 ### Security policy snapshots
@@ -2781,9 +2781,103 @@ The Queue Manager Class Creator exposes both sandbox and seccomp policy fields. 
 
 The Queue Manager class edit action is noninteractive. Selecting `edit` on a class now loads the selected class into the Class Creator panel, where it can be previewed, changed, validated, and saved. The panel no longer invokes `$EDITOR` through `queue classes edit`, because interactive editors can block the curses UI.
 
+
+### Class policy statements and authorisations
+
+`bashqueues` has a central class policy statement at `policies.d/class-statement/default.env`.
+It defines which sandbox/seccomp policies are user-selectable and whether security
+exception overlays require `--reason TEXT`, `--authorisation CODE`, or either.
+
+By default, submit-time overlays such as `--sandbox-override`, `--seccomp-allow`,
+`--drop-cap`, and `--add-port` require a reason or a short queue-local
+authorisation code.
+
+```bash
+queue submit job --sandbox-override off --reason "approved one-off" -- command
+queue generate authorisation --admin alice --user bob --code A1B2 -- bash -lc 'command'
+queue submit job --sandbox-override off --authorisation A1B2 -- bash -lc 'command'
+```
+
+Authorisation codes are command-bound, queue-specific, case-insensitive, and no
+more than five letters/numbers.  `queue authorisation list` reports whether each
+record is internally valid.  If the stored command array is forcibly edited and
+no longer matches the stored command hash, the record is shown as invalid and is
+not accepted by submit/cron checks.
+
+Authorisations can also be cryptographically signed. Generate an Ed25519
+queue-authorisation keypair with:
+
+```bash
+queue keygen authorisation root
+queue keygen authorisation hc3
+queue keys list
+queue keys show root
+```
+
+The private key remains in `$QUEUEBASH_ROOT/keys/private/` with mode `0600`.
+The generated public-key lines can be pasted into a central read-only policy,
+for example `/etc/bashqueues/policies.d/class-statement/default.env`:
+
+```bash
+CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="if-trusted-key"
+CLASS_POLICY_AUTHORISATION_SIGNER_ROOT_PUBLIC_KEY_SHA256="..."
+CLASS_POLICY_AUTHORISATION_SIGNER_ROOT_PUBLIC_KEY_PEM_B64="..."
+CLASS_POLICY_AUTHORISATION_SIGNER_HC3_PUBLIC_KEY_SHA256="..."
+CLASS_POLICY_AUTHORISATION_SIGNER_HC3_PUBLIC_KEY_PEM_B64="..."
+
+
+When a policy file declares trusted authorisation public keys, the short code is only a handle. The authorisation record must still verify against the policy public key for `AUTHORISATION_ADMIN` and the exact command hash. Unsigned records for declared signers show `invalid-missing-signature`; records from undeclared signers show `invalid-untrusted-admin`. Authorisation records are published read-only/readable so a root-issued approval in another user's selected queue can still be listed and verified by that queue owner.
+```
+
+When a public key for the authorising admin is declared in policy, the
+short code is only a handle; the real check is the Ed25519 signature over the
+queue root, authorising admin, authorised user, exact command hash, expiry, and
+reason hash.  Editing the command, user, hash, reason, or signature makes the
+record invalid.
+
+An operator can authorise an existing job in-place:
+
+```bash
+queue authorise <qid> --reason "approved one-off maintenance escape hatch"
+```
+
+This appends the authorisation code directly to the existing `.job` file without
+rewriting it, so using it from root or the Queue Manager panel does not
+accidentally change the job file owner/group.
+
+The cron bridge also uses this mechanism: if a crontab requests a class below
+the configured cron minimum, a matching `BASHQUEUES_AUTHORISATION=CODE` is
+required or the ticker falls back to the generated safe cron class.  See
+`docs/CLASS_POLICY_STATEMENT.md`.
+
 ### Security exception overlays
 
 Job-level security overrides such as `--sandbox-override`, `--seccomp-allow`,
 `--drop-cap`, and `--add-port` are recorded in the job file and shown by
 `queue explain` in the `Exception overlays` section. This makes deliberate
 single-job relaxation visible without editing the underlying class.
+
+`queue explain` also includes `Security exception guidance`. When a job is
+blocked by a runtime cap, sandbox, seccomp-looking failure, or pending
+class/asset preflight, explain prints the narrowest likely exception needed for
+that specific job. Examples include:
+
+```bash
+--drop-cap no-network-tools
+--add-port 443
+--sandbox-override off
+queue exception add <qid> secaudit:no_network_c2 --reason "approved one-off exception"
+```
+
+These are deliberately suggestions, not automatic policy changes. The preferred
+operator flow is to approve the smallest job-local exception and leave the class
+restriction visible.
+
+
+### Existing-job authorisation target user
+
+When an operator such as `root` authorises an existing job in a selected user queue,
+for example `queue --queue-user hc3 authorise QID --reason "..."`, the authorisation
+is recorded as `admin=root` and `user=hc3`.  The target user is the selected queue
+owner, not a stale `SUBMIT_USER` field from the job record.
+

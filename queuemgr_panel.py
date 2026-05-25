@@ -2115,8 +2115,8 @@ class PanelManager:
         # Jobs panel object context: bare typed actions act on the selected job.
         # Examples on Jobs: "kill", "delete", "undelete", "change priority 5", "edit".
         if self.view.name == "jobs":
-            job_context_heads = ["change", "priority", "prio", "kill", "delete", "undelete", "edit", "cancel", "resubmit", "history", "show", "tail", "explain", "exception", "copy"]
-            job_context_resolved, _ = resolve_unique_choice(head, job_context_heads, {"del": "delete", "undel": "undelete", "restore": "undelete", "pri": "priority", "p": "priority", "hist": "history", "h": "history", "ex": "exception", "cp": "copy"})
+            job_context_heads = ["change", "priority", "prio", "kill", "delete", "undelete", "edit", "cancel", "resubmit", "authorise", "authorize", "history", "show", "tail", "explain", "exception", "copy"]
+            job_context_resolved, _ = resolve_unique_choice(head, job_context_heads, {"del": "delete", "undel": "undelete", "restore": "undelete", "pri": "priority", "p": "priority", "hist": "history", "h": "history", "ex": "exception", "cp": "copy", "auth": "authorise"})
             if job_context_resolved:
                 self.execute_job_command(parts)
                 return
@@ -2301,7 +2301,7 @@ class PanelManager:
         job_actions = [
             "select", "show", "tail", "history", "explain", "exception", "exceptions",
             "copy", "cancel", "kill", "delete", "undelete", "edit", "resubmit",
-            "priority", "change-priority",
+            "authorise", "authorize", "priority", "change-priority",
         ]
         action_aliases = {
             "sel": "select", "s": "show", "h": "history", "hist": "history",
@@ -2309,7 +2309,7 @@ class PanelManager:
             "prio": "priority", "pri": "priority", "p": "priority",
             "changepriority": "change-priority", "chpri": "change-priority", "chp": "change-priority",
             "k": "kill", "del": "delete", "rm": "delete", "remove": "delete",
-            "undel": "undelete", "restore": "undelete", "ed": "edit",
+            "undel": "undelete", "restore": "undelete", "ed": "edit", "auth": "authorise", "authorise": "authorise", "authorize": "authorise",
         }
 
         def resolve_action_words(seq: Sequence[str]) -> tuple[str, int]:
@@ -2340,6 +2340,16 @@ class PanelManager:
                 else:
                     fragment = rest[0]
                     value = rest[1]
+            elif action in {"authorise", "authorize"}:
+                if not rest:
+                    fragment = self.current_job_fragment()
+                    value = self.prompt("Authorisation reason")
+                elif len(rest) == 1:
+                    fragment = rest[0]
+                    value = self.prompt("Authorisation reason")
+                else:
+                    fragment = rest[0]
+                    value = " ".join(rest[1:])
             else:
                 fragment = " ".join(rest) if rest else self.current_job_fragment()
         else:
@@ -2350,6 +2360,9 @@ class PanelManager:
                 if action == "priority":
                     value_index = 1 + consumed2
                     value = parts[value_index] if value_index < len(parts) else self.prompt("New priority")
+                elif action in {"authorise", "authorize"}:
+                    value_index = 1 + consumed2
+                    value = " ".join(parts[value_index:]) if value_index < len(parts) else self.prompt("Authorisation reason")
             else:
                 action = "select"
 
@@ -2391,6 +2404,17 @@ class PanelManager:
                 return
             rc, out = qrun(["priority", qid, value], dry_run=self.dry_run)
             self.status = out.splitlines()[-1] if out else f"priority rc={rc}"
+            self.refresh_current()
+            return
+
+        if action in {"authorise", "authorize"}:
+            if not value:
+                value = self.prompt("Authorisation reason")
+            args = ["authorise", qid]
+            if value:
+                args.extend(["--reason", value])
+            rc, out = qrun(args, dry_run=self.dry_run)
+            self.status = out.splitlines()[-1] if out else f"authorise rc={rc}"
             self.refresh_current()
             return
 
@@ -3231,7 +3255,7 @@ class PanelManager:
         qid = self.selected_qid()
         if not qid:
             return
-        job_actions = ["change priority", "kill", "delete", "undelete", "edit", "cancel", "resubmit", "copy", "show", "tail", "history", "explain"]
+        job_actions = ["authorise", "change priority", "kill", "delete", "undelete", "edit", "cancel", "resubmit", "copy", "show", "tail", "history", "explain"]
         action = self.prompt_choice("Job action", job_actions)
         if not action:
             return
@@ -4170,6 +4194,7 @@ class PanelManager:
             "  Examples: jo, tas, task class GITHUB, task name publish_git",
             "  Examples: task dependencies setup_job, task on-success bash -c 'echo ok'",
             "  Examples: job 1798231 history, job change priority 5, job kill, job edit",
+            "  Examples: job 1798231 authorise Approved maintenance exception",
             "  Examples: user hc3, user clear",
             "  Examples: cla MYCLASS hist, class MYCLASS use, maint health queue",
             "  Examples: module asset net disable, cap billing enable",

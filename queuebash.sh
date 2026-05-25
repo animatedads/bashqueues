@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.19"
+QUEUEBASH_VERSION="0.17.26"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -402,12 +402,12 @@ _queue_install_bundled_policies() {
 
     [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
 
-    mkdir -p "$root/policies.d/sandbox" "$root/policies.d/seccomp"
+    mkdir -p "$root/policies.d/sandbox" "$root/policies.d/seccomp" "$root/policies.d/class-statement"
     shopt -s nullglob
     for src in "$source_dir"/*/*.env; do
         [[ -f "$src" ]] || continue
         kind="$(basename "$(dirname "$src")")"
-        case "$kind" in sandbox|seccomp) ;; *) continue ;; esac
+        case "$kind" in sandbox|seccomp|class-statement) ;; *) continue ;; esac
         base="$(basename "$src")"
         dst="$root/policies.d/$kind/$base"
         if [[ ! -e "$dst" && ! -e "$root/policies.d/$kind/.disabled/$base" ]]; then
@@ -423,7 +423,7 @@ _queue_init() {
     local default_class="${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}"
     local default_file="$root/classes/$default_class.env"
 
-    mkdir -p "$root"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,caps.d,policies.d/sandbox,policies.d/seccomp,claims/classes,claims/assets}
+    mkdir -p "$root"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,caps.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets}
 
     if [[ ! -f "$default_file" ]]; then
         cat > "$default_file" <<'EOF'
@@ -1937,6 +1937,196 @@ _queue_exception_clear_all() {
     echo "Cleared all exception overlays for job=$id"
 }
 
+
+
+_queue_security_guidance_shell_join() {
+    local out="" item
+    for item in "$@"; do
+        printf -v item '%q' "$item"
+        out="${out:+$out }$item"
+    done
+    printf '%s\n' "$out"
+}
+
+_queue_security_guidance_command_for_current_job() {
+    if declare -p COMMAND >/dev/null 2>&1; then
+        _queue_security_guidance_shell_join "${COMMAND[@]}"
+    else
+        printf '%s\n' "${COMMAND_LINE:-}"
+    fi
+}
+
+_queue_security_guidance_extract_port() {
+    local text="${1:-}" port=""
+    if [[ "$text" =~ -\>([^[:space:]]*):([0-9]+) ]]; then
+        port="${BASH_REMATCH[2]}"
+    elif [[ "$text" =~ TCP[^:[:space:]]*:([0-9]+) ]]; then
+        port="${BASH_REMATCH[1]}"
+    elif [[ "$text" =~ UDP[^:[:space:]]*:([0-9]+) ]]; then
+        port="${BASH_REMATCH[1]}"
+    elif [[ "$text" =~ :([0-9]+)(\ |$|-) ]]; then
+        port="${BASH_REMATCH[1]}"
+    fi
+    [[ "$port" =~ ^[0-9]+$ ]] && printf '%s\n' "$port"
+}
+
+_queue_security_guidance_print_submit() {
+    local flag1="${1:-}" value1="${2:-}" flag2="${3:-}" value2="${4:-}"
+    local name="${JOB_NAME:-job}" class="${JOB_CLASS:-${QUEUE_CLASS_NAME:-DEFAULT}}" cmd
+    cmd="$(_queue_security_guidance_command_for_current_job)"
+    printf '    queue submit %q --class %q' "$name" "$class"
+    if [[ -n "$flag1" ]]; then
+        if [[ -n "$value1" ]]; then printf ' %s %q' "$flag1" "$value1"; else printf ' %s' "$flag1"; fi
+    fi
+    if [[ -n "$flag2" ]]; then
+        if [[ -n "$value2" ]]; then printf ' %s %q' "$flag2" "$value2"; else printf ' %s' "$flag2"; fi
+    fi
+    if [[ -n "$cmd" ]]; then
+        printf ' -- %s\n' "$cmd"
+    else
+        printf ' -- <original-command>\n'
+    fi
+}
+
+_queue_security_guidance_probe_preflight_for_current_job() {
+    # Explain-time probe only.  The existing class/asset preflight is already
+    # the source of truth; this captures its first blocking line so explain can
+    # show the exact job-level exception operator command.
+    local output line asset=""
+    output="$(_queue_asset_implied_preflight_for_class 2>&1 || true)"
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        case "$line" in
+            asset_exception_applied:*) continue ;;
+        esac
+        if [[ "$line" == *asset=* ]]; then
+            asset="${line#*asset=}"
+            asset="${asset%% *}"
+        elif [[ "$line" == asset_check_blocked:* ]]; then
+            asset="${line#asset_check_blocked: }"
+            asset="${asset%% *}"
+        fi
+        if [[ -n "$asset" ]]; then
+            printf '%s\t%s\n' "$asset" "$line"
+            return 0
+        fi
+    done <<< "$output"
+    return 1
+}
+
+_queue_security_exception_guidance_for_job() {
+    local id="${1:-}" jobf="${2:-}" log_file="${3:-}"
+    [[ -n "$id" && -n "$jobf" && -f "$jobf" ]] || return 0
+
+    (
+        JOB_ID="$id"
+        COMMAND=()
+        JOB_NAME=""
+        JOB_CLASS=""
+        SANDBOX_LEVEL=""
+        SECCOMP_PROFILE=""
+        SECCOMP_ALLOW=""
+        RUNTIME_CAPS=""
+        RUNTIME_CAP_PORTS=""
+        EXCEPTION_SANDBOX_OVERRIDE=""
+        EXCEPTION_SECCOMP_ALLOW=""
+        EXCEPTION_DROP_CAP=""
+        EXCEPTION_ADD_PORT=""
+        RUNTIME_CAP_VIOLATED=""
+        RUNTIME_CAP_VIOLATION=""
+        EXIT_CODE=""
+        source "$jobf" >/dev/null 2>&1 || exit 0
+
+        local any=0 violation="${RUNTIME_CAP_VIOLATION:-}" cmd log_tail port probe_asset probe_line sandbox_reason=""
+        cmd="$(_queue_security_guidance_command_for_current_job)"
+        [[ -n "$log_file" && -f "$log_file" ]] && log_tail="$(tail -80 "$log_file" 2>/dev/null || true)"
+
+        echo
+        echo "Security exception guidance"
+
+        case "$violation" in
+            no-spawn-shell*)
+                echo "  runtime cap blocked a child shell. Smallest explicit exception:"
+                echo "    --drop-cap no-spawn-shell"
+                _queue_security_guidance_print_submit --drop-cap no-spawn-shell
+                any=1
+                ;;
+            no-network-tools*)
+                echo "  runtime cap blocked a network client/tool. Smallest explicit exception:"
+                echo "    --drop-cap no-network-tools"
+                _queue_security_guidance_print_submit --drop-cap no-network-tools
+                any=1
+                ;;
+            no-network-sockets*)
+                echo "  runtime cap blocked socket creation. Smallest explicit exception:"
+                echo "    --drop-cap no-network-sockets"
+                _queue_security_guidance_print_submit --drop-cap no-network-sockets
+                any=1
+                ;;
+            only-local-sockets*)
+                echo "  runtime cap blocked a non-local socket. Smallest explicit exception:"
+                echo "    --drop-cap only-local-sockets"
+                _queue_security_guidance_print_submit --drop-cap only-local-sockets
+                any=1
+                ;;
+            only-port*)
+                port="$(_queue_security_guidance_extract_port "$violation" 2>/dev/null || true)"
+                [[ -z "$port" ]] && port="$(_queue_security_guidance_extract_port "$log_tail" 2>/dev/null || true)"
+                echo "  runtime cap blocked a socket outside the allowed port list. Smallest explicit exception:"
+                if [[ -n "$port" ]]; then
+                    echo "    --add-port $port"
+                    _queue_security_guidance_print_submit --add-port "$port"
+                else
+                    echo "    --add-port <required-port>"
+                    _queue_security_guidance_print_submit --add-port "<required-port>"
+                fi
+                any=1
+                ;;
+        esac
+
+        if [[ "$any" -eq 0 ]]; then
+            if [[ " ${SANDBOX_LEVEL:-} " =~ [[:space:]](network-none|strict)[[:space:]] ]] && \
+               { [[ "$cmd" =~ (^|[[:space:]])(curl|wget|nc|ncat|netcat|socat|telnet|ssh|scp|sftp|rsync)([[:space:]]|$) ]] || \
+                 grep -Eiq 'network is unreachable|temporary failure in name resolution|could not resolve host|name or service not known|no route to host|private.?network|dns' <<< "$log_tail"; }; then
+                sandbox_reason="${SANDBOX_LEVEL:-strict} blocks external networking"
+                echo "  sandbox likely blocked network access ($sandbox_reason). Smallest explicit exception:"
+                echo "    --sandbox-override off"
+                _queue_security_guidance_print_submit --sandbox-override off
+                any=1
+            fi
+        fi
+
+        if [[ "$any" -eq 0 && " ${SECCOMP_PROFILE:-} " =~ [[:space:]]strict[[:space:]] ]]; then
+            if grep -Eiq 'operation not permitted|system call|seccomp|strace|ptrace|keyctl|mount|unshare|clone3' <<< "$log_tail"; then
+                echo "  seccomp may have blocked a syscall. Start with the narrow systemd syscall group required by the tool."
+                echo "  Common debug exception:"
+                echo "    --seccomp-allow @debug"
+                _queue_security_guidance_print_submit --seccomp-allow @debug
+                any=1
+            fi
+        fi
+
+        if [[ "$any" -eq 0 && "$(_queue_job_state_for_file "$jobf" 2>/dev/null || true)" == "pending" ]]; then
+            if _queue_class_load_for_job "$jobf" >/dev/null 2>&1; then
+                IFS=$'\t' read -r probe_asset probe_line < <(_queue_security_guidance_probe_preflight_for_current_job || true)
+                if [[ -n "$probe_asset" ]]; then
+                    echo "  class/asset preflight is currently blocking this job:"
+                    echo "    $probe_line"
+                    echo "  Exact job-local exception overlay:"
+                    printf '    queue exception add %q %q --reason %q\n' "$id" "$probe_asset" "approved one-off exception for this job"
+                    any=1
+                fi
+            fi
+        fi
+
+        if [[ "$any" -eq 0 ]]; then
+            echo "  none inferred"
+            echo "  No specific security exception could be inferred from the job record/log yet."
+        else
+            echo "  note: prefer the narrowest exception; avoid editing class defaults unless this should become policy."
+        fi
+    )
+}
 
 _queue_exception_explain_for_job() {
     local id="${1:-}"
@@ -5042,8 +5232,27 @@ _queue_caps_explain_current_job() {
     local runtime_caps="${RUNTIME_CAPS:-}"
     local runtime_interval="${RUNTIME_CAP_INTERVAL:-}"
     local runtime_ports="${RUNTIME_CAP_PORTS:-}"
+    local display_sandbox="${SANDBOX_LEVEL:-}"
+    local display_seccomp_allow="${SECCOMP_ALLOW:-}"
     local wall_s="" effective_s="" effective=""
     local line kind seconds plugin detail
+
+    # queue explain should show the effective security posture, not merely the
+    # class defaults captured at submit time.  Workers apply these overlays
+    # before launching; pending jobs need the same visible calculation.
+    if [[ -n "${EXCEPTION_SANDBOX_OVERRIDE:-}" ]]; then
+        display_sandbox="$(_queue_sandbox_normalise_level "$EXCEPTION_SANDBOX_OVERRIDE" 2>/dev/null || true)"
+        [[ -z "$display_sandbox" ]] && display_sandbox="off"
+    fi
+    if [[ -n "${EXCEPTION_DROP_CAP:-}" ]]; then
+        runtime_caps="$(_queue_runtime_caps_drop_list "$runtime_caps" "$EXCEPTION_DROP_CAP" 2>/dev/null || true)"
+    fi
+    if [[ -n "${EXCEPTION_ADD_PORT:-}" ]]; then
+        runtime_ports="$(_queue_ports_add_list "$runtime_ports" "$EXCEPTION_ADD_PORT" 2>/dev/null || true)"
+    fi
+    if [[ -n "${EXCEPTION_SECCOMP_ALLOW:-}" ]]; then
+        display_seccomp_allow="${display_seccomp_allow:+$display_seccomp_allow }${EXCEPTION_SECCOMP_ALLOW}"
+    fi
 
     [[ -n "$wall" ]] && wall_s="$(_queue_duration_to_seconds "$wall" 2>/dev/null || true)"
     effective_s="$(_queue_caps_effective_timeout_seconds_from_current_job 2>/dev/null || true)"
@@ -5054,15 +5263,15 @@ _queue_caps_explain_current_job() {
     [[ -n "$kill_after" ]] && echo "  kill after:         $kill_after"
     [[ -n "$cpu_seconds" ]] && echo "  CPU seconds:        $cpu_seconds (metadata; live CPU enforcement is future work)"
     [[ -n "$wall_seconds" ]] && echo "  wall seconds:       $wall_seconds (metadata)"
-    [[ -n "${SANDBOX_LEVEL:-}" ]] && echo "  sandbox:            ${SANDBOX_LEVEL:-off}"
+    [[ -n "$display_sandbox" ]] && echo "  sandbox:            ${display_sandbox:-off}"
     [[ -n "${SECCOMP_PROFILE:-}" ]] && echo "  seccomp:            ${SECCOMP_PROFILE:-}"
-    [[ -n "${SECCOMP_ALLOW:-}" ]] && echo "  seccomp allow:      ${SECCOMP_ALLOW:-}"
+    [[ -n "$display_seccomp_allow" ]] && echo "  seccomp allow:      ${display_seccomp_allow:-}"
     [[ -n "$runtime_caps" ]] && echo "  runtime caps:       $runtime_caps${runtime_interval:+ interval=${runtime_interval}s}${runtime_ports:+ ports=$runtime_ports}"
-    if [[ -n "${RUNTIME_CAPS:-}" ]]; then
+    if [[ -n "$runtime_caps" ]]; then
         local normalised unknown
-        normalised="$(_queue_runtime_caps_normalise "${RUNTIME_CAPS:-}" 2>/dev/null || true)"
-        unknown="$(_queue_runtime_caps_unknown_list "${RUNTIME_CAPS:-}" 2>/dev/null || true)"
-        [[ -n "$normalised" && "$normalised" != "${RUNTIME_CAPS:-}" ]] && echo "  runtime caps norm:  $normalised"
+        normalised="$(_queue_runtime_caps_normalise "$runtime_caps" 2>/dev/null || true)"
+        unknown="$(_queue_runtime_caps_unknown_list "$runtime_caps" 2>/dev/null || true)"
+        [[ -n "$normalised" && "$normalised" != "$runtime_caps" ]] && echo "  runtime caps norm:  $normalised"
         [[ -n "$unknown" ]] && echo "  runtime warning:    unknown cap(s): $unknown"
     fi
     if [[ "${RUNTIME_CAP_VIOLATED:-0}" == "1" || -n "${RUNTIME_CAP_VIOLATION:-}" ]]; then
@@ -5141,8 +5350,650 @@ _queue_emit_user_switch_prefix() {
 }
 
 
+
+_queue_security_policy_statement_name() {
+    printf '%s\n' "${QUEUEBASH_CLASS_POLICY_STATEMENT:-default}"
+}
+
+_queue_security_policy_statement_source() {
+    local name="${1:-$(_queue_security_policy_statement_name)}" file
+    file="$(_queue_policy_file class-statement "$name" 2>/dev/null || true)"
+    [[ -n "$file" && -f "$file" ]] || return 1
+    # Policy statements are bash data files with the same admin/root/bundled
+    # precedence as sandbox/seccomp policy files.
+    source "$file" >/dev/null 2>&1 || return 1
+}
+
+_queue_security_policy_value_in_list() {
+    local value="$1" list="$2" item
+    for item in $list; do
+        [[ "${item,,}" == "${value,,}" ]] && return 0
+    done
+    return 1
+}
+
+_queue_security_sandbox_rank() {
+    case "${1,,}" in
+        off|none) echo 0 ;;
+        restrict-egress|queue-default) echo 1 ;;
+        network-none) echo 2 ;;
+        strict) echo 3 ;;
+        *) echo 0 ;;
+    esac
+}
+
+_queue_security_seccomp_rank() {
+    case "${1,,}" in
+        off|none) echo 0 ;;
+        docker-default|queue-default) echo 1 ;;
+        strict) echo 2 ;;
+        *) echo 0 ;;
+    esac
+}
+
+_queue_authorisation_normalise_code() {
+    local c="${1:-}"
+    c="${c^^}"
+    [[ "$c" =~ ^[A-Z0-9]{1,5}$ ]] || return 1
+    printf '%s\n' "$c"
+}
+
+_queue_command_hash_from_args() {
+    local raw=""
+    if [[ "$#" -gt 0 ]]; then
+        printf -v raw '%q ' "$@"
+    fi
+    printf '%s' "$raw" | sha256sum | awk '{print $1}'
+}
+
+
+_queue_authorisation_key_name_ok() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9_.@+-]{1,64}$ ]]
+}
+
+_queue_authorisation_key_suffix() {
+    local s="${1:-}"
+    s="${s^^}"
+    s="${s//[^A-Z0-9]/_}"
+    [[ -n "$s" ]] || s="UNKNOWN"
+    printf '%s\n' "$s"
+}
+
+_queue_authorisation_key_root() {
+    printf '%s\n' "$(_queue_root)/keys"
+}
+
+_queue_authorisation_private_key_file() {
+    local name="${1:-}"
+    _queue_authorisation_key_name_ok "$name" || return 1
+    printf '%s/private/%s.ed25519.pem\n' "$(_queue_authorisation_key_root)" "$name"
+}
+
+_queue_authorisation_public_key_file() {
+    local name="${1:-}"
+    _queue_authorisation_key_name_ok "$name" || return 1
+    printf '%s/public/%s.ed25519.pub.pem\n' "$(_queue_authorisation_key_root)" "$name"
+}
+
+_queue_authorisation_key_meta_file() {
+    local name="${1:-}"
+    _queue_authorisation_key_name_ok "$name" || return 1
+    printf '%s/meta/%s.env\n' "$(_queue_authorisation_key_root)" "$name"
+}
+
+_queue_base64_one_line() {
+    base64 "$@" | tr -d '\n'
+}
+
+_queue_base64_decode() {
+    base64 -d "$@" 2>/dev/null || base64 --decode "$@"
+}
+
+_queue_authorisation_public_key_sha256_file() {
+    local f="${1:-}"
+    [[ -f "$f" ]] || return 1
+    sha256sum "$f" | awk '{print $1}'
+}
+
+_queue_authorisation_keygen() {
+    local kind="${1:-authorisation}" name="" force=0 priv pub meta created pub_sha pub_b64 key_id suffix
+    [[ "$kind" == "authorisation" || "$kind" == "auth" ]] || { echo "Usage: queue keygen authorisation NAME [--force]" >&2; return 2; }
+    shift || true
+    name="${1:-}"; [[ -n "$name" ]] && shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --force) force=1; shift ;;
+            *) echo "queue keygen authorisation: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$name" ]] || name="$(id -un 2>/dev/null || echo root)"
+    _queue_authorisation_key_name_ok "$name" || { echo "queue keygen authorisation: key name must be 1-64 safe characters" >&2; return 2; }
+    command -v openssl >/dev/null 2>&1 || { echo "queue keygen authorisation: openssl is required for Ed25519 keys" >&2; return 3; }
+    priv="$(_queue_authorisation_private_key_file "$name")" || return 2
+    pub="$(_queue_authorisation_public_key_file "$name")" || return 2
+    meta="$(_queue_authorisation_key_meta_file "$name")" || return 2
+    if [[ "$force" -ne 1 && ( -e "$priv" || -e "$pub" || -e "$meta" ) ]]; then
+        echo "queue keygen authorisation: key already exists: $name (use --force to replace)" >&2
+        return 1
+    fi
+    mkdir -p "$(dirname "$priv")" "$(dirname "$pub")" "$(dirname "$meta")"
+    chmod 0700 "$(dirname "$priv")" 2>/dev/null || true
+    chmod 0755 "$(dirname "$pub")" "$(dirname "$meta")" 2>/dev/null || true
+    umask 077
+    openssl genpkey -algorithm ED25519 -out "$priv" >/dev/null 2>&1 || { echo "queue keygen authorisation: openssl failed generating private key" >&2; return 1; }
+    chmod 0600 "$priv" 2>/dev/null || true
+    openssl pkey -in "$priv" -pubout -out "$pub" >/dev/null 2>&1 || { rm -f "$priv"; echo "queue keygen authorisation: openssl failed deriving public key" >&2; return 1; }
+    chmod 0644 "$pub" 2>/dev/null || true
+    created="$(date -Is 2>/dev/null || date)"
+    pub_sha="$(_queue_authorisation_public_key_sha256_file "$pub")"
+    key_id="${pub_sha:0:16}"
+    pub_b64="$(_queue_base64_one_line "$pub")"
+    {
+        printf 'KEY_NAME=%q\n' "$name"
+        printf 'KEY_ID=%q\n' "$key_id"
+        printf 'KEY_ALGORITHM=%q\n' "Ed25519"
+        printf 'KEY_CREATED_AT=%q\n' "$created"
+        printf 'KEY_STATUS=%q\n' "active"
+        printf 'KEY_PURPOSE=%q\n' "queue-authorisation-signing"
+        printf 'PUBLIC_KEY_SHA256=%q\n' "$pub_sha"
+        printf 'PUBLIC_KEY_FILE=%q\n' "$pub"
+        printf 'PRIVATE_KEY_FILE=%q\n' "$priv"
+    } > "$meta"
+    chmod 0644 "$meta" 2>/dev/null || true
+    suffix="$(_queue_authorisation_key_suffix "$name")"
+    echo "key:       $name"
+    echo "key_id:    $key_id"
+    echo "algorithm: Ed25519"
+    echo "private:   $priv"
+    echo "public:    $pub"
+    echo "public_sha256: $pub_sha"
+    echo ""
+    echo "Policy statement lines for policies.d/class-statement/default.env or /etc/bashqueues/policies.d/class-statement/default.env:"
+    printf 'CLASS_POLICY_AUTHORISATION_SIGNER_%s_PUBLIC_KEY_SHA256=%q\n' "$suffix" "$pub_sha"
+    printf 'CLASS_POLICY_AUTHORISATION_SIGNER_%s_PUBLIC_KEY_PEM_B64=%q\n' "$suffix" "$pub_b64"
+}
+
+_queue_authorisation_keys_list() {
+    local f line name key_id alg status pub_sha
+    shopt -s nullglob
+    for f in "$(_queue_authorisation_key_root)"/meta/*.env; do
+        line="$(KEY_NAME="" KEY_ID="" KEY_ALGORITHM="" KEY_STATUS="" PUBLIC_KEY_SHA256=""; source "$f" >/dev/null 2>&1 || exit 9; printf '%s\t%s\t%s\t%s\t%s\n' "${KEY_NAME:-$(basename "$f" .env)}" "${KEY_ID:-}" "${KEY_ALGORITHM:-}" "${KEY_STATUS:-}" "${PUBLIC_KEY_SHA256:-}")" || continue
+        IFS=$'\t' read -r name key_id alg status pub_sha <<< "$line"
+        printf '%-16s key_id=%-16s algorithm=%-8s status=%-8s public_sha=%s\n' "$name" "$key_id" "$alg" "$status" "${pub_sha:0:16}"
+    done
+    shopt -u nullglob
+}
+
+_queue_authorisation_keys_show() {
+    local name="${1:-}" meta pub suffix pub_sha pub_b64
+    [[ -n "$name" ]] || { echo "Usage: queue keys show NAME" >&2; return 2; }
+    meta="$(_queue_authorisation_key_meta_file "$name")" || { echo "queue keys show: invalid key name" >&2; return 2; }
+    [[ -f "$meta" ]] || { echo "queue keys show: key not found: $name" >&2; return 1; }
+    sed -n '1,120p' "$meta" | sed '/PRIVATE_KEY_FILE=/d'
+    pub="$(_queue_authorisation_public_key_file "$name")" || return 2
+    if [[ -f "$pub" ]]; then
+        pub_sha="$(_queue_authorisation_public_key_sha256_file "$pub")"
+        pub_b64="$(_queue_base64_one_line "$pub")"
+        suffix="$(_queue_authorisation_key_suffix "$name")"
+        echo "POLICY_SIGNER_SUFFIX=$suffix"
+        printf 'CLASS_POLICY_AUTHORISATION_SIGNER_%s_PUBLIC_KEY_SHA256=%q\n' "$suffix" "$pub_sha"
+        printf 'CLASS_POLICY_AUTHORISATION_SIGNER_%s_PUBLIC_KEY_PEM_B64=%q\n' "$suffix" "$pub_b64"
+    fi
+}
+
+_queue_authorisation_payload_text() {
+    local code="$1" admin="$2" user="$3" cmd_hash="$4" created="$5" expires="$6" reason="$7" queue_root="$8"
+    local reason_sha
+    reason_sha="$(printf '%s' "$reason" | sha256sum | awk '{print $1}')"
+    printf 'BQAUTH-V1\n'
+    printf 'code=%s\n' "$code"
+    printf 'queue_root=%s\n' "$queue_root"
+    printf 'admin=%s\n' "$admin"
+    printf 'user=%s\n' "$user"
+    printf 'command_sha256=%s\n' "$cmd_hash"
+    printf 'created_at=%s\n' "$created"
+    printf 'expires_at=%s\n' "$expires"
+    printf 'reason_sha256=%s\n' "$reason_sha"
+}
+
+_queue_authorisation_policy_public_key_b64() {
+    local signer="${1:-}" suffix var
+    _queue_security_policy_statement_source >/dev/null 2>&1 || return 1
+    suffix="$(_queue_authorisation_key_suffix "$signer")"
+    var="CLASS_POLICY_AUTHORISATION_SIGNER_${suffix}_PUBLIC_KEY_PEM_B64"
+    printf '%s\n' "${!var:-}"
+}
+
+_queue_authorisation_policy_public_key_sha() {
+    local signer="${1:-}" suffix var
+    _queue_security_policy_statement_source >/dev/null 2>&1 || return 1
+    suffix="$(_queue_authorisation_key_suffix "$signer")"
+    var="CLASS_POLICY_AUTHORISATION_SIGNER_${suffix}_PUBLIC_KEY_SHA256"
+    printf '%s\n' "${!var:-}"
+}
+
+_queue_authorisation_signature_requirement() {
+    _queue_security_policy_statement_source >/dev/null 2>&1 || { echo "off"; return 0; }
+    printf '%s\n' "${CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED:-if-trusted-key}"
+}
+
+_queue_authorisation_sign_fields() {
+    local code="$1" admin="$2" user="$3" cmd_hash="$4" created="$5" expires="$6" reason="$7" key_name="$8"
+    local priv payload sig sig_b64 payload_sha
+    [[ -n "$key_name" ]] || key_name="$admin"
+    priv="$(_queue_authorisation_private_key_file "$key_name")" || return 1
+    [[ -f "$priv" ]] || return 1
+    command -v openssl >/dev/null 2>&1 || return 1
+    payload="$(mktemp)" || return 1
+    sig="$(mktemp)" || { rm -f "$payload"; return 1; }
+    _queue_authorisation_payload_text "$code" "$admin" "$user" "$cmd_hash" "$created" "$expires" "$reason" "$(_queue_root)" > "$payload"
+    payload_sha="$(sha256sum "$payload" | awk '{print $1}')"
+    if ! openssl pkeyutl -sign -rawin -inkey "$priv" -in "$payload" -out "$sig" >/dev/null 2>&1; then
+        rm -f "$payload" "$sig"
+        return 1
+    fi
+    sig_b64="$(_queue_base64_one_line "$sig")"
+    rm -f "$payload" "$sig"
+    printf '%s\t%s\t%s\n' "$key_name" "$payload_sha" "$sig_b64"
+}
+
+_queue_authorisation_verify_signature_loaded() {
+    local mode pub_b64 expected_sha pubfile payload sigfile actual_sha payload_sha expected_payload_sha
+    mode="$(_queue_authorisation_signature_requirement)"
+    pub_b64="$(_queue_authorisation_policy_public_key_b64 "${AUTHORISATION_ADMIN:-}")"
+    expected_sha="$(_queue_authorisation_policy_public_key_sha "${AUTHORISATION_ADMIN:-}")"
+    case "${mode,,}" in
+        off|none|legacy) echo "valid-unsigned"; return 0 ;;
+        always|required)
+            [[ -n "$pub_b64" ]] || { echo "invalid-no-policy-public-key"; return 1; }
+            ;;
+        if-trusted-key|if-trusted-keys|trusted|auto|"")
+            if [[ -z "$pub_b64" ]]; then
+                if _queue_authorisation_policy_has_any_public_keys; then
+                    echo "invalid-untrusted-admin"
+                    return 1
+                fi
+                echo "valid-unsigned"
+                return 0
+            fi
+            ;;
+        *) echo "invalid-policy-signature-mode"; return 1 ;;
+    esac
+    [[ -n "${AUTHORISATION_SIGNATURE_B64:-}" ]] || { echo "invalid-missing-signature"; return 1; }
+    pubfile="$(mktemp)" || return 1
+    payload="$(mktemp)" || { rm -f "$pubfile"; return 1; }
+    sigfile="$(mktemp)" || { rm -f "$pubfile" "$payload"; return 1; }
+    printf '%s' "$pub_b64" | _queue_base64_decode > "$pubfile" || { rm -f "$pubfile" "$payload" "$sigfile"; echo "invalid-policy-public-key"; return 1; }
+    actual_sha="$(_queue_authorisation_public_key_sha256_file "$pubfile" 2>/dev/null || true)"
+    if [[ -n "$expected_sha" && "$actual_sha" != "$expected_sha" ]]; then
+        rm -f "$pubfile" "$payload" "$sigfile"
+        echo "invalid-policy-public-key-sha"
+        return 1
+    fi
+    _queue_authorisation_payload_text "${AUTHORISATION_CODE:-}" "${AUTHORISATION_ADMIN:-}" "${AUTHORISATION_USER:-}" "${AUTHORISATION_COMMAND_SHA256:-}" "${AUTHORISATION_CREATED_AT:-}" "${AUTHORISATION_EXPIRES_AT:-never}" "${AUTHORISATION_REASON:-}" "${AUTHORISATION_QUEUE_ROOT:-$(_queue_root)}" > "$payload"
+    payload_sha="$(sha256sum "$payload" | awk '{print $1}')"
+    expected_payload_sha="${AUTHORISATION_SIGNATURE_PAYLOAD_SHA256:-}"
+    if [[ -n "$expected_payload_sha" && "$payload_sha" != "$expected_payload_sha" ]]; then
+        rm -f "$pubfile" "$payload" "$sigfile"
+        echo "invalid-payload-hash"
+        return 1
+    fi
+    printf '%s' "${AUTHORISATION_SIGNATURE_B64:-}" | _queue_base64_decode > "$sigfile" || { rm -f "$pubfile" "$payload" "$sigfile"; echo "invalid-signature-b64"; return 1; }
+    if openssl pkeyutl -verify -rawin -pubin -inkey "$pubfile" -sigfile "$sigfile" -in "$payload" >/dev/null 2>&1; then
+        rm -f "$pubfile" "$payload" "$sigfile"
+        echo "valid-signed"
+        return 0
+    fi
+    rm -f "$pubfile" "$payload" "$sigfile"
+    echo "invalid-signature"
+    return 1
+}
+
+_queue_authorisation_dir() {
+    printf '%s\n' "$(_queue_root)/authorisations"
+}
+
+_queue_authorisation_file() {
+    local code
+    code="$(_queue_authorisation_normalise_code "${1:-}")" || return 1
+    printf '%s/%s.env\n' "$(_queue_authorisation_dir)" "$code"
+}
+
+_queue_authorisation_publish_file_permissions() {
+    # Authorisation records are queue evidence.  They may be created by root
+    # while operating inside another user's selected queue, so they must not
+    # inherit root-only readability (for example 0640 root:root).  Publish them
+    # read-only and world-readable so the queue owner/panel can validate them
+    # without changing the record owner/group or relying on a particular group.
+    local file="${1:-}"
+    [[ -n "$file" && -e "$file" ]] || return 0
+    chmod 0444 "$file" 2>/dev/null || chmod 0644 "$file" 2>/dev/null || true
+}
+
+_queue_authorisation_policy_has_any_public_keys() {
+    _queue_security_policy_statement_source >/dev/null 2>&1 || return 1
+    compgen -A variable CLASS_POLICY_AUTHORISATION_SIGNER_ 2>/dev/null | grep -q '_PUBLIC_KEY_PEM_B64$'
+}
+
+_queue_authorisation_policy_signers_list() {
+    local var s out=""
+    _queue_security_policy_statement_source >/dev/null 2>&1 || return 1
+    for var in $(compgen -A variable CLASS_POLICY_AUTHORISATION_SIGNER_ 2>/dev/null | LC_ALL=C sort); do
+        [[ "$var" == *_PUBLIC_KEY_PEM_B64 ]] || continue
+        [[ -n "${!var:-}" ]] || continue
+        s="${var#CLASS_POLICY_AUTHORISATION_SIGNER_}"
+        s="${s%_PUBLIC_KEY_PEM_B64}"
+        out+=" ${s}"
+    done
+    printf '%s\n' "${out# }"
+}
+
+_queue_authorisation_generate_code() {
+    local root code try
+    root="$(_queue_root)"
+    mkdir -p "$root/authorisations"
+    for try in 1 2 3 4 5 6 7 8 9 10; do
+        code="$(LC_ALL=C tr -dc 'A-Z0-9' </dev/urandom 2>/dev/null | head -c 5 || true)"
+        if [[ -z "$code" ]]; then
+            code="$(date +%s%N | sha256sum | tr -dc 'A-Z0-9' | head -c 5)"
+        fi
+        [[ -n "$code" && ! -e "$root/authorisations/$code.env" ]] && { printf '%s\n' "$code"; return 0; }
+    done
+    return 1
+}
+
+_queue_authorisation_generate() {
+    local admin="" user="" reason="" expires="never" code="" key_name="" command=() cmd_hash file created sign_line sig_key sig_payload_sha sig_b64
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --admin) admin="${2:-}"; shift 2 ;;
+            --user) user="${2:-}"; shift 2 ;;
+            --reason) reason="${2:-}"; shift 2 ;;
+            --expires|--expires-at) expires="${2:-}"; shift 2 ;;
+            --code) code="${2:-}"; shift 2 ;;
+            --key|--signing-key) key_name="${2:-}"; shift 2 ;;
+            --) shift; command=("$@"); break ;;
+            *) echo "queue authorisation generate: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$admin" ]] || admin="$(id -un 2>/dev/null || echo unknown)"
+    [[ -n "$user" ]] || user="$(id -un 2>/dev/null || echo unknown)"
+    [[ "${#command[@]}" -gt 0 ]] || { echo "Usage: queue authorisation generate --admin ADMIN --user USER [--reason TEXT] [--expires never] -- <command>" >&2; return 2; }
+    if [[ -n "$code" ]]; then
+        code="$(_queue_authorisation_normalise_code "$code")" || { echo "queue authorisation generate: code must be 1-5 case-insensitive letters/numbers" >&2; return 2; }
+    else
+        code="$(_queue_authorisation_generate_code)" || { echo "queue authorisation generate: unable to allocate code" >&2; return 1; }
+    fi
+    cmd_hash="$(_queue_command_hash_from_args "${command[@]}")"
+    file="$(_queue_authorisation_file "$code")" || return 2
+    [[ ! -e "$file" ]] || { echo "queue authorisation generate: code already exists: $code" >&2; return 1; }
+    mkdir -p "$(dirname "$file")"
+    created="$(date -Is 2>/dev/null || date)"
+    sign_line="$(_queue_authorisation_sign_fields "$code" "$admin" "$user" "$cmd_hash" "$created" "$expires" "$reason" "$key_name" 2>/dev/null || true)"
+    IFS=$'\t' read -r sig_key sig_payload_sha sig_b64 <<< "$sign_line"
+    {
+        printf 'AUTHORISATION_CODE=%q\n' "$code"
+        printf 'AUTHORISATION_ADMIN=%q\n' "$admin"
+        printf 'AUTHORISATION_USER=%q\n' "$user"
+        printf 'AUTHORISATION_QUEUE_ROOT=%q\n' "$(_queue_root)"
+        printf 'AUTHORISATION_COMMAND_SHA256=%q\n' "$cmd_hash"
+        printf 'AUTHORISATION_CREATED_AT=%q\n' "$created"
+        printf 'AUTHORISATION_EXPIRES_AT=%q\n' "$expires"
+        printf 'AUTHORISATION_STATUS=%q\n' "active"
+        printf 'AUTHORISATION_REASON=%q\n' "$reason"
+        [[ -n "$sig_b64" ]] && printf 'AUTHORISATION_SIGNING_KEY=%q\n' "$sig_key"
+        [[ -n "$sig_payload_sha" ]] && printf 'AUTHORISATION_SIGNATURE_PAYLOAD_SHA256=%q\n' "$sig_payload_sha"
+        [[ -n "$sig_b64" ]] && printf 'AUTHORISATION_SIGNATURE_B64=%q\n' "$sig_b64"
+        printf 'AUTHORISATION_COMMAND=('; printf ' %q' "${command[@]}"; printf ' )\n'
+    } > "$file"
+    _queue_authorisation_publish_file_permissions "$file"
+    echo "authorisation: $code"
+    echo "queue:         $(_queue_root)"
+    echo "admin:         $admin"
+    echo "user:          $user"
+    echo "command_sha:   $cmd_hash"
+    [[ -n "$sig_b64" ]] && echo "signature:     signed" || echo "signature:     unsigned"
+}
+
+_queue_authorisation_validate() {
+    local code="${1:-}" user="${2:-}" reason_context="${3:-submit}" file cmd_hash now exp
+    shift 3 || true
+    code="$(_queue_authorisation_normalise_code "$code")" || { echo "queue $reason_context: invalid authorisation code: ${1:-}" >&2; return 2; }
+    file="$(_queue_authorisation_file "$code")" || return 2
+    [[ -f "$file" ]] || { echo "queue $reason_context: authorisation not found in this queue: $code" >&2; return 1; }
+    (
+        AUTHORISATION_CODE=""; AUTHORISATION_ADMIN=""; AUTHORISATION_USER=""; AUTHORISATION_COMMAND_SHA256=""; AUTHORISATION_EXPIRES_AT="never"; AUTHORISATION_STATUS="active"
+        AUTHORISATION_COMMAND=()
+        source "$file" >/dev/null 2>&1 || exit 10
+        [[ "${AUTHORISATION_STATUS,,}" == "active" ]] || { echo "queue $reason_context: authorisation is not active: $code" >&2; exit 11; }
+        [[ -z "${AUTHORISATION_USER:-}" || "${AUTHORISATION_USER}" == "$user" || "${AUTHORISATION_USER}" == "*" ]] || { echo "queue $reason_context: authorisation $code is for user ${AUTHORISATION_USER}, not $user" >&2; exit 12; }
+        if [[ "${#AUTHORISATION_COMMAND[@]}" -eq 0 || "$(_queue_command_hash_from_args "${AUTHORISATION_COMMAND[@]}")" != "${AUTHORISATION_COMMAND_SHA256:-}" ]]; then
+            echo "queue $reason_context: authorisation $code file integrity check failed" >&2
+            exit 15
+        fi
+        cmd_hash="$(_queue_command_hash_from_args "$@")"
+        [[ -n "${AUTHORISATION_COMMAND_SHA256:-}" && "$cmd_hash" == "$AUTHORISATION_COMMAND_SHA256" ]] || { echo "queue $reason_context: authorisation $code does not match this command" >&2; exit 13; }
+        if [[ -n "${AUTHORISATION_EXPIRES_AT:-}" && "${AUTHORISATION_EXPIRES_AT}" != "never" ]]; then
+            now="$(date +%s 2>/dev/null || echo 0)"; exp="$(date -d "$AUTHORISATION_EXPIRES_AT" +%s 2>/dev/null || echo 0)"
+            [[ "$exp" -le 0 || "$now" -le "$exp" ]] || { echo "queue $reason_context: authorisation $code expired at $AUTHORISATION_EXPIRES_AT" >&2; exit 14; }
+        fi
+        sig_status="$(_queue_authorisation_verify_signature_loaded)" || { echo "queue $reason_context: authorisation $code signature check failed: $sig_status" >&2; exit 16; }
+        exit 0
+    )
+}
+
+_queue_authorisation_file_status() {
+    local file="${1:-}"
+    [[ -f "$file" ]] || { echo "missing"; return 1; }
+    (
+        AUTHORISATION_CODE=""; AUTHORISATION_ADMIN=""; AUTHORISATION_USER=""; AUTHORISATION_COMMAND_SHA256=""; AUTHORISATION_EXPIRES_AT="never"; AUTHORISATION_STATUS="active"; AUTHORISATION_REASON=""
+        AUTHORISATION_COMMAND=()
+        # shellcheck disable=SC1090
+        if [[ ! -r "$file" ]]; then
+            echo "invalid-unreadable"
+            exit 1
+        fi
+        source "$file" >/dev/null 2>&1 || { echo "invalid-source"; exit 1; }
+        if [[ "${AUTHORISATION_STATUS,,}" != "active" ]]; then
+            echo "invalid-status:${AUTHORISATION_STATUS:-unset}"
+            exit 1
+        fi
+        if [[ -n "${AUTHORISATION_EXPIRES_AT:-}" && "${AUTHORISATION_EXPIRES_AT}" != "never" ]]; then
+            local now exp
+            now="$(date +%s 2>/dev/null || echo 0)"
+            exp="$(date -d "$AUTHORISATION_EXPIRES_AT" +%s 2>/dev/null || echo 0)"
+            if [[ "$exp" -gt 0 && "$now" -gt "$exp" ]]; then
+                echo "invalid-expired"
+                exit 1
+            fi
+        fi
+        if [[ "${#AUTHORISATION_COMMAND[@]}" -eq 0 ]]; then
+            echo "invalid-no-command"
+            exit 1
+        fi
+        local declared
+        declared="$(_queue_command_hash_from_args "${AUTHORISATION_COMMAND[@]}")"
+        if [[ -z "${AUTHORISATION_COMMAND_SHA256:-}" || "$declared" != "$AUTHORISATION_COMMAND_SHA256" ]]; then
+            echo "invalid-command-hash"
+            exit 1
+        fi
+        local sig_status
+        sig_status="$(_queue_authorisation_verify_signature_loaded)" || { echo "$sig_status"; exit 1; }
+        echo "$sig_status"
+        exit 0
+    )
+}
+
+_queue_authorisation_list() {
+    local f code user admin status exp hash integrity line
+    shopt -s nullglob
+    for f in "$(_queue_authorisation_dir)"/*.env; do
+        [[ -f "$f" ]] || continue
+        if line="$(
+            AUTHORISATION_CODE=""; AUTHORISATION_ADMIN=""; AUTHORISATION_USER=""; AUTHORISATION_COMMAND_SHA256=""; AUTHORISATION_EXPIRES_AT="never"; AUTHORISATION_STATUS="unknown"; AUTHORISATION_COMMAND=()
+            # shellcheck disable=SC1090
+            [[ -r "$f" ]] || exit 8
+            source "$f" >/dev/null 2>&1 || exit 9
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${AUTHORISATION_CODE:-$(basename "$f" .env)}" "${AUTHORISATION_USER:-}" "${AUTHORISATION_ADMIN:-}" "${AUTHORISATION_STATUS:-}" "${AUTHORISATION_EXPIRES_AT:-}" "${AUTHORISATION_COMMAND_SHA256:-}"
+        )"; then
+            IFS=$'\t' read -r code user admin status exp hash <<< "$line"
+        else
+            code="$(basename "$f" .env)"
+            user=""
+            admin=""
+            status="invalid-source"
+            exp=""
+            hash=""
+        fi
+        integrity="$(_queue_authorisation_file_status "$f" 2>/dev/null || true)"
+        [[ -n "$integrity" ]] || integrity="invalid"
+        printf '%-5s user=%-12s admin=%-12s status=%-14s integrity=%-24s expires=%-20s command=%s\n' "$code" "$user" "$admin" "$status" "$integrity" "$exp" "${hash:0:16}"
+    done
+    shopt -u nullglob
+}
+
+_queue_authorisation_from_job_command() {
+    local jobf="${1:-}"
+    [[ -f "$jobf" ]] || return 1
+    (
+        COMMAND=()
+        # shellcheck disable=SC1090
+        source "$jobf" >/dev/null 2>&1 || exit 1
+        [[ "${#COMMAND[@]}" -gt 0 ]] || exit 2
+        _queue_command_hash_from_args "${COMMAND[@]}"
+    )
+}
+
+_queue_authorise_job() {
+    local qid="${1:-}" reason="" admin="" user="" expires="never" code="" key_name="" jobf cmd_hash file created before_owner after_owner sign_line sig_key sig_payload_sha sig_b64
+    shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --reason) reason="${2:-}"; shift 2 ;;
+            --admin) admin="${2:-}"; shift 2 ;;
+            --user) user="${2:-}"; shift 2 ;;
+            --expires|--expires-at) expires="${2:-}"; shift 2 ;;
+            --code) code="${2:-}"; shift 2 ;;
+            --key|--signing-key) key_name="${2:-}"; shift 2 ;;
+            *) echo "queue authorise: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$qid" ]] || { echo "Usage: queue authorise <qid> [--reason TEXT] [--code CODE]" >&2; return 2; }
+    jobf="$(_queue_job_file_for_id_any_state "$qid")" || { echo "queue authorise: job not found: $qid" >&2; return 1; }
+    [[ -n "$admin" ]] || admin="$(id -un 2>/dev/null || echo unknown)"
+    # Existing-job authorisation is approval for the queue owner / selected queue user,
+    # not necessarily for the shell user that is performing the approval and not
+    # necessarily for a stale SUBMIT_USER field.  This matters when root is operating
+    # in another user's queue via `queue --queue-user USER authorise QID`: admin=root,
+    # target user=USER.
+    [[ -n "$user" ]] || user="${QUEUEBASH_SELECTED_USER:-}"
+    [[ -n "$user" ]] || user="$(_queue_root_owner_user 2>/dev/null || true)"
+    [[ -n "$user" ]] || user="$(_queue_job_var_value "$jobf" SUBMIT_USER 2>/dev/null || true)"
+    [[ -n "$user" ]] || user="$(id -un 2>/dev/null || echo unknown)"
+    if [[ -n "$code" ]]; then
+        code="$(_queue_authorisation_normalise_code "$code")" || { echo "queue authorise: code must be 1-5 case-insensitive letters/numbers" >&2; return 2; }
+    else
+        code="$(_queue_authorisation_generate_code)" || { echo "queue authorise: unable to allocate code" >&2; return 1; }
+    fi
+    file="$(_queue_authorisation_file "$code")" || return 2
+    [[ ! -e "$file" ]] || { echo "queue authorise: code already exists: $code" >&2; return 1; }
+    cmd_hash="$(_queue_authorisation_from_job_command "$jobf")" || { echo "queue authorise: job has no readable COMMAND array: $qid" >&2; return 1; }
+    created="$(date -Is 2>/dev/null || date)"
+    sign_line="$(_queue_authorisation_sign_fields "$code" "$admin" "$user" "$cmd_hash" "$created" "$expires" "$reason" "$key_name" 2>/dev/null || true)"
+    IFS=$'\t' read -r sig_key sig_payload_sha sig_b64 <<< "$sign_line"
+    mkdir -p "$(dirname "$file")"
+    (
+        COMMAND=()
+        # shellcheck disable=SC1090
+        source "$jobf" >/dev/null 2>&1 || exit 1
+        {
+            printf 'AUTHORISATION_CODE=%q\n' "$code"
+            printf 'AUTHORISATION_ADMIN=%q\n' "$admin"
+            printf 'AUTHORISATION_USER=%q\n' "$user"
+            printf 'AUTHORISATION_QUEUE_ROOT=%q\n' "$(_queue_root)"
+            printf 'AUTHORISATION_COMMAND_SHA256=%q\n' "$cmd_hash"
+            printf 'AUTHORISATION_CREATED_AT=%q\n' "$created"
+            printf 'AUTHORISATION_EXPIRES_AT=%q\n' "$expires"
+            printf 'AUTHORISATION_STATUS=%q\n' "active"
+            printf 'AUTHORISATION_REASON=%q\n' "$reason"
+            printf 'AUTHORISATION_JOB_ID=%q\n' "$qid"
+            [[ -n "$sig_b64" ]] && printf 'AUTHORISATION_SIGNING_KEY=%q\n' "$sig_key"
+            [[ -n "$sig_payload_sha" ]] && printf 'AUTHORISATION_SIGNATURE_PAYLOAD_SHA256=%q\n' "$sig_payload_sha"
+            [[ -n "$sig_b64" ]] && printf 'AUTHORISATION_SIGNATURE_B64=%q\n' "$sig_b64"
+            printf 'AUTHORISATION_COMMAND=('; printf ' %q' "${COMMAND[@]}"; printf ' )\n'
+        } > "$file"
+    ) || { rm -f "$file"; echo "queue authorise: failed to create authorisation file" >&2; return 1; }
+    _queue_authorisation_publish_file_permissions "$file"
+
+    before_owner="$(stat -c '%u:%g' "$jobf" 2>/dev/null || true)"
+    {
+        printf '\n# Security authorisation stamped by queue authorise at %q\n' "$created"
+        printf 'SECURITY_AUTHORISATION_CODE=%q\n' "$code"
+        printf 'SECURITY_AUTHORISATION_ADMIN=%q\n' "$admin"
+        printf 'SECURITY_AUTHORISATION_AT=%q\n' "$created"
+        [[ -n "$reason" ]] && printf 'SECURITY_AUTHORISATION_REASON=%q\n' "$reason"
+    } >> "$jobf"
+    after_owner="$(stat -c '%u:%g' "$jobf" 2>/dev/null || true)"
+    if [[ -n "$before_owner" && -n "$after_owner" && "$before_owner" != "$after_owner" ]]; then
+        echo "queue authorise: WARNING: job file owner/group changed unexpectedly: $before_owner -> $after_owner" >&2
+    fi
+    echo "authorised: $qid"
+    echo "authorisation: $code"
+    echo "admin: $admin"
+    echo "user: $user"
+    [[ -n "$sig_b64" ]] && echo "signature: signed" || echo "signature: unsigned"
+    echo "integrity: $(_queue_authorisation_file_status "$file" 2>/dev/null || true)"
+    echo "job_file: $jobf"
+}
+
+_queue_submit_policy_check() {
+    local class="$1" submit_user="$2" reason="$3" auth_code="$4" sandbox_level="$5" seccomp_profile="$6" exception_sandbox="$7" exception_seccomp="$8" exception_drop="$9" exception_port="${10}"
+    shift 10 || true
+    local allowed_sandbox allowed_seccomp exception_requires_reason weak_sandbox_reason weak_seccomp_reason mode=none s
+    _queue_security_policy_statement_source >/dev/null 2>&1 || return 0
+    allowed_sandbox="${CLASS_POLICY_USER_SANDBOX_POLICIES:-}"
+    allowed_seccomp="${CLASS_POLICY_USER_SECCOMP_POLICIES:-}"
+    exception_requires_reason="${CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE:-reason-or-authorisation}"
+    weak_sandbox_reason="${CLASS_POLICY_SANDBOX_REASON_REQUIRED:-off}"
+    weak_seccomp_reason="${CLASS_POLICY_SECCOMP_REASON_REQUIRED:-off}"
+
+    if [[ -n "$allowed_sandbox" && -n "$sandbox_level" ]]; then
+        _queue_security_policy_value_in_list "$sandbox_level" "$allowed_sandbox" || { echo "queue submit: sandbox policy '$sandbox_level' is not in user-selectable range: $allowed_sandbox" >&2; return 2; }
+    fi
+    if [[ -n "$allowed_seccomp" && -n "$seccomp_profile" ]]; then
+        _queue_security_policy_value_in_list "$seccomp_profile" "$allowed_seccomp" || { echo "queue submit: seccomp policy '$seccomp_profile' is not in user-selectable range: $allowed_seccomp" >&2; return 2; }
+    fi
+
+    if [[ -n "$exception_sandbox$exception_seccomp$exception_drop$exception_port" ]]; then
+        mode="$exception_requires_reason"
+    elif [[ -n "$weak_sandbox_reason" ]] && _queue_security_policy_value_in_list "$sandbox_level" "$weak_sandbox_reason"; then
+        mode="${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"
+    elif [[ -n "$weak_seccomp_reason" ]] && _queue_security_policy_value_in_list "$seccomp_profile" "$weak_seccomp_reason"; then
+        mode="${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"
+    fi
+
+    case "$mode" in
+        none|off|"") return 0 ;;
+        reason)
+            [[ -n "$reason" ]] || { echo "queue submit: this security policy requires --reason TEXT" >&2; return 2; }
+            ;;
+        authorisation|authorization)
+            [[ -n "$auth_code" ]] || { echo "queue submit: this security policy requires --authorisation CODE" >&2; return 2; }
+            _queue_authorisation_validate "$auth_code" "$submit_user" submit "$@" || return $?
+            ;;
+        reason-or-authorisation|reason-or-authorization|either)
+            if [[ -z "$reason" ]]; then
+                [[ -n "$auth_code" ]] || { echo "queue submit: this security exception requires --reason TEXT or --authorisation CODE" >&2; return 2; }
+                _queue_authorisation_validate "$auth_code" "$submit_user" submit "$@" || return $?
+            fi
+            ;;
+        *) echo "queue submit: invalid class policy requirement mode: $mode" >&2; return 2 ;;
+    esac
+}
+
+# Backward-compatible literals kept for static tests/docs: queue policies edit sandbox|seccomp NAME; queue policies create sandbox|seccomp NAME
 _queue_policy_valid_kind() {
-    case "${1:-}" in sandbox|seccomp) return 0 ;; *) return 1 ;; esac
+    case "${1:-}" in sandbox|seccomp|class-statement) return 0 ;; *) return 1 ;; esac
 }
 
 _queue_policy_valid_name() {
@@ -7457,6 +8308,7 @@ _queue_explain_job() {
     echo
 
     _queue_exception_explain_for_job "$id"
+    _queue_security_exception_guidance_for_job "$id" "$f" "$log"
 
     echo "Dependencies"
     _queue_job_dependencies_status "$f" | sed 's/^/  /'
@@ -8797,6 +9649,44 @@ queue() {
             fi
             ;;
 
+        keygen)
+            _queue_authorisation_keygen "$@"
+            ;;
+        keys)
+            case "${1:-list}" in
+                list|ls|"") _queue_authorisation_keys_list ;;
+                show) shift; _queue_authorisation_keys_show "${1:-}" ;;
+                *) echo "Usage: queue keys list|show NAME" >&2; return 2 ;;
+            esac
+            ;;
+        authorise|authorize)
+            _queue_authorise_job "$@"
+            ;;
+        authorisation|authorization|auth)
+            case "${1:-list}" in
+                generate|gen|new) shift; _queue_authorisation_generate "$@" ;;
+                job|stamp|authorise|authorize) shift; _queue_authorise_job "$@" ;;
+                list|ls|"") _queue_authorisation_list ;;
+                show)
+                    shift
+                    local acode="${1:-}" afile
+                    [[ -n "$acode" ]] || { echo "Usage: queue authorisation show CODE" >&2; return 2; }
+                    afile="$(_queue_authorisation_file "$acode")" || { echo "queue authorisation show: invalid code" >&2; return 2; }
+                    [[ -f "$afile" ]] || { echo "queue authorisation show: not found: $acode" >&2; return 1; }
+                    sed -n '1,120p' "$afile"
+                    echo "AUTHORISATION_FILE_INTEGRITY=$(_queue_authorisation_file_status "$afile" 2>/dev/null || true)"
+                    ;;
+                *) echo "Usage: queue authorisation generate|job|list|show" >&2; return 2 ;;
+            esac
+            ;;
+        generate)
+            case "${1:-}" in
+                authorisation|authorization|auth) shift; _queue_authorisation_generate "$@" ;;
+                key|keys) shift; _queue_authorisation_keygen "$@" ;;
+                *) echo "Usage: queue generate authorisation --admin ADMIN --user USER -- <command> | queue generate key authorisation NAME" >&2; return 2 ;;
+            esac
+            ;;
+
         cron|crontab|cron-bridge)
             _queue_cron_command "$@"
             ;;
@@ -8857,6 +9747,8 @@ queue() {
             local exception_seccomp_allow=""
             local exception_drop_cap=""
             local exception_add_port=""
+            local security_reason=""
+            local authorisation_code=""
             local max_log_size="${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}"
             local allow_large_log=0
             local log_overflow_policy="${QUEUEBASH_LOG_OVERFLOW_POLICY:-stderr-only}"
@@ -9008,6 +9900,16 @@ queue() {
                         exception_add_port="${exception_add_port:+$exception_add_port,}$2"
                         shift 2
                         ;;
+                    --reason)
+                        [[ -z "$2" ]] && { echo "queue submit: --reason needs text" >&2; return 2; }
+                        security_reason="$2"
+                        shift 2
+                        ;;
+                    --authorisation|--authorization)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a code" >&2; return 2; }
+                        authorisation_code="$2"
+                        shift 2
+                        ;;
                     --on-success)
                         shift
                         on_success=()
@@ -9056,6 +9958,9 @@ queue() {
                     return 2
                 fi
             done
+
+            local submit_user="$(id -un 2>/dev/null || echo unknown)"
+            _queue_submit_policy_check "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$submit_user" "$security_reason" "$authorisation_code" "$sandbox_level" "$seccomp_profile" "$exception_sandbox_override" "$exception_seccomp_allow" "$exception_drop_cap" "$exception_add_port" "$@" || return $?
 
             local id="$(_queue_id)"
             local job="$root/pending/$id.job"
@@ -9127,6 +10032,11 @@ queue() {
                 [[ -n "$exception_seccomp_allow" ]] && printf 'EXCEPTION_SECCOMP_ALLOW=%q\n' "$exception_seccomp_allow"
                 [[ -n "$exception_drop_cap" ]] && printf 'EXCEPTION_DROP_CAP=%q\n' "$exception_drop_cap"
                 [[ -n "$exception_add_port" ]] && printf 'EXCEPTION_ADD_PORT=%q\n' "$exception_add_port"
+                [[ -n "$security_reason" ]] && printf 'SECURITY_EXCEPTION_REASON=%q\n' "$security_reason"
+                if [[ -n "$authorisation_code" ]]; then
+                    _auth_norm="$(_queue_authorisation_normalise_code "$authorisation_code" 2>/dev/null || printf '%s' "$authorisation_code")"
+                    printf 'SECURITY_AUTHORISATION_CODE=%q\n' "$_auth_norm"
+                fi
                 printf 'JOB_CLASS=%q\n' "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}"
                 if [[ "${#depends_after_success[@]}" -gt 0 ]]; then
                     deps_join="${depends_after_success[*]}"
@@ -9746,7 +10656,7 @@ EOF
                 list|"")
                     local kind="${2:-}" name file origin
                     if [[ -n "$kind" ]]; then
-                        _queue_policy_valid_kind "$kind" || { echo "Usage: queue policies list [sandbox|seccomp]" >&2; return 2; }
+                        _queue_policy_valid_kind "$kind" || { echo "Usage: queue policies list [sandbox|seccomp|class-statement]" >&2; return 2; }
                         echo "=== $kind policies ==="
                         while IFS= read -r name; do
                             [[ -n "$name" ]] || continue
@@ -9762,7 +10672,7 @@ EOF
                     ;;
                 show|explain)
                     local kind="${2:-}" name="${3:-}" file
-                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies show sandbox|seccomp NAME" >&2; return 2; }
+                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies show sandbox|seccomp|class-statement NAME" >&2; return 2; }
                     _queue_policy_valid_kind "$kind" || { echo "queue policies show: invalid kind: $kind" >&2; return 2; }
                     file="$(_queue_policy_file "$kind" "$name")" || { echo "queue policies show: not found: $kind $name" >&2; return 1; }
                     echo "=== $kind policy: $name ==="
@@ -9773,7 +10683,7 @@ EOF
                     ;;
                 edit)
                     local kind="${2:-}" name="${3:-}" root file src editor
-                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies edit sandbox|seccomp NAME" >&2; return 2; }
+                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies edit sandbox|seccomp|class-statement NAME" >&2; return 2; }
                     _queue_policy_valid_kind "$kind" || { echo "queue policies edit: invalid kind: $kind" >&2; return 2; }
                     _queue_policy_valid_name "$name" || { echo "queue policies edit: invalid policy name: $name" >&2; return 2; }
                     root="$(_queue_root)"
@@ -9790,6 +10700,7 @@ EOF
                                 case "$kind" in
                                     sandbox) echo 'SANDBOX_SYSTEMD_PROPERTIES=()'; echo 'SANDBOX_DIRECT_PREFIX=()'; echo 'SANDBOX_DIRECT_WARNING=""' ;;
                                     seccomp) echo 'SECCOMP_SYSTEMD_PROPERTIES=()' ;;
+                                    class-statement) echo 'CLASS_POLICY_USER_SANDBOX_POLICIES="off network-none restrict-egress strict queue-default"'; echo 'CLASS_POLICY_USER_SECCOMP_POLICIES="off docker-default strict queue-default"'; echo 'CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE="reason-or-authorisation"'; echo 'CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="if-trusted-key"' ;;
                                 esac
                             } > "$file"
                         fi
@@ -9799,7 +10710,7 @@ EOF
                     ;;
                 create|new)
                     local kind="${2:-}" name="${3:-}" from="" root file src
-                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies create sandbox|seccomp NAME [--from EXISTING]" >&2; return 2; }
+                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies create sandbox|seccomp|class-statement NAME [--from EXISTING]" >&2; return 2; }
                     shift 3 || true
                     while [[ "$#" -gt 0 ]]; do
                         case "$1" in
@@ -9825,13 +10736,14 @@ EOF
                             case "$kind" in
                                 sandbox) echo 'SANDBOX_SYSTEMD_PROPERTIES=()'; echo 'SANDBOX_DIRECT_PREFIX=()'; echo 'SANDBOX_DIRECT_WARNING=""' ;;
                                 seccomp) echo 'SECCOMP_SYSTEMD_PROPERTIES=()' ;;
+                                class-statement) echo 'CLASS_POLICY_USER_SANDBOX_POLICIES="off network-none restrict-egress strict queue-default"'; echo 'CLASS_POLICY_USER_SECCOMP_POLICIES="off docker-default strict queue-default"'; echo 'CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE="reason-or-authorisation"'; echo 'CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="if-trusted-key"' ;;
                             esac
                         } > "$file"
                     fi
                     echo "Created policy: $file"
                     ;;
                 *)
-                    echo "Usage: queue policies list [sandbox|seccomp]|show sandbox|seccomp NAME|edit sandbox|seccomp NAME|create sandbox|seccomp NAME [--from EXISTING]" >&2
+                    echo "Usage: queue policies list [sandbox|seccomp|class-statement]|show sandbox|seccomp NAME|edit sandbox|seccomp NAME|create sandbox|seccomp NAME [--from EXISTING]" >&2
                     return 2
                     ;;
             esac

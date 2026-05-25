@@ -5,7 +5,7 @@ python3 - <<'PY'
 from pathlib import Path
 q = Path('queuebash.sh').read_text()
 p = Path('queuemgr_panel.py').read_text()
-assert 'QUEUEBASH_VERSION="0.17.19"' in q
+assert 'QUEUEBASH_VERSION="0.17.25"' in q
 for needle in [
     'queue_class_global_exclusive_claim()',
     'queue_class_global_shared_claim()',
