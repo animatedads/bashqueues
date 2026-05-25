@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.16"
+QUEUEBASH_VERSION="0.17.19"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1940,30 +1940,55 @@ _queue_exception_clear_all() {
 
 _queue_exception_explain_for_job() {
     local id="${1:-}"
-    local f
+    local f jobf
     local now_epoch created_epoch age
 
     [[ -n "$id" ]] || return 0
     f="$(_queue_exception_file "$id")"
+    jobf="$(_queue_job_file_by_id_any_state "$id" 2>/dev/null || true)"
 
     echo
     echo "Exception overlays"
 
     local any_job_exception=0
-    if [[ -n "${EXCEPTION_SANDBOX_OVERRIDE:-}" ]]; then
-        echo "  sandbox:           OVERRIDE to '${EXCEPTION_SANDBOX_OVERRIDE}' via job flag"
+    local sandbox_override seccomp_allow drop_cap add_port
+    local sandbox_from seccomp_profile caps_from ports_from
+
+    if [[ -n "$jobf" && -f "$jobf" ]]; then
+        sandbox_override="$(_queue_job_var_value "$jobf" EXCEPTION_SANDBOX_OVERRIDE 2>/dev/null || true)"
+        seccomp_allow="$(_queue_job_var_value "$jobf" EXCEPTION_SECCOMP_ALLOW 2>/dev/null || true)"
+        drop_cap="$(_queue_job_var_value "$jobf" EXCEPTION_DROP_CAP 2>/dev/null || true)"
+        add_port="$(_queue_job_var_value "$jobf" EXCEPTION_ADD_PORT 2>/dev/null || true)"
+        sandbox_from="$(_queue_job_var_value "$jobf" SANDBOX_POLICY_NAME 2>/dev/null || true)"
+        seccomp_profile="$(_queue_job_var_value "$jobf" SECCOMP_POLICY_NAME 2>/dev/null || true)"
+        caps_from="$(_queue_job_var_value "$jobf" RUNTIME_CAPS 2>/dev/null || true)"
+        ports_from="$(_queue_job_var_value "$jobf" RUNTIME_CAP_PORTS 2>/dev/null || true)"
+    else
+        # Fallback for callers that deliberately source a job before calling this helper.
+        sandbox_override="${EXCEPTION_SANDBOX_OVERRIDE:-}"
+        seccomp_allow="${EXCEPTION_SECCOMP_ALLOW:-}"
+        drop_cap="${EXCEPTION_DROP_CAP:-}"
+        add_port="${EXCEPTION_ADD_PORT:-}"
+        sandbox_from="${SANDBOX_POLICY_NAME:-}"
+        seccomp_profile="${SECCOMP_POLICY_NAME:-}"
+        caps_from="${RUNTIME_CAPS:-}"
+        ports_from="${RUNTIME_CAP_PORTS:-}"
+    fi
+
+    if [[ -n "$sandbox_override" ]]; then
+        echo "  sandbox:           OVERRIDE ${sandbox_from:-class-default} -> $sandbox_override via job flag"
         any_job_exception=1
     fi
-    if [[ -n "${EXCEPTION_SECCOMP_ALLOW:-}" ]]; then
-        echo "  seccomp:           HOLE PUNCHED allowing '${EXCEPTION_SECCOMP_ALLOW}'"
+    if [[ -n "$seccomp_allow" ]]; then
+        echo "  seccomp:           HOLE PUNCHED allowing '$seccomp_allow'${seccomp_profile:+ on $seccomp_profile}"
         any_job_exception=1
     fi
-    if [[ -n "${EXCEPTION_DROP_CAP:-}" ]]; then
-        echo "  runtime caps:      REMOVED '${EXCEPTION_DROP_CAP}'"
+    if [[ -n "$drop_cap" ]]; then
+        echo "  runtime caps:      REMOVED '$drop_cap'${caps_from:+ from $caps_from}"
         any_job_exception=1
     fi
-    if [[ -n "${EXCEPTION_ADD_PORT:-}" ]]; then
-        echo "  runtime ports:     ADDED '${EXCEPTION_ADD_PORT}'"
+    if [[ -n "$add_port" ]]; then
+        echo "  runtime ports:     ADDED '$add_port'${ports_from:+ to $ports_from}"
         any_job_exception=1
     fi
 

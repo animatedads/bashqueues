@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
-grep -q 'QUEUEBASH_VERSION="0.17.16"' queuebash.sh || fail "version not 0.17.16"
+grep -q 'QUEUEBASH_VERSION="0.17.19"' queuebash.sh || fail "version not 0.17.19"
 python3 - <<'PY'
 from pathlib import Path
 src = Path('queuemgr_panel.py').read_text()

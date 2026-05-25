@@ -618,3 +618,12 @@ class sandbox strict
 ### 0.17.14 systemd relative executable handling
 
 When the systemd runner is selected, bashqueues now normalises a relative executable argv[0] such as `./script.sh` to an absolute path before passing it to `systemd-run`. This avoids systemd's `is neither a valid executable name nor an absolute path` launch failure while keeping the job working directory unchanged.
+
+
+### 0.17.17 Class Creator seccomp policy chooser
+
+The Queue Manager Class Creator exposes both sandbox and seccomp policy fields. Use `*` on the default seccomp field to choose from `queue policies list seccomp`. F2 commands include `classcreator seccomp docker-default` and `classcreator seccomp-allow @debug`.
+
+### 0.17.18 Queue Manager class edit safety
+
+The Queue Manager class edit action is noninteractive. Selecting `edit` on a class now loads the selected class into the Class Creator panel, where it can be previewed, changed, validated, and saved. The panel no longer invokes `$EDITOR` through `queue classes edit`, because interactive editors can block the curses UI.

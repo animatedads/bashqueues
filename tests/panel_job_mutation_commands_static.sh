@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 pass() { echo "[PASS] $*"; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.16"' queuebash.sh || fail "queuebash version not bumped to 0.17.16"
+grep -q 'QUEUEBASH_VERSION="0.17.19"' queuebash.sh || fail "queuebash version not bumped to 0.17.19"
 
 grep -q 'def current_job_fragment' queuemgr_panel.py || fail "selected job context helper missing"
 grep -q 'job_context_heads = \["change", "priority", "prio", "kill", "delete", "undelete", "edit"' queuemgr_panel.py || fail "bare job context mutation commands missing"

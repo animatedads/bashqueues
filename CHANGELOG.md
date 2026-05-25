@@ -1,3 +1,22 @@
+## 0.17.18
+
+## 0.17.19 - Exception overlay explain visibility
+
+- Fixed `queue explain` so submit-time security exceptions are visible in the `Exception overlays` section.
+- `--sandbox-override`, `--seccomp-allow`, `--drop-cap`, and `--add-port` are now reported from the job record, not only from already-sourced shell variables.
+- Added a static regression test for security exception overlay visibility.
+
+- Fixed Queue Manager class edit action so it no longer calls interactive `queue classes edit` through `qrun()`.
+- Class edit from the panel now loads the selected class into Class Creator for noninteractive preview/validate/save editing.
+- Fixed Python 3.13 timeout handling in `qrun()` so `TimeoutExpired` bytes output is decoded before building diagnostics.
+
+## 0.17.17 - Class Creator seccomp policy chooser
+
+- Added seccomp policy selection to the Queue Manager Class Creator.
+- Class Creator now exposes both default sandbox and default seccomp profiles.
+- Added F2 commands for `classcreator seccomp NAME` and `classcreator seccomp-allow GROUPS`.
+- Seccomp chooser reads policy names from `queue policies list seccomp`, matching sandbox policy behaviour.
+
 ## 0.17.16 - Security policy snapshots and editor commands
 
 - Security policies are now snapshotted into each job record at submit time after class defaults are applied.

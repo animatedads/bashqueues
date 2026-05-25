@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 pass(){ echo "[PASS] $*"; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.16"' queuebash.sh || fail "queuebash version not 0.17.16"
+grep -q 'QUEUEBASH_VERSION="0.17.19"' queuebash.sh || fail "queuebash version not 0.17.19"
 grep -q 'self.class_detail_mode = "explain"' queuemgr_panel.py || fail "class right-pane mode state missing"
 grep -q 'def detail_class' queuemgr_panel.py || fail "class detail renderer missing"
 grep -q 'mode = getattr(app, "class_detail_mode", "explain")' queuemgr_panel.py || fail "class detail renderer is not mode-driven"

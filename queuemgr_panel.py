@@ -146,6 +146,20 @@ def _queue_shell_command(args: Sequence[str]) -> str:
     return f"queue {quoted}"
 
 
+def _coerce_subprocess_text(value: object) -> str:
+    """Return subprocess captured output as text.
+
+    Python normally honours text=True, but TimeoutExpired.stdout/stderr may
+    still be bytes on some versions/paths.  qrun() is used by the curses panel,
+    so timeout handling must never raise while building a diagnostic.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    return str(value)
+
+
 def qrun(args: Sequence[str], timeout: int = 20, dry_run: bool = False, cwd: str = "", as_user: str = "") -> Tuple[int, str]:
     # If root/operator selected another queue owner, every panel qrun must use
     # that queue root explicitly.  This is queue ownership, not payload-user
@@ -197,7 +211,7 @@ def qrun(args: Sequence[str], timeout: int = 20, dry_run: bool = False, cwd: str
             out = f"queue command failed rc={p.returncode}: {cmd}"
         return p.returncode, out.rstrip("\n")
     except subprocess.TimeoutExpired as exc:
-        out = (exc.stdout or "") + (exc.stderr or "")
+        out = _coerce_subprocess_text(exc.stdout) + _coerce_subprocess_text(exc.stderr)
         return 124, (out + f"\n[timeout running queue command: {cmd}]").strip()
 
 
@@ -939,6 +953,8 @@ def load_class_draft(app: "PanelManager") -> List[Item]:
         Item("default_run_user", f"default run user  {d.default_run_user or '<current>'}"),
         Item("default_submit_user", f"default submit user {d.default_submit_user or '<current>'}"),
         Item("default_sandbox_level", f"default sandbox   {d.default_sandbox_level or '-'}"),
+        Item("default_seccomp_profile", f"default seccomp   {d.default_seccomp_profile or '-'}"),
+        Item("default_seccomp_allow", f"seccomp allow     {d.default_seccomp_allow or '-'}"),
         Item("add_restriction", "add restriction   build from asset/cap hint"),
         Item("records", f"records           {len(d.records)}"),
         Item("preview", "preview generated class"),
@@ -1278,6 +1294,22 @@ class PanelManager:
                 # should offer the policy name, not the whole diagnostic row.
                 choices.append(line.split()[0])
         for fallback in ["off", "queue-default", "network-none", "restrict-egress", "strict"]:
+            if fallback not in choices:
+                choices.append(fallback)
+        return choices
+
+    def seccomp_policy_choices(self) -> List[str]:
+        rc, out = qrun(["policies", "list", "seccomp"], timeout=5)
+        choices = [""]
+        if rc == 0:
+            for line in out.splitlines():
+                line = line.strip()
+                if not line or line.startswith("==="):
+                    continue
+                # queue policies list prints: NAME ORIGIN PATH.  The chooser
+                # should offer the policy name, not the whole diagnostic row.
+                choices.append(line.split()[0])
+        for fallback in ["off", "queue-default", "docker-default", "strict"]:
             if fallback not in choices:
                 choices.append(fallback)
         return choices
@@ -2476,6 +2508,106 @@ class PanelManager:
         elif rc == 0:
             self.status = "Task submit dry-run complete; draft retained"
 
+    def _class_assignment_value(self, line: str) -> str:
+        """Parse the RHS from a simple CLASS_* assignment line."""
+        _key, _sep, value = line.partition("=")
+        value = value.strip()
+        try:
+            parts = shlex.split(value)
+            if len(parts) == 1:
+                return parts[0]
+        except ValueError:
+            pass
+        return value.strip('"\'')
+
+    def load_class_into_creator(self, class_name: str) -> None:
+        """Load an existing class into the panel Class Creator draft.
+
+        The panel must not call ``queue classes edit`` because that launches
+        ``$EDITOR`` and blocks inside curses/qrun().  Edit in the panel means:
+        read the class record, populate the Class Creator, then let the
+        operator preview/validate/save through normal noninteractive paths.
+        """
+        rc, out = qrun(["classes", "show", class_name], timeout=8)
+        if rc != 0:
+            self.popup(f"Load class for edit: {class_name}", out or f"classes show rc={rc}")
+            self.status = f"Could not load class {class_name}"
+            return
+
+        draft = ClassDraft(name=class_name)
+        records: List[str] = []
+        lines = out.splitlines()
+        in_purpose = False
+        purpose_lines: List[str] = []
+
+        for raw in lines:
+            line = raw.rstrip("\n")
+            stripped = line.strip()
+            if not stripped or stripped.startswith("=== class:") or stripped.startswith("file:"):
+                continue
+
+            if stripped.startswith("# bashqueues class:"):
+                maybe = stripped.split(":", 1)[1].strip()
+                if maybe:
+                    draft.name = maybe
+                continue
+            if stripped == "# Purpose:":
+                in_purpose = True
+                continue
+            if in_purpose:
+                if stripped.startswith("#   "):
+                    purpose_lines.append(stripped[4:])
+                    continue
+                if stripped == "#":
+                    in_purpose = False
+                    continue
+                in_purpose = False
+
+            if stripped.startswith("CLASS_") and "=" in stripped:
+                key = stripped.split("=", 1)[0]
+                value = self._class_assignment_value(stripped)
+                if key == "CLASS_ALLOW_PARALLEL":
+                    draft.allow_parallel = value
+                elif key == "CLASS_MAX_CONCURRENT":
+                    draft.max_concurrent = value
+                elif key == "CLASS_DEFAULT_RUNNER":
+                    draft.default_runner = value
+                elif key == "CLASS_DEFAULT_TIMEOUT":
+                    draft.default_timeout = value
+                elif key == "CLASS_DEFAULT_KILL_AFTER":
+                    draft.default_kill_after = value
+                elif key == "CLASS_DEFAULT_CPU_LIMIT":
+                    draft.default_cpu_limit = value
+                elif key == "CLASS_DEFAULT_MEM_LIMIT":
+                    draft.default_mem_limit = value
+                elif key == "CLASS_DEFAULT_MAX_LOG_SIZE_BYTES":
+                    draft.default_log_cap = value
+                elif key == "CLASS_DEFAULT_RUN_USER":
+                    draft.default_run_user = value
+                elif key == "CLASS_DEFAULT_SUBMIT_USER":
+                    draft.default_submit_user = value
+                elif key == "CLASS_DEFAULT_SANDBOX_LEVEL":
+                    draft.default_sandbox_level = value
+                elif key == "CLASS_DEFAULT_SECCOMP_PROFILE":
+                    draft.default_seccomp_profile = value
+                elif key == "CLASS_DEFAULT_SECCOMP_ALLOW":
+                    draft.default_seccomp_allow = value
+                else:
+                    records.append(stripped)
+                continue
+
+            if stripped.startswith("#"):
+                continue
+            records.append(stripped)
+
+        if purpose_lines:
+            draft.purpose = "\n".join(purpose_lines)
+        draft.records = records
+        self.class_draft = draft
+        self.switch_view("classdraft")
+        self.view.refresh(self)
+        self.status = f"Loaded class {class_name} into Class Creator; edit then save to apply changes"
+
     def perform_class_command_action(self, action: str, class_name: str) -> None:
         """Perform a class action selected from typed command entry.
 
@@ -2515,8 +2647,7 @@ class PanelManager:
                 self.refresh_current()
             return
         if action == "edit":
-            rc, out = qrun(["classes", "edit", class_name], dry_run=self.dry_run)
-            self.status = out.splitlines()[-1] if out else f"class edit rc={rc}"
+            self.load_class_into_creator(class_name)
             return
         if action == "rollback":
             rc, out = qrun(["classes", "rollback", class_name], dry_run=self.dry_run)
@@ -3141,8 +3272,7 @@ class PanelManager:
             _, out = qrun(["classes", "explain", it.key])
             self.popup("Class explain", out[:8000])
         elif action == "edit":
-            rc, out = qrun(["classes", "edit", it.key], dry_run=self.dry_run)
-            self.status = out.splitlines()[-1] if out else f"edit rc={rc}"
+            self.load_class_into_creator(it.key)
         elif action == "validate":
             rc, out = qrun(["classes", "validate", it.key])
             self.popup("Class validate", out[:8000])
@@ -3714,13 +3844,15 @@ class PanelManager:
         actions = [
             "name", "purpose", "allow-parallel", "parallel", "max-concurrent",
             "runner", "timeout", "kill-after", "cpu", "memory", "log",
-            "run-user", "submit-user", "sandbox", "restriction", "restrict", "asset",
+            "run-user", "submit-user", "sandbox", "seccomp", "seccomp-allow",
+            "restriction", "restrict", "asset",
             "record", "records", "preview", "validate", "save", "clear",
         ]
         aliases = {
             "n": "name", "p": "purpose", "ap": "allow-parallel", "mc": "max-concurrent",
             "r": "runner", "t": "timeout", "ka": "kill-after", "mem": "memory",
             "maxlog": "log", "ru": "run-user", "su": "submit-user", "sb": "sandbox",
+            "sc": "seccomp", "sec": "seccomp", "sa": "seccomp-allow",
             "res": "restriction", "restr": "restriction", "a": "asset", "rec": "record",
             "pv": "preview", "v": "validate", "s": "save", "reset": "clear",
         }
@@ -3760,6 +3892,12 @@ class PanelManager:
             d.default_sandbox_level = value or self.prompt_choice("Default sandbox", self.sandbox_policy_choices(), d.default_sandbox_level, allow_free=True)
             if d.default_sandbox_level in {"<current/default>", "current", "default", "none", "-"}:
                 d.default_sandbox_level = ""
+        elif action == "seccomp":
+            d.default_seccomp_profile = value or self.prompt_choice("Default seccomp", self.seccomp_policy_choices(), d.default_seccomp_profile, allow_free=True)
+            if d.default_seccomp_profile in {"<current/default>", "current", "default", "none", "-"}:
+                d.default_seccomp_profile = ""
+        elif action == "seccomp-allow":
+            d.default_seccomp_allow = value or self.prompt("Seccomp allow groups, e.g. @debug", d.default_seccomp_allow)
         elif action in {"restriction", "restrict", "asset"}:
             self.add_class_restriction_from_hints(value)
             return
@@ -3825,6 +3963,12 @@ class PanelManager:
             d.default_sandbox_level = self.prompt_choice("Default sandbox", self.sandbox_policy_choices(), d.default_sandbox_level, allow_free=True)
             if d.default_sandbox_level in {"<current/default>", "current", "default", "none", "-"}:
                 d.default_sandbox_level = ""
+        elif key == "default_seccomp_profile":
+            d.default_seccomp_profile = self.prompt_choice("Default seccomp", self.seccomp_policy_choices(), d.default_seccomp_profile, allow_free=True)
+            if d.default_seccomp_profile in {"<current/default>", "current", "default", "none", "-"}:
+                d.default_seccomp_profile = ""
+        elif key == "default_seccomp_allow":
+            d.default_seccomp_allow = self.prompt("Seccomp allow groups, e.g. @debug", d.default_seccomp_allow)
         elif key == "add_restriction":
             self.add_class_restriction_from_hints()
             return

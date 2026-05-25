@@ -117,3 +117,24 @@ seccomp/strict
 restrict public egress at the sandbox layer and use Docker-style seccomp
 filtering at the syscall layer.  Use `strict` for untrusted local scripts and
 `off` only when the operator intentionally wants no policy.
+
+
+### 0.17.17 Class Creator seccomp policy chooser
+
+The Queue Manager Class Creator exposes both sandbox and seccomp policy fields. Use `*` on the default seccomp field to choose from `queue policies list seccomp`. F2 commands include `classcreator seccomp docker-default` and `classcreator seccomp-allow @debug`.
+
+## Exception overlay visibility
+
+Submit-time security exceptions are stored in the job record and reported by
+`queue explain` under `Exception overlays`:
+
+```text
+Exception overlays
+  sandbox:           OVERRIDE strict -> off via job flag
+  seccomp:           HOLE PUNCHED allowing '@debug'
+  runtime caps:      REMOVED 'no-network-tools'
+  runtime ports:     ADDED '443'
+```
+
+This means a strict class can be relaxed for a single QID while keeping the
+audit trail visible later.

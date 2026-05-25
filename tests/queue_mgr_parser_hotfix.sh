@@ -11,7 +11,7 @@ out="$(QUEUEBASH_ALLOW_NONINTERACTIVE=1 bash -lc "source '$repo_root/queuebash.s
   echo "$out" >&2
   fail "queue version failed"
 }
-echo "$out" | grep -q 'queuebash 0.17.16' || fail "version not 0.17.16"
+echo "$out" | grep -q 'queuebash 0.17.19' || fail "version not 0.17.19"
 
 out="$(QUEUEBASH_ALLOW_NONINTERACTIVE=1 bash -lc "source '$repo_root/queuebash.sh'; QUEUEBASH_PYTHON=/bin/echo queue mgr" 2>&1)" || {
   echo "$out" >&2

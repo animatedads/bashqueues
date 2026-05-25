@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.16"' queuebash.sh || fail "version not 0.17.16"
+grep -q 'QUEUEBASH_VERSION="0.17.19"' queuebash.sh || fail "version not 0.17.19"
 grep -q 'list-all|all|jobs) _queue_exception_list_all' queuebash.sh || fail "exception list-all dispatcher missing"
 grep -q '_queue_exception_list_all()' queuebash.sh || fail "exception list-all function missing"
 grep -q 'qrun(\["exception", "list-all"\])' queuemgr_panel.py || fail "Exceptions panel does not use qrun list-all"

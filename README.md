@@ -2771,3 +2771,19 @@ queue policies edit sandbox local-strict
 Bundled safe defaults include `queue-default`, `network-none`,
 `restrict-egress`, and `strict` for sandboxing, plus `queue-default`,
 `docker-default`, and `strict` for seccomp.
+
+
+### 0.17.17 Class Creator seccomp policy chooser
+
+The Queue Manager Class Creator exposes both sandbox and seccomp policy fields. Use `*` on the default seccomp field to choose from `queue policies list seccomp`. F2 commands include `classcreator seccomp docker-default` and `classcreator seccomp-allow @debug`.
+
+### 0.17.18 Queue Manager class edit safety
+
+The Queue Manager class edit action is noninteractive. Selecting `edit` on a class now loads the selected class into the Class Creator panel, where it can be previewed, changed, validated, and saved. The panel no longer invokes `$EDITOR` through `queue classes edit`, because interactive editors can block the curses UI.
+
+### Security exception overlays
+
+Job-level security overrides such as `--sandbox-override`, `--seccomp-allow`,
+`--drop-cap`, and `--add-port` are recorded in the job file and shown by
+`queue explain` in the `Exception overlays` section. This makes deliberate
+single-job relaxation visible without editing the underlying class.
