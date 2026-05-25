@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.35"
+QUEUEBASH_VERSION="0.17.50"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1786,7 +1786,7 @@ _queue_exception_asset_matches() {
 }
 
 _queue_exception_is_allowed_for_asset() {
-    local id asset f line key reason created_at created_by
+    local id asset f line key reason created_at created_by expires_at
 
     id="$(_queue_exception_job_id_from_current_context 2>/dev/null || true)"
     [[ -n "$id" ]] || return 1
@@ -1795,29 +1795,35 @@ _queue_exception_is_allowed_for_asset() {
     f="$(_queue_exception_file "$id")"
     [[ -f "$f" ]] || return 1
 
-    while IFS=$'\t' read -r key reason created_at created_by; do
+    while IFS=$'	' read -r key reason created_at created_by expires_at; do
         [[ -n "$key" ]] || continue
         [[ "$key" == \#* ]] && continue
+        expires_at="${expires_at:-never}"
         if _queue_exception_asset_matches "$key" "$asset"; then
+            if _queue_expiry_is_expired "$expires_at"; then
+                printf 'asset_exception_expired: job=%s asset=%s exception=%s expired_at=%s
+' "$id" "$asset" "$key" "$expires_at"
+                continue
+            fi
             QUEUEBASH_EXCEPTION_MATCH_KEY="$key"
             QUEUEBASH_EXCEPTION_MATCH_REASON="${reason:-not-recorded}"
             QUEUEBASH_EXCEPTION_MATCH_BY="${created_by:-unknown}"
             QUEUEBASH_EXCEPTION_MATCH_AT="${created_at:-unknown}"
-            export QUEUEBASH_EXCEPTION_MATCH_KEY QUEUEBASH_EXCEPTION_MATCH_REASON QUEUEBASH_EXCEPTION_MATCH_BY QUEUEBASH_EXCEPTION_MATCH_AT
-            printf 'asset_exception_applied: job=%s asset=%s exception=%s reason=%s by=%s at=%s\n' \
-                "$id" "$asset" "$QUEUEBASH_EXCEPTION_MATCH_KEY" "$QUEUEBASH_EXCEPTION_MATCH_REASON" "$QUEUEBASH_EXCEPTION_MATCH_BY" "$QUEUEBASH_EXCEPTION_MATCH_AT"
+            QUEUEBASH_EXCEPTION_MATCH_EXPIRES_AT="$expires_at"
+            export QUEUEBASH_EXCEPTION_MATCH_KEY QUEUEBASH_EXCEPTION_MATCH_REASON QUEUEBASH_EXCEPTION_MATCH_BY QUEUEBASH_EXCEPTION_MATCH_AT QUEUEBASH_EXCEPTION_MATCH_EXPIRES_AT
+            printf 'asset_exception_applied: job=%s asset=%s exception=%s reason=%s by=%s at=%s expires=%s
+'                 "$id" "$asset" "$QUEUEBASH_EXCEPTION_MATCH_KEY" "$QUEUEBASH_EXCEPTION_MATCH_REASON" "$QUEUEBASH_EXCEPTION_MATCH_BY" "$QUEUEBASH_EXCEPTION_MATCH_AT" "$QUEUEBASH_EXCEPTION_MATCH_EXPIRES_AT"
             return 0
         fi
     done < "$f"
 
     return 1
 }
-
 _queue_exception_add() {
     local id="${1:-}"
     local key="${2:-}"
     shift 2 || true
-    local reason="" user created f norm arg
+    local reason="" expires="never" user created f norm arg
 
     while (($#)); do
         case "$1" in
@@ -1828,6 +1834,15 @@ _queue_exception_add() {
                 ;;
             --reason=*)
                 reason="${1#*=}"
+                shift
+                ;;
+            --expires|--expires-at)
+                [[ $# -ge 2 ]] || { echo "queue exception add: $1 needs a value" >&2; return 2; }
+                expires="$2"
+                shift 2
+                ;;
+            --expires=*|--expires-at=*)
+                expires="${1#*=}"
                 shift
                 ;;
             *)
@@ -1843,13 +1858,17 @@ _queue_exception_add() {
     done
 
     [[ -n "$id" && -n "$key" ]] || {
-        echo "Usage: queue exception add <qid> <family|facility|asset> --reason <text>" >&2
+        echo "Usage: queue exception add <qid> <family|facility|asset> --reason <text> [--expires never|+30m|+2h|YYYY-MM-DD]" >&2
         return 2
     }
     [[ -n "$reason" ]] || {
         echo "queue exception add: reason is required" >&2
         return 2
     }
+    if [[ "$expires" != "never" && -z "$(_queue_expiry_to_epoch "$expires" 2>/dev/null || true)" ]]; then
+        echo "queue exception add: unsupported --expires value: $expires" >&2
+        return 2
+    fi
 
     norm="$(_queue_exception_normalize_key "$key")"
     mkdir -p "$(_queue_exception_dir)"
@@ -1857,16 +1876,16 @@ _queue_exception_add() {
     created="$(date -Is 2>/dev/null || date)"
     user="${USER:-unknown}"
 
-    if [[ -f "$f" ]] && awk -F '\t' -v k="$norm" '$1 == k { found=1 } END { exit !found }' "$f"; then
+    if [[ -f "$f" ]] && awk -F '	' -v k="$norm" '$1 == k { found=1 } END { exit !found }' "$f"; then
         echo "queue exception add: exception already exists for $id: $norm" >&2
         return 1
     fi
 
-    printf '%s\t%s\t%s\t%s\n' "$norm" "$reason" "$created" "$user" >> "$f"
-    _queue_log_event "exception_added" "$id" "$norm" "exceptions" "reason=$reason by=$user"
-    echo "Added exception overlay: job=$id asset=$norm"
+    printf '%s	%s	%s	%s	%s
+' "$norm" "$reason" "$created" "$user" "$expires" >> "$f"
+    _queue_log_event "exception_added" "$id" "$norm" "exceptions" "reason=$reason by=$user expires=$expires"
+    echo "Added exception overlay: job=$id asset=$norm expires=$expires"
 }
-
 _queue_exception_list() {
     local id="${1:-}"
     local f
@@ -1883,16 +1902,16 @@ _queue_exception_list() {
         return 0
     fi
 
-    awk -F '\t' '
+    awk -F '	' '
         BEGIN {
-            printf "%-32s  %-20s  %-12s  %s\n", "ASSET/FACILITY", "CREATED", "BY", "REASON"
+            printf "%-32s  %-20s  %-12s  %-20s  %s\n", "ASSET/FACILITY", "CREATED", "BY", "EXPIRES", "REASON"
         }
         NF {
-            printf "%-32s  %-20s  %-12s  %s\n", $1, $3, $4, $2
+            expires=$5; if (expires == "") expires="never";
+            printf "%-32s  %-20s  %-12s  %-20s  %s\n", $1, $3, $4, expires, $2
         }
     ' "$f"
 }
-
 _queue_exception_clear() {
     local id="${1:-}"
     local key="${2:-}"
@@ -2202,7 +2221,7 @@ _queue_exception_explain_for_job() {
         return 0
     fi
 
-    while IFS=$'\t' read -r key reason created_at created_by; do
+    while IFS=$'\t' read -r key reason created_at created_by expires_at; do
         [[ -n "$key" ]] || continue
         [[ "$key" == \#* ]] && continue
 
@@ -2219,6 +2238,7 @@ _queue_exception_explain_for_job() {
         echo "    reason:          ${reason:-not-recorded}"
         echo "    by:              ${created_by:-unknown}"
         echo "    created:         ${created_at:-unknown}${age:+ (age $age)}"
+        echo "    expires:         ${expires_at:-never}"
     done < "$f"
 }
 
@@ -4927,6 +4947,36 @@ _queue_seconds_to_duration() {
 }
 
 
+
+_queue_expiry_to_epoch() {
+    local v="${1:-}"
+    [[ -n "$v" && "$v" != "never" ]] || return 1
+    case "$v" in
+        +*)
+            local rel="${v#+}" secs now
+            secs="$(_queue_duration_to_seconds "$rel" 2>/dev/null || true)"
+            [[ "$secs" =~ ^[0-9]+$ ]] || return 1
+            now="$(date +%s 2>/dev/null || echo 0)"
+            [[ "$now" =~ ^[0-9]+$ ]] || return 1
+            echo $((now + secs))
+            ;;
+        *)
+            date -d "$v" +%s 2>/dev/null || return 1
+            ;;
+    esac
+}
+
+_queue_expiry_is_expired() {
+    local expires="${1:-}"
+    [[ -n "$expires" && "$expires" != "never" ]] || return 1
+    local exp now
+    exp="$(_queue_expiry_to_epoch "$expires" 2>/dev/null || true)"
+    [[ "$exp" =~ ^[0-9]+$ ]] || return 1
+    now="$(date +%s 2>/dev/null || echo 0)"
+    [[ "$now" =~ ^[0-9]+$ ]] || return 1
+    (( now >= exp ))
+}
+
 _queue_cap_refresh() {
     local dir="${1:-}"
     local src family dst backup ts any=0 rc=0
@@ -6329,8 +6379,8 @@ _queue_class_policy_user_weak_policy_grant_covers() {
 }
 
 _queue_submit_policy_check() {
-    local class="$1" submit_user="$2" reason="$3" auth_code="$4" sandbox_level="$5" seccomp_profile="$6" exception_sandbox="$7" exception_seccomp="$8" exception_drop="$9" exception_port="${10}"
-    shift 10 || true
+    local class="$1" submit_user="$2" reason="$3" auth_code="$4" sandbox_level="$5" seccomp_profile="$6" exception_sandbox="$7" exception_seccomp="$8" exception_drop="$9" exception_port="${10}" sandbox_explicit="${11:-0}" seccomp_explicit="${12:-0}"
+    shift 12 || true
     local allowed_sandbox allowed_seccomp exception_requires_reason weak_sandbox_reason weak_seccomp_reason mode=none cmd_hash auto_code grant_detail=""
     QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE=""
     QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL=""
@@ -6357,14 +6407,14 @@ _queue_submit_policy_check() {
             return 0
         fi
         mode="$exception_requires_reason"
-    elif [[ -n "$weak_sandbox_reason" ]] && _queue_security_policy_value_in_list "$sandbox_level" "$weak_sandbox_reason"; then
+    elif [[ "$sandbox_explicit" == "1" && -n "$weak_sandbox_reason" ]] && _queue_security_policy_value_in_list "$sandbox_level" "$weak_sandbox_reason"; then
         if _queue_class_policy_user_weak_policy_grant_covers "$submit_user" "$sandbox_level" "$seccomp_profile" "$cmd_hash" "$weak_sandbox_reason" "$weak_seccomp_reason"; then
             QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="policy-approved"
             QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="standing policy grant covers weak sandbox/seccomp selection"
             return 0
         fi
         mode="${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"
-    elif [[ -n "$weak_seccomp_reason" ]] && _queue_security_policy_value_in_list "$seccomp_profile" "$weak_seccomp_reason"; then
+    elif [[ "$seccomp_explicit" == "1" && -n "$weak_seccomp_reason" ]] && _queue_security_policy_value_in_list "$seccomp_profile" "$weak_seccomp_reason"; then
         if _queue_class_policy_user_weak_policy_grant_covers "$submit_user" "$sandbox_level" "$seccomp_profile" "$cmd_hash" "$weak_sandbox_reason" "$weak_seccomp_reason"; then
             QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="policy-approved"
             QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="standing policy grant covers weak sandbox/seccomp selection"
@@ -6421,7 +6471,7 @@ _queue_job_policy_execution_check() {
     local jobf="${1:-}"
     [[ -f "$jobf" ]] || { echo "job file not found"; return 1; }
     (
-        JOB_CLASS=""; SUBMIT_USER=""; SANDBOX_LEVEL=""; SECCOMP_PROFILE=""
+        JOB_CLASS=""; SUBMIT_USER=""; SANDBOX_LEVEL=""; SECCOMP_PROFILE=""; SECURITY_SANDBOX_EXPLICIT="0"; SECURITY_SECCOMP_EXPLICIT="0"
         EXCEPTION_SANDBOX_OVERRIDE=""; EXCEPTION_SECCOMP_ALLOW=""; EXCEPTION_DROP_CAP=""; EXCEPTION_ADD_PORT=""
         SECURITY_AUTHORISATION_CODE=""; SECURITY_EXCEPTION_REASON=""; SECURITY_EXEMPTION_TYPE=""; SECURITY_EXEMPTION_DETAIL=""
         COMMAND=()
@@ -6440,7 +6490,7 @@ _queue_job_policy_execution_check() {
         [[ "${#COMMAND[@]}" -gt 0 ]] || { echo "job has no COMMAND array for policy check"; exit 1; }
 
         local submit_user cmd_hash command_text argv0 allowed_sandbox allowed_seccomp weak_sandbox weak_seccomp block_classes block_hashes block_words block_patterns contrary details auth_out
-        local sandbox_level seccomp_profile
+        local sandbox_level seccomp_profile sandbox_explicit seccomp_explicit
         submit_user="${SUBMIT_USER:-${QUEUEBASH_SELECTED_USER:-}}"
         [[ -n "$submit_user" ]] || submit_user="$(_queue_root_owner_user 2>/dev/null || true)"
         [[ -n "$submit_user" ]] || submit_user="$(id -un 2>/dev/null || echo unknown)"
@@ -6449,6 +6499,8 @@ _queue_job_policy_execution_check() {
         argv0="${COMMAND[0]:-}"
         sandbox_level="${SANDBOX_LEVEL:-off}"
         seccomp_profile="${SECCOMP_PROFILE:-off}"
+        sandbox_explicit="${SECURITY_SANDBOX_EXPLICIT:-0}"
+        seccomp_explicit="${SECURITY_SECCOMP_EXPLICIT:-0}"
         allowed_sandbox="${CLASS_POLICY_USER_SANDBOX_POLICIES:-}"
         allowed_seccomp="${CLASS_POLICY_USER_SECCOMP_POLICIES:-}"
         weak_sandbox="${CLASS_POLICY_SANDBOX_REASON_REQUIRED:-off}"
@@ -6531,14 +6583,14 @@ _queue_job_policy_execution_check() {
                 _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers requested exception overlay" ""
             fi
         fi
-        if [[ -n "$weak_sandbox" ]] && _queue_security_policy_value_in_list "$sandbox_level" "$weak_sandbox"; then
+        if [[ "$sandbox_explicit" == "1" && -n "$weak_sandbox" ]] && _queue_security_policy_value_in_list "$sandbox_level" "$weak_sandbox"; then
             if ! _queue_class_policy_user_weak_policy_grant_covers "$submit_user" "$sandbox_level" "$seccomp_profile" "$cmd_hash" "$weak_sandbox" "$weak_seccomp"; then
                 contrary=1; _queue_policy_gate_raise_requirement "${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"; details+=("weak sandbox policy '$sandbox_level'")
             else
                 _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers weak sandbox policy $sandbox_level" ""
             fi
         fi
-        if [[ -n "$weak_seccomp" ]] && _queue_security_policy_value_in_list "$seccomp_profile" "$weak_seccomp"; then
+        if [[ "$seccomp_explicit" == "1" && -n "$weak_seccomp" ]] && _queue_security_policy_value_in_list "$seccomp_profile" "$weak_seccomp"; then
             if ! _queue_class_policy_user_weak_policy_grant_covers "$submit_user" "$sandbox_level" "$seccomp_profile" "$cmd_hash" "$weak_sandbox" "$weak_seccomp"; then
                 contrary=1; _queue_policy_gate_raise_requirement "${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"; details+=("weak seccomp policy '$seccomp_profile'")
             else
@@ -6659,6 +6711,63 @@ _queue_policy_origin() {
         "$root"/policies.d/*) printf '%s\n' personal ;;
         "$source_root"/*) printf '%s\n' bundled ;;
         *) printf '%s\n' unknown ;;
+    esac
+}
+
+_queue_policy_edit_target_file() {
+    # Prints the file path to edit/create for a policy.
+    # Default behaviour is intentionally admin-friendly: root edits the shared
+    # site policy under /etc/bashqueues/policies.d, normal users edit their
+    # queue-local policy under $QUEUEBASH_ROOT/policies.d.  --shared and
+    # --personal are explicit overrides used by tests and automation.
+    local scope="${1:-auto}" kind="${2:-}" name="${3:-}" root base
+    _queue_policy_valid_kind "$kind" || return 1
+    _queue_policy_valid_name "$name" || return 1
+    case "$scope" in
+        auto|"")
+            if [[ "$(id -u 2>/dev/null || echo 1)" == "0" ]]; then
+                base="$(_queue_policy_shared_root)"
+            else
+                root="$(_queue_root)"
+                base="$root/policies.d"
+            fi
+            ;;
+        shared|site|admin|etc)
+            base="$(_queue_policy_shared_root)"
+            ;;
+        personal|queue|user)
+            root="$(_queue_root)"
+            base="$root/policies.d"
+            ;;
+        *) return 1 ;;
+    esac
+    printf '%s/%s/%s.env\n' "$base" "$kind" "$name"
+}
+
+_queue_policy_emit_template() {
+    local kind="${1:-}" name="${2:-}"
+    echo "# bashqueues $kind policy: $name"
+    echo "QUEUEBASH_POLICY_KIND=$kind"
+    echo "QUEUEBASH_POLICY_NAME=$name"
+    case "$kind" in
+        sandbox)
+            echo 'SANDBOX_SYSTEMD_PROPERTIES=()'
+            echo 'SANDBOX_DIRECT_PREFIX=()'
+            echo 'SANDBOX_DIRECT_WARNING=""'
+            ;;
+        seccomp)
+            echo 'SECCOMP_SYSTEMD_PROPERTIES=()'
+            ;;
+        class-statement)
+            echo 'CLASS_POLICY_USER_SANDBOX_POLICIES="off network-none restrict-egress strict queue-default"'
+            echo 'CLASS_POLICY_USER_SECCOMP_POLICIES="off docker-default strict queue-default"'
+            echo 'CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE="reason-or-authorisation"'
+            echo 'CLASS_POLICY_WEAK_POLICY_REQUIRE="reason-or-authorisation"'
+            echo '# Weak policies below are only treated as weak when explicitly requested on submit/class paths.'
+            echo 'CLASS_POLICY_SANDBOX_REASON_REQUIRED="off"'
+            echo 'CLASS_POLICY_SECCOMP_REASON_REQUIRED="off"'
+            echo 'CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="if-trusted-key"'
+            ;;
     esac
 }
 
@@ -9645,6 +9754,126 @@ _queue_cron_ticker_path() {
     done
     command -v bashqueues-cron-ticker.py 2>/dev/null || true
 }
+_queue_cron_line_description() {
+    local min="$1" hour="$2" dom="$3" mon="$4" dow="$5"
+    local out=""
+    case "$min" in
+        "*") out="every minute" ;;
+        \*/[0-9]*) out="every ${min#*/} minutes" ;;
+        [0-9]*) out="at minute $min" ;;
+        *) out="minutes '$min'" ;;
+    esac
+    case "$hour" in
+        "*") ;;
+        \*/[0-9]*) out="$out, every ${hour#*/} hours" ;;
+        [0-9]*) out="$out past hour $hour" ;;
+        *) out="$out, hours '$hour'" ;;
+    esac
+    [[ "$dom" != "*" ]] && out="$out, day-of-month '$dom'"
+    [[ "$mon" != "*" ]] && out="$out, month '$mon'"
+    [[ "$dow" != "*" ]] && out="$out, weekday '$dow'"
+    printf '%s\n' "$out"
+}
+
+_queue_cron_entry_hash() {
+    local user="$1" command="$2"
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s\0%s' "$user" "$command" | sha256sum | awk '{print $1}'
+    else
+        printf '%s\0%s' "$user" "$command" | shasum -a 256 | awk '{print $1}'
+    fi
+}
+
+_queue_cron_stable_class() {
+    local user="$1" command="$2" h
+    h="$(_queue_cron_entry_hash "$user" "$command")"
+    printf 'cron_%s\n' "${h:0:12}"
+}
+
+_queue_cron_next_hint() {
+    local spec="$1"
+    local ticker="$(_queue_cron_ticker_path)"
+    if [[ -n "$ticker" && -x "$ticker" ]]; then
+        # The ticker is the source of truth for cron matching.  It does not yet
+        # expose next-run calculation, so keep this as a cheap human hint rather
+        # than inventing a second scheduler here.
+        :
+    fi
+    printf 'next run: calculated by bashqueues-cron.timer/tick at minute boundaries\n'
+}
+
+_queue_cron_explain_file() {
+    local owner="$1" file="$2" line raw min hour dom mon dow cmd class h desc n=0
+    [[ -f "$file" ]] || { echo "No bashqueues crontab for $owner: $file" >&2; return 1; }
+    if [[ ! -r "$file" ]]; then
+        echo "=== cron for $owner ==="
+        echo "file: $file"
+        echo "status: not readable by $(id -un 2>/dev/null || echo unknown)"
+        echo
+        return 0
+    fi
+    echo "=== cron for $owner ==="
+    echo "file: $file"
+    while IFS= read -r raw || [[ -n "$raw" ]]; do
+        line="${raw%%#*}"
+        line="${line#${line%%[![:space:]]*}}"
+        line="${line%${line##*[![:space:]]}}"
+        [[ -z "$line" ]] && continue
+        if [[ "$line" == @* ]]; then
+            local macro rest
+            macro="${line%%[[:space:]]*}"
+            rest="${line#${macro}}"; rest="${rest#${rest%%[![:space:]]*}}"
+            case "$macro" in
+                @hourly) min="0"; hour="*"; dom="*"; mon="*"; dow="*"; cmd="$rest" ;;
+                @daily|@midnight) min="0"; hour="0"; dom="*"; mon="*"; dow="*"; cmd="$rest" ;;
+                @weekly) min="0"; hour="0"; dom="*"; mon="*"; dow="0"; cmd="$rest" ;;
+                @monthly) min="0"; hour="0"; dom="1"; mon="*"; dow="*"; cmd="$rest" ;;
+                @yearly|@annually) min="0"; hour="0"; dom="1"; mon="1"; dow="*"; cmd="$rest" ;;
+                @reboot)
+                    n=$((n+1))
+                    echo
+                    echo "entry $n: $raw"
+                    echo "  status: unsupported macro @reboot"
+                    echo "  reason: bashqueues cron is queue/timer based; @reboot has no queue-safe equivalent"
+                    continue
+                    ;;
+                *)
+                    n=$((n+1))
+                    echo
+                    echo "entry $n: $raw"
+                    echo "  status: unsupported macro $macro"
+                    continue
+                    ;;
+            esac
+        else
+            read -r min hour dom mon dow cmd <<< "$line"
+            if [[ -z "${min:-}" || -z "${hour:-}" || -z "${dom:-}" || -z "${mon:-}" || -z "${dow:-}" || -z "${cmd:-}" ]]; then
+                n=$((n+1))
+                echo
+                echo "entry $n: $raw"
+                echo "  status: invalid; expected five cron fields plus command"
+                continue
+            fi
+        fi
+        n=$((n+1))
+        class="$(_queue_cron_stable_class "$owner" "$cmd")"
+        h="$(_queue_cron_entry_hash "$owner" "$cmd")"
+        desc="$(_queue_cron_line_description "$min" "$hour" "$dom" "$mon" "$dow")"
+        echo
+        echo "entry $n: $raw"
+        echo "  schedule: $min $hour $dom $mon $dow"
+        echo "  meaning:  $desc"
+        echo "  user:     $owner"
+        echo "  command:  $cmd"
+        echo "  submits:  queue user $owner submit $class --class $class -- bash -lc $(printf '%q' "$cmd")"
+        echo "  class:    $class"
+        echo "  hash:     ${h:0:16}"
+        echo "  state:    one queue job per matching minute; duplicate ticks are suppressed by state markers"
+    done < "$file"
+    [[ "$n" -gt 0 ]] || echo "No active cron entries."
+    echo
+}
+
 _queue_cron_command() {
     local action="${1:-status}"
     case "$action" in
@@ -9654,15 +9883,26 @@ _queue_cron_command() {
             echo "state:  $(_queue_cron_state_dir)"
             ;;
         list|ls|status|"")
-            local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" f any=0
+            shift || true
+            local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" f any=0 list_all=0 selected="${QUEUEBASH_SELECTED_USER:-}"
+            [[ "${1:-}" == "--all" ]] && list_all=1
             echo "=== user bashqueues crontabs ==="
             if [[ -d "$d" ]]; then
-                for f in "$d"/*; do
-                    [[ -f "$f" ]] || continue
-                    any=1
-                    echo "$(basename "$f")  $f"
-                    grep -v '^[[:space:]]*#' "$f" 2>/dev/null | grep -v '^[[:space:]]*$' | sed 's/^/  /' || true
-                done
+                if [[ -n "$selected" && "$list_all" -ne 1 ]]; then
+                    f="$d/$selected"
+                    if [[ -f "$f" ]]; then
+                        any=1
+                        echo "$selected  $f"
+                        grep -v '^[[:space:]]*#' "$f" 2>/dev/null | grep -v '^[[:space:]]*$' | sed 's/^/  /' || true
+                    fi
+                else
+                    for f in "$d"/*; do
+                        [[ -f "$f" ]] || continue
+                        any=1
+                        echo "$(basename "$f")  $f"
+                        grep -v '^[[:space:]]*#' "$f" 2>/dev/null | grep -v '^[[:space:]]*$' | sed 's/^/  /' || true
+                    done
+                fi
             fi
             [[ "$any" -eq 1 ]] || echo "No user bashqueues crontabs."
             any=0
@@ -9677,6 +9917,44 @@ _queue_cron_command() {
                 done
             fi
             [[ "$any" -eq 1 ]] || echo "No system bashqueues cron.d files."
+            ;;
+        explain|why)
+            shift || true
+            local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" target="${1:-}" selected="${QUEUEBASH_SELECTED_USER:-}" current_user
+            current_user="$(id -un 2>/dev/null || echo unknown)"
+            if [[ -z "$target" ]]; then
+                target="${selected:-$current_user}"
+            fi
+            if [[ "$target" == "--all" ]]; then
+                local f any=0
+                if [[ -d "$d" ]]; then
+                    for f in "$d"/*; do
+                        [[ -f "$f" ]] || continue
+                        any=1
+                        _queue_cron_explain_file "$(basename "$f")" "$f"
+                    done
+                fi
+                if [[ -d "$d2" ]]; then
+                    for f in "$d2"/*; do
+                        [[ -f "$f" ]] || continue
+                        any=1
+                        _queue_cron_explain_file "system:$(basename "$f")" "$f"
+                    done
+                fi
+                [[ "$any" -eq 1 ]] || echo "No bashqueues cron files."
+            elif [[ "$target" == "system" ]]; then
+                local f any=0
+                if [[ -d "$d2" ]]; then
+                    for f in "$d2"/*; do
+                        [[ -f "$f" ]] || continue
+                        any=1
+                        _queue_cron_explain_file "system:$(basename "$f")" "$f"
+                    done
+                fi
+                [[ "$any" -eq 1 ]] || echo "No system bashqueues cron.d files."
+            else
+                _queue_cron_explain_file "$target" "$d/$target"
+            fi
             ;;
         show|cat)
             shift
@@ -9701,12 +9979,34 @@ _queue_cron_command() {
             ;;
         edit)
             shift
-            local target_user="${1:-$(id -un 2>/dev/null || echo unknown)}" d f tmp
-            d="$(_queue_cron_spool_dir)"; mkdir -p "$d" || return 1
+            local current_user target_user d f tmp
+            current_user="$(id -un 2>/dev/null || echo unknown)"
+            target_user="${1:-$current_user}"
+            if [[ "$current_user" != "root" && "$target_user" != "$current_user" ]]; then
+                echo "queue cron edit: only root may edit another user's bashqueues crontab" >&2
+                return 1
+            fi
+            if [[ ! "$target_user" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+                echo "queue cron edit: invalid user name: $target_user" >&2
+                return 2
+            fi
+            d="$(_queue_cron_spool_dir)"
+            if ! mkdir -p "$d" 2>/dev/null; then
+                echo "queue cron edit: cannot create cron spool directory: $d" >&2
+                echo "hint: run sudo ./install-system.sh --with-cron, or set QUEUEBASH_CRON_SPOOL_DIR to a writable spool" >&2
+                return 1
+            fi
             f="$d/$target_user"; tmp="$(mktemp)" || return 1
-            [[ -f "$f" ]] && cp "$f" "$tmp"
+            [[ -f "$f" ]] && cp "$f" "$tmp" 2>/dev/null || true
             "${VISUAL:-${EDITOR:-vi}}" "$tmp"
-            cp "$tmp" "$f" && chmod 0644 "$f" 2>/dev/null || true
+            if ! cp "$tmp" "$f" 2>/dev/null; then
+                rm -f "$tmp"
+                echo "queue cron edit: cannot write bashqueues crontab: $f" >&2
+                echo "hint: install/fix cron spool permissions with: sudo ./install-system.sh --with-cron" >&2
+                echo "hint: expected user spool directory mode is 1777: $d" >&2
+                return 1
+            fi
+            chmod 0600 "$f" 2>/dev/null || true
             rm -f "$tmp"
             echo "Updated bashqueues crontab: $f"
             ;;
@@ -9718,7 +10018,7 @@ _queue_cron_command() {
             echo "Removed bashqueues crontab: $target_user"
             ;;
         *)
-            echo "Usage: queue cron root|list|show [user]|preview [--now ISO]|tick [--dryrun]|edit [user]|remove [user]" >&2
+            echo "Usage: queue cron root|list [--all]|explain [user|--all|system]|show [user]|preview [--now ISO]|tick [--dryrun]|edit [user]|remove [user]" >&2
             return 2
             ;;
     esac
@@ -9778,6 +10078,8 @@ Usage:
   queue draft ready|abandon <draft-id>
 
   queue run [--workers N] [--detach] [--dryrun]
+  queue sentinel [--once] [--interval SEC] [--detach]
+  queue system-daemon [--once] [--interval SEC] [--detach] [--min-workers N]
   queue start [--workers N]
 
   queue clear done [--dryrun]
@@ -9804,6 +10106,8 @@ Runtime PID tracking:
 
 Health/recovery:
   queue health reports queue integrity, dead worker PID files, and stale running jobs.
+  queue sentinel runs a cheap control-plane loop: policy gate, stale-worker cleanup, stale-running repair, and deadline escalation only.
+  queue system-daemon is the root multi-user control loop; it delegates per-user queue daemons and never runs user jobs as root.
   queue health --fix creates missing directories, removes dead worker records, and moves stale running jobs to interrupted.
 
 Structured audit:
@@ -9890,6 +10194,9 @@ Examples:
   queue delete unzip001
   queue undelete unzip001
   queue resubmit failed_job_name
+  queue reevaluate [--all|QID] [--dryrun]
+  queue backup [create] [FILE.tar.gz] [--force]
+  queue backup restore FILE.tar.gz --to DIRECTORY [--force]
   queue clear deleted
 
   queue run --workers 4
@@ -9906,6 +10213,7 @@ Queue manager:
     r4    run four workers in foreground
     rd4   dryrun four workers
     start detached workers from the shell with: queue start --workers 4
+    sentinel control-plane loop with: queue sentinel --detach --interval 30
 
 Notes:
   Jobs are stored in ~/.queuebash by default.
@@ -10134,6 +10442,116 @@ _queue_modules_explain() {
 }
 
 
+_queue_pol_block_reevaluate() {
+    local target="" local_dryrun=0 root f id state reason moved=0 checked=0
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --all) target=""; shift ;;
+            --dryrun|-n) local_dryrun=1; shift ;;
+            *) target="$1"; shift ;;
+        esac
+    done
+    root="$(_queue_root)"
+    local files=()
+    if [[ -n "$target" ]]; then
+        while IFS= read -r f; do
+            state="$(basename "$(dirname "$f")")"
+            [[ "$state" == "pol_block" || "$state" == "policy_blocked" ]] && files+=("$f")
+        done < <(_queue_find_jobs "$target")
+    else
+        for f in "$root/pol_block"/*.job "$root/policy_blocked"/*.job; do
+            [[ -e "$f" ]] && files+=("$f")
+        done
+    fi
+    if [[ "${#files[@]}" -eq 0 ]]; then
+        echo "queue reevaluate: no pol_block jobs matched${target:+: $target}" >&2
+        return 1
+    fi
+    for f in "${files[@]}"; do
+        id="$(basename "$f" .job)"
+        checked=$((checked + 1))
+        if _queue_job_policy_execution_check "$f" >/dev/null 2>&1; then
+            if [[ "$local_dryrun" -eq 1 ]]; then
+                echo "DRYRUN: would requeue $id from $(basename "$(dirname "$f")") -> pending"
+            else
+                {
+                    echo "REEVALUATED_AT=$(printf '%q' "$(date -Is)")"
+                    echo "REEVALUATED_FROM=$(printf '%q' "$(basename "$(dirname "$f")")")"
+                    echo "STATE=$(printf '%q' pending)"
+                } >> "$f"
+                mv -f "$f" "$root/pending/$id.job"
+                _queue_log_event "pol_block_reevaluated" "$id" "$(_queue_job_name "$root/pending/$id.job" 2>/dev/null || echo -)" "pending" "result=requeued"
+                echo "Requeued $id -> pending"
+            fi
+            moved=$((moved + 1))
+        else
+            reason="$(_queue_job_policy_execution_check "$f" 2>&1 >/dev/null || true)"
+            echo "Still pol_block: $id"
+            [[ -n "$reason" ]] && printf '  %s
+' "$reason" | head -3
+        fi
+    done
+    echo "Reevaluated $checked pol_block job(s); requeued $moved."
+}
+
+_queue_backup_create() {
+    local out="" force=0 root running_count ts
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --force|-f) force=1; shift ;;
+            --output|-o) out="${2:-}"; shift 2 ;;
+            --quiesce) shift ;;
+            *) [[ -z "$out" ]] && out="$1" || { echo "queue backup: unexpected argument: $1" >&2; return 2; }; shift ;;
+        esac
+    done
+    root="$(_queue_root)"
+    ts="$(date +%Y%m%d_%H%M%S 2>/dev/null || date +%s)"
+    [[ -n "$out" ]] || out="$PWD/bashqueues-backup-${ts}.tar.gz"
+    running_count="$(find "$root/running" -maxdepth 1 -name '*.job' -type f 2>/dev/null | wc -l | tr -d ' ')"
+    if [[ "$running_count" != "0" && "$force" -ne 1 ]]; then
+        echo "queue backup: $running_count running job(s); stop workers or use --force for a best-effort snapshot" >&2
+        return 1
+    fi
+    mkdir -p "$(dirname "$out")" || return 1
+    tar -C "$(dirname "$root")" -czf "$out" "$(basename "$root")" || return 1
+    echo "Backup written: $out"
+    echo "Queue root:     $root"
+    _queue_log_event "backup_created" "backup" "backup" "admin" "path=$out root=$root force=$force" 2>/dev/null || true
+}
+
+_queue_backup_restore() {
+    local archive="${1:-}" to="" force=0
+    shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --to) to="${2:-}"; shift 2 ;;
+            --force|-f) force=1; shift ;;
+            *) echo "queue backup restore: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$archive" ]] || { echo "Usage: queue backup restore <archive.tar.gz> --to <directory> [--force]" >&2; return 2; }
+    [[ -f "$archive" ]] || { echo "queue backup restore: archive not found: $archive" >&2; return 1; }
+    [[ -n "$to" ]] || { echo "queue backup restore: --to is required to avoid overwriting the live queue root" >&2; return 2; }
+    if [[ -e "$to" && "$force" -ne 1 ]]; then
+        echo "queue backup restore: destination exists; use --force: $to" >&2
+        return 1
+    fi
+    rm -rf "$to"
+    mkdir -p "$to" || return 1
+    tar -C "$to" --strip-components=1 -xzf "$archive" || return 1
+    echo "Backup restored into: $to"
+}
+
+_queue_backup_command() {
+    local sub="${1:-create}"
+    shift || true
+    case "$sub" in
+        create|save) _queue_backup_create "$@" ;;
+        restore) _queue_backup_restore "$@" ;;
+        *) _queue_backup_create "$sub" "$@" ;;
+    esac
+}
+
 queue() {
     local dryrun=0
 
@@ -10234,6 +10652,14 @@ queue() {
             fi
             ;;
 
+        reevaluate|re-evaluate|recheck|policy-reevaluate|pol-block-reevaluate)
+            _queue_pol_block_reevaluate "$@"
+            ;;
+
+        backup)
+            _queue_backup_command "$@"
+            ;;
+
         keygen)
             _queue_authorisation_keygen "$@"
             ;;
@@ -10328,6 +10754,10 @@ queue() {
             local runner="${QUEUEBASH_RUNNER:-auto}"
             local sandbox_level="${QUEUEBASH_SANDBOX_LEVEL:-off}"
             local seccomp_profile="${QUEUEBASH_SECCOMP_PROFILE:-}"
+            local sandbox_explicit=0
+            local seccomp_explicit=0
+            [[ -n "${QUEUEBASH_SANDBOX_LEVEL+x}" ]] && sandbox_explicit=1
+            [[ -n "${QUEUEBASH_SECCOMP_PROFILE+x}" ]] && seccomp_explicit=1
             local seccomp_allow="${QUEUEBASH_SECCOMP_ALLOW:-}"
             local exception_sandbox_override=""
             local exception_seccomp_allow=""
@@ -10452,6 +10882,7 @@ queue() {
                             network-none|restrict-egress|strict) sandbox_level="$2" ;;
                             *) echo "queue submit: invalid --sandbox: $2" >&2; return 2 ;;
                         esac
+                        sandbox_explicit=1
                         shift 2
                         ;;
                     --seccomp|--seccomp-profile)
@@ -10460,6 +10891,7 @@ queue() {
                             off|none|docker-default|strict) seccomp_profile="$2" ;;
                             *) echo "queue submit: invalid $1: $2" >&2; return 2 ;;
                         esac
+                        seccomp_explicit=1
                         shift 2
                         ;;
                     --sandbox-override)
@@ -10545,11 +10977,15 @@ queue() {
                 fi
             done
 
+            if [[ -z "$security_reason" && -n "${QUEUEBASH_SUBMIT_REASON_DEFAULT:-}" ]]; then
+                security_reason="$QUEUEBASH_SUBMIT_REASON_DEFAULT"
+            fi
+
             local submit_user="${QUEUEBASH_SELECTED_USER:-$(id -un 2>/dev/null || echo unknown)}"
             QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE=""
             QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL=""
             QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE=""
-            _queue_submit_policy_check "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$submit_user" "$security_reason" "$authorisation_code" "$sandbox_level" "$seccomp_profile" "$exception_sandbox_override" "$exception_seccomp_allow" "$exception_drop_cap" "$exception_add_port" "$@" || return $?
+            _queue_submit_policy_check "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$submit_user" "$security_reason" "$authorisation_code" "$sandbox_level" "$seccomp_profile" "$exception_sandbox_override" "$exception_seccomp_allow" "$exception_drop_cap" "$exception_add_port" "$sandbox_explicit" "$seccomp_explicit" "$@" || return $?
             if [[ -z "$authorisation_code" && -n "${QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE:-}" ]]; then
                 authorisation_code="$QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE"
             fi
@@ -10618,7 +11054,9 @@ queue() {
                 printf 'LOG_OVERFLOW_POLICY=%q\n' "$log_overflow_policy"
                 printf 'RUNNER=%q\n' "$runner"
                 printf 'SANDBOX_LEVEL=%q\n' "$sandbox_level"
+                printf 'SECURITY_SANDBOX_EXPLICIT=%q\n' "$sandbox_explicit"
                 [[ -n "$seccomp_profile" ]] && printf 'SECCOMP_PROFILE=%q\n' "$seccomp_profile"
+                printf 'SECURITY_SECCOMP_EXPLICIT=%q\n' "$seccomp_explicit"
                 [[ -n "$seccomp_allow" ]] && printf 'SECCOMP_ALLOW=%q\n' "$seccomp_allow"
                 [[ -n "$exception_sandbox_override" ]] && printf 'EXCEPTION_SANDBOX_OVERRIDE=%q\n' "$exception_sandbox_override"
                 [[ -n "$exception_seccomp_allow" ]] && printf 'EXCEPTION_SECCOMP_ALLOW=%q\n' "$exception_seccomp_allow"
@@ -11260,11 +11698,36 @@ EOF
                         queue policies list sandbox
                         echo
                         queue policies list seccomp
+                        echo
+                        queue policies list class-statement
                     fi
                     ;;
                 show|explain)
-                    local kind="${2:-}" name="${3:-}" file
-                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies show sandbox|seccomp|class-statement NAME" >&2; return 2; }
+                    local kind="${2:-}" name="${3:-}" file found_kind="" found_count=0 k
+                    if [[ -z "$kind" ]]; then
+                        kind="class-statement"
+                        name="$(_queue_security_policy_statement_name)"
+                    elif [[ -z "$name" ]]; then
+                        # Friendly shorthand: queue policy show policyblock-test
+                        # or queue policy explain.  Prefer the active class-statement
+                        # policy for a bare explain because class-statement is the
+                        # governing site policy operators usually mean.
+                        name="$kind"
+                        kind=""
+                        for k in class-statement sandbox seccomp; do
+                            if _queue_policy_file "$k" "$name" >/dev/null 2>&1; then
+                                found_kind="$k"
+                                found_count=$((found_count + 1))
+                            fi
+                        done
+                        if [[ "$found_count" -eq 1 ]]; then
+                            kind="$found_kind"
+                        else
+                            echo "Usage: queue policies show sandbox|seccomp|class-statement NAME" >&2
+                            echo "       queue policy explain [NAME]   # infers kind when unique; default is active class-statement" >&2
+                            return 2
+                        fi
+                    fi
                     _queue_policy_valid_kind "$kind" || { echo "queue policies show: invalid kind: $kind" >&2; return 2; }
                     file="$(_queue_policy_file "$kind" "$name")" || { echo "queue policies show: not found: $kind $name" >&2; return 1; }
                     echo "=== $kind policy: $name ==="
@@ -11273,69 +11736,84 @@ EOF
                     echo "file: $file"
                     sed -n '1,200p' "$file"
                     ;;
-                edit)
-                    local kind="${2:-}" name="${3:-}" root file src editor
-                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies edit sandbox|seccomp|class-statement NAME" >&2; return 2; }
+                path)
+                    local kind="${2:-}" name="${3:-}" scope="auto" file
+                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies path sandbox|seccomp|class-statement NAME [--shared|--personal]" >&2; return 2; }
+                    shift 3 || true
+                    while [[ "$#" -gt 0 ]]; do
+                        case "$1" in
+                            --shared|--site|--admin|--etc) scope="shared"; shift ;;
+                            --personal|--queue|--user) scope="personal"; shift ;;
+                            *) echo "queue policies path: unknown option: $1" >&2; return 2 ;;
+                        esac
+                    done
+                    file="$(_queue_policy_edit_target_file "$scope" "$kind" "$name")" || { echo "queue policies path: invalid target" >&2; return 2; }
+                    echo "$file"
+                    ;;
+
+                edit|editor)
+                    local kind="${2:-}" name="${3:-}" scope="auto" file src editor origin
+                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies edit sandbox|seccomp|class-statement NAME [--shared|--personal]" >&2; return 2; }
+                    shift 3 || true
+                    while [[ "$#" -gt 0 ]]; do
+                        case "$1" in
+                            --shared|--site|--admin|--etc) scope="shared"; shift ;;
+                            --personal|--queue|--user) scope="personal"; shift ;;
+                            *) echo "queue policies edit: unknown option: $1" >&2; return 2 ;;
+                        esac
+                    done
                     _queue_policy_valid_kind "$kind" || { echo "queue policies edit: invalid kind: $kind" >&2; return 2; }
                     _queue_policy_valid_name "$name" || { echo "queue policies edit: invalid policy name: $name" >&2; return 2; }
-                    root="$(_queue_root)"
-                    mkdir -p "$root/policies.d/$kind"
-                    file="$root/policies.d/$kind/$name.env"
+                    file="$(_queue_policy_edit_target_file "$scope" "$kind" "$name")" || { echo "queue policies edit: invalid target" >&2; return 2; }
+                    if [[ "$(_queue_policy_origin "$file")" == "shared" && "$(id -u 2>/dev/null || echo 1)" != "0" ]]; then
+                        echo "queue policies edit: shared policy editing requires root: $file" >&2
+                        return 1
+                    fi
+                    mkdir -p "$(dirname "$file")"
                     if [[ ! -f "$file" ]]; then
                         if src="$(_queue_policy_file "$kind" "$name" 2>/dev/null)" && [[ -f "$src" ]]; then
                             cp "$src" "$file"
                         else
-                            {
-                                echo "# bashqueues $kind policy: $name"
-                                echo "QUEUEBASH_POLICY_KIND=$kind"
-                                echo "QUEUEBASH_POLICY_NAME=$name"
-                                case "$kind" in
-                                    sandbox) echo 'SANDBOX_SYSTEMD_PROPERTIES=()'; echo 'SANDBOX_DIRECT_PREFIX=()'; echo 'SANDBOX_DIRECT_WARNING=""' ;;
-                                    seccomp) echo 'SECCOMP_SYSTEMD_PROPERTIES=()' ;;
-                                    class-statement) echo 'CLASS_POLICY_USER_SANDBOX_POLICIES="off network-none restrict-egress strict queue-default"'; echo 'CLASS_POLICY_USER_SECCOMP_POLICIES="off docker-default strict queue-default"'; echo 'CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE="reason-or-authorisation"'; echo 'CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="if-trusted-key"' ;;
-                                esac
-                            } > "$file"
+                            _queue_policy_emit_template "$kind" "$name" > "$file"
                         fi
                     fi
+                    origin="$(_queue_policy_origin "$file")"
+                    echo "Editing $origin policy: $file" >&2
                     editor="${VISUAL:-${EDITOR:-vi}}"
                     "$editor" "$file"
                     ;;
                 create|new)
-                    local kind="${2:-}" name="${3:-}" from="" root file src
-                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies create sandbox|seccomp|class-statement NAME [--from EXISTING]" >&2; return 2; }
+                    local kind="${2:-}" name="${3:-}" from="" scope="auto" file src
+                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies create sandbox|seccomp|class-statement NAME [--from EXISTING] [--shared|--personal]" >&2; return 2; }
                     shift 3 || true
                     while [[ "$#" -gt 0 ]]; do
                         case "$1" in
                             --from) from="${2:-}"; shift 2 ;;
+                            --shared|--site|--admin|--etc) scope="shared"; shift ;;
+                            --personal|--queue|--user) scope="personal"; shift ;;
                             *) echo "queue policies create: unknown option: $1" >&2; return 2 ;;
                         esac
                     done
                     _queue_policy_valid_kind "$kind" || { echo "queue policies create: invalid kind: $kind" >&2; return 2; }
                     _queue_policy_valid_name "$name" || { echo "queue policies create: invalid policy name: $name" >&2; return 2; }
-                    root="$(_queue_root)"
-                    mkdir -p "$root/policies.d/$kind"
-                    file="$root/policies.d/$kind/$name.env"
+                    file="$(_queue_policy_edit_target_file "$scope" "$kind" "$name")" || { echo "queue policies create: invalid target" >&2; return 2; }
+                    if [[ "$(_queue_policy_origin "$file")" == "shared" && "$(id -u 2>/dev/null || echo 1)" != "0" ]]; then
+                        echo "queue policies create: shared policy creation requires root: $file" >&2
+                        return 1
+                    fi
+                    mkdir -p "$(dirname "$file")"
                     [[ ! -e "$file" ]] || { echo "queue policies create: already exists: $file" >&2; return 1; }
                     if [[ -n "$from" ]]; then
                         src="$(_queue_policy_file "$kind" "$from")" || { echo "queue policies create: source policy not found: $kind $from" >&2; return 1; }
                         cp "$src" "$file"
                         sed -i "s/^QUEUEBASH_POLICY_NAME=.*/QUEUEBASH_POLICY_NAME=$name/" "$file" 2>/dev/null || true
                     else
-                        {
-                            echo "# bashqueues $kind policy: $name"
-                            echo "QUEUEBASH_POLICY_KIND=$kind"
-                            echo "QUEUEBASH_POLICY_NAME=$name"
-                            case "$kind" in
-                                sandbox) echo 'SANDBOX_SYSTEMD_PROPERTIES=()'; echo 'SANDBOX_DIRECT_PREFIX=()'; echo 'SANDBOX_DIRECT_WARNING=""' ;;
-                                seccomp) echo 'SECCOMP_SYSTEMD_PROPERTIES=()' ;;
-                                class-statement) echo 'CLASS_POLICY_USER_SANDBOX_POLICIES="off network-none restrict-egress strict queue-default"'; echo 'CLASS_POLICY_USER_SECCOMP_POLICIES="off docker-default strict queue-default"'; echo 'CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE="reason-or-authorisation"'; echo 'CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="if-trusted-key"' ;;
-                            esac
-                        } > "$file"
+                        _queue_policy_emit_template "$kind" "$name" > "$file"
                     fi
-                    echo "Created policy: $file"
+                    echo "Created $(_queue_policy_origin "$file") policy: $file"
                     ;;
                 *)
-                    echo "Usage: queue policies list [sandbox|seccomp|class-statement]|show sandbox|seccomp NAME|edit sandbox|seccomp NAME|create sandbox|seccomp NAME [--from EXISTING]" >&2
+                    echo "Usage: queue policies list [sandbox|seccomp|class-statement]|show KIND NAME|path KIND NAME [--shared|--personal]|edit KIND NAME [--shared|--personal]|create KIND NAME [--from EXISTING] [--shared|--personal]" >&2
                     return 2
                     ;;
             esac
@@ -12175,6 +12653,18 @@ EOF
             ;;
 
 
+        system-daemon|system-supervisor|system-sentinel|all-user-daemon|multi-user-daemon)
+            _queue_system_daemon_command "$@"
+            ;;
+
+        daemon)
+            _queue_sentinel_command --min-workers 1 "$@"
+            ;;
+
+        sentinel|supervisor|supervise|scheduler)
+            _queue_sentinel_command "$@"
+            ;;
+
         run|start)
             local local_dryrun="$dryrun"
             local detach=0
@@ -12281,6 +12771,371 @@ EOF
             return 2
             ;;
     esac
+}
+
+
+
+_queue_system_daemon_candidate_users() {
+    local include_root="${1:-0}" user home
+    if [[ "$include_root" == "1" && -d /root/.queuebash ]]; then
+        printf '%s\t%s\n' root /root/.queuebash
+    fi
+    getent passwd 2>/dev/null | awk -F: '$3 >= 1000 && $6 ~ /^\/home\// {print $1 "\t" $6 "/.queuebash"}' | while IFS=$'\t' read -r user home; do
+        [[ -n "$user" && -d "$home" ]] || continue
+        printf '%s\t%s\n' "$user" "$home"
+    done | sort -u
+}
+
+_queue_system_daemon_tick_user() {
+    local user="$1" qroot="$2" min_workers="$3" dry="$4" source_file
+    [[ -n "$user" && -n "$qroot" ]] || return 0
+    [[ -d "$qroot" ]] || return 0
+    source_file="${BASH_SOURCE[0]}"
+    if [[ "$dry" == "1" ]]; then
+        echo "system-daemon: would check user=$user root=$qroot min_workers=$min_workers"
+        return 0
+    fi
+    echo "system-daemon: checking user=$user root=$qroot"
+    if [[ "$user" == "$(id -un 2>/dev/null || echo root)" ]]; then
+        QUEUEBASH_ALLOW_NONINTERACTIVE=1 QUEUEBASH_ROOT="$qroot" queue daemon --once --min-workers "$min_workers"
+        return "$?"
+    fi
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u "$user" -- bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue daemon --once --min-workers %q' "$qroot" "$source_file" "$min_workers")"
+        return "$?"
+    fi
+    if command -v sudo >/dev/null 2>&1; then
+        sudo -u "$user" bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue daemon --once --min-workers %q' "$qroot" "$source_file" "$min_workers")"
+        return "$?"
+    fi
+    echo "system-daemon: cannot switch to user=$user; runuser/sudo not found" >&2
+    return 126
+}
+
+_queue_system_daemon_tick() {
+    local min_workers="${1:-1}" include_root="${2:-0}" dry="${3:-0}" line user qroot any=0 rc=0
+    while IFS=$'\t' read -r user qroot; do
+        [[ -n "$user" ]] || continue
+        any=1
+        if ! _queue_system_daemon_tick_user "$user" "$qroot" "$min_workers" "$dry"; then
+            rc=1
+        fi
+    done < <(_queue_system_daemon_candidate_users "$include_root")
+    if [[ "$any" -eq 0 ]]; then
+        echo "system-daemon: no user queue roots found"
+    fi
+    return "$rc"
+}
+
+_queue_system_daemon_command() {
+    local interval=30 once=0 detach=0 dry=0 min_workers=1 include_root=0 pid pidfile state_dir=/var/lib/bashqueues/daemon
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --interval|-i) interval="${2:-30}"; shift 2 ;;
+            --once) once=1; shift ;;
+            --detach|-d|--background) detach=1; shift ;;
+            --min-workers|--min-worker) min_workers="${2:-1}"; shift 2 ;;
+            --include-root) include_root=1; shift ;;
+            --dryrun|-n) dry=1; shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage: queue system-daemon [--once] [--interval SEC] [--detach] [--min-workers N] [--include-root]
+       queue system-supervisor [same options]
+
+Root-only multi-user control loop.  It quickly scans known user queue roots and,
+for each queue, delegates to that queue owner to run:
+  queue daemon --once --min-workers N
+
+This does not run user jobs as root.  Each per-user sentinel performs cheap
+control-plane checks and starts at least N detached user workers only when that
+user has due/dependency-ready pending work.
+EOF
+                return 0 ;;
+            *) echo "queue system-daemon: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ "$(id -u 2>/dev/null || echo 99999)" == "0" ]] || { echo "queue system-daemon: must be run as root" >&2; return 126; }
+    [[ "$interval" =~ ^[0-9]+$ && "$interval" -ge 1 ]] || { echo "queue system-daemon: interval must be a positive integer" >&2; return 2; }
+    [[ "$min_workers" =~ ^[0-9]+$ ]] || { echo "queue system-daemon: min-workers must be a non-negative integer" >&2; return 2; }
+    if [[ "$dry" -eq 1 ]]; then
+        echo "DRYRUN: would run system-daemon interval=${interval}s once=$once detach=$detach min_workers=$min_workers include_root=$include_root"
+        _queue_system_daemon_tick "$min_workers" "$include_root" 1
+        return 0
+    fi
+    if [[ "$detach" -eq 1 ]]; then
+        mkdir -p "$state_dir" 2>/dev/null || true
+        (
+            export QUEUEBASH_SYSTEM_DAEMON=1
+            while true; do
+                _queue_system_daemon_tick "$min_workers" "$include_root" 0 || true
+                [[ "$once" -eq 1 ]] && break
+                sleep "$interval"
+            done
+        ) &
+        pid="$!"
+        pidfile="$state_dir/system_daemon_${pid}.pid"
+        printf '%s\n' "$pid" > "$pidfile" 2>/dev/null || true
+        echo "Started bashqueues system-daemon pid=$pid interval=${interval}s min_workers=$min_workers"
+        return 0
+    fi
+    if [[ "$once" -eq 1 ]]; then
+        _queue_system_daemon_tick "$min_workers" "$include_root" 0
+        return "$?"
+    fi
+    echo "Running bashqueues system-daemon interval=${interval}s min_workers=$min_workers. Ctrl+C to stop."
+    while true; do
+        _queue_system_daemon_tick "$min_workers" "$include_root" 0 || true
+        sleep "$interval"
+    done
+}
+
+_queue_sentinel_running_jobs_fix_stale() {
+    local root="$(_queue_root)" f id
+    shopt -s nullglob
+    for f in "$root"/running/*.job; do
+        [[ -f "$f" ]] || continue
+        if _queue_health_running_is_stale2 "$f"; then
+            id="$(basename "$f" .job)"
+            _queue_health_mark_interrupted "$f"
+            _queue_log_event "sentinel_interrupted_stale" "$id" "$(_queue_job_name "$root/interrupted/$id.job" 2>/dev/null || echo -)" "interrupted" "reason=stale-running-detected-by-sentinel"
+            echo "sentinel: moved stale running job to interrupted: $id"
+        fi
+    done
+    shopt -u nullglob
+}
+
+_queue_sentinel_move_pending_to_pol_block() {
+    local jobf="$1" reason="$2" root id dest log name now
+    root="$(_queue_root)"
+    [[ -f "$jobf" ]] || return 0
+    id="$(basename "$jobf" .job)"
+    name="$(_queue_job_name "$jobf" 2>/dev/null || echo -)"
+    dest="$root/pol_block/$id.job"
+    log="$root/logs/$id.log"
+    now="$(date -Is 2>/dev/null || date)"
+    mkdir -p "$root/pol_block" "$root/logs" 2>/dev/null || true
+
+    {
+        echo "=== queue job $id : $name ==="
+        echo "pol_block: $now"
+        echo "state: pol_block"
+        echo "sentinel: $$"
+        echo
+        echo "POLICY_BLOCKED"
+        echo "$reason"
+        echo
+        echo "No class claims, asset preflight checks, dynamic preflight checks, global claims, or payload launch were attempted."
+        echo "Blocked by cheap sentinel policy gate before worker dispatch."
+    } > "$log" 2>&1
+
+    {
+        printf '\n# Policy blocked by sentinel at %q\n' "$now"
+        printf 'POLICY_BLOCKED=1\n'
+        printf 'POLICY_BLOCKED_AT=%q\n' "$now"
+        printf 'POLICY_BLOCKED_BY=%q\n' "sentinel"
+        printf 'POLICY_BLOCKED_REASON=%q\n' "$reason"
+    } >> "$jobf"
+    _queue_append_summary_to_job "$jobf" 78 "$log"
+
+    if mv "$jobf" "$dest" 2>/dev/null; then
+        _queue_job_stream_temp_cleanup "$id"
+        _queue_log_event "pol_block" "$id" "$name" "pol_block" "sentinel=1"
+        echo "sentinel: pol_block $id"
+    fi
+}
+
+_queue_sentinel_check_pending_policy() {
+    local root="$(_queue_root)" f id reason
+    shopt -s nullglob
+    for f in "$root"/pending/*.job; do
+        [[ -f "$f" ]] || continue
+        id="$(basename "$f" .job)"
+        reason=""
+        if ! reason="$(_queue_job_policy_execution_check "$f" 2>&1)"; then
+            _queue_sentinel_move_pending_to_pol_block "$f" "$reason"
+        fi
+    done
+    shopt -u nullglob
+}
+
+_queue_sentinel_asset_is_deadline_spec() {
+    local spec="$1" family check target
+    eval "set -- $spec"
+    (($# >= 3)) || return 1
+    family="$1"; check="$2"; target="$3"
+    [[ "$family" == "deadline" && ( "$check" == "monitor" || "$check" == "panic" ) ]]
+}
+
+_queue_sentinel_eval_deadline_for_job() {
+    local jobf="$1" root id spec rc line helper
+    [[ -f "$jobf" ]] || return 0
+    root="$(_queue_root)"
+    id="$(basename "$jobf" .job)"
+    (
+        # Source the job before class context so JOB_* variables are available
+        # to deadline.sh helpers, but do not run class claims or normal assets.
+        JOB_ID=""; JOB_NAME=""; JOB_CLASS=""; PRIORITY=""; COMMAND=()
+        source "$jobf" >/dev/null 2>&1 || exit 0
+        _queue_class_load_for_job "$jobf" >/dev/null 2>&1 || exit 0
+        helper="$(_queue_asset_helper_path deadline)"
+        [[ -f "$helper" ]] || exit 0
+        for spec in "${QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS[@]}" "${QUEUE_CLASS_SHARED_ASSET_SPECS[@]}"; do
+            [[ -n "$spec" ]] || continue
+            _queue_sentinel_asset_is_deadline_spec "$spec" || continue
+            # Deadline assets are deliberately cheap/control-plane capable.
+            # Their output may include priority escalation, fallback exception,
+            # or bounded extra-worker audit messages.
+            _queue_asset_implied_preflight_spec "$spec"
+        done
+        exit 0
+    ) 2>&1 | while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        _queue_dispatch_trace_log "sentinel" "deadline $id: $line" 2>/dev/null || true
+    done
+}
+
+_queue_sentinel_eval_deadlines() {
+    local root="$(_queue_root)" f
+    shopt -s nullglob
+    for f in "$root"/pending/*.job; do
+        [[ -f "$f" ]] || continue
+        # The sentinel should be cheap and should not evaluate deadlines for jobs
+        # that are not yet schedule/dependency eligible.
+        _queue_job_retry_due "$f" || continue
+        _queue_job_schedule_due "$f" || continue
+        _queue_job_dependencies_satisfied "$f" || continue
+        _queue_sentinel_eval_deadline_for_job "$f"
+    done
+    shopt -u nullglob
+}
+
+_queue_sentinel_live_worker_count() {
+    local root="$(_queue_root)" pf pid count=0
+    shopt -s nullglob
+    for pf in "$root"/workers/worker_*.pid; do
+        [[ -f "$pf" ]] || continue
+        pid="$(cat "$pf" 2>/dev/null || true)"
+        if [[ -n "$pid" && -d "/proc/$pid" ]]; then
+            count=$((count + 1))
+        else
+            rm -f "$pf" 2>/dev/null || true
+        fi
+    done
+    shopt -u nullglob
+    printf '%s
+' "$count"
+}
+
+_queue_sentinel_ready_pending_count() {
+    local root="$(_queue_root)" f count=0
+    shopt -s nullglob
+    for f in "$root"/pending/*.job; do
+        [[ -f "$f" ]] || continue
+        _queue_job_retry_due "$f" || continue
+        _queue_job_schedule_due "$f" || continue
+        _queue_job_dependencies_satisfied "$f" || continue
+        _queue_job_policy_execution_check "$f" >/dev/null 2>&1 || continue
+        count=$((count + 1))
+    done
+    shopt -u nullglob
+    printf '%s
+' "$count"
+}
+
+_queue_sentinel_ensure_min_workers() {
+    local min_workers="${1:-0}" root live ready need i wp
+    [[ "$min_workers" =~ ^[0-9]+$ ]] || min_workers=0
+    [[ "$min_workers" -gt 0 ]] || return 0
+    root="$(_queue_root)"
+    ready="$(_queue_sentinel_ready_pending_count 2>/dev/null || echo 0)"
+    [[ "$ready" -gt 0 ]] || return 0
+    live="$(_queue_sentinel_live_worker_count 2>/dev/null || echo 0)"
+    [[ "$live" -lt "$min_workers" ]] || return 0
+    need=$((min_workers - live))
+    mkdir -p "$root/workers" 2>/dev/null || true
+    for ((i=1; i<=need; i++)); do
+        (_queue_worker "sentinel-$i") &
+        wp="$!"
+        echo "$wp" > "$root/workers/worker_${wp}.pid" 2>/dev/null || true
+        _queue_log_event "sentinel_worker_started" "" "" "workers" "pid=$wp min_workers=$min_workers ready=$ready"
+        echo "sentinel: started worker pid=$wp ready=$ready min_workers=$min_workers"
+    done
+}
+
+_queue_sentinel_tick() {
+    local min_workers="${1:-0}"
+    _queue_init
+    _queue_health_clean_dead_workers >/dev/null 2>&1 || true
+    _queue_sentinel_running_jobs_fix_stale || true
+    _queue_sentinel_check_pending_policy || true
+    _queue_sentinel_eval_deadlines || true
+    _queue_sentinel_ensure_min_workers "$min_workers" || true
+}
+
+_queue_sentinel_command() {
+    local interval=30 once=0 detach=0 dry=0 min_workers=0 root pidfile pid
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --interval|-i) interval="${2:-30}"; shift 2 ;;
+            --once) once=1; shift ;;
+            --detach|-d|--background) detach=1; shift ;;
+            --min-workers|--min-worker) min_workers="${2:-1}"; shift 2 ;;
+            --dryrun|-n) dry=1; shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage: queue sentinel [--once] [--interval SEC] [--detach] [--min-workers N]
+       queue daemon [--interval SEC] [--detach]
+
+Runs the cheap control-plane queue sentinel. It does not run normal asset
+preflight. With --min-workers N, it also keeps at least N detached payload
+worker available whenever a due/dependency-ready pending job exists.
+It only performs inexpensive checks:
+  - remove dead detached-worker PID files
+  - mark definitely stale running jobs as interrupted
+  - apply the shared/admin policy gate to pending jobs
+  - evaluate deadline:monitor/deadline:panic assets for due, dependency-ready jobs
+
+Use queue start/run for manual payload workers. queue daemon is shorthand for
+queue sentinel --min-workers 1.
+EOF
+                return 0 ;;
+            *) echo "queue sentinel: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ "$interval" =~ ^[0-9]+$ && "$interval" -ge 1 ]] || { echo "queue sentinel: interval must be a positive integer" >&2; return 2; }
+    [[ "$min_workers" =~ ^[0-9]+$ ]] || { echo "queue sentinel: min-workers must be a non-negative integer" >&2; return 2; }
+    if [[ "$dry" -eq 1 ]]; then
+        echo "DRYRUN: would run queue sentinel interval=${interval}s once=$once detach=$detach min_workers=$min_workers"
+        return 0
+    fi
+    root="$(_queue_root)"
+    mkdir -p "$root/workers" 2>/dev/null || true
+    if [[ "$detach" -eq 1 ]]; then
+        (
+            export QUEUEBASH_SENTINEL=1
+            while true; do
+                _queue_sentinel_tick "$min_workers"
+                [[ "$once" -eq 1 ]] && break
+                sleep "$interval"
+            done
+        ) &
+        pid="$!"
+        pidfile="$root/workers/sentinel_${pid}.pid"
+        printf '%s\n' "$pid" > "$pidfile" 2>/dev/null || true
+        echo "Started queue sentinel pid=$pid interval=${interval}s min_workers=$min_workers"
+        _queue_log_event "sentinel_started" "" "" "workers" "pid=$pid interval=$interval detached=1 min_workers=$min_workers"
+        return 0
+    fi
+    export QUEUEBASH_SENTINEL=1
+    if [[ "$once" -eq 1 ]]; then
+        _queue_sentinel_tick "$min_workers"
+        return 0
+    fi
+    echo "Running queue sentinel interval=${interval}s min_workers=$min_workers. Ctrl+C to stop."
+    while true; do
+        _queue_sentinel_tick "$min_workers"
+        sleep "$interval"
+    done
 }
 
 _queue_worker_external_move_state() {
@@ -12665,7 +13520,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit submit-at submit-in list ls find show explain deps dependencies waiting blocked scheduled schedule tail stream follow class classes assets facilities claims resources pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V help --help -h"
+    local commands="--dryrun -n submit submit-at submit-in list ls find show explain deps dependencies waiting blocked scheduled schedule tail stream follow class classes assets facilities claims resources pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V backup reevaluate re-evaluate recheck policy-reevaluate help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )

@@ -1,3 +1,19 @@
+## System install
+
+For a shared root-managed installation, run:
+
+```bash
+sudo ./install-system.sh
+```
+
+Add cron bridge support with:
+
+```bash
+sudo ./install-system.sh --with-cron
+```
+
+The system installer uses an isolated temporary bashqueues queue to perform the privileged installation steps, installs shared policies under `/etc/bashqueues/policies.d`, and can generate/install root's authorisation signing public key into the shared class-statement policy. The generated `/usr/local/bin/queue` wrapper is explicitly non-interactive-safe, so scripts can call `queue ...` without first sourcing a shell profile. See `docs/SYSTEM_INSTALL.md`.
+
 # bashqueues
 
 Queues for Bash, because good job management means everything should use Queues.
@@ -7,7 +23,12 @@ Queues for Bash, because good job management means everything should use Queues.
 It is designed to be inspectable and recoverable using normal shell tools. The queue lives in `~/.queuebash` by default.
 
 
-### Policy-blocked jobs
+#
+### Dynamic deadline asset
+
+`assets.d/deadline.sh` adds `deadline:monitor` and `deadline:panic` assets. They compute deterministic slack from a drop-dead completion time and median historical runtime, then raise priority or apply only class-declared fallback asset exceptions when the point of no return is reached. See `docs/DEADLINE_ASSET.md`.
+
+## Policy-blocked jobs
 
 Jobs that are contrary to the active shared/admin class-policy statement at execution time and do not have a valid standing grant or command-bound authorisation move to `pol_block`. This is a terminal state, not a retryable failure. The worker performs this check before class claims, asset preflight, dynamic preflight, global claims, or payload launch.
 
@@ -19,6 +40,19 @@ See `docs/POLICY_BLOCKED.md`.
 
 The shared class-policy statement can delegate narrow exception values to specific
 queue users.  For example, a site policy in
+### Root-aware policy editor
+
+Root can edit the shared site policy directly:
+
+```bash
+sudo queue policies edit class-statement default
+sudo queue policies path class-statement default
+```
+
+Normal users still edit queue-local policies by default. Use `--shared` or `--personal` when the target must be explicit.
+
+A plain submit that inherits the default sandbox/seccomp settings is no longer treated as an explicit weak-policy request. Explicit selections such as `--sandbox off` still follow the active class-statement requirement.
+
 `/etc/bashqueues/policies.d/class-statement/default.env` may contain:
 
 ```bash
@@ -56,6 +90,22 @@ normal `--reason` or signed `--authorisation` path.
   - `overdir`
 
 
+
+
+## SNMP asset and NMS notification helpers
+
+`assets.d/snmp.sh` provides SNMP-backed preflight gates for infrastructure-specific readiness checks:
+
+```bash
+queue_class_shared_asset snmp int_below SAN_CPU max=85
+queue_class_shared_asset snmp truth_ok MAINT_WINDOW
+```
+
+SNMP aliases are resolved from `/etc/bashqueues/snmp-map.env`, `/etc/bashqueues/snmp.d/default.env`, or queue-local/bundled `policies.d/snmp-map/default.env` files.  Direct `oid=...` parameters still work, but production classes should normally use stable aliases so OIDs can be corrected centrally.
+
+The plugin uses Net-SNMP `snmpget -Oqv`, validates numeric SMI values before shell arithmetic, and fails closed if the tool, OID, value type, or network response is unsuitable.
+
+`bin/queue_snmp_inform.sh` is a site-hook helper for sending typed SNMP INFORM notifications to an NMS from failure, policy-block, or incident hooks. See `docs/SNMP_INTEGRATION.md`.
 
 ## Process preflight assets
 
@@ -1385,6 +1435,7 @@ Bundled external plugins now include:
 
 ```text
 assets.d/net.sh
+assets.d/snmp.sh
 assets.d/sys.sh
 ```
 
@@ -2661,8 +2712,9 @@ of running commands directly. It is installed with:
 sudo ./install-cron-bridge.sh
 ```
 
-Use `bashqueues-crontab -e` for bashqueues-managed crontabs and
-`queue cron tick --dryrun` to preview due entries. See
+Use `bashqueues-crontab -e` or `queue cron edit` for bashqueues-managed crontabs,
+`queue cron explain [user]` to translate entries into readable schedule/submission details,
+and `queue cron tick --dryrun` to preview due entries. See
 [`docs/CRON_BRIDGE.md`](docs/CRON_BRIDGE.md).
 
 
@@ -2954,3 +3006,51 @@ See `docs/POLICY_COMMAND_BLOCKS.md`.
 Jobs that run under a standing grant, reason, or valid command-bound
 authorisation are still logged as security exemptions and shown by
 `queue explain`.
+
+
+### Queue sentinel / scheduler
+
+`queue sentinel` is the lightweight daemon-mode control thread. It is deliberately separate from payload workers. It does not launch job commands and it does not run normal asset preflight. Its job is to perform cheap queue-control checks while workers may be busy:
+
+```bash
+queue sentinel --once
+queue sentinel --interval 30 --detach
+queue scheduler --interval 30 --detach   # alias
+queue daemon --interval 30 --detach      # sentinel plus --min-workers 1
+```
+
+The sentinel currently removes dead detached-worker PID files, marks definitely stale running jobs as `interrupted`, moves policy-contrary pending jobs to `pol_block`, and evaluates only `deadline:monitor` / `deadline:panic` assets for due, dependency-ready jobs. With `--min-workers N` it also starts enough detached payload workers to maintain the requested minimum whenever at least one due, dependency-ready job exists. This lets deadline-driven priority boosts and bounded extra-worker starts happen before a payload worker becomes free, while keeping the control thread itself cheap.
+
+
+### Queue Manager policy/global editors
+
+The Queue Manager tab order now starts with day-to-day operational views: Jobs, Task Creator, Drafts, Classes, Assets, Policies, Global Resources, Exceptions, Queue Users, Modules, Maintenance, and Class Creator.
+
+The Policies panel lists sandbox, seccomp, and class-statement policies and exposes actions for show/explain, path, edit, and create-copy. Root editing defaults to `/etc/bashqueues/policies.d`; normal users edit queue-local policy files unless `--shared` or `--personal` is specified.
+
+The Global Resources panel exposes claims, explain, cleanup dry-run, cleanup, and force-release actions.
+
+Typed command entry preserves the first printable key that opened the command prompt, so typing `e` followed by `xpl` becomes `expl` rather than losing the initial `e`.
+
+### 0.17.42 operations additions
+
+- `queue reevaluate [--all|QID]` rechecks `pol_block` jobs after a policy change or new command-bound authorisation.
+- `queue exception add QID ASSET --reason TEXT --expires +2h` creates time-limited asset exceptions.
+- `queue backup create FILE.tar.gz` and `queue backup restore FILE.tar.gz --to DIR` provide filesystem backup/restore helpers.
+
+
+### 0.17.43 noninteractive submit default reason
+
+Noninteractive scripts that create temporary queues, such as repository smoke tests, may run under a site policy that requires a reason for weak/default sandbox choices. They can set an audited default reason instead of adding `--reason` to every local test submission:
+
+```bash
+QUEUEBASH_SUBMIT_REASON_DEFAULT="publish selftest temporary queue under site policy" \
+  bash tests/selftest.sh
+```
+
+This is only reason text. It does not satisfy policies that require a signed authorisation code, and it does not make an authorisation valid for a different command.
+
+### System daemon
+
+`queue system-daemon` is the root multi-user control loop. It scans user queue roots and delegates per-user `queue daemon --once --min-workers N`, so queued work is cleared by user-owned workers rather than by root. Install it with `sudo ./install-system.sh --with-daemon`.
+

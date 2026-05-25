@@ -1,3 +1,107 @@
+## 0.17.49 - Cron explain and selected-user cron list scoping
+
+- Added `queue cron explain [user|--all|system]` to translate bashqueues crontab entries into readable schedule, command, generated class, command hash, and queue submission details.
+- `@reboot` is now called out explicitly as unsupported in cron explain output because bashqueues cron is timer/queue based.
+- `queue --queue-user USER cron list` and `queue user USER cron list` now scope the user crontab section to that selected user unless `--all` is requested.
+- Added static and smoke coverage for cron explain output and selected-user list scoping.
+
+## 0.17.48 - Cron edit spool permission fix
+
+- Fixed `queue cron edit` so it no longer prints a successful update after failing to write the crontab file.
+- Normal users may only edit their own bashqueues crontab; root may edit another user's crontab.
+- `queue cron edit` now reports actionable permission hints when `/var/spool/bashqueues_cron` is not writable.
+- The system installer now creates/fixes `/var/spool/bashqueues_cron` as mode `1777`, so users can create their own bashqueues crontab files without being able to replace another user's file.
+
+## 0.17.47 - Installer noninteractive queue sourcing fix
+
+- Fixed `install-system.sh` so its dogfood install queue sets `QUEUEBASH_ALLOW_NONINTERACTIVE=1` before sourcing `queuebash.sh`.
+- Fixed the generated `/usr/local/bin/queue` wrapper so non-interactive `queue ...` commands source the installed shell library correctly.
+- Added regression coverage for both paths.
+
+## 0.17.46 - System installer with optional cron and root signing key setup
+
+- Added `install-system.sh`, a root-only system installer that dogfoods bashqueues by running its privileged installation steps through an isolated temporary queue.
+- Installs the shared system copy, `/etc/profile.d/bashqueues.sh`, a non-interactive `/usr/local/bin/queue` wrapper, shared policies under `/etc/bashqueues/policies.d`, and bundled support files without overwriting site policy edits.
+- Added `--with-cron` to install and enable the cron bridge timer without replacing `/usr/bin/crontab`.
+- Added root authorisation key setup: if root has no signing key, the installer generates one and installs the root public key into `/etc/bashqueues/policies.d/class-statement/default.env` unless already configured.
+- Added `docs/SYSTEM_INSTALL.md` and static coverage for the system installer.
+
+## 0.17.45 - Panel policy/global editors and daemon worker guard
+
+- Added `queue daemon` as a control-thread alias for `queue sentinel --min-workers 1`; it performs cheap sentinel checks and whirls up at least one detached payload worker when a due, dependency-ready pending job exists.
+- Added `--min-workers N` to `queue sentinel` / `queue scheduler`.
+- Added friendly policy explain/show shorthand: `queue policy explain`, `queue policy show policyblock-test`, and `queue policy explain class-statement policyblock-test`.
+- Queue Manager tabs are reordered around common day-to-day work and now include an interactive Policies panel.
+- Queue Manager Global Resources panel now has an action menu for claims, cleanup, dry-run cleanup, and force-release by claim/QID.
+- Fixed typed command entry so the first printable character is not swallowed when it opens the command prompt.
+- Added regression/static tests for these fixes.
+
+## 0.17.44 - Root-aware policy editor and explicit weak-policy tracking
+
+- `queue policies edit` is now root-aware: root edits shared/site policy files under `/etc/bashqueues/policies.d` by default, while normal users edit queue-local policies.
+- Added `--shared` / `--personal` scope flags for `queue policies edit`, `queue policies create`, and `queue policies path`.
+- Added `queue policies path KIND NAME` to show the exact target path before editing.
+- Submit now records whether sandbox/seccomp were explicitly selected. A plain default `off` no longer requires a reason merely because the active policy treats explicit `--sandbox off` as weak.
+- Added regression tests for root-aware policy editing and implicit-default submit behaviour.
+
+## 0.17.43 - Noninteractive submit default reason for policy-aware selftests
+
+- Added `QUEUEBASH_SUBMIT_REASON_DEFAULT` as an audited default reason for noninteractive scripts that call `queue submit` without an explicit `--reason`.
+- The value is only used as reason text; it does not satisfy authorisation-only policy modes and does not bypass signed command authorisation requirements.
+- Updated `publish_to_github.sh` and `tests/selftest.sh` so cloned temporary selftest queues do not fail under a site policy that requires reasons for weak/default sandbox choices.
+- Added regression tests for default-reason recording and authorisation-only refusal.
+
+## 0.17.42 - Policy re-evaluate, expiring exceptions, and queue backup
+
+- Added `queue reevaluate` to recheck existing `pol_block` jobs after policy changes or on-file authorisations.
+- Added `--expires` / `--expires-at` to `queue exception add`; expired asset exceptions are ignored but retained for audit.
+- Added `queue backup create` and `queue backup restore` for filesystem queue snapshots.
+- Added docs for pol_block re-evaluation, time-limited exceptions, and queue backup/restore.
+
+## 0.17.41 - Queue sentinel control-plane loop
+
+- Added `queue sentinel` / `queue scheduler` as the cheap daemon-mode control thread.
+- The sentinel does not launch payloads and does not run normal asset preflight.
+- It removes dead detached-worker PID files, detects definitely stale running jobs, applies the early policy gate to pending jobs, and evaluates only `deadline:monitor` / `deadline:panic` control-plane assets for due dependency-ready jobs.
+- This lets deadline escalation and bounded extra-worker creation happen even when all payload workers are busy.
+- Added regression tests for sentinel policy blocking and deadline escalation.
+
+## 0.17.40 - Deadline extra worker escalation
+
+- `deadline:monitor` and `deadline:panic` can now start a bounded extra detached worker after priority escalation when explicitly enabled by class policy or asset parameters.
+- Added `CLASS_DEADLINE_ALLOW_EXTRA_WORKER`, `CLASS_DEADLINE_EXTRA_WORKER_SLACK`, and `CLASS_DEADLINE_MAX_EXTRA_WORKERS`.
+- Extra workers are started only when the recorded worker set appears saturated, and are capped per queue to avoid runaway worker creation.
+- Deadline worker escalation is recorded in the job file and emitted as an asset check message for auditability.
+
+## 0.17.38 - Central SNMP map aliases
+
+
+## 0.17.39
+
+- Added `assets.d/deadline.sh` dynamic deadline asset.
+- Added `deadline:monitor` for deterministic slack calculation and priority escalation.
+- Added `deadline:panic` for class-declared fallback asset exceptions once the point of no return is crossed.
+- Added `docs/DEADLINE_ASSET.md`.
+
+- Added central SNMP map support for `assets.d/snmp.sh` so class files can reference aliases such as `SAN_CPU` rather than opaque numeric OIDs.
+- SNMP maps are loaded from `/etc/bashqueues/snmp-map.env`, `/etc/bashqueues/snmp.d/default.env`, queue-local `policies.d/snmp-map/default.env`, and the bundled fallback map.
+- Explicit class parameters override map defaults, allowing one-off thresholds without editing the central map.
+- Added `policies.d/snmp-map/default.env` and regression coverage for map alias resolution.
+
+## 0.17.37 - SNMP asset and NMS notification helper
+
+- Added `assets.d/snmp.sh` with `snmp:int_below`, `snmp:int_above`, `snmp:truth_ok`, and `snmp:string_match` facilities.
+- SNMP numeric facilities use `snmpget -Oqv`, validate integer SMI values before shell arithmetic, and fail closed on missing tools, errors, or unexpected types.
+- Added `bin/queue_snmp_inform.sh` for strictly typed SNMP INFORM notifications to a site NMS.
+- Added `docs/SNMP_INTEGRATION.md` and regression tests.
+
+## 0.17.36 - Queue Manager Delete clears inactive editor fields
+
+- Queue Manager Task Creator and Class Creator now support Delete on the selected inactive field.
+- Delete clears optional fields without opening an edit prompt.
+- Resettable fields return to safe defaults, for example priority=10, retries=0, class default runner=auto.
+- Security exception fields can be cleared from the Task Creator by selecting the field and pressing Delete.
+
 ## 0.17.34 - pol_block resubmission and exemption audit model
 
 

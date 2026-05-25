@@ -1,0 +1,13 @@
+[Unit]
+Description=bashqueues multi-user queue daemon
+Documentation=file:/usr/local/share/bashqueues/docs/SYSTEM_DAEMON.md
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/queue system-daemon --interval 30 --min-workers 1
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -8,6 +8,7 @@ source "$repo_root/queuebash.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 export QUEUEBASH_ROOT="$tmp"
+export QUEUEBASH_SUBMIT_REASON_DEFAULT="${QUEUEBASH_SUBMIT_REASON_DEFAULT:-bashqueues selftest temporary queue under site policy}"
 
 queue submit testls -- echo one >/dev/null
 queue submit testls -- echo two >/dev/null

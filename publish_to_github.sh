@@ -41,7 +41,9 @@ bash -n queuebash.sh
 
 # Mandatory smoke test. Broader tests can be run by the operator before publish;
 # this publish job should stay fast and safe for noninteractive queued use.
-QUEUEBASH_ALLOW_NONINTERACTIVE=1 bash tests/selftest.sh
+QUEUEBASH_ALLOW_NONINTERACTIVE=1 \
+QUEUEBASH_SUBMIT_REASON_DEFAULT="publish selftest temporary queue under site policy" \
+bash tests/selftest.sh
 
 # If these newer focused tests exist, run the quick non-destructive ones too.
 quick_tests=(
@@ -56,7 +58,9 @@ quick_tests=(
 for t in "${quick_tests[@]}"; do
     if [[ -x "$t" ]]; then
         echo "Running $t"
-        QUEUEBASH_ALLOW_NONINTERACTIVE=1 bash "$t"
+        QUEUEBASH_ALLOW_NONINTERACTIVE=1 \
+        QUEUEBASH_SUBMIT_REASON_DEFAULT="publish quick test temporary queue under site policy" \
+        bash "$t"
     fi
 done
 

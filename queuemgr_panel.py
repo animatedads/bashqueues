@@ -879,6 +879,46 @@ def detail_global_resource(app: "PanelManager", item: Optional[Item]) -> str:
     return out or f"No detail for global claim {item.key}"
 
 
+def parse_policy_line(line: str, kind: str) -> Optional[Item]:
+    line = (line or "").strip()
+    if not line or line.startswith("==="):
+        return None
+    parts = line.split(None, 2)
+    if len(parts) < 2:
+        return None
+    name = parts[0]
+    origin = parts[1]
+    path = parts[2] if len(parts) > 2 else ""
+    key = f"{kind}:{name}"
+    label = f"{kind:<16} {name:<20} {origin:<8}"
+    return Item(key, label, path, {"kind": kind, "name": name, "origin": origin, "path": path})
+
+
+def load_policies(app: "PanelManager") -> List[Item]:
+    items: List[Item] = []
+    for kind in ("class-statement", "sandbox", "seccomp"):
+        rc, out = qrun(["policies", "list", kind], timeout=5)
+        if rc != 0:
+            items.extend(error_items("policies", rc, out))
+            continue
+        for line in split_lines(out):
+            it = parse_policy_line(line, kind)
+            if it:
+                items.append(it)
+    return items
+
+
+def detail_policy(app: "PanelManager", item: Optional[Item]) -> str:
+    if item is None:
+        return "No policies."
+    if item.key == "__error__":
+        return item.meta
+    kind = item.fields.get("kind", item.key.split(":", 1)[0])
+    name = item.fields.get("name", item.key.split(":", 1)[1] if ":" in item.key else item.key)
+    _, out = qrun(["policies", "show", kind, name], timeout=10)
+    return out or f"No detail for policy {kind}:{name}"
+
+
 def load_exceptions(app: "PanelManager") -> List[Item]:
     """Load exception overlays through the queue command, not by local path.
 
@@ -1265,33 +1305,38 @@ class PanelManager:
         self.module_filter = ""
         self.detail_tab_index = 0
         self.class_detail_mode = "explain"
-        self.menu_line = "Type command/hotkey or * list  F1 Help  F2 Cmd  F3 Users  F4 Jobs  F5 Refresh  F6 Dry-run  F7 Filter  F8 Detail  F10 Action  F12/Esc Quit"
+        self.menu_line = "Type command/hotkey or * list | F1 Help F2 Cmd F3 Users F4 Jobs F5 Refresh F6 Dry F7 Filter F8 Detail F10 Action F12 Quit"
         self.status = "Ready"
+        # Ordered by day-to-day operational use.  Creation/editing panels stay
+        # reachable by hotkey/typed command, but the most common live views are
+        # early in the tab order.
         self.views = [
-            ViewState("queueusers", "Queue Users", load_queue_users, detail_queue_user),
             ViewState("jobs", "Jobs", load_jobs, detail_job),
+            ViewState("taskdraft", "Task Creator", load_task_draft, detail_task_draft),
             ViewState("drafts", "Drafts", load_drafts, detail_draft),
             ViewState("classes", "Classes", load_classes, detail_class),
-            ViewState("modules", "Modules", load_modules, detail_module),
-            ViewState("global", "Global Resources", load_global_resources, detail_global_resource),
             ViewState("assets", "Assets", load_assets, detail_asset),
-            ViewState("maintenance", "Maintenance", load_maintenance, detail_maintenance),
+            ViewState("policies", "Policies", load_policies, detail_policy),
+            ViewState("global", "Global Resources", load_global_resources, detail_global_resource),
             ViewState("exceptions", "Exceptions", load_exceptions, detail_exception),
+            ViewState("queueusers", "Queue Users", load_queue_users, detail_queue_user),
+            ViewState("modules", "Modules", load_modules, detail_module),
+            ViewState("maintenance", "Maintenance", load_maintenance, detail_maintenance),
             ViewState("classdraft", "Class Creator", load_class_draft, detail_class_draft),
-            ViewState("taskdraft", "Task Creator", load_task_draft, detail_task_draft),
         ]
         self.view_hotkeys = {
-            "queueusers": "U",
             "jobs": "J",
+            "taskdraft": "T",
             "drafts": "D",
             "classes": "C",
-            "modules": "O",
-            "global": "G",
             "assets": "A",
-            "maintenance": "M",
+            "policies": "P",
+            "global": "G",
             "exceptions": "E",
+            "queueusers": "U",
+            "modules": "O",
+            "maintenance": "M",
             "classdraft": "K",
-            "taskdraft": "T",
         }
         self.active = 0
 
@@ -1665,6 +1710,7 @@ class PanelManager:
             "drafts": ["drafts", "draft", "dr"],
             "classes": ["classes", "class", "cls", "cl"],
             "assets": ["assets", "asset", "as"],
+            "policies": ["policies", "policy", "pol", "site policy", "shared policy", "p"],
             "modules": ["modules", "module", "mods", "mod", "caps", "cap", "plugins", "plugin", "mo"],
             "global": ["global", "globals", "global resources", "resources", "claims", "claim", "gr", "g"],
             "maintenance": ["maintenance", "maint", "fixes", "fix", "tidy", "tidyup", "cleanup", "clean", "logs", "m"],
@@ -1836,6 +1882,12 @@ class PanelManager:
                 self.view.refresh(self)
                 return self.command_completion_choices("")
             return finish(include_users=False, include_panels=True)
+
+        policy_heads = ["policy", "policies", "pol", "site-policy", "shared-policy"]
+        policy_resolved, _ = resolve_unique_choice(head, policy_heads)
+        if policy_resolved:
+            self.execute_policy_command(tail)
+            return
 
         global_heads = ["global", "globals", "claim", "claims", "resource", "resources"]
         global_resolved, _ = resolve_unique_choice(head, global_heads)
@@ -2045,6 +2097,12 @@ class PanelManager:
         current = initial or ""
         while True:
             text = self.prompt("Command (* list)", current)
+            # prompt() shows the initial character as a default, but curses getstr()
+            # does not place that character into the editable buffer.  When the
+            # operator simply types the rest of the command, preserve the first
+            # key instead of swallowing it ("e" + "xpl" => "expl").
+            if initial and text and text != current and not text.startswith(current):
+                text = current + text
             if not text:
                 return
             if text.strip() == "*":
@@ -2214,6 +2272,12 @@ class PanelManager:
         asset_resolved, _ = resolve_unique_choice(head, asset_heads)
         if asset_resolved:
             self.execute_asset_command(tail)
+            return
+
+        policy_heads = ["policy", "policies", "pol", "site-policy", "shared-policy"]
+        policy_resolved, _ = resolve_unique_choice(head, policy_heads)
+        if policy_resolved:
+            self.execute_policy_command(tail)
             return
 
         global_heads = ["global", "globals", "claim", "claims", "resource", "resources"]
@@ -2719,7 +2783,76 @@ class PanelManager:
             return
         self.status = f"Unknown class action: {action}"
 
-    def execute_global_command(self, parts: Sequence[str]) -> None:
+    def execute_policy_command(self, parts: Sequence[str]) -> None:
+        self.switch_view("policies")
+        self.view.refresh(self)
+        if not parts:
+            self.status = "Policies panel"
+            return
+        actions = ["select", "show", "explain", "path", "edit", "create", "refresh"]
+        action_aliases = {"x": "explain", "cat": "show", "e": "edit", "new": "create", "r": "refresh"}
+        action, _ = resolve_unique_choice(parts[0], actions, action_aliases)
+        rest = list(parts[1:]) if action else list(parts)
+        if not action:
+            action = "select"
+        if action == "refresh":
+            self.view.refresh(self); self.status = "Policies refreshed"; return
+        kind = ""
+        name = ""
+        if len(rest) >= 2 and rest[0] in {"sandbox", "seccomp", "class-statement"}:
+            kind, name = rest[0], rest[1]
+        elif rest and ":" in rest[0]:
+            kind, name = rest[0].split(":", 1)
+        elif rest:
+            name = rest[0]
+            # Let queue infer the kind for show/explain; for edit/path try selected item.
+            cur = self.view.current()
+            if cur and cur.key != "__error__" and name in {cur.fields.get("name", ""), cur.key}:
+                kind = cur.fields.get("kind", "")
+        else:
+            cur = self.view.current()
+            if cur and cur.key != "__error__":
+                kind = cur.fields.get("kind", "")
+                name = cur.fields.get("name", "")
+        if action == "select":
+            if name and self.select_item_by_text(self.view, name):
+                self.status = f"Selected policy {name}"
+            else:
+                self.status = "Usage: policy select KIND:NAME or NAME"
+            return
+        if action in {"show", "explain"}:
+            args = ["policy", action]
+            if kind and name:
+                args += [kind, name]
+            elif name:
+                args += [name]
+            rc, out = qrun(args, timeout=10)
+            self.popup("Policy " + action, out[:12000] if out else f"policy {action} rc={rc}")
+            return
+        if action == "path":
+            if not (kind and name):
+                self.status = "Usage: policy path KIND NAME"; return
+            rc, out = qrun(["policy", "path", kind, name], timeout=5)
+            self.popup("Policy path", out or f"policy path rc={rc}")
+            return
+        if action == "edit":
+            if not (kind and name):
+                self.status = "Usage: policy edit KIND NAME"; return
+            rc, out = qrun(["policy", "edit", kind, name], dry_run=self.dry_run, timeout=5)
+            # In a curses panel, $EDITOR may not be usable; still provide the
+            # command and any diagnostic so the operator knows the exact target.
+            self.popup("Policy edit", out or f"policy edit rc={rc}")
+            self.view.refresh(self)
+            return
+        if action == "create":
+            if not (kind and name):
+                self.status = "Usage: policy create KIND NAME"; return
+            rc, out = qrun(["policy", "create", kind, name], dry_run=self.dry_run, timeout=10)
+            self.popup("Policy create", out or f"policy create rc={rc}")
+            self.view.refresh(self)
+            return
+        self.status = "Usage: policy show|explain|path|edit|create [KIND] NAME"
+
         self.switch_view("global")
         if not parts:
             self.view.refresh(self)
@@ -3384,6 +3517,65 @@ class PanelManager:
             rc, out = qrun(["modules", "refresh", kind, d], dry_run=self.dry_run)
             self.popup("Module refresh", out[:12000] if out else f"refresh rc={rc}")
             self.refresh_current()
+
+    def global_action(self) -> None:
+        it = self.view.current()
+        choices = ["claims", "explain", "cleanup-dryrun", "cleanup", "release"]
+        action = self.prompt_choice("Global resource action", choices, "explain" if it else "claims")
+        if action == "claims":
+            self.view.refresh(self); self.status = "Global claims refreshed"; return
+        if action == "explain":
+            if not it or it.key == "__error__":
+                self.status = "No global claim selected"; return
+            _, out = qrun(["global", "claim", it.key])
+            self.popup("Global claim", out[:12000])
+            return
+        if action == "cleanup-dryrun":
+            rc, out = qrun(["global", "cleanup", "--dryrun"], dry_run=self.dry_run)
+            self.popup("Global cleanup dry-run", out[:12000] if out else f"cleanup rc={rc}")
+            self.view.refresh(self); return
+        if action == "cleanup":
+            if not self.confirm("Run global cleanup now?"):
+                return
+            rc, out = qrun(["global", "cleanup"], dry_run=self.dry_run)
+            self.popup("Global cleanup", out[:12000] if out else f"cleanup rc={rc}")
+            self.view.refresh(self); return
+        if action == "release":
+            claim = it.key if it and it.key != "__error__" else self.prompt("Claim")
+            qid = self.prompt("QID holder to release")
+            if not claim or not qid:
+                self.status = "release needs claim and QID"; return
+            if not self.confirm(f"Force release {claim} holder {qid}?"):
+                return
+            rc, out = qrun(["global", "release", claim, qid, "--force"], dry_run=self.dry_run)
+            self.popup("Global release", out[:12000] if out else f"release rc={rc}")
+            self.view.refresh(self)
+
+    def policy_action(self) -> None:
+        it = self.view.current()
+        if not it or it.key == "__error__":
+            return
+        kind = it.fields.get("kind", it.key.split(":", 1)[0])
+        name = it.fields.get("name", it.key.split(":", 1)[1] if ":" in it.key else it.key)
+        action = self.prompt_choice("Policy action", ["show", "explain", "path", "edit", "create-copy", "refresh"], "show")
+        if action in {"show", "explain"}:
+            _, out = qrun(["policy", action, kind, name], timeout=10)
+            self.popup("Policy " + action, out[:12000])
+        elif action == "path":
+            _, out = qrun(["policy", "path", kind, name], timeout=5)
+            self.popup("Policy path", out)
+        elif action == "edit":
+            rc, out = qrun(["policy", "edit", kind, name], dry_run=self.dry_run, timeout=5)
+            self.popup("Policy edit", out or f"policy edit rc={rc}")
+            self.view.refresh(self)
+        elif action == "create-copy":
+            new_name = self.prompt("New policy name", name + "-copy")
+            if new_name:
+                rc, out = qrun(["policy", "create", kind, new_name, "--from", name], dry_run=self.dry_run, timeout=10)
+                self.popup("Policy create", out or f"policy create rc={rc}")
+                self.view.refresh(self)
+        elif action == "refresh":
+            self.view.refresh(self); self.status = "Policies refreshed"
 
     def asset_action(self) -> None:
         it = self.view.current()
@@ -4197,6 +4389,112 @@ class PanelManager:
         else:
             self.status = "Unknown draft action"
 
+
+    def clear_current_editor_field(self) -> None:
+        """Clear the selected inactive editor field without opening a prompt.
+
+        This is intentionally bound to the terminal Delete key rather than
+        Backspace.  Operators often need to remove an optional value from the
+        Task Creator or Class Creator after selecting it from a chooser; opening
+        a prompt just to type "clear" is clumsy.  Delete should not perform
+        destructive object actions here: it only clears the currently selected
+        editor field.
+        """
+        if self.view.name == "taskdraft":
+            self.clear_current_task_field()
+            return
+        if self.view.name == "classdraft":
+            self.clear_current_class_field()
+            return
+        self.status = "Delete clears the selected field in Task Creator or Class Creator"
+
+    def clear_current_task_field(self) -> None:
+        item = self.view.current()
+        if not item:
+            return
+        d = self.task_draft
+        key = item.key
+        clearable = {
+            "name": "name",
+            "command": "command",
+            "job_class": "job_class",
+            "submit_user": "submit_user",
+            "execution_dir": "execution_dir",
+            "not_before": "not_before",
+            "retry_backoff": "retry_backoff",
+            "runner": "runner",
+            "sandbox_level": "sandbox_level",
+            "security_reason": "security_reason",
+            "authorisation": "authorisation_code",
+            "cpu_limit": "cpu_limit",
+            "mem_limit": "mem_limit",
+            "max_log_size": "max_log_size",
+            "dependencies": "dependencies",
+            "inherit_env_from": "inherit_env_from",
+            "on_success": "on_success",
+            "on_failure": "on_failure",
+            "on_retry_failure": "on_retry_failure",
+        }
+        if key == "priority":
+            d.priority = "10"
+            self.status = "Task Creator priority reset to 10"
+        elif key == "retries":
+            d.retries = "0"
+            self.status = "Task Creator retries reset to 0"
+        elif key == "no_security_exemption":
+            d.no_security_exemption_required = False
+            self.status = "Task Creator security exemption mode reset to auto/required by policy"
+        elif key in clearable:
+            setattr(d, clearable[key], "")
+            if key in {"security_reason", "authorisation"}:
+                d.no_security_exemption_required = False
+            self.status = f"Task Creator field cleared: {key}"
+        else:
+            self.status = f"Task Creator field is not clearable with Delete: {key}"
+        self.refresh_current()
+
+    def clear_current_class_field(self) -> None:
+        item = self.view.current()
+        if not item:
+            return
+        d = self.class_draft
+        key = item.key
+        clearable = {
+            "name": "name",
+            "purpose": "purpose",
+            "default_timeout": "default_timeout",
+            "default_kill_after": "default_kill_after",
+            "default_cpu_limit": "default_cpu_limit",
+            "default_mem_limit": "default_mem_limit",
+            "default_log_cap": "default_log_cap",
+            "default_run_user": "default_run_user",
+            "default_submit_user": "default_submit_user",
+            "default_sandbox_level": "default_sandbox_level",
+            "default_seccomp_profile": "default_seccomp_profile",
+            "default_seccomp_allow": "default_seccomp_allow",
+        }
+        if key == "allow_parallel":
+            d.allow_parallel = "1"
+            self.status = "Class Creator allow_parallel reset to 1"
+        elif key == "max_concurrent":
+            d.max_concurrent = "0"
+            self.status = "Class Creator max_concurrent reset to 0"
+        elif key == "default_runner":
+            d.default_runner = "auto"
+            self.status = "Class Creator default runner reset to auto"
+        elif key == "records":
+            if self.confirm("Clear all class draft records?"):
+                d.records.clear()
+                self.status = "Class Creator records cleared"
+            else:
+                self.status = "Class Creator records unchanged"
+        elif key in clearable:
+            setattr(d, clearable[key], "")
+            self.status = f"Class Creator field cleared: {key}"
+        else:
+            self.status = f"Class Creator field is not clearable with Delete: {key}"
+        self.refresh_current()
+
     def action(self) -> None:
         if self.view.name == "queueusers":
             self.queue_user_action()
@@ -4210,6 +4508,10 @@ class PanelManager:
             self.asset_action()
         elif self.view.name == "modules":
             self.module_action()
+        elif self.view.name == "policies":
+            self.policy_action()
+        elif self.view.name == "global":
+            self.global_action()
         elif self.view.name == "maintenance":
             self.maintenance_action()
         elif self.view.name == "classdraft":
@@ -4242,6 +4544,7 @@ class PanelManager:
             "  Examples: user hc3, user clear",
             "  Examples: cla MYCLASS hist, class MYCLASS use, maint health queue",
             "  Examples: module asset net disable, cap billing enable",
+            "  Policy: policy show class-statement default, policy edit class-statement default",
             "  Global: global claims, global claim github:publish, global cleanup --dryrun",
             "  Examples: classcreator restriction net:allowance, restriction billing",
             "  Type * in the command line for contextual completions",
@@ -4260,6 +4563,7 @@ class PanelManager:
             "",
             "Fields:",
             "  Field entry: * opens searchable list; type part to filter; ↑/↓ selects",
+            "  Delete on an inactive Class/Task Creator field clears that field",
             "  Optional user fields accept current, none, clear, default, or -",
             "",
             "Maintenance:",
@@ -4303,6 +4607,8 @@ class PanelManager:
                 #   ex / exception
                 #   ce / clear-exception
                 self.status = "F11 is not bound; type ex/exception or ce/clear-exception"
+            elif k == curses.KEY_DC:
+                self.clear_current_editor_field()
             elif k in (curses.KEY_BTAB, 353):
                 self.active = (self.active - 1) % len(self.views)
             elif k == 9:
