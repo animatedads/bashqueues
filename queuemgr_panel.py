@@ -1274,8 +1274,10 @@ class PanelManager:
                 line = line.strip()
                 if not line or line.startswith("==="):
                     continue
-                choices.append(line)
-        for fallback in ["off", "network-none", "restrict-egress", "strict"]:
+                # queue policies list prints: NAME ORIGIN PATH.  The chooser
+                # should offer the policy name, not the whole diagnostic row.
+                choices.append(line.split()[0])
+        for fallback in ["off", "queue-default", "network-none", "restrict-egress", "strict"]:
             if fallback not in choices:
                 choices.append(fallback)
         return choices

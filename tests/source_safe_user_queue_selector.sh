@@ -13,7 +13,7 @@ out="$(
     fail "source or queue version failed"
 }
 
-echo "$out" | grep -q 'queuebash 0.17.15' || fail "version output missing"
+echo "$out" | grep -q 'queuebash 0.17.16' || fail "version output missing"
 ! echo "$out" | grep -q '_queue_select_user_: command not found' || fail "truncated helper executed at source time"
 
 grep -q '^_queue_select_user_queue()' "$repo_root/queuebash.sh" || fail "helper definition missing"

@@ -2745,3 +2745,29 @@ queue submit example --sandbox network-none -- command
 ```
 
 See `docs/SECURITY_POLICIES.md`.
+
+
+### Security policy snapshots
+
+Sandbox and seccomp names are policy files, not hard-coded launch profiles.
+Shared/admin policy files under `/etc/bashqueues/policies.d` take precedence
+over queue-root personal policy files with the same name.
+
+When a job is submitted, bashqueues snapshots the resolved sandbox/seccomp
+policy into the `.job` record after class defaults are applied.  `queue explain`
+therefore shows the exact policy name, origin, hash, and launch properties that
+were in force for that QID.  Job-level exception overlays are applied on top and
+remain visible in the exception overlay section.
+
+Useful commands:
+
+```bash
+queue policies list
+queue policies show sandbox strict
+queue policies create sandbox local-strict --from strict
+queue policies edit sandbox local-strict
+```
+
+Bundled safe defaults include `queue-default`, `network-none`,
+`restrict-egress`, and `strict` for sandboxing, plus `queue-default`,
+`docker-default`, and `strict` for seccomp.

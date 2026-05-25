@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 q=queuemgr_panel.py
 
-grep -q 'QUEUEBASH_VERSION="0.17.15"' queuebash.sh || fail "version not 0.17.15"
+grep -q 'QUEUEBASH_VERSION="0.17.16"' queuebash.sh || fail "version not 0.17.16"
 grep -q 'elif rest and ":" in rest\[0\]' "$q" || fail "module command does not parse kind:name identity token"
 grep -q 'maybe_kind, maybe_target = rest\[0\]\.split(":", 1)' "$q" || fail "module identity is not split into kind/name"
 grep -q 'action, _ = resolve_unique_choice(rest\[1\], actions, action_aliases)' "$q" || fail "module identity parser does not use following token as action"

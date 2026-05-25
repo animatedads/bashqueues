@@ -1,3 +1,12 @@
+## 0.17.16 - Security policy snapshots and editor commands
+
+- Security policies are now snapshotted into each job record at submit time after class defaults are applied.
+- The worker prefers the per-QID snapshot for sandbox/seccomp launch properties, so later policy edits do not silently change already-submitted jobs.
+- `queue explain` shows the policy snapshot time, policy origin, and policy hash.
+- Shared/admin policies in `/etc/bashqueues/policies.d` now take precedence over queue-root personal policies with the same name.
+- Added policy editor commands: `queue policies edit KIND NAME` and `queue policies create KIND NAME [--from EXISTING]`.
+- Added `queue-default` sandbox/seccomp policies as recommended safe defaults for ordinary queue behaviour.
+
 
 ## 0.17.15
 

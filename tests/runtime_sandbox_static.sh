@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 python3 - <<'PY'
 from pathlib import Path
 src = Path('queuebash.sh').read_text()
-assert 'QUEUEBASH_VERSION="0.17.15"' in src
+assert 'QUEUEBASH_VERSION="0.17.16"' in src
 assert 'CLASS_DEFAULT_SANDBOX_LEVEL' in src
 assert '--sandbox' in src
 assert '_queue_emit_sandbox_systemd_props' in src

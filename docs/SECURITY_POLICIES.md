@@ -16,8 +16,15 @@ $QUEUEBASH_ROOT/policies.d/sandbox/*.env
 $QUEUEBASH_ROOT/policies.d/seccomp/*.env
 ```
 
-Local policy files in the queue root override bundled policies of the same name.
-Disabled policies are not loaded.
+Policy lookup order is:
+
+1. shared/admin policy folder, normally `/etc/bashqueues/policies.d`
+2. personal queue-root policy folder, `$QUEUEBASH_ROOT/policies.d`
+3. bundled repository policy folder, `policies.d`
+
+If a shared/admin policy and a personal policy have the same kind/name, the
+shared/admin policy wins.  This lets an operator define site policy centrally
+without being shadowed by a user-local file.  Disabled policies are not loaded.
 
 Useful commands:
 
@@ -26,6 +33,8 @@ queue policies list
 queue policies list sandbox
 queue policies show sandbox strict
 queue policies show seccomp docker-default
+queue policies create sandbox my-safe-policy --from strict
+queue policies edit sandbox my-safe-policy
 ```
 
 Classes and submissions still use the same names:
@@ -61,3 +70,50 @@ SECCOMP_SYSTEMD_PROPERTIES=(
 
 Policy files are shell data files. Treat queue-root policy edits as operator
 configuration and keep them under the same trust/audit model as class files.
+
+
+## Policy snapshots
+
+At submit time, bashqueues resolves the class defaults and job override names,
+loads the selected sandbox/seccomp policy files, and writes a snapshot into the
+`.job` record.  The snapshot includes:
+
+```text
+SECURITY_POLICY_SNAPSHOT_AT=...
+SANDBOX_POLICY_NAME=...
+SANDBOX_POLICY_ORIGIN=shared|personal|bundled
+SANDBOX_POLICY_SHA256=...
+SANDBOX_POLICY_SYSTEMD_PROPERTIES=( ... )
+SECCOMP_POLICY_NAME=...
+SECCOMP_POLICY_ORIGIN=shared|personal|bundled
+SECCOMP_POLICY_SHA256=...
+SECCOMP_POLICY_SYSTEMD_PROPERTIES=( ... )
+```
+
+The worker prefers the per-QID snapshot when building `systemd-run` arguments.
+That means an already-submitted job remains auditable and reproducible even if
+a same-named policy is edited later.  Submit-time exception overlays such as
+`--sandbox-override`, `--seccomp-allow`, `--drop-cap`, and `--add-port` are
+then applied on top and shown in `queue explain`.
+
+## Default policy set
+
+The bundled policy set now includes:
+
+```text
+sandbox/off
+sandbox/queue-default
+sandbox/network-none
+sandbox/restrict-egress
+sandbox/strict
+
+seccomp/off
+seccomp/queue-default
+seccomp/docker-default
+seccomp/strict
+```
+
+`queue-default` is the recommended starting point for general queue classes:
+restrict public egress at the sandbox layer and use Docker-style seccomp
+filtering at the syscall layer.  Use `strict` for untrusted local scripts and
+`off` only when the operator intentionally wants no policy.

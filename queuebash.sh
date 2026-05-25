@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.15"
+QUEUEBASH_VERSION="0.17.16"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -5124,6 +5124,10 @@ _queue_policy_valid_name() {
     [[ "${1:-}" =~ ^[A-Za-z0-9_.@+-]+$ ]]
 }
 
+_queue_policy_shared_root() {
+    printf '%s\n' "${QUEUEBASH_SHARED_POLICY_ROOT:-/etc/bashqueues/policies.d}"
+}
+
 _queue_policy_source_root() {
     local source_dir="${QUEUEBASH_POLICY_SOURCE_DIR:-}" script_dir
     if [[ -z "$source_dir" && -n "${BASH_SOURCE[0]:-}" ]]; then
@@ -5135,9 +5139,20 @@ _queue_policy_source_root() {
 }
 
 _queue_policy_file() {
-    local kind="${1:-}" name="${2:-}" root source_root
+    local kind="${1:-}" name="${2:-}" root source_root shared_root
     _queue_policy_valid_kind "$kind" || return 1
     _queue_policy_valid_name "$name" || return 1
+
+    # Precedence is intentional:
+    #   1. shared/admin policy folder, normally /etc/bashqueues/policies.d
+    #   2. queue-root personal policy folder
+    #   3. bundled repository policy folder
+    # If two policies have the same kind/name, the shared/admin policy wins.
+    shared_root="$(_queue_policy_shared_root)"
+    if [[ -f "$shared_root/$kind/$name.env" ]]; then
+        printf '%s\n' "$shared_root/$kind/$name.env"
+        return 0
+    fi
 
     root="$(_queue_root)"
     if [[ -f "$root/policies.d/$kind/$name.env" ]]; then
@@ -5159,30 +5174,118 @@ _queue_policy_exists() {
 }
 
 _queue_policy_list() {
-    local kind="${1:-}" root source_root f
+    local kind="${1:-}" root source_root shared_root f
     _queue_policy_valid_kind "$kind" || return 1
     root="$(_queue_root)"
     source_root="$(_queue_policy_source_root)"
+    shared_root="$(_queue_policy_shared_root)"
     {
         shopt -s nullglob
-        for f in "$source_root/$kind"/*.env "$root/policies.d/$kind"/*.env; do
+        for f in "$source_root/$kind"/*.env "$root/policies.d/$kind"/*.env "$shared_root/$kind"/*.env; do
             [[ -f "$f" ]] && basename "$f" .env
         done
         shopt -u nullglob
     } | sort -u
 }
 
+_queue_policy_origin() {
+    local file="${1:-}" root shared_root source_root
+    root="$(_queue_root)"
+    shared_root="$(_queue_policy_shared_root)"
+    source_root="$(_queue_policy_source_root)"
+    case "$file" in
+        "$shared_root"/*) printf '%s\n' shared ;;
+        "$root"/policies.d/*) printf '%s\n' personal ;;
+        "$source_root"/*) printf '%s\n' bundled ;;
+        *) printf '%s\n' unknown ;;
+    esac
+}
+
+_queue_policy_sha256() {
+    local file="${1:-}"
+    [[ -f "$file" ]] || return 1
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file" | awk '{print $1}'
+    else
+        wc -c < "$file" | awk '{print "size:"$1}'
+    fi
+}
+
+_queue_policy_quote_array_assignment() {
+    local var="$1"; shift || true
+    printf '%s=(' "$var"
+    local item
+    for item in "$@"; do
+        printf ' %q' "$item"
+    done
+    printf ' )\n'
+}
+
 _queue_policy_source_file() {
     local kind="${1:-}" name="${2:-}" file
     file="$(_queue_policy_file "$kind" "$name")" || return 1
     # Policy files are data files installed from trusted bashqueues policy dirs.
-    # They may define *_SYSTEMD_PROPERTIES and *_DIRECT_PREFIX arrays only.
-    # Site-local policy edits are deliberately supported, but disabled policies
-    # are not loaded.
+    # Shared/admin policies intentionally win over personal policies with the
+    # same name so operators can define site policy centrally.
     # shellcheck disable=SC1090
     source "$file"
 }
 
+_queue_append_policy_snapshot_to_job_file() {
+    local job_file="${1:-}" file origin hash sandbox_name seccomp_name
+    [[ -f "$job_file" ]] || return 0
+
+    (
+        SANDBOX_LEVEL=""
+        SECCOMP_PROFILE=""
+        EXCEPTION_SANDBOX_OVERRIDE=""
+        EXCEPTION_SECCOMP_ALLOW=""
+        # shellcheck disable=SC1090
+        source "$job_file" >/dev/null 2>&1 || exit 0
+
+        printf 'SECURITY_POLICY_SNAPSHOT_AT=%q\n' "$(date -Is 2>/dev/null || date)"
+
+        sandbox_name="$(_queue_sandbox_normalise_level "${SANDBOX_LEVEL:-off}")"
+        if [[ -n "$sandbox_name" ]]; then
+            file="$(_queue_policy_file sandbox "$sandbox_name" 2>/dev/null || true)"
+            if [[ -n "$file" && -f "$file" ]]; then
+                SANDBOX_SYSTEMD_PROPERTIES=()
+                SANDBOX_DIRECT_PREFIX=()
+                SANDBOX_DIRECT_WARNING=""
+                # shellcheck disable=SC1090
+                source "$file" >/dev/null 2>&1 || true
+                origin="$(_queue_policy_origin "$file")"
+                hash="$(_queue_policy_sha256 "$file" 2>/dev/null || true)"
+                printf 'SANDBOX_POLICY_NAME=%q\n' "$sandbox_name"
+                printf 'SANDBOX_POLICY_FILE=%q\n' "$file"
+                printf 'SANDBOX_POLICY_ORIGIN=%q\n' "$origin"
+                printf 'SANDBOX_POLICY_SHA256=%q\n' "$hash"
+                _queue_policy_quote_array_assignment SANDBOX_POLICY_SYSTEMD_PROPERTIES "${SANDBOX_SYSTEMD_PROPERTIES[@]:-}"
+                _queue_policy_quote_array_assignment SANDBOX_POLICY_DIRECT_PREFIX "${SANDBOX_DIRECT_PREFIX[@]:-}"
+                printf 'SANDBOX_POLICY_DIRECT_WARNING=%q\n' "${SANDBOX_DIRECT_WARNING:-}"
+            fi
+        fi
+
+        seccomp_name="$(_queue_seccomp_normalise_profile "${SECCOMP_PROFILE:-off}")"
+        if [[ -n "$seccomp_name" ]]; then
+            file="$(_queue_policy_file seccomp "$seccomp_name" 2>/dev/null || true)"
+            if [[ -n "$file" && -f "$file" ]]; then
+                SECCOMP_SYSTEMD_PROPERTIES=()
+                # shellcheck disable=SC1090
+                source "$file" >/dev/null 2>&1 || true
+                origin="$(_queue_policy_origin "$file")"
+                hash="$(_queue_policy_sha256 "$file" 2>/dev/null || true)"
+                printf 'SECCOMP_POLICY_NAME=%q\n' "$seccomp_name"
+                printf 'SECCOMP_POLICY_FILE=%q\n' "$file"
+                printf 'SECCOMP_POLICY_ORIGIN=%q\n' "$origin"
+                printf 'SECCOMP_POLICY_SHA256=%q\n' "$hash"
+                _queue_policy_quote_array_assignment SECCOMP_POLICY_SYSTEMD_PROPERTIES "${SECCOMP_SYSTEMD_PROPERTIES[@]:-}"
+            fi
+        fi
+    ) >> "$job_file"
+}
 _queue_sandbox_normalise_level() {
     local level="${1:-}"
     case "$level" in
@@ -5202,6 +5305,15 @@ _queue_emit_sandbox_systemd_props() {
     level="$(_queue_sandbox_normalise_level "${1:-}")"
     [[ -n "$level" ]] || return 0
 
+    # Prefer the per-QID policy snapshot written at submit time. This makes the
+    # executed policy auditable and immune to later edits of a same-named policy.
+    if [[ "${SANDBOX_POLICY_NAME:-}" == "$level" && "${#SANDBOX_POLICY_SYSTEMD_PROPERTIES[@]}" -gt 0 ]]; then
+        for prop in "${SANDBOX_POLICY_SYSTEMD_PROPERTIES[@]:-}"; do
+            [[ -n "$prop" ]] && printf '%s\0' -p "$prop"
+        done
+        return 0
+    fi
+
     SANDBOX_SYSTEMD_PROPERTIES=()
     SANDBOX_DIRECT_PREFIX=()
     if ! _queue_policy_source_file sandbox "$level"; then
@@ -5217,6 +5329,16 @@ _queue_emit_sandbox_direct_prefix() {
     local level item
     level="$(_queue_sandbox_normalise_level "${1:-}")"
     [[ -n "$level" ]] || return 0
+
+    if [[ "${SANDBOX_POLICY_NAME:-}" == "$level" ]]; then
+        if [[ "${#SANDBOX_POLICY_DIRECT_PREFIX[@]}" -gt 0 ]]; then
+            printf '%s\0' "${SANDBOX_POLICY_DIRECT_PREFIX[@]}"
+            return 0
+        elif [[ -n "${SANDBOX_POLICY_DIRECT_WARNING:-}" ]]; then
+            echo "WARNING: $SANDBOX_POLICY_DIRECT_WARNING" >&2
+            return 0
+        fi
+    fi
 
     SANDBOX_SYSTEMD_PROPERTIES=()
     SANDBOX_DIRECT_PREFIX=()
@@ -5252,11 +5374,17 @@ _queue_emit_seccomp_systemd_props() {
     allow="${2:-}"
 
     if [[ -n "$profile" ]]; then
-        SECCOMP_SYSTEMD_PROPERTIES=()
-        if _queue_policy_source_file seccomp "$profile"; then
-            for prop in "${SECCOMP_SYSTEMD_PROPERTIES[@]:-}"; do
+        if [[ "${SECCOMP_POLICY_NAME:-}" == "$profile" && "${#SECCOMP_POLICY_SYSTEMD_PROPERTIES[@]}" -gt 0 ]]; then
+            for prop in "${SECCOMP_POLICY_SYSTEMD_PROPERTIES[@]:-}"; do
                 [[ -n "$prop" ]] && printf '%s\0' -p "$prop"
             done
+        else
+            SECCOMP_SYSTEMD_PROPERTIES=()
+            if _queue_policy_source_file seccomp "$profile"; then
+                for prop in "${SECCOMP_SYSTEMD_PROPERTIES[@]:-}"; do
+                    [[ -n "$prop" ]] && printf '%s\0' -p "$prop"
+                done
+            fi
         fi
     fi
 
@@ -7251,6 +7379,15 @@ _queue_explain_job() {
         [[ -n "${OUTPUT_DIR:-}" ]] && echo "  output dir:        $OUTPUT_DIR"
         [[ -n "${ENV_PREFIX:-}" ]] && echo "  env prefix:        $ENV_PREFIX"
         [[ -n "${PWD_AT_SUBMIT:-}" ]] && echo "  working dir:       $PWD_AT_SUBMIT"
+        [[ -n "${SECURITY_POLICY_SNAPSHOT_AT:-}" ]] && echo "  policy snapshot:   $SECURITY_POLICY_SNAPSHOT_AT"
+        if [[ -n "${SANDBOX_POLICY_NAME:-}" ]]; then
+            echo "  sandbox policy:    ${SANDBOX_POLICY_NAME} (${SANDBOX_POLICY_ORIGIN:-unknown})"
+            [[ -n "${SANDBOX_POLICY_SHA256:-}" ]] && echo "  sandbox sha256:    $SANDBOX_POLICY_SHA256"
+        fi
+        if [[ -n "${SECCOMP_POLICY_NAME:-}" ]]; then
+            echo "  seccomp policy:    ${SECCOMP_POLICY_NAME} (${SECCOMP_POLICY_ORIGIN:-unknown})"
+            [[ -n "${SECCOMP_POLICY_SHA256:-}" ]] && echo "  seccomp sha256:    $SECCOMP_POLICY_SHA256"
+        fi
     )
     echo
 
@@ -8994,6 +9131,7 @@ queue() {
             } > "$job"
 
             _queue_append_class_defaults_to_job_file "$job" "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$id" "$name"
+            _queue_append_policy_snapshot_to_job_file "$job"
 
             echo "Submitted $id : $name priority=$priority"
             if [[ "${not_before_epoch:-0}" =~ ^[0-9]+$ && "${not_before_epoch:-0}" -gt 0 ]]; then
@@ -9581,17 +9719,20 @@ EOF
         policy|policies)
             case "${1:-list}" in
                 list|"")
-                    local kind="${2:-}"
+                    local kind="${2:-}" name file origin
                     if [[ -n "$kind" ]]; then
                         _queue_policy_valid_kind "$kind" || { echo "Usage: queue policies list [sandbox|seccomp]" >&2; return 2; }
                         echo "=== $kind policies ==="
-                        _queue_policy_list "$kind"
+                        while IFS= read -r name; do
+                            [[ -n "$name" ]] || continue
+                            file="$(_queue_policy_file "$kind" "$name" 2>/dev/null || true)"
+                            origin="$(_queue_policy_origin "$file")"
+                            printf '%-20s %-8s %s\n' "$name" "$origin" "$file"
+                        done < <(_queue_policy_list "$kind")
                     else
-                        echo "=== sandbox policies ==="
-                        _queue_policy_list sandbox
+                        queue policies list sandbox
                         echo
-                        echo "=== seccomp policies ==="
-                        _queue_policy_list seccomp
+                        queue policies list seccomp
                     fi
                     ;;
                 show|explain)
@@ -9600,11 +9741,72 @@ EOF
                     _queue_policy_valid_kind "$kind" || { echo "queue policies show: invalid kind: $kind" >&2; return 2; }
                     file="$(_queue_policy_file "$kind" "$name")" || { echo "queue policies show: not found: $kind $name" >&2; return 1; }
                     echo "=== $kind policy: $name ==="
+                    echo "origin: $(_queue_policy_origin "$file")"
+                    echo "sha256: $(_queue_policy_sha256 "$file" 2>/dev/null || echo unknown)"
                     echo "file: $file"
                     sed -n '1,200p' "$file"
                     ;;
+                edit)
+                    local kind="${2:-}" name="${3:-}" root file src editor
+                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies edit sandbox|seccomp NAME" >&2; return 2; }
+                    _queue_policy_valid_kind "$kind" || { echo "queue policies edit: invalid kind: $kind" >&2; return 2; }
+                    _queue_policy_valid_name "$name" || { echo "queue policies edit: invalid policy name: $name" >&2; return 2; }
+                    root="$(_queue_root)"
+                    mkdir -p "$root/policies.d/$kind"
+                    file="$root/policies.d/$kind/$name.env"
+                    if [[ ! -f "$file" ]]; then
+                        if src="$(_queue_policy_file "$kind" "$name" 2>/dev/null)" && [[ -f "$src" ]]; then
+                            cp "$src" "$file"
+                        else
+                            {
+                                echo "# bashqueues $kind policy: $name"
+                                echo "QUEUEBASH_POLICY_KIND=$kind"
+                                echo "QUEUEBASH_POLICY_NAME=$name"
+                                case "$kind" in
+                                    sandbox) echo 'SANDBOX_SYSTEMD_PROPERTIES=()'; echo 'SANDBOX_DIRECT_PREFIX=()'; echo 'SANDBOX_DIRECT_WARNING=""' ;;
+                                    seccomp) echo 'SECCOMP_SYSTEMD_PROPERTIES=()' ;;
+                                esac
+                            } > "$file"
+                        fi
+                    fi
+                    editor="${VISUAL:-${EDITOR:-vi}}"
+                    "$editor" "$file"
+                    ;;
+                create|new)
+                    local kind="${2:-}" name="${3:-}" from="" root file src
+                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies create sandbox|seccomp NAME [--from EXISTING]" >&2; return 2; }
+                    shift 3 || true
+                    while [[ "$#" -gt 0 ]]; do
+                        case "$1" in
+                            --from) from="${2:-}"; shift 2 ;;
+                            *) echo "queue policies create: unknown option: $1" >&2; return 2 ;;
+                        esac
+                    done
+                    _queue_policy_valid_kind "$kind" || { echo "queue policies create: invalid kind: $kind" >&2; return 2; }
+                    _queue_policy_valid_name "$name" || { echo "queue policies create: invalid policy name: $name" >&2; return 2; }
+                    root="$(_queue_root)"
+                    mkdir -p "$root/policies.d/$kind"
+                    file="$root/policies.d/$kind/$name.env"
+                    [[ ! -e "$file" ]] || { echo "queue policies create: already exists: $file" >&2; return 1; }
+                    if [[ -n "$from" ]]; then
+                        src="$(_queue_policy_file "$kind" "$from")" || { echo "queue policies create: source policy not found: $kind $from" >&2; return 1; }
+                        cp "$src" "$file"
+                        sed -i "s/^QUEUEBASH_POLICY_NAME=.*/QUEUEBASH_POLICY_NAME=$name/" "$file" 2>/dev/null || true
+                    else
+                        {
+                            echo "# bashqueues $kind policy: $name"
+                            echo "QUEUEBASH_POLICY_KIND=$kind"
+                            echo "QUEUEBASH_POLICY_NAME=$name"
+                            case "$kind" in
+                                sandbox) echo 'SANDBOX_SYSTEMD_PROPERTIES=()'; echo 'SANDBOX_DIRECT_PREFIX=()'; echo 'SANDBOX_DIRECT_WARNING=""' ;;
+                                seccomp) echo 'SECCOMP_SYSTEMD_PROPERTIES=()' ;;
+                            esac
+                        } > "$file"
+                    fi
+                    echo "Created policy: $file"
+                    ;;
                 *)
-                    echo "Usage: queue policies list [sandbox|seccomp]|show sandbox|seccomp NAME" >&2
+                    echo "Usage: queue policies list [sandbox|seccomp]|show sandbox|seccomp NAME|edit sandbox|seccomp NAME|create sandbox|seccomp NAME [--from EXISTING]" >&2
                     return 2
                     ;;
             esac
