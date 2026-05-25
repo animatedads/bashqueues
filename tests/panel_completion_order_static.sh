@@ -7,7 +7,7 @@ cd "$ROOT"
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 pass() { echo "[PASS] $*"; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.4"' queuebash.sh || fail "queuebash version not 0.17.4"
+grep -q 'QUEUEBASH_VERSION="0.17.15"' queuebash.sh || fail "queuebash version not 0.17.15"
 grep -q 'Object/action commands for the current context' queuemgr_panel.py || fail "completion ordering rule missing"
 grep -q 'Panels are deliberately appended last' queuemgr_panel.py || fail "panel-bottom completion comment missing"
 grep -q 'def add_panel_choices' queuemgr_panel.py || fail "panel choices are not grouped separately"

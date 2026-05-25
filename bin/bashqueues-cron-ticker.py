@@ -86,8 +86,9 @@ def should_run(parts: Sequence[str], dt: _dt.datetime) -> bool:
     return dom_match and dow_match
 
 
-def stable_name(command: str) -> str:
-    return "cron_" + hashlib.sha256(command.encode("utf-8")).hexdigest()[:12]
+def stable_name(user: str, command: str) -> str:
+    """Stable generated class name, scoped by user to avoid cross-user collisions."""
+    return "cron_" + hashlib.sha256(f"{user}\0{command}".encode("utf-8")).hexdigest()[:12]
 
 
 def run_id(source: str, user: str, line_no: int, line: str, minute_key: str) -> str:
@@ -130,9 +131,14 @@ def source_for_user(user: str) -> str:
     return ""
 
 
-def dispatch(user: str, command: str, cron_source: str, line_no: int, dryrun: bool = False) -> int:
-    cname = stable_name(command)
+def _shell_single_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def dispatch(user: str, command: str, cron_source: str, line_no: int, dryrun: bool = False, explicit_class: Optional[str] = None) -> int:
+    cname = stable_name(user, command)
     qname = cname
+    target_class = explicit_class or cname
     qsrc = source_for_user(user)
     home = user_home(user)
     class_body = f"""# bashqueues generated cron bridge class: {cname}
@@ -142,6 +148,9 @@ def dispatch(user: str, command: str, cron_source: str, line_no: int, dryrun: bo
 CLASS_ALLOW_PARALLEL=1
 CLASS_MAX_CONCURRENT=1
 CLASS_DEFAULT_RUNNER=auto
+CLASS_DEFAULT_SANDBOX_LEVEL=strict
+CLASS_DEFAULT_RUNTIME_CAPS=no-spawn-shell,no-network-tools,only-local-sockets
+CLASS_DEFAULT_RUNTIME_CAP_INTERVAL=1
 """
     script_lines = [
         "set -e",
@@ -150,56 +159,142 @@ CLASS_DEFAULT_RUNNER=auto
     ]
     if qsrc:
         script_lines.append(f"source {shlex.quote(qsrc)} >/dev/null 2>&1")
-    script_lines.extend([
-        "mkdir -p \"$QUEUEBASH_ROOT/classes\"",
-        f"cat > \"$QUEUEBASH_ROOT/classes/{cname}.env\" <<'EOF_CLASS'\n{class_body}EOF_CLASS",
-        "chmod 0644 \"$QUEUEBASH_ROOT/classes/" + cname + ".env\" 2>/dev/null || true",
-        "queue submit " + shlex.quote(qname) + " --priority 10 --class " + shlex.quote(cname) + " -- bash -lc " + shlex.quote(command),
-    ])
+
+    if explicit_class:
+        # Explicit classes are operator/user managed.  Do not overwrite them.
+        script_lines.append(
+            "queue submit " + shlex.quote(qname) + " --priority 10 --class " + shlex.quote(target_class) + " -- bash -lc " + shlex.quote(command)
+        )
+    else:
+        quoted_body = _shell_single_quote(class_body)
+        script_lines.extend([
+            "mkdir -p \"$QUEUEBASH_ROOT/classes\"",
+            f"class_file=\"$QUEUEBASH_ROOT/classes/{cname}.env\"",
+            f"class_body={quoted_body}",
+            "if [[ ! -f \"$class_file\" ]] || [[ \"$(cat \"$class_file\" 2>/dev/null)\" != \"$class_body\" ]]; then",
+            "  printf '%s' \"$class_body\" > \"$class_file\"",
+            "  chmod 0644 \"$class_file\" 2>/dev/null || true",
+            "fi",
+            "queue submit " + shlex.quote(qname) + " --priority 10 --class " + shlex.quote(target_class) + " -- bash -lc " + shlex.quote(command),
+        ])
     shell_script = "\n".join(script_lines)
     if dryrun:
-        print(f"DRYRUN user={user} class={cname} command={command}")
+        print(f"DRYRUN user={user} class={target_class} command={command}")
         return 0
     if os.geteuid() == 0 and user != "root":
         return subprocess.call(["runuser", "-u", user, "--", "bash", "-lc", shell_script])
     return subprocess.call(["bash", "-lc", shell_script])
 
 
-def iter_user_crons(spool: Path) -> Iterable[Tuple[str, Path, int, str, List[str], str]]:
+
+CRON_MACROS = {
+    "@yearly": "0 0 1 1 *",
+    "@annually": "0 0 1 1 *",
+    "@monthly": "0 0 1 * *",
+    "@weekly": "0 0 * * 0",
+    "@daily": "0 0 * * *",
+    "@midnight": "0 0 * * *",
+    "@hourly": "0 * * * *",
+}
+
+
+def expand_cron_macro(stripped: str, path: Path, line_no: int, system: bool) -> Optional[str]:
+    if not stripped.startswith("@"):
+        return stripped
+    parts = stripped.split(maxsplit=2 if system else 1)
+    macro = parts[0].lower()
+    if macro == "@reboot":
+        print(f"WARN unsupported cron macro {path}:{line_no}: @reboot has no minute-ticker equivalent", file=sys.stderr)
+        return None
+    sched = CRON_MACROS.get(macro)
+    if not sched:
+        return stripped
+    if system:
+        if len(parts) < 3:
+            print(f"WARN invalid system cron {path}:{line_no}: macro requires user and command", file=sys.stderr)
+            return None
+        return f"{sched} {parts[1]} {parts[2]}"
+    if len(parts) < 2:
+        print(f"WARN invalid user cron {path}:{line_no}: macro requires command", file=sys.stderr)
+        return None
+    return f"{sched} {parts[1]}"
+
+
+def cleanup_state_markers(state_dir: Path, max_age_days: int) -> None:
+    if max_age_days < 0 or not state_dir.exists():
+        return
+    cutoff = _dt.datetime.now().timestamp() - (max_age_days * 86400)
+    for marker in state_dir.glob("*.json"):
+        try:
+            if marker.stat().st_mtime < cutoff:
+                marker.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError as e:
+            print(f"WARN unable to remove old cron marker {marker}: {e}", file=sys.stderr)
+
+def _parse_cron_assignment(line: str) -> Optional[Tuple[str, str]]:
+    m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
+    if not m:
+        return None
+    return m.group(1), m.group(2).strip().strip('"').strip("'")
+
+
+def iter_user_crons(spool: Path) -> Iterable[Tuple[str, Path, int, str, List[str], str, Optional[str]]]:
     if not spool.exists():
         return
     for path in sorted(spool.iterdir()):
         if not path.is_file() or path.name.startswith("."):
             continue
         user = path.name
+        active_class: Optional[str] = None
         with path.open(errors="replace") as f:
             for n, line in enumerate(f, 1):
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#"):
                     continue
-                parts = stripped.split(maxsplit=5)
+                assignment = _parse_cron_assignment(stripped)
+                if assignment:
+                    key, value = assignment
+                    if key == "BASHQUEUES_CLASS":
+                        active_class = value or None
+                    continue
+                expanded = expand_cron_macro(stripped, path, n, system=False)
+                if expanded is None:
+                    continue
+                parts = expanded.split(maxsplit=5)
                 if len(parts) != 6:
                     print(f"WARN invalid user cron {path}:{n}: expected 6 fields", file=sys.stderr)
                     continue
-                yield user, path, n, stripped, parts[:5], parts[5]
+                yield user, path, n, stripped, parts[:5], parts[5], active_class
 
 
-def iter_system_crons(system_dir: Path) -> Iterable[Tuple[str, Path, int, str, List[str], str]]:
+def iter_system_crons(system_dir: Path) -> Iterable[Tuple[str, Path, int, str, List[str], str, Optional[str]]]:
     if not system_dir.exists():
         return
     for path in sorted(system_dir.iterdir()):
         if not path.is_file() or path.name.startswith("."):
             continue
+        active_class: Optional[str] = None
         with path.open(errors="replace") as f:
             for n, line in enumerate(f, 1):
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#"):
                     continue
-                parts = stripped.split(maxsplit=6)
+                assignment = _parse_cron_assignment(stripped)
+                if assignment:
+                    key, value = assignment
+                    if key == "BASHQUEUES_CLASS":
+                        active_class = value or None
+                    continue
+                expanded = expand_cron_macro(stripped, path, n, system=True)
+                if expanded is None:
+                    continue
+                parts = expanded.split(maxsplit=6)
                 if len(parts) != 7:
                     print(f"WARN invalid system cron {path}:{n}: expected 7 fields", file=sys.stderr)
                     continue
-                yield parts[5], path, n, stripped, parts[:5], parts[6]
+                yield parts[5], path, n, stripped, parts[:5], parts[6], active_class
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -209,6 +304,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--state-dir", default=os.environ.get("QUEUEBASH_CRON_STATE_DIR", DEFAULT_STATE_DIR))
     ap.add_argument("--dryrun", "--dry-run", action="store_true")
     ap.add_argument("--now", help="ISO timestamp for tests, local time if timezone omitted")
+    ap.add_argument("--state-max-age-days", type=int, default=int(os.environ.get("QUEUEBASH_CRON_STATE_MAX_AGE_DAYS", "7")))
     ns = ap.parse_args(argv)
 
     if ns.now:
@@ -221,18 +317,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     state_dir = Path(ns.state_dir)
     rc = 0
     entries = list(iter_user_crons(Path(ns.spool_dir))) + list(iter_system_crons(Path(ns.system_dir)))
-    for user, path, line_no, raw_line, parts, command in entries:
+    for user, path, line_no, raw_line, parts, command, explicit_class in entries:
         try:
             if not should_run(parts, dt):
                 continue
             rid = run_id(str(path), user, line_no, raw_line, minute_key)
             if already_dispatched(state_dir, rid, ns.dryrun):
                 continue
-            drc = dispatch(user, command, f"{path}", line_no, dryrun=ns.dryrun)
+            drc = dispatch(user, command, f"{path}", line_no, dryrun=ns.dryrun, explicit_class=explicit_class)
             rc = rc or drc
         except Exception as e:
             print(f"ERROR {path}:{line_no}: {e}", file=sys.stderr)
             rc = rc or 1
+    if not ns.dryrun:
+        cleanup_state_markers(state_dir, ns.state_max_age_days)
     return rc
 
 

@@ -530,3 +530,81 @@ queue_class_global_shared_asset net allowance "wwan0" slots=1 allowance_bytes=10
 ```
 
 Existing `queue_class_shared_asset`, `queue_class_exclusive_asset`, and `queue_class_exclusive_claim` records are still local to one queue root.
+
+## Runtime cap defaults
+
+Classes may request runtime monitoring caps in addition to preflight assets and
+systemd sandboxing:
+
+```bash
+CLASS_DEFAULT_RUNTIME_CAPS="no-spawn-shell,no-network-tools,only-local-sockets,only-port"
+CLASS_DEFAULT_RUNTIME_CAP_INTERVAL=1
+CLASS_DEFAULT_RUNTIME_CAP_PORTS="5432,8000-8099"
+```
+
+These caps are implemented by `caps.d/runtime.sh` and the worker runtime
+watchdog. They can catch behaviour that static checks miss, such as a script
+spawning a child shell, invoking `curl`/`wget`, opening a non-local socket, or
+using a port outside the class allow-list after it has started.
+
+## Seccomp and security exception overlays
+
+Classes may request a systemd seccomp profile:
+
+```bash
+CLASS_DEFAULT_SECCOMP_PROFILE=docker-default
+```
+
+Supported profiles:
+
+- `docker-default`: blacklist dangerous syscall groups such as clock changes,
+  ptrace/debugging, kernel modules, mounts, raw I/O, reboot, swap, CPU emulation,
+  and keyring operations.
+- `strict`: uses systemd's `@system-service` allow-list.
+
+The systemd runner emits:
+
+```bash
+SystemCallArchitectures=native
+SystemCallFilter=...
+```
+
+Seccomp is orthogonal to `CLASS_DEFAULT_SANDBOX_LEVEL` and runtime caps; a class
+can use all three.
+
+For deliberate one-off exceptions, use job-level overlays instead of editing the
+class:
+
+```bash
+queue submit debug-run \
+  --class SECURE_CLASS \
+  --sandbox-override restrict-egress \
+  --seccomp-allow @debug \
+  --drop-cap no-network-tools \
+  --add-port 8080 \
+  -- strace -o /tmp/trace.log ./script.sh
+```
+
+These exceptions are stored in the job record and displayed by `queue explain`.
+They are intended to make the audited path easier than bypassing the queue.
+
+## Security policies
+
+`CLASS_DEFAULT_SANDBOX_LEVEL` and `CLASS_DEFAULT_SECCOMP_PROFILE` reference
+policy names. The bundled policies are stored under `policies.d/` and copied to
+`$QUEUEBASH_ROOT/policies.d/` so operators can review or override them without
+editing `queuebash.sh`.
+
+```bash
+CLASS_DEFAULT_SANDBOX_LEVEL=strict
+CLASS_DEFAULT_SECCOMP_PROFILE=docker-default
+```
+
+Use:
+
+```bash
+queue policies list
+queue policies show sandbox strict
+```
+
+for inspection.

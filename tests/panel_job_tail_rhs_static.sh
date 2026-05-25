@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.4"' queuebash.sh || fail "queuebash version not 0.17.4"
+grep -q 'QUEUEBASH_VERSION="0.17.15"' queuebash.sh || fail "queuebash version not 0.17.15"
 grep -q '"Tail"' queuemgr_panel.py || fail "Jobs detail tabs do not include Tail"
 grep -q 'qrun(\["tail", item.key, "--no-follow"\]' queuemgr_panel.py || fail "Tail RHS does not use non-following queue tail"
 grep -q 'action == "tail"' queuemgr_panel.py || fail "job tail action not handled separately"

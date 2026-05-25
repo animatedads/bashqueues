@@ -82,6 +82,7 @@ db      database checks
 format  file/format checks
 runnable executable/script checks
 time    time-window checks
+queue   bashqueues job-history checks
 ```
 
 ## QueueManager hints
@@ -114,3 +115,89 @@ queue assets enable net
 
 By default, disabling an asset helper is refused when enabled classes still reference that asset family. Use `--force` only when deliberately taking the facility out of service.
 
+
+
+## proc asset family
+
+`assets.d/proc.sh` publishes process-related preflight checks.
+
+Facilities:
+
+- `proc:running` — require at least one matching process.
+- `proc:not_running` — pass only when no matching process exists; useful for duplicate-launch prevention.
+- `proc:user_running` — require a matching process owned by a given Unix user.
+- `proc:pid_file` — require a PID file whose PID is alive.
+- `proc:max_instances` — cap matching process count.
+- `proc:cpu_user` — block when matching processes exceed a CPU percentage threshold.
+- `proc:mem_user` — block when matching processes exceed an RSS threshold.
+
+Examples:
+
+```bash
+queue_class_shared_asset proc not_running "enhance" match=exact
+queue_class_shared_asset proc max_instances "ffmpeg" max=2 match=substr
+queue_class_shared_asset proc pid_file "/run/mydaemon.pid" stale_ok=0
+```
+
+## queue asset family
+
+`assets.d/queue.sh` publishes queue-history checks. These are different from `proc:*`: `proc` checks the current operating-system process table, while `queue` checks bashqueues job records.
+
+Facilities:
+
+- `queue:command_has_run` — require a matching job command/name to have run within a time window.
+- `queue:command_has_not_run` — require no matching job command/name to have run within a time window.
+- `queue:job_has_run` — alias wording for job-name checks.
+- `queue:job_has_not_run` — alias wording for job-name checks.
+
+Useful parameters:
+
+```text
+match=exact|substr|regex     default substr
+field=command|name|both      default both
+time=24h                     supports s/m/h/d/w suffixes
+states=done,failed,running   optional state filter; default checks common active/terminal states
+```
+
+Examples:
+
+```bash
+# Allow only if a matching command ran in the last 24 hours.
+queue_class_shared_asset queue command_has_run "nightly_export.sh" match=substr time=24h
+
+# Allow only if the command has not run in the last 24 hours.
+queue_class_shared_asset queue command_has_not_run "nightly_export.sh" match=substr time=24h
+
+# Job-name form.
+queue_class_shared_asset queue job_has_not_run "nightly_export" field=name match=exact time=24h
+```
+
+## secaudit asset family
+
+`assets.d/secaudit.sh` provides static security-audit gates for scripts and generated command strings. It is intended as a preflight safety net, not as a complete security boundary. Combine it with runtime sandboxing for defense in depth.
+
+Facilities:
+
+- `secaudit:script_safe` — scan a shell script for destructive, C2, privilege escalation, and obfuscation patterns.
+- `secaudit:string_safe` — scan a literal command string.
+- `secaudit:no_destructive` — block obvious `rm -rf`, `mkfs`, disk wipe, fork bomb, or critical overwrite patterns.
+- `secaudit:no_network_c2` — block reverse-shell and curl-pipe-shell patterns.
+- `secaudit:no_privesc` — block sudo/su/SUID/777/root-ownership patterns unless explicitly allowed.
+- `secaudit:no_obfuscation` — block common eval/base64 pipe-to-shell obfuscation.
+
+Examples:
+
+```bash
+queue_class_shared_asset secaudit script_safe "/opt/scripts/import.sh" strict=0
+queue_class_shared_asset secaudit no_network_c2 "/opt/ingest/parse_payload.sh"
+queue_class_shared_asset secaudit string_safe "bash publish_to_github.sh" strict=0
+```
+
+On failure the check reports the detected threat and, for files, the line number where possible.
+
+
+### 0.17.12 runtime cap spelling and C2 audit notes
+
+Runtime cap names may be written with hyphens or underscores. For example, `no_spawn_shell` is normalised to `no-spawn-shell`. Unknown runtime cap names are reported as warnings in job logs and `queue explain`, because a misspelled cap should not silently disable protection.
+
+`secaudit:no_network_c2` now detects listener-style network payloads such as `nc -l -p PORT`, `ncat -l`, `socat TCP-LISTEN:PORT`, and Python `socket.bind(...)` patterns. This remains an early warning layer; runtime sandbox and caps remain the load-bearing enforcement.

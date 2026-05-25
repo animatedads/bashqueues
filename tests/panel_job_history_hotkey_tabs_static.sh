@@ -9,7 +9,7 @@ changelog="$repo_root/CHANGELOG.md"
 
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.4"' "$repo_root/queuebash.sh" || fail "queuebash version not 0.17.4"
+grep -q 'QUEUEBASH_VERSION="0.17.15"' "$repo_root/queuebash.sh" || fail "queuebash version not 0.17.15"
 
 grep -q 'def execute_job_command' "$panel" || fail "panel lacks typed job command handler"
 grep -q 'def select_job_by_fragment' "$panel" || fail "panel lacks QID fragment selector"

@@ -603,3 +603,18 @@ cron list
 cron root
 cron tick --dryrun
 ```
+
+## Task/Class sandbox fields
+
+Task Creator exposes a sandbox override field. Class Creator exposes a default sandbox field which renders `CLASS_DEFAULT_SANDBOX_LEVEL`. Valid values are blank/off, `network-none`, `restrict-egress`, and `strict`.
+
+The F2 command line accepts current-task and current-class forms such as:
+
+```text
+task sandbox network-none
+class sandbox strict
+```
+
+### 0.17.14 systemd relative executable handling
+
+When the systemd runner is selected, bashqueues now normalises a relative executable argv[0] such as `./script.sh` to an absolute path before passing it to `systemd-run`. This avoids systemd's `is neither a valid executable name nor an absolute path` launch failure while keeping the job working directory unchanged.

@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 pass() { echo "[PASS] $*"; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.4"' queuebash.sh || fail "version not bumped to 0.17.4"
+grep -q 'QUEUEBASH_VERSION="0.17.15"' queuebash.sh || fail "version not bumped to 0.17.15"
 grep -q '_queue_install_bundled_cap_plugins' queuebash.sh || fail "bundled caps.d installer missing"
 grep -q 'caps.d/.disabled' queuebash.sh || fail "caps disable directory missing"
 grep -q 'queue modules list|explain' queuebash.sh || fail "queue modules dispatcher usage missing"

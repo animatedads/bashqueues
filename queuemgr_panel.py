@@ -280,6 +280,9 @@ class ClassDraft:
     default_log_cap: str = ""
     default_run_user: str = ""
     default_submit_user: str = ""
+    default_sandbox_level: str = ""
+    default_seccomp_profile: str = ""
+    default_seccomp_allow: str = ""
     records: List[str] = field(default_factory=list)
 
     def render(self) -> str:
@@ -310,6 +313,12 @@ class ClassDraft:
             lines.append("CLASS_DEFAULT_RUN_USER=" + self.default_run_user)
         if self.default_submit_user:
             lines.append("CLASS_DEFAULT_SUBMIT_USER=" + self.default_submit_user)
+        if self.default_sandbox_level:
+            lines.append("CLASS_DEFAULT_SANDBOX_LEVEL=" + self.default_sandbox_level)
+        if self.default_seccomp_profile:
+            lines.append("CLASS_DEFAULT_SECCOMP_PROFILE=" + self.default_seccomp_profile)
+        if self.default_seccomp_allow:
+            lines.append("CLASS_DEFAULT_SECCOMP_ALLOW=" + self.default_seccomp_allow)
         lines.append("")
         lines.extend(self.records or ["# Add asset restriction/claim records here, or use class commands to populate them."])
         lines.append("")
@@ -356,6 +365,7 @@ class TaskDraft:
     retries: str = "0"
     retry_backoff: str = ""
     runner: str = ""
+    sandbox_level: str = ""
     cpu_limit: str = ""
     mem_limit: str = ""
     max_log_size: str = ""
@@ -392,6 +402,8 @@ class TaskDraft:
             args.extend(["--backoff", self.retry_backoff])
         if self.runner:
             args.extend(["--runner", self.runner])
+        if self.sandbox_level:
+            args.extend(["--sandbox", self.sandbox_level])
         if self.cpu_limit:
             args.extend(["--cpu", self.cpu_limit])
         if self.mem_limit:
@@ -439,6 +451,8 @@ class TaskDraft:
             args.extend(["--backoff", self.retry_backoff])
         if self.runner:
             args.extend(["--runner", self.runner])
+        if self.sandbox_level:
+            args.extend(["--sandbox", self.sandbox_level])
         if self.cpu_limit:
             args.extend(["--cpu", self.cpu_limit])
         if self.mem_limit:
@@ -924,6 +938,7 @@ def load_class_draft(app: "PanelManager") -> List[Item]:
         Item("default_log_cap", f"default log cap   {d.default_log_cap or '-'}"),
         Item("default_run_user", f"default run user  {d.default_run_user or '<current>'}"),
         Item("default_submit_user", f"default submit user {d.default_submit_user or '<current>'}"),
+        Item("default_sandbox_level", f"default sandbox   {d.default_sandbox_level or '-'}"),
         Item("add_restriction", "add restriction   build from asset/cap hint"),
         Item("records", f"records           {len(d.records)}"),
         Item("preview", "preview generated class"),
@@ -966,6 +981,7 @@ def load_task_draft(app: "PanelManager") -> List[Item]:
         Item("retries", f"retries              {d.retries}"),
         Item("retry_backoff", f"retry backoff        {d.retry_backoff or '-'}"),
         Item("runner", f"runner override      {d.runner or '-'}"),
+        Item("sandbox_level", f"sandbox override     {d.sandbox_level or '-'}"),
         Item("cpu_limit", f"CPU override         {d.cpu_limit or '-'}"),
         Item("mem_limit", f"memory override      {d.mem_limit or '-'}"),
         Item("max_log_size", f"log cap override     {d.max_log_size or '-'}"),
@@ -1248,6 +1264,21 @@ class PanelManager:
             "taskdraft": "T",
         }
         self.active = 0
+
+
+    def sandbox_policy_choices(self) -> List[str]:
+        rc, out = qrun(["policies", "list", "sandbox"], timeout=5)
+        choices = [""]
+        if rc == 0:
+            for line in out.splitlines():
+                line = line.strip()
+                if not line or line.startswith("==="):
+                    continue
+                choices.append(line)
+        for fallback in ["off", "network-none", "restrict-egress", "strict"]:
+            if fallback not in choices:
+                choices.append(fallback)
+        return choices
 
     @property
     def detail_tab(self) -> str:
@@ -2093,7 +2124,7 @@ class PanelManager:
             classdraft_context_actions = [
                 "name", "purpose", "allow-parallel", "parallel", "max-concurrent",
                 "runner", "timeout", "kill-after", "cpu", "memory", "log",
-                "run-user", "submit-user", "restriction", "restrict", "asset",
+                "run-user", "submit-user", "sandbox", "restriction", "restrict", "asset",
                 "record", "records", "preview", "validate", "save", "clear",
             ]
             classdraft_aliases = {
@@ -2360,8 +2391,8 @@ class PanelManager:
             self.status = "Task Creator"
             return
         d = self.task_draft
-        field_choices = ["name", "command", "class", "priority", "submit-user", "user", "directory", "cwd", "schedule", "not-before", "retries", "backoff", "runner", "cpu", "memory", "mem", "log", "dependencies", "depends", "after", "inherit-env", "inherit", "on-success", "on-failure", "on-retry-failure", "hook-success", "hook-failure", "hook-retry", "preview", "dryrun", "save", "submit", "clear"]
-        aliases = {"n":"name", "cmd":"command", "c":"class", "cls":"class", "p":"priority", "pri":"priority", "su":"submit-user", "submituser":"submit-user", "u":"user", "dir":"directory", "pwd":"cwd", "when":"schedule", "nb":"not-before", "r":"retries", "retry":"retries", "b":"backoff", "run":"runner", "m":"memory", "maxlog":"log", "logcap":"log", "dep":"dependencies", "deps":"dependencies", "depends":"dependencies", "after":"dependencies", "after-success":"dependencies", "inherit":"inherit-env", "inheritenv":"inherit-env", "env":"inherit-env", "success":"on-success", "onsuccess":"on-success", "failure":"on-failure", "onfailure":"on-failure", "retryhook":"on-retry-failure", "onretry":"on-retry-failure", "attempt":"on-retry-failure", "pv":"preview", "dr":"dryrun", "s":"save", "go":"submit", "sub":"submit", "reset":"clear"}
+        field_choices = ["name", "command", "class", "priority", "submit-user", "user", "directory", "cwd", "schedule", "not-before", "retries", "backoff", "runner", "sandbox", "cpu", "memory", "mem", "log", "dependencies", "depends", "after", "inherit-env", "inherit", "on-success", "on-failure", "on-retry-failure", "hook-success", "hook-failure", "hook-retry", "preview", "dryrun", "save", "submit", "clear"]
+        aliases = {"n":"name", "cmd":"command", "c":"class", "cls":"class", "p":"priority", "pri":"priority", "su":"submit-user", "submituser":"submit-user", "u":"user", "dir":"directory", "pwd":"cwd", "when":"schedule", "nb":"not-before", "r":"retries", "retry":"retries", "b":"backoff", "run":"runner", "sb":"sandbox", "sand":"sandbox", "m":"memory", "maxlog":"log", "logcap":"log", "dep":"dependencies", "deps":"dependencies", "depends":"dependencies", "after":"dependencies", "after-success":"dependencies", "inherit":"inherit-env", "inheritenv":"inherit-env", "env":"inherit-env", "success":"on-success", "onsuccess":"on-success", "failure":"on-failure", "onfailure":"on-failure", "retryhook":"on-retry-failure", "onretry":"on-retry-failure", "attempt":"on-retry-failure", "pv":"preview", "dr":"dryrun", "s":"save", "go":"submit", "sub":"submit", "reset":"clear"}
         field, _ = resolve_unique_choice(parts[0], field_choices, aliases)
         if not field:
             classes = [it.key for it in load_classes(self) if it.key != "__error__"]
@@ -2391,6 +2422,7 @@ class PanelManager:
         elif field == "retries": d.retries = value or self.prompt("Retries", d.retries or "0")
         elif field == "backoff": d.retry_backoff = value or self.prompt("Retry backoff", d.retry_backoff)
         elif field == "runner": d.runner = value or self.prompt_choice("Runner override", ["auto", "direct", "systemd"], d.runner, allow_free=True)
+        elif field == "sandbox": d.sandbox_level = value or self.prompt_choice("Sandbox override", self.sandbox_policy_choices(), d.sandbox_level, allow_free=True)
         elif field == "cpu": d.cpu_limit = value or self.prompt("CPU override, e.g. 50%", d.cpu_limit)
         elif field in {"memory", "mem"}: d.mem_limit = value or self.prompt("Memory override, e.g. 512M", d.mem_limit)
         elif field == "log": d.max_log_size = value or self.prompt("Max log size bytes", d.max_log_size)
@@ -3247,6 +3279,8 @@ class PanelManager:
             d.retry_backoff = self.prompt("Retry backoff", d.retry_backoff)
         elif key == "runner":
             d.runner = self.prompt_choice("Runner override", ["auto", "direct", "systemd"], d.runner, allow_free=True)
+        elif key == "sandbox_level":
+            d.sandbox_level = self.prompt_choice("Sandbox override", self.sandbox_policy_choices(), d.sandbox_level, allow_free=True)
         elif key == "cpu_limit":
             d.cpu_limit = self.prompt("CPU override, e.g. 50%", d.cpu_limit)
         elif key == "mem_limit":
@@ -3678,13 +3712,13 @@ class PanelManager:
         actions = [
             "name", "purpose", "allow-parallel", "parallel", "max-concurrent",
             "runner", "timeout", "kill-after", "cpu", "memory", "log",
-            "run-user", "submit-user", "restriction", "restrict", "asset",
+            "run-user", "submit-user", "sandbox", "restriction", "restrict", "asset",
             "record", "records", "preview", "validate", "save", "clear",
         ]
         aliases = {
             "n": "name", "p": "purpose", "ap": "allow-parallel", "mc": "max-concurrent",
             "r": "runner", "t": "timeout", "ka": "kill-after", "mem": "memory",
-            "maxlog": "log", "ru": "run-user", "su": "submit-user",
+            "maxlog": "log", "ru": "run-user", "su": "submit-user", "sb": "sandbox",
             "res": "restriction", "restr": "restriction", "a": "asset", "rec": "record",
             "pv": "preview", "v": "validate", "s": "save", "reset": "clear",
         }
@@ -3720,6 +3754,10 @@ class PanelManager:
         elif action == "submit-user":
             users = [it.key for it in load_queue_users(self) if it.key != "__error__"]
             d.default_submit_user = _normalise_optional_user(value or self.prompt_choice("Default queue submit/owner user", users, d.default_submit_user, allow_free=True))
+        elif action == "sandbox":
+            d.default_sandbox_level = value or self.prompt_choice("Default sandbox", self.sandbox_policy_choices(), d.default_sandbox_level, allow_free=True)
+            if d.default_sandbox_level in {"<current/default>", "current", "default", "none", "-"}:
+                d.default_sandbox_level = ""
         elif action in {"restriction", "restrict", "asset"}:
             self.add_class_restriction_from_hints(value)
             return
@@ -3781,6 +3819,10 @@ class PanelManager:
         elif key == "default_submit_user":
             users = [it.key for it in load_queue_users(self) if it.key != "__error__"]
             d.default_submit_user = _normalise_optional_user(self.prompt_choice("Default queue submit/owner user", users, d.default_submit_user, allow_free=True))
+        elif key == "default_sandbox_level":
+            d.default_sandbox_level = self.prompt_choice("Default sandbox", self.sandbox_policy_choices(), d.default_sandbox_level, allow_free=True)
+            if d.default_sandbox_level in {"<current/default>", "current", "default", "none", "-"}:
+                d.default_sandbox_level = ""
         elif key == "add_restriction":
             self.add_class_restriction_from_hints()
             return
@@ -3920,6 +3962,7 @@ class PanelManager:
             d.execution_dir = env.get("PWD_AT_SUBMIT", "")
             d.submit_user = env.get("SUBMIT_USER", "")
             d.runner = env.get("RUNNER", "")
+            d.sandbox_level = env.get("SANDBOX_LEVEL", "")
             d.cpu_limit = env.get("CPU_LIMIT", "")
             d.mem_limit = env.get("MEM_LIMIT", "")
             d.max_log_size = env.get("MAX_LOG_SIZE_BYTES", "")

@@ -35,7 +35,7 @@ out="$(QUEUEBASH_ALLOW_NONINTERACTIVE=1 bash -lc "source '$repo_root/queuebash.s
   echo "$out" >&2
   fail "queue version failed"
 }
-echo "$out" | grep -q 'queuebash 0.17.4' || fail "version not 0.17.4"
+echo "$out" | grep -q 'queuebash 0.17.15' || fail "version not 0.17.15"
 
 current_user="$(id -un)"
 expected_home="$(getent passwd "$current_user" | awk -F: 'NR == 1 { print $6 }')"

@@ -33,6 +33,20 @@ It is designed to be inspectable and recoverable using normal shell tools. The q
   - `overdir`
 
 
+
+## Process preflight assets
+
+`assets.d/proc.sh` provides process-state gates for classes, including `proc:running`, `proc:not_running`, `proc:user_running`, `proc:pid_file`, `proc:max_instances`, `proc:cpu_user`, and `proc:mem_user`.
+
+Example:
+
+```bash
+queue_class_shared_asset proc not_running "nightly_export.sh" match=substr
+queue_class_shared_asset proc running "gpsd" match=exact
+```
+
+These checks are read-only and return `asset_check_blocked` rather than hard-failing the worker when the precondition is not met.
+
 ## Global shared resources
 
 `queue_class_global_*` class records coordinate scarce resources across multiple user queue roots.
@@ -75,6 +89,34 @@ mkdir -p ~/.local/share/bashqueues
 cp queuebash.sh ~/.local/share/bashqueues/queuebash.sh
 printf '\n# bashqueues\nsource "$HOME/.local/share/bashqueues/queuebash.sh"\n' >> ~/.bashrc
 source ~/.bashrc
+```
+
+## Runtime sandboxing
+
+Jobs can request a runtime sandbox either directly or through class defaults:
+
+```bash
+queue submit safe_import --sandbox network-none -- bash import.sh
+
+# in a class file
+CLASS_DEFAULT_SANDBOX_LEVEL=strict
+```
+
+Supported levels:
+
+- `network-none` — no external network namespace under systemd (`PrivateNetwork=yes`) or best-effort `unshare --net -r --` fallback for direct runner.
+- `restrict-egress` — systemd IP address policy allows loopback/RFC1918 subnets and denies public egress.
+- `strict` — disables networking and asks systemd for `ProtectSystem=strict`, `ProtectHome=read-only`, and `NoNewPrivileges=yes`.
+
+This is designed to complement static `secaudit:*` asset checks. Static analysis can catch common mistakes; the runtime sandbox limits what a payload can do if static analysis misses an obfuscated action.
+
+## Security audit asset
+
+`assets.d/secaudit.sh` publishes `secaudit:script_safe`, `secaudit:string_safe`, `secaudit:no_destructive`, `secaudit:no_network_c2`, `secaudit:no_privesc`, and `secaudit:no_obfuscation`. Example:
+
+```bash
+queue_class_shared_asset secaudit script_safe "/opt/scripts/import.sh" strict=0
+queue_class_shared_asset secaudit no_network_c2 "/opt/ingest/parse_payload.sh"
 ```
 
 ## Quick start
@@ -2600,3 +2642,106 @@ Use `bashqueues-crontab -e` for bashqueues-managed crontabs and
 `queue cron tick --dryrun` to preview due entries. See
 [`docs/CRON_BRIDGE.md`](docs/CRON_BRIDGE.md).
 
+
+### Queue-history asset checks
+
+The `queue` asset family checks bashqueues job records rather than the current OS process table. This is useful for once-per-period or prerequisite workflows:
+
+```bash
+queue_class_shared_asset queue command_has_run "nightly_export.sh" match=substr time=24h
+queue_class_shared_asset queue command_has_not_run "nightly_export.sh" match=substr time=24h
+```
+
+Use `proc:not_running` when the question is "is this process running right now?". Use `queue:command_has_not_run` when the question is "has a matching queue job already run recently?".
+
+### Runtime caps
+
+In addition to static `secaudit` assets and `--sandbox` isolation, bashqueues
+now includes runtime caps via `caps.d/runtime.sh`:
+
+```bash
+CLASS_DEFAULT_SANDBOX_LEVEL=strict
+CLASS_DEFAULT_RUNTIME_CAPS="no-spawn-shell,no-network-tools,only-local-sockets,only-port"
+CLASS_DEFAULT_RUNTIME_CAP_INTERVAL=1
+CLASS_DEFAULT_RUNTIME_CAP_PORTS="5432,8000-8099"
+```
+
+The worker watches the running process tree with `/proc` and, when installed,
+`lsof -p`, then terminates jobs that spawn forbidden shells, invoke network
+client tools, open non-local sockets, or use ports outside the class allow-list.
+
+
+### 0.17.12 runtime cap spelling and C2 audit notes
+
+Runtime cap names may be written with hyphens or underscores. For example, `no_spawn_shell` is normalised to `no-spawn-shell`. Unknown runtime cap names are reported as warnings in job logs and `queue explain`, because a misspelled cap should not silently disable protection.
+
+`secaudit:no_network_c2` now detects listener-style network payloads such as `nc -l -p PORT`, `ncat -l`, `socat TCP-LISTEN:PORT`, and Python `socket.bind(...)` patterns. This remains an early warning layer; runtime sandbox and caps remain the load-bearing enforcement.
+
+### 0.17.14 systemd relative executable handling
+
+When the systemd runner is selected, bashqueues now normalises a relative executable argv[0] such as `./script.sh` to an absolute path before passing it to `systemd-run`. This avoids systemd's `is neither a valid executable name nor an absolute path` launch failure while keeping the job working directory unchanged.
+
+### Seccomp profiles and sandbox/cap exception overlays
+
+`bashqueues` supports class-level seccomp profiles for systemd-run jobs:
+
+```bash
+CLASS_DEFAULT_SECCOMP_PROFILE=docker-default
+```
+
+`docker-default` blocks dangerous syscall groups such as clock manipulation,
+debug/ptrace, kernel module loading, mounting, raw I/O, reboot, swap, CPU
+emulation, and keyring operations. `strict` uses systemd's `@system-service`
+allow-list.
+
+For deliberate exceptions, use job-level flags rather than editing the class:
+
+```bash
+queue submit debug-run \
+  --class SECURE_CLASS \
+  --sandbox-override restrict-egress \
+  --seccomp-allow @debug \
+  --drop-cap no-network-tools \
+  --add-port 8080 \
+  -- ./debug-script.sh
+```
+
+The exception is visible in `queue explain` under Exception overlays.
+
+### Cron bridge class routing
+
+The cron bridge accepts `BASHQUEUES_CLASS=` as stateful crontab metadata:
+
+```cron
+BASHQUEUES_CLASS=cron_standard
+*/5 * * * * /opt/jobs/poll-local-service.sh
+
+BASHQUEUES_CLASS=
+0 * * * * /opt/jobs/local-cache-clear.sh
+```
+
+When set, the ticker submits to the named class and does not overwrite it. When
+unset, it creates a conservative generated `cron_<hash>` class with
+`CLASS_MAX_CONCURRENT=1`, strict sandboxing, and basic runtime caps.
+
+### Security policy files
+
+Sandbox and seccomp profiles are policy-file driven. Bundled policy files live
+under `policies.d/sandbox/` and `policies.d/seccomp/`, and are copied into the
+queue root at initialisation.
+
+```bash
+queue policies list
+queue policies show sandbox strict
+queue policies show seccomp docker-default
+```
+
+Class defaults and submit flags still name policies:
+
+```bash
+CLASS_DEFAULT_SANDBOX_LEVEL=strict
+CLASS_DEFAULT_SECCOMP_PROFILE=docker-default
+queue submit example --sandbox network-none -- command
+```
+
+See `docs/SECURITY_POLICIES.md`.

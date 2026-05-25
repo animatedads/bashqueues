@@ -8,7 +8,7 @@ changelog="$repo_root/CHANGELOG.md"
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 pass() { echo "[PASS] $*"; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.4"' "$q" || fail "queuebash version not 0.17.4"
+grep -q 'QUEUEBASH_VERSION="0.17.15"' "$q" || fail "queuebash version not 0.17.15"
 grep -q 'Usage: queue ${1:---queue-user} USER \[command\] \[args\.\.\.\]' "$q" || fail "--queue-user usage does not allow selection-only form"
 grep -q 'Usage: queue user USER \[command\] \[args\.\.\.\]' "$q" || fail "queue user usage does not allow selection-only form"
 grep -q 'if \[\[ "$#" -eq 0 \]\]; then' "$q" || fail "selector does not stop after selection-only form"

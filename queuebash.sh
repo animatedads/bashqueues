@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.4"
+QUEUEBASH_VERSION="0.17.15"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -382,12 +382,48 @@ _queue_install_bundled_cap_plugins() {
     shopt -u nullglob
 }
 
+_queue_install_bundled_policies() {
+    local root="$(_queue_root)"
+    local source_dir="${QUEUEBASH_POLICY_SOURCE_DIR:-}"
+    local src dst rel script_dir kind base
+
+    if [[ -z "$source_dir" ]]; then
+        if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+            if [[ -n "$script_dir" && -d "$script_dir/policies.d" ]]; then
+                source_dir="$script_dir/policies.d"
+            fi
+        fi
+    fi
+
+    if [[ -z "$source_dir" && -d "./policies.d" ]]; then
+        source_dir="./policies.d"
+    fi
+
+    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
+
+    mkdir -p "$root/policies.d/sandbox" "$root/policies.d/seccomp"
+    shopt -s nullglob
+    for src in "$source_dir"/*/*.env; do
+        [[ -f "$src" ]] || continue
+        kind="$(basename "$(dirname "$src")")"
+        case "$kind" in sandbox|seccomp) ;; *) continue ;; esac
+        base="$(basename "$src")"
+        dst="$root/policies.d/$kind/$base"
+        if [[ ! -e "$dst" && ! -e "$root/policies.d/$kind/.disabled/$base" ]]; then
+            mkdir -p "$(dirname "$dst")"
+            cp "$src" "$dst"
+        fi
+    done
+    shopt -u nullglob
+}
+
 _queue_init() {
     local root="$(_queue_root)"
     local default_class="${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}"
     local default_file="$root/classes/$default_class.env"
 
-    mkdir -p "$root"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,caps.d,claims/classes,claims/assets}
+    mkdir -p "$root"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,caps.d,policies.d/sandbox,policies.d/seccomp,claims/classes,claims/assets}
 
     if [[ ! -f "$default_file" ]]; then
         cat > "$default_file" <<'EOF'
@@ -412,6 +448,7 @@ EOF
     _queue_install_bundled_classes
     _queue_install_bundled_asset_plugins
     _queue_install_bundled_cap_plugins
+    _queue_install_bundled_policies
 
 }
 
@@ -1912,8 +1949,26 @@ _queue_exception_explain_for_job() {
     echo
     echo "Exception overlays"
 
+    local any_job_exception=0
+    if [[ -n "${EXCEPTION_SANDBOX_OVERRIDE:-}" ]]; then
+        echo "  sandbox:           OVERRIDE to '${EXCEPTION_SANDBOX_OVERRIDE}' via job flag"
+        any_job_exception=1
+    fi
+    if [[ -n "${EXCEPTION_SECCOMP_ALLOW:-}" ]]; then
+        echo "  seccomp:           HOLE PUNCHED allowing '${EXCEPTION_SECCOMP_ALLOW}'"
+        any_job_exception=1
+    fi
+    if [[ -n "${EXCEPTION_DROP_CAP:-}" ]]; then
+        echo "  runtime caps:      REMOVED '${EXCEPTION_DROP_CAP}'"
+        any_job_exception=1
+    fi
+    if [[ -n "${EXCEPTION_ADD_PORT:-}" ]]; then
+        echo "  runtime ports:     ADDED '${EXCEPTION_ADD_PORT}'"
+        any_job_exception=1
+    fi
+
     if [[ ! -f "$f" ]]; then
-        echo "  none"
+        [[ "$any_job_exception" -eq 0 ]] && echo "  none"
         return 0
     fi
 
@@ -2285,6 +2340,7 @@ _queue_draft_create() {
     local retries_max=0
     local retry_backoff=0
     local runner=""
+    local sandbox_level=""
     local cpu_limit=""
     local mem_limit=""
     local max_log_size_bytes=""
@@ -2353,6 +2409,12 @@ _queue_draft_create() {
             --runner)
                 [[ -n "${2:-}" ]] || { echo "queue draft create: --runner needs a value" >&2; return 2; }
                 runner="$2"
+                shift 2
+                ;;
+            --sandbox)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --sandbox needs a value" >&2; return 2; }
+                case "$2" in off|none) sandbox_level="off" ;;
+                            network-none|restrict-egress|strict) sandbox_level="$2" ;; *) echo "queue draft create: invalid --sandbox: $2" >&2; return 2 ;; esac
                 shift 2
                 ;;
             --cpu)
@@ -2451,6 +2513,7 @@ _queue_draft_create() {
         printf 'RETRIES_MAX=%q\n' "$retries_max"
         printf 'RETRY_BACKOFF=%q\n' "$retry_backoff"
         printf 'RUNNER=%q\n' "$runner"
+        printf 'SANDBOX_LEVEL=%q\n' "$sandbox_level"
         printf 'CPU_LIMIT=%q\n' "$cpu_limit"
         printf 'MEM_LIMIT=%q\n' "$mem_limit"
         printf 'MAX_LOG_SIZE_BYTES=%q\n' "$max_log_size_bytes"
@@ -2620,6 +2683,7 @@ _queue_draft_submit() {
         RETRIES_MAX=0
         RETRY_BACKOFF=0
         RUNNER=""
+        SANDBOX_LEVEL=""
         CPU_LIMIT=""
         MEM_LIMIT=""
         MAX_LOG_SIZE_BYTES=""
@@ -2646,6 +2710,7 @@ _queue_draft_submit() {
         args=(submit "$job_name" --priority "${PRIORITY:-10}")
         [[ -n "${JOB_CLASS:-}" ]] && args+=(--class "$JOB_CLASS")
         [[ -n "${RUNNER:-}" ]] && args+=(--runner "$RUNNER")
+        [[ -n "${SANDBOX_LEVEL:-}" ]] && args+=(--sandbox "$SANDBOX_LEVEL")
         [[ -n "${CPU_LIMIT:-}" ]] && args+=(--cpu "$CPU_LIMIT")
         [[ -n "${MEM_LIMIT:-}" ]] && args+=(--mem "$MEM_LIMIT")
         [[ -n "${MAX_LOG_SIZE_BYTES:-}" ]] && args+=(--max-log-size "$MAX_LOG_SIZE_BYTES")
@@ -2805,6 +2870,7 @@ _queue_command_may_evaluate_queue_code() {
         run|worker|workers|start|daemon|submit|explain)
             return 0
             ;;
+
         class|classes)
             case "$sub" in
                 explain|validate|refresh|replace|rollback|edit|create|class-create)
@@ -3849,6 +3915,12 @@ _queue_class_load_defaults_for_class() {
         CLASS_DEFAULT_WORKING_DIR=""
         CLASS_DEFAULT_RUN_USER=""
         CLASS_DEFAULT_SUBMIT_USER=""
+        CLASS_DEFAULT_SANDBOX_LEVEL=""
+        CLASS_DEFAULT_RUNTIME_CAPS=""
+        CLASS_DEFAULT_RUNTIME_CAP_INTERVAL=""
+        CLASS_DEFAULT_RUNTIME_CAP_PORTS=""
+        CLASS_DEFAULT_SECCOMP_PROFILE=""
+        CLASS_DEFAULT_SECCOMP_ALLOW=""
 
         # Execution/cost caps.
         CLASS_DEFAULT_CPU_SECONDS=""
@@ -3880,6 +3952,12 @@ _queue_class_load_defaults_for_class() {
         [[ -n "${CLASS_DEFAULT_WORKING_DIR:-}" ]] && printf 'PWD_AT_SUBMIT\t%s\n' "$CLASS_DEFAULT_WORKING_DIR"
         [[ -n "${CLASS_DEFAULT_RUN_USER:-}" ]] && printf 'RUN_USER\t%s\n' "$CLASS_DEFAULT_RUN_USER"
         [[ -n "${CLASS_DEFAULT_SUBMIT_USER:-}" ]] && printf 'SUBMIT_USER\t%s\n' "$CLASS_DEFAULT_SUBMIT_USER"
+        [[ -n "${CLASS_DEFAULT_SANDBOX_LEVEL:-}" ]] && printf 'SANDBOX_LEVEL\t%s\n' "$CLASS_DEFAULT_SANDBOX_LEVEL"
+        [[ -n "${CLASS_DEFAULT_RUNTIME_CAPS:-}" ]] && printf 'RUNTIME_CAPS\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAPS"
+        [[ -n "${CLASS_DEFAULT_RUNTIME_CAP_INTERVAL:-}" ]] && printf 'RUNTIME_CAP_INTERVAL\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAP_INTERVAL"
+        [[ -n "${CLASS_DEFAULT_RUNTIME_CAP_PORTS:-}" ]] && printf 'RUNTIME_CAP_PORTS\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAP_PORTS"
+        [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILE:-}" ]] && printf 'SECCOMP_PROFILE\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILE"
+        [[ -n "${CLASS_DEFAULT_SECCOMP_ALLOW:-}" ]] && printf 'SECCOMP_ALLOW\t%s\n' "$CLASS_DEFAULT_SECCOMP_ALLOW"
 
         [[ -n "${CLASS_DEFAULT_CPU_SECONDS:-}" ]] && printf 'CPU_SECONDS\t%s\n' "$CLASS_DEFAULT_CPU_SECONDS"
         [[ -n "${CLASS_DEFAULT_WALL_SECONDS:-}" ]] && printf 'WALL_SECONDS\t%s\n' "$CLASS_DEFAULT_WALL_SECONDS"
@@ -4936,6 +5014,9 @@ _queue_caps_explain_current_job() {
     local cpu_seconds="${CPU_SECONDS:-}"
     local wall_seconds="${WALL_SECONDS:-}"
     local policy="${CAP_POLICY:-shortest-cap-wins}"
+    local runtime_caps="${RUNTIME_CAPS:-}"
+    local runtime_interval="${RUNTIME_CAP_INTERVAL:-}"
+    local runtime_ports="${RUNTIME_CAP_PORTS:-}"
     local wall_s="" effective_s="" effective=""
     local line kind seconds plugin detail
 
@@ -4948,6 +5029,24 @@ _queue_caps_explain_current_job() {
     [[ -n "$kill_after" ]] && echo "  kill after:         $kill_after"
     [[ -n "$cpu_seconds" ]] && echo "  CPU seconds:        $cpu_seconds (metadata; live CPU enforcement is future work)"
     [[ -n "$wall_seconds" ]] && echo "  wall seconds:       $wall_seconds (metadata)"
+    [[ -n "${SANDBOX_LEVEL:-}" ]] && echo "  sandbox:            ${SANDBOX_LEVEL:-off}"
+    [[ -n "${SECCOMP_PROFILE:-}" ]] && echo "  seccomp:            ${SECCOMP_PROFILE:-}"
+    [[ -n "${SECCOMP_ALLOW:-}" ]] && echo "  seccomp allow:      ${SECCOMP_ALLOW:-}"
+    [[ -n "$runtime_caps" ]] && echo "  runtime caps:       $runtime_caps${runtime_interval:+ interval=${runtime_interval}s}${runtime_ports:+ ports=$runtime_ports}"
+    if [[ -n "${RUNTIME_CAPS:-}" ]]; then
+        local normalised unknown
+        normalised="$(_queue_runtime_caps_normalise "${RUNTIME_CAPS:-}" 2>/dev/null || true)"
+        unknown="$(_queue_runtime_caps_unknown_list "${RUNTIME_CAPS:-}" 2>/dev/null || true)"
+        [[ -n "$normalised" && "$normalised" != "${RUNTIME_CAPS:-}" ]] && echo "  runtime caps norm:  $normalised"
+        [[ -n "$unknown" ]] && echo "  runtime warning:    unknown cap(s): $unknown"
+    fi
+    if [[ "${RUNTIME_CAP_VIOLATED:-0}" == "1" || -n "${RUNTIME_CAP_VIOLATION:-}" ]]; then
+        echo "  runtime result:     blocked"
+        [[ -n "${RUNTIME_CAP_VIOLATION:-}" ]] && echo "  runtime violation:  ${RUNTIME_CAP_VIOLATION}"
+        [[ -n "${RUNTIME_CAP_VIOLATION_PID:-}" ]] && echo "  violation pid:      ${RUNTIME_CAP_VIOLATION_PID}"
+        [[ -n "${RUNTIME_CAP_VIOLATED_AT:-}" ]] && echo "  violation time:     ${RUNTIME_CAP_VIOLATED_AT}"
+    fi
+    [[ -n "${RUNTIME_CAP_WARNING:-}" ]] && echo "  runtime warning:    ${RUNTIME_CAP_WARNING}"
 
     while IFS=$'\t' read -r kind seconds plugin detail; do
         [[ "$kind" == "timeout" ]] || continue
@@ -5016,6 +5115,521 @@ _queue_emit_user_switch_prefix() {
     return 1
 }
 
+
+_queue_policy_valid_kind() {
+    case "${1:-}" in sandbox|seccomp) return 0 ;; *) return 1 ;; esac
+}
+
+_queue_policy_valid_name() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9_.@+-]+$ ]]
+}
+
+_queue_policy_source_root() {
+    local source_dir="${QUEUEBASH_POLICY_SOURCE_DIR:-}" script_dir
+    if [[ -z "$source_dir" && -n "${BASH_SOURCE[0]:-}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+        [[ -n "$script_dir" && -d "$script_dir/policies.d" ]] && source_dir="$script_dir/policies.d"
+    fi
+    [[ -z "$source_dir" && -d "./policies.d" ]] && source_dir="./policies.d"
+    printf '%s\n' "$source_dir"
+}
+
+_queue_policy_file() {
+    local kind="${1:-}" name="${2:-}" root source_root
+    _queue_policy_valid_kind "$kind" || return 1
+    _queue_policy_valid_name "$name" || return 1
+
+    root="$(_queue_root)"
+    if [[ -f "$root/policies.d/$kind/$name.env" ]]; then
+        printf '%s\n' "$root/policies.d/$kind/$name.env"
+        return 0
+    fi
+
+    source_root="$(_queue_policy_source_root)"
+    if [[ -n "$source_root" && -f "$source_root/$kind/$name.env" ]]; then
+        printf '%s\n' "$source_root/$kind/$name.env"
+        return 0
+    fi
+
+    return 1
+}
+
+_queue_policy_exists() {
+    _queue_policy_file "${1:-}" "${2:-}" >/dev/null 2>&1
+}
+
+_queue_policy_list() {
+    local kind="${1:-}" root source_root f
+    _queue_policy_valid_kind "$kind" || return 1
+    root="$(_queue_root)"
+    source_root="$(_queue_policy_source_root)"
+    {
+        shopt -s nullglob
+        for f in "$source_root/$kind"/*.env "$root/policies.d/$kind"/*.env; do
+            [[ -f "$f" ]] && basename "$f" .env
+        done
+        shopt -u nullglob
+    } | sort -u
+}
+
+_queue_policy_source_file() {
+    local kind="${1:-}" name="${2:-}" file
+    file="$(_queue_policy_file "$kind" "$name")" || return 1
+    # Policy files are data files installed from trusted bashqueues policy dirs.
+    # They may define *_SYSTEMD_PROPERTIES and *_DIRECT_PREFIX arrays only.
+    # Site-local policy edits are deliberately supported, but disabled policies
+    # are not loaded.
+    # shellcheck disable=SC1090
+    source "$file"
+}
+
+_queue_sandbox_normalise_level() {
+    local level="${1:-}"
+    case "$level" in
+        ""|off|none) echo "" ;;
+        *)
+            if _queue_policy_valid_name "$level" && _queue_policy_exists sandbox "$level"; then
+                echo "$level"
+            else
+                echo ""
+            fi
+            ;;
+    esac
+}
+
+_queue_emit_sandbox_systemd_props() {
+    local level prop
+    level="$(_queue_sandbox_normalise_level "${1:-}")"
+    [[ -n "$level" ]] || return 0
+
+    SANDBOX_SYSTEMD_PROPERTIES=()
+    SANDBOX_DIRECT_PREFIX=()
+    if ! _queue_policy_source_file sandbox "$level"; then
+        return 0
+    fi
+
+    for prop in "${SANDBOX_SYSTEMD_PROPERTIES[@]:-}"; do
+        [[ -n "$prop" ]] && printf '%s\0' -p "$prop"
+    done
+}
+
+_queue_emit_sandbox_direct_prefix() {
+    local level item
+    level="$(_queue_sandbox_normalise_level "${1:-}")"
+    [[ -n "$level" ]] || return 0
+
+    SANDBOX_SYSTEMD_PROPERTIES=()
+    SANDBOX_DIRECT_PREFIX=()
+    SANDBOX_DIRECT_WARNING=""
+    if ! _queue_policy_source_file sandbox "$level"; then
+        return 0
+    fi
+
+    if [[ "${#SANDBOX_DIRECT_PREFIX[@]}" -gt 0 ]]; then
+        printf '%s\0' "${SANDBOX_DIRECT_PREFIX[@]}"
+    elif [[ -n "${SANDBOX_DIRECT_WARNING:-}" ]]; then
+        echo "WARNING: $SANDBOX_DIRECT_WARNING" >&2
+    fi
+}
+
+_queue_seccomp_normalise_profile() {
+    local profile="${1:-}"
+    case "$profile" in
+        ""|off|none) echo "" ;;
+        *)
+            if _queue_policy_valid_name "$profile" && _queue_policy_exists seccomp "$profile"; then
+                echo "$profile"
+            else
+                echo ""
+            fi
+            ;;
+    esac
+}
+
+_queue_emit_seccomp_systemd_props() {
+    local profile allow item prop
+    profile="$(_queue_seccomp_normalise_profile "${1:-}")"
+    allow="${2:-}"
+
+    if [[ -n "$profile" ]]; then
+        SECCOMP_SYSTEMD_PROPERTIES=()
+        if _queue_policy_source_file seccomp "$profile"; then
+            for prop in "${SECCOMP_SYSTEMD_PROPERTIES[@]:-}"; do
+                [[ -n "$prop" ]] && printf '%s\0' -p "$prop"
+            done
+        fi
+    fi
+
+    # Exception overlays may punch carefully-audited holes such as @debug for strace.
+    # Systemd accepts multiple SystemCallFilter= properties; later allow-lists are
+    # intentionally emitted as separate properties for auditability in launch_argv.
+    for item in $allow; do
+        [[ -n "$item" ]] || continue
+        printf '%s\0' -p "SystemCallFilter=$item"
+    done
+}
+
+_queue_runtime_caps_drop_list() {
+    local caps="${1:-}" drops="${2:-}" cap drop out="" skip
+    caps="$(_queue_runtime_caps_normalise "$caps" 2>/dev/null || true)"
+    drops="$(_queue_runtime_caps_normalise "$drops" 2>/dev/null || true)"
+    for cap in $caps; do
+        skip=0
+        for drop in $drops; do
+            [[ "$cap" == "$drop" ]] && skip=1
+        done
+        [[ "$skip" -eq 1 ]] && continue
+        out="${out:+$out,}$cap"
+    done
+    printf '%s\n' "$out"
+}
+
+_queue_ports_add_list() {
+    local ports="${1:-}" add="${2:-}"
+    ports="${ports// /,}"
+    add="${add// /,}"
+    ports="${ports#,}"; ports="${ports%,}"
+    add="${add#,}"; add="${add%,}"
+    if [[ -n "$ports" && -n "$add" ]]; then
+        printf '%s,%s\n' "$ports" "$add"
+    elif [[ -n "$add" ]]; then
+        printf '%s\n' "$add"
+    else
+        printf '%s\n' "$ports"
+    fi
+}
+
+_queue_apply_security_exception_overlays_for_current_job() {
+    # Merge class defaults with job-level exception overlays.  This happens in
+    # the worker, after the job record is sourced and before launch_argv is built.
+    # Exceptions are intentionally visible in queue explain and job history; they
+    # are escape hatches, not invisible policy edits.
+    local effective_sandbox effective_caps effective_ports effective_seccomp_allow
+
+    effective_sandbox="${SANDBOX_LEVEL:-off}"
+    if [[ -n "${EXCEPTION_SANDBOX_OVERRIDE:-}" ]]; then
+        effective_sandbox="$(_queue_sandbox_normalise_level "$EXCEPTION_SANDBOX_OVERRIDE")"
+        [[ -z "$effective_sandbox" ]] && effective_sandbox="off"
+    fi
+
+    effective_caps="${RUNTIME_CAPS:-}"
+    if [[ -n "${EXCEPTION_DROP_CAP:-}" ]]; then
+        effective_caps="$(_queue_runtime_caps_drop_list "$effective_caps" "$EXCEPTION_DROP_CAP")"
+    fi
+
+    effective_ports="${RUNTIME_CAP_PORTS:-}"
+    if [[ -n "${EXCEPTION_ADD_PORT:-}" ]]; then
+        effective_ports="$(_queue_ports_add_list "$effective_ports" "$EXCEPTION_ADD_PORT")"
+    fi
+
+    effective_seccomp_allow="${SECCOMP_ALLOW:-}"
+    if [[ -n "${EXCEPTION_SECCOMP_ALLOW:-}" ]]; then
+        effective_seccomp_allow="${effective_seccomp_allow:+$effective_seccomp_allow }${EXCEPTION_SECCOMP_ALLOW}"
+    fi
+
+    SANDBOX_LEVEL="$effective_sandbox"
+    RUNTIME_CAPS="$effective_caps"
+    RUNTIME_CAP_PORTS="$effective_ports"
+    SECCOMP_ALLOW="$effective_seccomp_allow"
+    export SANDBOX_LEVEL RUNTIME_CAPS RUNTIME_CAP_PORTS SECCOMP_PROFILE SECCOMP_ALLOW
+}
+
+_queue_runtime_caps_normalise() {
+    # Operators naturally use both runtime:no_spawn_shell and
+    # no-spawn-shell spelling.  Runtime caps are matched internally in
+    # kebab-case so underscore spelling does not silently disable a cap.
+    local caps="${1:-${RUNTIME_CAPS:-}}"
+    caps="${caps//_/ -}"
+    caps="${caps//-/ -}"
+    # The two substitutions above intentionally route all words through the
+    # whitespace normaliser below; collapse commas/semicolons/pipes too.
+    caps="${1:-${RUNTIME_CAPS:-}}"
+    caps="${caps//_/-}"
+    caps="${caps//,/ }"
+    caps="${caps//;/ }"
+    caps="${caps//|/ }"
+    printf '%s\n' "$caps" | awk '{for (i=1;i<=NF;i++) if ($i != "") print $i}' | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//'
+}
+
+_queue_runtime_caps_is_known() {
+    case "$1" in
+        no-spawn-shell|no-network-tools|no-network-sockets|only-local-sockets|only-port) return 0 ;;
+        '') return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_queue_runtime_caps_unknown_list() {
+    local cap unknown=""
+    for cap in $(_queue_runtime_caps_normalise "${1:-${RUNTIME_CAPS:-}}" 2>/dev/null); do
+        if ! _queue_runtime_caps_is_known "$cap"; then
+            unknown+="${unknown:+,}$cap"
+        fi
+    done
+    printf '%s\n' "$unknown"
+}
+
+_queue_runtime_caps_has() {
+    local want="$1" cap
+    for cap in $(_queue_runtime_caps_normalise "${RUNTIME_CAPS:-}" 2>/dev/null); do
+        [[ "$cap" == "$want" ]] && return 0
+    done
+    return 1
+}
+
+_queue_runtime_caps_pids() {
+    local root_pid="${1:-}" pgid="${2:-}" p pid seen=" "
+    [[ -n "$root_pid" ]] && printf '%s\n' "$root_pid"
+    if [[ -n "$pgid" ]]; then
+        pgrep -g "$pgid" 2>/dev/null || true
+    fi
+    if [[ -n "$root_pid" ]]; then
+        local frontier=("$root_pid") next=()
+        while [[ "${#frontier[@]}" -gt 0 ]]; do
+            next=()
+            for p in "${frontier[@]}"; do
+                while IFS= read -r pid; do
+                    [[ -n "$pid" ]] || continue
+                    [[ "$seen" == *" $pid "* ]] && continue
+                    seen+="$pid "
+                    printf '%s\n' "$pid"
+                    next+=("$pid")
+                done < <(pgrep -P "$p" 2>/dev/null || true)
+            done
+            frontier=("${next[@]}")
+        done
+    fi | awk 'NF && !seen[$1]++'
+}
+
+_queue_runtime_caps_cmdline() {
+    local pid="$1"
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | sed 's/[[:space:]]\+$//'
+}
+
+_queue_runtime_caps_exe_base() {
+    local pid="$1" exe=""
+    exe="$(readlink "/proc/$pid/exe" 2>/dev/null || true)"
+    basename "$exe" 2>/dev/null || true
+}
+
+_queue_runtime_caps_lsof_sockets() {
+    local pid="$1"
+    command -v lsof >/dev/null 2>&1 || return 1
+    lsof -nP -a -p "$pid" -i 2>/dev/null | awk 'NR>1 {print; found=1} END {exit found?0:1}'
+}
+
+_queue_runtime_caps_lsof_local_only_violation() {
+    # Reads lsof -i output on stdin.  Returns success and prints the first
+    # violating line when an INET socket is not localhost-only.  LISTEN on
+    # *:PORT or 0.0.0.0:PORT is deliberately a violation.
+    local line name
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        name="${line##* }"
+        case "$line" in
+            *' 127.0.0.1:'*|*' localhost:'*|*' [::1]:'*|*' ::1:'*)
+                continue
+                ;;
+            *)
+                printf '%s\n' "$line"
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+_queue_runtime_caps_port_allowed() {
+    local port="$1" spec="${RUNTIME_CAP_PORTS:-}" item lo hi
+    [[ "$port" =~ ^[0-9]+$ ]] || return 1
+    spec="${spec// /,}"
+    spec="${spec//;/,}"
+    spec="${spec//:/,}"
+    spec="${spec//|/,}"
+    IFS=',' read -r -a _queue_runtime_port_items <<< "$spec"
+    for item in "${_queue_runtime_port_items[@]}"; do
+        [[ -n "$item" ]] || continue
+        if [[ "$item" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            lo="${BASH_REMATCH[1]}"; hi="${BASH_REMATCH[2]}"
+            [[ "$port" -ge "$lo" && "$port" -le "$hi" ]] && return 0
+        elif [[ "$item" =~ ^[0-9]+$ ]]; then
+            [[ "$port" -eq "$item" ]] && return 0
+        fi
+    done
+    return 1
+}
+
+_queue_runtime_caps_socket_policy_port() {
+    # For TCP client connections, evaluate the remote port after ->.
+    # For LISTEN/UDP sockets, evaluate the bound/local port.  This avoids
+    # blocking normal localhost clients because their ephemeral local port is
+    # not in the allow-list.
+    local line="$1" name side port
+    name="${line##* }"
+    side="$name"
+    if [[ "$side" == *'->'* ]]; then
+        side="${side##*->}"
+    fi
+    side="${side%% *}"
+    port="${side##*:}"
+    port="${port%%-*}"
+    port="${port%%/*}"
+    [[ "$port" =~ ^[0-9]+$ ]] || return 1
+    printf '%s\n' "$port"
+}
+
+_queue_runtime_caps_lsof_port_violation() {
+    local line port
+    [[ -n "${RUNTIME_CAP_PORTS:-}" ]] || { printf '%s\n' 'RUNTIME_CAP_PORTS not set'; return 0; }
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        port="$(_queue_runtime_caps_socket_policy_port "$line" 2>/dev/null || true)"
+        [[ -n "$port" ]] || { printf '%s\n' "$line"; return 0; }
+        if ! _queue_runtime_caps_port_allowed "$port"; then
+            printf '%s\n' "$line"
+            return 0
+        fi
+    done
+    return 1
+}
+
+_queue_runtime_caps_watchdog() {
+    local job_file="$1" log_file="$2" root_pid="$3" pgid="$4" interval="${RUNTIME_CAP_INTERVAL:-1}"
+    local pid base cmd sockets reason now
+    [[ "$interval" =~ ^[0-9]+$ && "$interval" -gt 0 ]] || interval=1
+    [[ -n "${RUNTIME_CAPS:-}" ]] || return 0
+
+    local unknown_caps normalised_caps
+    normalised_caps="$(_queue_runtime_caps_normalise "${RUNTIME_CAPS:-}" 2>/dev/null || true)"
+    unknown_caps="$(_queue_runtime_caps_unknown_list "${RUNTIME_CAPS:-}" 2>/dev/null || true)"
+    if [[ -n "$unknown_caps" ]]; then
+        now="$(date -Is 2>/dev/null || date)"
+        {
+            printf 'RUNTIME_CAP_WARNING=%q\n' "unknown runtime cap(s): $unknown_caps"
+            printf 'RUNTIME_CAPS_NORMALISED=%q\n' "$normalised_caps"
+        } >> "$job_file"
+        {
+            echo
+            echo "RUNTIME_CAP_WARNING: unknown runtime cap(s): $unknown_caps"
+            echo "RUNTIME_CAPS_NORMALISED: ${normalised_caps:-none}"
+        } >> "$log_file"
+        _queue_log_event "runtime_cap_warning" "${JOB_ID:-$(basename "$job_file" .job)}" "${JOB_NAME:-}" "running" "unknown=$unknown_caps normalised=${normalised_caps:-none}"
+    fi
+
+    while kill -0 "$root_pid" 2>/dev/null; do
+        while IFS= read -r pid; do
+            [[ -n "$pid" && -d "/proc/$pid" ]] || continue
+            base="$(_queue_runtime_caps_exe_base "$pid")"
+            cmd="$(_queue_runtime_caps_cmdline "$pid")"
+            reason=""
+
+            if [[ "$pid" != "$root_pid" ]] && _queue_runtime_caps_has no-spawn-shell; then
+                case "$base" in
+                    sh|bash|dash|zsh|ksh|mksh|busybox) reason="no-spawn-shell exe=$base cmd=$cmd" ;;
+                esac
+            fi
+
+            if [[ -z "$reason" ]] && _queue_runtime_caps_has no-network-tools; then
+                case "$base" in
+                    curl|wget|nc|ncat|netcat|socat|telnet|ssh|scp|sftp|rsync) reason="no-network-tools exe=$base cmd=$cmd" ;;
+                esac
+            fi
+
+            if [[ -z "$reason" ]] && _queue_runtime_caps_has no-network-sockets; then
+                sockets="$(_queue_runtime_caps_lsof_sockets "$pid" 2>/dev/null || true)"
+                [[ -n "$sockets" ]] && reason="no-network-sockets pid=$pid exe=$base"
+            fi
+
+            if [[ -z "$reason" ]] && _queue_runtime_caps_has only-local-sockets; then
+                sockets="$(_queue_runtime_caps_lsof_sockets "$pid" 2>/dev/null || true)"
+                if [[ -n "$sockets" ]]; then
+                    violation="$(_queue_runtime_caps_lsof_local_only_violation <<< "$sockets" 2>/dev/null || true)"
+                    [[ -n "$violation" ]] && reason="only-local-sockets pid=$pid exe=$base socket=$violation"
+                fi
+            fi
+
+            if [[ -z "$reason" ]] && _queue_runtime_caps_has only-port; then
+                sockets="$(_queue_runtime_caps_lsof_sockets "$pid" 2>/dev/null || true)"
+                if [[ -n "$sockets" ]]; then
+                    violation="$(_queue_runtime_caps_lsof_port_violation <<< "$sockets" 2>/dev/null || true)"
+                    [[ -n "$violation" ]] && reason="only-port ports=${RUNTIME_CAP_PORTS:-unset} pid=$pid exe=$base socket=$violation"
+                fi
+            fi
+
+            if [[ -n "$reason" ]]; then
+                now="$(date -Is 2>/dev/null || date)"
+                {
+                    printf 'RUNTIME_CAP_VIOLATED=%q\n' "1"
+                    printf 'RUNTIME_CAP_VIOLATED_AT=%q\n' "$now"
+                    printf 'RUNTIME_CAP_VIOLATION=%q\n' "$reason"
+                    printf 'RUNTIME_CAP_VIOLATION_PID=%q\n' "$pid"
+                } >> "$job_file"
+                {
+                    echo
+                    echo "RUNTIME_CAP_VIOLATION: $reason"
+                    [[ -n "${sockets:-}" ]] && { echo "lsof:"; echo "$sockets"; }
+                } >> "$log_file"
+                _queue_log_event "runtime_cap_violation" "${JOB_ID:-$(basename "$job_file" .job)}" "${JOB_NAME:-}" "running" "$reason"
+                if [[ -n "$pgid" && "$pgid" =~ ^[0-9]+$ ]]; then
+                    kill -TERM -- "-$pgid" 2>/dev/null || true
+                    sleep 1
+                    kill -KILL -- "-$pgid" 2>/dev/null || true
+                else
+                    kill -TERM "$root_pid" 2>/dev/null || true
+                    sleep 1
+                    kill -KILL "$root_pid" 2>/dev/null || true
+                fi
+                return 0
+            fi
+        done < <(_queue_runtime_caps_pids "$root_pid" "$pgid")
+        sleep "$interval"
+    done
+}
+
+
+
+_queue_absolutize_systemd_argv0() {
+    # systemd-run accepts either a simple executable name found via PATH, or
+    # an absolute executable path.  It rejects relative paths containing a
+    # slash, such as ./script.sh, even when --working-directory is supplied.
+    # Normalise only argv[0]; arguments remain unchanged.
+    local cwd="${1:-}"
+    shift || true
+    local cmd0="${1:-}"
+    [[ -n "$cmd0" ]] || return 0
+    shift || true
+
+    if [[ "$cmd0" == */* && "$cmd0" != /* ]]; then
+        if [[ -n "$cwd" ]]; then
+            printf '%s\0' "$cwd/$cmd0"
+        else
+            printf '%s\0' "$PWD/$cmd0"
+        fi
+    else
+        printf '%s\0' "$cmd0"
+    fi
+
+    printf '%s\0' "$@"
+}
+
+_queue_emit_systemd_payload_argv() {
+    # Emit the command section after systemd-run's "--" marker.
+    # If timeout is present, timeout is argv[0] and the payload command is an
+    # argument to timeout, so the relative-path executable restriction does not
+    # apply directly to the payload.  Without timeout, normalise argv[0].
+    local cwd="${1:-}"
+    local timeout_value="${2:-}"
+    local kill_after="${3:-}"
+    shift 3 || true
+
+    if [[ -n "$timeout_value" ]]; then
+        _queue_emit_timeout_wrapper_argv "$timeout_value" "$kill_after"
+        printf '%s\0' "$@"
+    else
+        _queue_absolutize_systemd_argv0 "$cwd" "$@"
+    fi
+}
+
 _queue_build_payload_command() {
     # Prints NUL-separated argv for the actual process to spawn.
     # We prefer systemd-run for CPU/MEM limits. If no limits are requested,
@@ -5026,8 +5640,9 @@ _queue_build_payload_command() {
     local runner="${4:-auto}"
     local timeout_value="${5:-}"
     local kill_after="${6:-}"
-    local run_user="${7:-}"
-    shift 7
+    local sandbox_level="${7:-}"
+    local run_user="${8:-}"
+    shift 8
 
     if [[ "$runner" == "systemd" ]]; then
         if [[ -n "$run_user" && "$run_user" != "$(_queue_current_user_name)" && "$(id -u 2>/dev/null || echo 99999)" == "0" ]]; then
@@ -5046,16 +5661,18 @@ _queue_build_payload_command() {
             done
 
             [[ -n "$cwd" ]] && printf '%s\0' --working-directory="$cwd"
+            _queue_emit_sandbox_systemd_props "$sandbox_level"
+            _queue_emit_seccomp_systemd_props "${SECCOMP_PROFILE:-}" "${SECCOMP_ALLOW:-}"
             [[ -n "$cpu" ]] && printf '%s\0' -p "CPUQuota=$(_queue_normalize_systemd_cpu_quota "$cpu")"
             [[ -n "$mem" ]] && printf '%s\0' -p "MemoryMax=${mem}"
             printf '%s\0' --
-            _queue_emit_timeout_wrapper_argv "$timeout_value" "$kill_after"
-            printf '%s\0' "$@"
+            _queue_emit_systemd_payload_argv "$cwd" "$timeout_value" "$kill_after" "$@"
             return 0
         fi
     fi
 
     _queue_emit_user_switch_prefix "$run_user"
+    _queue_emit_sandbox_direct_prefix "$sandbox_level"
     if command -v setsid >/dev/null 2>&1; then
         printf '%s\0' setsid --
     fi
@@ -7441,16 +8058,40 @@ _queue_cron_command() {
             local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" f any=0
             echo "=== user bashqueues crontabs ==="
             if [[ -d "$d" ]]; then
-                for f in "$d"/*; do [[ -f "$f" ]] || continue; any=1; echo "$(basename "$f")  $f"; done
+                for f in "$d"/*; do
+                    [[ -f "$f" ]] || continue
+                    any=1
+                    echo "$(basename "$f")  $f"
+                    grep -v '^[[:space:]]*#' "$f" 2>/dev/null | grep -v '^[[:space:]]*$' | sed 's/^/  /' || true
+                done
             fi
             [[ "$any" -eq 1 ]] || echo "No user bashqueues crontabs."
             any=0
             echo
             echo "=== system bashqueues cron.d ==="
             if [[ -d "$d2" ]]; then
-                for f in "$d2"/*; do [[ -f "$f" ]] || continue; any=1; echo "$(basename "$f")  $f"; done
+                for f in "$d2"/*; do
+                    [[ -f "$f" ]] || continue
+                    any=1
+                    echo "$(basename "$f")  $f"
+                    grep -v '^[[:space:]]*#' "$f" 2>/dev/null | grep -v '^[[:space:]]*$' | sed 's/^/  /' || true
+                done
             fi
             [[ "$any" -eq 1 ]] || echo "No system bashqueues cron.d files."
+            ;;
+        show|cat)
+            shift
+            local target_user="${1:-$(id -un 2>/dev/null || echo unknown)}" f
+            f="$(_queue_cron_spool_dir)/$target_user"
+            [[ -f "$f" ]] || { echo "No bashqueues crontab for $target_user" >&2; return 1; }
+            cat "$f"
+            ;;
+        preview)
+            shift
+            local ticker
+            ticker="$(_queue_cron_ticker_path)"
+            [[ -n "$ticker" ]] || { echo "queue cron preview: bashqueues-cron-ticker.py not found" >&2; return 127; }
+            "$ticker" --dryrun "$@"
             ;;
         tick)
             shift
@@ -7478,7 +8119,7 @@ _queue_cron_command() {
             echo "Removed bashqueues crontab: $target_user"
             ;;
         *)
-            echo "Usage: queue cron root|list|tick [--dryrun]|edit [user]|remove [user]" >&2
+            echo "Usage: queue cron root|list|show [user]|preview [--now ISO]|tick [--dryrun]|edit [user]|remove [user]" >&2
             return 2
             ;;
     esac
@@ -8047,6 +8688,13 @@ queue() {
             local cpu_limit=""
             local mem_limit=""
             local runner="${QUEUEBASH_RUNNER:-auto}"
+            local sandbox_level="${QUEUEBASH_SANDBOX_LEVEL:-off}"
+            local seccomp_profile="${QUEUEBASH_SECCOMP_PROFILE:-}"
+            local seccomp_allow="${QUEUEBASH_SECCOMP_ALLOW:-}"
+            local exception_sandbox_override=""
+            local exception_seccomp_allow=""
+            local exception_drop_cap=""
+            local exception_add_port=""
             local max_log_size="${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}"
             local allow_large_log=0
             local log_overflow_policy="${QUEUEBASH_LOG_OVERFLOW_POLICY:-stderr-only}"
@@ -8157,6 +8805,47 @@ queue() {
                         runner="$2"
                         shift 2
                         ;;
+                    --sandbox)
+                        [[ -z "$2" ]] && { echo "queue submit: --sandbox needs a value: off|network-none|restrict-egress|strict" >&2; return 2; }
+                        case "$2" in
+                            off|none) sandbox_level="off" ;;
+                            network-none|restrict-egress|strict) sandbox_level="$2" ;;
+                            *) echo "queue submit: invalid --sandbox: $2" >&2; return 2 ;;
+                        esac
+                        shift 2
+                        ;;
+                    --seccomp|--seccomp-profile)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a value: off|docker-default|strict" >&2; return 2; }
+                        case "$2" in
+                            off|none|docker-default|strict) seccomp_profile="$2" ;;
+                            *) echo "queue submit: invalid $1: $2" >&2; return 2 ;;
+                        esac
+                        shift 2
+                        ;;
+                    --sandbox-override)
+                        [[ -z "$2" ]] && { echo "queue submit: --sandbox-override needs a value" >&2; return 2; }
+                        case "$2" in
+                            off|none) exception_sandbox_override="off" ;;
+                            network-none|restrict-egress|strict) exception_sandbox_override="$2" ;;
+                            *) echo "queue submit: invalid --sandbox-override: $2" >&2; return 2 ;;
+                        esac
+                        shift 2
+                        ;;
+                    --seccomp-allow)
+                        [[ -z "$2" ]] && { echo "queue submit: --seccomp-allow needs a systemd syscall group such as @debug" >&2; return 2; }
+                        exception_seccomp_allow="${exception_seccomp_allow:+$exception_seccomp_allow }$2"
+                        shift 2
+                        ;;
+                    --drop-cap)
+                        [[ -z "$2" ]] && { echo "queue submit: --drop-cap needs a runtime cap name" >&2; return 2; }
+                        exception_drop_cap="${exception_drop_cap:+$exception_drop_cap,}$2"
+                        shift 2
+                        ;;
+                    --add-port)
+                        [[ -z "$2" ]] && { echo "queue submit: --add-port needs a port or range" >&2; return 2; }
+                        exception_add_port="${exception_add_port:+$exception_add_port,}$2"
+                        shift 2
+                        ;;
                     --on-success)
                         shift
                         on_success=()
@@ -8221,6 +8910,7 @@ queue() {
                 echo "  maxlog:   $max_log_size"
                 echo "  largelog: $allow_large_log"
                 echo "  runner:   $runner"
+                echo "  sandbox:  ${sandbox_level:-}"
                 if [[ "${#depends_after_success[@]}" -gt 0 ]]; then
                     printf "  after-success:"
                     printf " %q" "${depends_after_success[@]}"
@@ -8268,6 +8958,13 @@ queue() {
                 printf 'ALLOW_LARGE_LOG=%q\n' "$allow_large_log"
                 printf 'LOG_OVERFLOW_POLICY=%q\n' "$log_overflow_policy"
                 printf 'RUNNER=%q\n' "$runner"
+                printf 'SANDBOX_LEVEL=%q\n' "$sandbox_level"
+                [[ -n "$seccomp_profile" ]] && printf 'SECCOMP_PROFILE=%q\n' "$seccomp_profile"
+                [[ -n "$seccomp_allow" ]] && printf 'SECCOMP_ALLOW=%q\n' "$seccomp_allow"
+                [[ -n "$exception_sandbox_override" ]] && printf 'EXCEPTION_SANDBOX_OVERRIDE=%q\n' "$exception_sandbox_override"
+                [[ -n "$exception_seccomp_allow" ]] && printf 'EXCEPTION_SECCOMP_ALLOW=%q\n' "$exception_seccomp_allow"
+                [[ -n "$exception_drop_cap" ]] && printf 'EXCEPTION_DROP_CAP=%q\n' "$exception_drop_cap"
+                [[ -n "$exception_add_port" ]] && printf 'EXCEPTION_ADD_PORT=%q\n' "$exception_add_port"
                 printf 'JOB_CLASS=%q\n' "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}"
                 if [[ "${#depends_after_success[@]}" -gt 0 ]]; then
                     deps_join="${depends_after_success[*]}"
@@ -8877,6 +9574,39 @@ EOF
                     esac
                     ;;
                 *) echo "Usage: queue modules list|explain <kind:name>|enable kind name|disable kind name [--force]|refresh kind <directory>" >&2; return 2 ;;
+            esac
+            ;;
+
+
+        policy|policies)
+            case "${1:-list}" in
+                list|"")
+                    local kind="${2:-}"
+                    if [[ -n "$kind" ]]; then
+                        _queue_policy_valid_kind "$kind" || { echo "Usage: queue policies list [sandbox|seccomp]" >&2; return 2; }
+                        echo "=== $kind policies ==="
+                        _queue_policy_list "$kind"
+                    else
+                        echo "=== sandbox policies ==="
+                        _queue_policy_list sandbox
+                        echo
+                        echo "=== seccomp policies ==="
+                        _queue_policy_list seccomp
+                    fi
+                    ;;
+                show|explain)
+                    local kind="${2:-}" name="${3:-}" file
+                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies show sandbox|seccomp NAME" >&2; return 2; }
+                    _queue_policy_valid_kind "$kind" || { echo "queue policies show: invalid kind: $kind" >&2; return 2; }
+                    file="$(_queue_policy_file "$kind" "$name")" || { echo "queue policies show: not found: $kind $name" >&2; return 1; }
+                    echo "=== $kind policy: $name ==="
+                    echo "file: $file"
+                    sed -n '1,200p' "$file"
+                    ;;
+                *)
+                    echo "Usage: queue policies list [sandbox|seccomp]|show sandbox|seccomp NAME" >&2
+                    return 2
+                    ;;
             esac
             ;;
 
@@ -9902,6 +10632,14 @@ _queue_worker() {
 
                 runner_requested="${RUNNER:-${QUEUEBASH_RUNNER:-auto}}"
                 runner_planned="$(_queue_runner_for_job "$runner_requested" "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${RUN_USER:-}" || true)"
+                _queue_apply_security_exception_overlays_for_current_job
+                {
+                    printf 'SANDBOX_LEVEL=%q\n' "${SANDBOX_LEVEL:-off}"
+                    [[ -n "${RUNTIME_CAPS:-}" ]] && printf 'RUNTIME_CAPS=%q\n' "${RUNTIME_CAPS:-}"
+                    [[ -n "${RUNTIME_CAP_PORTS:-}" ]] && printf 'RUNTIME_CAP_PORTS=%q\n' "${RUNTIME_CAP_PORTS:-}"
+                    [[ -n "${SECCOMP_PROFILE:-}" ]] && printf 'SECCOMP_PROFILE=%q\n' "${SECCOMP_PROFILE:-}"
+                    [[ -n "${SECCOMP_ALLOW:-}" ]] && printf 'SECCOMP_ALLOW=%q\n' "${SECCOMP_ALLOW:-}"
+                } >> "$running"
                 limit_status="$(_queue_limit_status_text "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")"
                 [[ "$runner_planned" == "systemd" ]] && limit_status="systemd-run-user-service-pipe"
                 if [[ -n "${CPU_LIMIT:-}" || -n "${MEM_LIMIT:-}" ]]; then
@@ -9909,6 +10647,9 @@ _queue_worker() {
                     if [[ "$limit_status" != "systemd-run-user-service-pipe" ]]; then
                         echo "WARNING: resource limits were requested but are NOT enforced in this shell/session."
                     fi
+                fi
+                if [[ -n "${SANDBOX_LEVEL:-}" ]]; then
+                    echo "sandbox_request: level=${SANDBOX_LEVEL:-} runner=${runner_planned:-}"
                 fi
                 if [[ -n "${TIMEOUT:-}" ]]; then
                     echo "timeout_request: timeout=${TIMEOUT:-} effective_timeout=${effective_timeout:-none} kill_after=${KILL_AFTER:-} billing_unit=${BILLING_UNIT_SECONDS:-} billing_cycles=${BILLING_CYCLES:-} billing_grace=${BILLING_GRACE_SECONDS:-} wrapper=coreutils-timeout"
@@ -9930,7 +10671,7 @@ _queue_worker() {
                     printf 'RUNNER_USED=%q\n' "$runner_used"
                 } >> "$running"
                 effective_timeout="$(_queue_caps_effective_timeout_for_current_job 2>/dev/null || true)"
-                mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${PWD_AT_SUBMIT:-$PWD}" "$runner_used" "${effective_timeout:-}" "${KILL_AFTER:-}" "${RUN_USER:-}" "${COMMAND[@]}")
+                mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${PWD_AT_SUBMIT:-$PWD}" "$runner_used" "${effective_timeout:-}" "${KILL_AFTER:-}" "${SANDBOX_LEVEL:-}" "${RUN_USER:-}" "${COMMAND[@]}")
                 echo "systemd_user_bus: $(_queue_systemd_user_service_status_text)"
                 if _queue_root_running_foreign_payload_user "${RUN_USER:-}"; then echo "foreign_run_user_runner_policy: root-foreign-user-auto-direct run_user=${RUN_USER:-}"; fi
                 printf "launch_argv:"
@@ -9972,6 +10713,13 @@ _queue_worker() {
                 _queue_log_worker_record "$use_stream_logger" "$log" "run_pid: $cmd_pid" "run_pgid: $cmd_pgid"
                 _queue_log_event "pid_recorded" "$JOB_ID" "$JOB_NAME" "running" "pid=$cmd_pid pgid=$cmd_pgid"
 
+                runtime_caps_watchdog_pid=""
+                if [[ -n "${RUNTIME_CAPS:-}" ]]; then
+                    _queue_log_worker_record "$use_stream_logger" "$log" "runtime_caps: ${RUNTIME_CAPS:-} interval=${RUNTIME_CAP_INTERVAL:-1} monitor=lsof/proc"
+                    _queue_runtime_caps_watchdog "$running" "$log" "$cmd_pid" "$cmd_pgid" &
+                    runtime_caps_watchdog_pid="$!"
+                fi
+
                 max_log_bytes="$(_queue_job_log_max_bytes "$running")"
                 log_overflow_policy="$(_queue_job_log_policy "$running")"
                 if [[ "${ALLOW_LARGE_LOG:-0}" != "1" && "$log_overflow_policy" == "kill" && "$max_log_bytes" =~ ^[0-9]+$ && "$max_log_bytes" -gt 0 ]]; then
@@ -9993,6 +10741,13 @@ _queue_worker() {
                 if [[ -n "${log_watchdog_pid:-}" ]]; then
                     kill "$log_watchdog_pid" >/dev/null 2>&1 || true
                     wait "$log_watchdog_pid" >/dev/null 2>&1 || true
+                fi
+                if [[ -n "${runtime_caps_watchdog_pid:-}" ]]; then
+                    kill "$runtime_caps_watchdog_pid" >/dev/null 2>&1 || true
+                    wait "$runtime_caps_watchdog_pid" >/dev/null 2>&1 || true
+                fi
+                if grep -q '^RUNTIME_CAP_VIOLATED=1$' "$running" 2>/dev/null; then
+                    rc=96
                 fi
                 _queue_record_systemd_unit_if_seen "$running" "$log"
 

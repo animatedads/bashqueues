@@ -1,3 +1,81 @@
+
+## 0.17.15
+
+- Moved sandbox and seccomp launch profiles into policy files under `policies.d/`.
+- Added bundled sandbox policies: `off`, `network-none`, `restrict-egress`, `strict`.
+- Added bundled seccomp policies: `off`, `docker-default`, `strict`.
+- Added `queue policies list` and `queue policies show sandbox|seccomp NAME`.
+- Queue roots now install policy files under `$QUEUEBASH_ROOT/policies.d/`.
+
+## 0.17.11
+## 0.17.14 - Systemd relative executable normalization
+
+- Fixed `systemd-run --user` launch of queue commands whose argv[0] is a relative path containing a slash, such as `./tests/runtime_cap_payload_test.sh`.
+- systemd-run requires argv[0] after `--` to be either a PATH-resolved executable name or an absolute path; `--working-directory` does not make `./script.sh` valid for systemd's parser.
+- The worker now converts relative executable argv[0] values to absolute paths for systemd launches while preserving direct-runner behaviour.
+- Added a static regression test for this launch path.
+
+## 0.17.14 - systemd relative executable normalization
+
+- Fixed `systemd-run --user` launch of queue commands whose argv[0] is a relative path containing a slash, such as `./tests/runtime_cap_payload_test.sh`.
+- systemd-run requires argv[0] after `--` to be either a PATH-resolved executable name or an absolute path; `--working-directory` does not make `./script.sh` valid for systemd's parser.
+- The worker now converts relative executable argv[0] values to absolute paths for systemd launches while preserving direct-runner behaviour.
+- Added a static regression test for this launch path.
+
+
+## 0.17.12 - Runtime cap normalization and stronger static C2 audit
+
+- Normalise runtime cap names so underscore spelling such as `no_spawn_shell` arms the same cap as `no-spawn-shell`.
+- Warn on unknown runtime cap names in the job record, log, history, and explain output.
+- Expand `secaudit:no_network_c2` to catch listener-style `nc`, `ncat`, `socat TCP-LISTEN`, Python socket bind patterns, and wget pipe-to-shell patterns.
+- `queue explain` now surfaces runtime cap violations and warning metadata directly under Execution caps.
+
+
+
+- Fixed Class Creator default sandbox editing from the panel field list.
+- Fixed F2 command-line class sandbox handling so `classcreator sandbox strict` writes `CLASS_DEFAULT_SANDBOX_LEVEL=strict`.
+- Task Creator sandbox override behaviour is unchanged.
+
+## 0.17.10
+
+- Added runtime cap facilities `runtime:only_local_sockets` and `runtime:only_port`.
+- Added `CLASS_DEFAULT_RUNTIME_CAP_PORTS` for port allow-lists such as `5432,8000-8099`.
+- Runtime socket policy now uses `lsof -p PID -i` to distinguish localhost-only sockets and allowed service ports.
+- Kept `assets.d/net_usage.sh` removed; runtime net usage remains under `caps.d/net_usage.sh`.
+
+
+## 0.17.8
+
+- Added runtime caps via `caps.d/runtime.sh`.
+- Added class defaults `CLASS_DEFAULT_RUNTIME_CAPS` and `CLASS_DEFAULT_RUNTIME_CAP_INTERVAL`.
+- Worker now runs a best-effort runtime watchdog for `no-spawn-shell`, `no-network-tools`, and `no-network-sockets`.
+- Runtime watchdog uses `/proc` and `lsof -p` where available, records `RUNTIME_CAP_*` metadata, logs `runtime_cap_violation`, and fails violating jobs with exit code 96.
+- Kept `assets.d/net_usage.sh` removed; runtime net usage remains under `caps.d/net_usage.sh`.
+
+## 0.17.7 - Runtime sandbox and secaudit asset
+
+- Added runtime sandboxing support through `--sandbox off|network-none|restrict-egress|strict`.
+- Added `CLASS_DEFAULT_SANDBOX_LEVEL` so classes can default jobs into a sandbox.
+- Systemd runner injects native sandbox properties such as `PrivateNetwork=yes`, `IPAddressDeny=any`, `ProtectSystem=strict`, and `NoNewPrivileges=yes`.
+- Direct runner uses `unshare --net -r --` as a best-effort fallback for `network-none` and `strict`.
+- Task Creator and Class Creator expose sandbox fields.
+- Added `assets.d/secaudit.sh` with `secaudit:script_safe`, `secaudit:string_safe`, `secaudit:no_destructive`, `secaudit:no_network_c2`, `secaudit:no_privesc`, and `secaudit:no_obfuscation`.
+
+## 0.17.6 - Queue history asset checks
+
+- Added `assets.d/queue.sh` for bashqueues job-history preflight checks.
+- New facilities: `queue:command_has_run`, `queue:command_has_not_run`, `queue:job_has_run`, and `queue:job_has_not_run`.
+- These checks answer whether a matching queue job command/name has run within a time window such as `time=24h`; they are distinct from `proc:not_running`, which checks current OS processes.
+
+## 0.17.5 - Cron review fixes and proc asset
+
+- Cron generated class names are now scoped by user as well as command, preventing two users with identical commands from sharing the same generated class file.
+- The cron ticker writes generated class files only when absent or changed.
+- Added cron macro handling for `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`, and `@annually`; `@reboot` is reported as unsupported instead of silently misparsed.
+- Cron de-duplication markers are cleaned after `${QUEUEBASH_CRON_STATE_MAX_AGE_DAYS:-7}` days.
+- `queue cron list` now previews scheduled entries, `queue cron show [user]` prints a crontab, and `queue cron preview [--now ISO]` runs the ticker in dry-run mode.
+- Added `assets.d/proc.sh` for process/running-job preflight checks.
+
 ## 0.17.4 - Global claim blocked history detail
 
 - Global claim blocking now logs the specific claim key, mode, slots, and current holder summary.
@@ -1126,3 +1204,11 @@ Initial public queuebash release:
 - The implementation already correctly passes `d.submit_user` through `_normalise_optional_user(...)` before calling `qrun`.
 - No runtime behaviour change.
 
+## 0.17.14 - Seccomp profiles, exception overlays, and cron class routing
+
+- Added class-level seccomp defaults: `CLASS_DEFAULT_SECCOMP_PROFILE` and `CLASS_DEFAULT_SECCOMP_ALLOW`.
+- Added systemd `SystemCallFilter=` emission for `docker-default` and `strict` profiles.
+- Added job-level exception overlay flags: `--sandbox-override`, `--seccomp-allow`, `--drop-cap`, and `--add-port`.
+- `queue explain` now surfaces these security exceptions in the Exception overlays section.
+- Cron bridge now supports `BASHQUEUES_CLASS=` stateful crontab routing.
+- Auto-generated cron classes default to strict sandboxing and basic runtime caps.

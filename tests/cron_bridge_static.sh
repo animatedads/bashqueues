@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 python3 - <<'PY'
 from pathlib import Path
 q=Path('queuebash.sh').read_text()
-assert 'QUEUEBASH_VERSION="0.17.4"' in q
+assert 'QUEUEBASH_VERSION="0.17.15"' in q
 assert '_queue_cron_command()' in q
 assert 'cron|crontab|cron-bridge)' in q
 assert Path('bin/bashqueues-cron-ticker.py').exists()

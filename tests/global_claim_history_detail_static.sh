@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 python3 - <<'PY'
 from pathlib import Path
 src = Path('queuebash.sh').read_text()
-assert 'QUEUEBASH_VERSION="0.17.4"' in src
+assert 'QUEUEBASH_VERSION="0.17.15"' in src
 assert '_queue_global_claim_holder_summary()' in src
 assert 'holders="$(_queue_global_claim_holder_summary "$claim")"' in src
 assert 'claim=$claim mode=$mode slots=$slots${holders:+ $holders}' in src
