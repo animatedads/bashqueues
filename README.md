@@ -1,3 +1,16 @@
+
+## Effective class-statement policy
+
+`queue policy list` may show multiple `class-statement` policy files from the shared policy tree, queue-local policy tree, or bundled defaults. The execution gate loads the discovered class-statement files as a merged effective policy, so an operator can keep emergency blocks or test policy statements in a separate file such as `policyblock-test.env` without replacing the default statement.
+
+Useful diagnostic:
+
+```bash
+queue policy explain
+```
+
+This prints the class-statement files loaded and the effective merged values, including `CLASS_POLICY_BLOCK_CLASS_NAMES` and command-block settings.
+
 ## System install
 
 For a shared root-managed installation, run:
@@ -2715,6 +2728,8 @@ sudo ./install-cron-bridge.sh
 Use `bashqueues-crontab -e` or `queue cron edit` for bashqueues-managed crontabs,
 `queue cron explain [user]` to translate entries into readable schedule/submission details,
 `queue cron class ENTRY CLASS` to route an entry to a named queue class,
+`queue cron status` to inspect the installed bridge/timer/spool state,
+`queue cron test` for status plus a dry-run tick,
 and `queue cron tick --dryrun` to preview due entries. See
 [`docs/CRON_BRIDGE.md`](docs/CRON_BRIDGE.md).
 

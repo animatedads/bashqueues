@@ -4,7 +4,7 @@ set -euo pipefail
 src="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$src"
 
-grep -q 'QUEUEBASH_VERSION="0.17.51"' queuebash.sh
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh
 
 for f in \
   policies.d/sandbox/off.env \

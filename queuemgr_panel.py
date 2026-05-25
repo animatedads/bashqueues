@@ -1420,21 +1420,38 @@ class PanelManager:
         if title:
             self.safe_addstr(y, x + 2, f" {title} ", curses.A_BOLD)
 
-    def draw_tabs(self, y: int) -> None:
+    def draw_tabs(self, y: int) -> int:
+        """Draw top-level view tabs over up to two rows.
+
+        The panel now has enough operational views that a single line becomes
+        cramped on normal terminals.  We keep hotkey-labelled tabs, wrap once,
+        and return the number of rows consumed so the body layout can move down
+        without guessing.
+        """
         _, w = self.stdscr.getmaxyx()
+        max_rows = 2
+        row = 0
         x = 2
+        used_rows = 1
+        # Clear both possible tab rows first, so stale text is not left behind
+        # when the terminal is resized or tabs fit on one row again.
+        for yy in range(y, y + max_rows):
+            self.safe_addstr(yy, 0, " " * max(0, w - 1))
         for i, v in enumerate(self.views):
             hotkey = self.view_hotkeys.get(v.name, "?")
             label = f" [{hotkey}] {v.title} "
+            if x + len(label) >= w - 1 and row < max_rows - 1:
+                row += 1
+                used_rows = max(used_rows, row + 1)
+                x = 2
             remaining = w - x - 1
             if remaining <= 1:
                 break
             shown = label[:remaining]
             attr = curses.A_REVERSE | curses.A_BOLD if i == self.active else curses.A_NORMAL
-            self.safe_addstr(y, x, shown, attr)
+            self.safe_addstr(y + row, x, shown, attr)
             x += len(label) + 1
-        if x < w - 1:
-            self.safe_addstr(y, x, " " * max(0, w - x - 1))
+        return used_rows
 
     def draw_detail_tabs(self, y: int, x: int, w: int) -> None:
         xx = x
@@ -1463,14 +1480,15 @@ class PanelManager:
         owner = self.queue_user or "default"
         header = f"QUEUEBASH PANEL MANAGER   src: {src_label}  mode: {mode}  owner: {owner}  root: {selected_queue_root_display(self.queue_user)}"
         self.safe_addstr(0, 2, header[: max(0, w - 4)], curses.A_BOLD if self.dry_run else curses.A_NORMAL)
-        self.draw_tabs(1)
+        tab_rows = self.draw_tabs(1)
 
+        filter_y = 1 + tab_rows
         filter_line = f"state={self.job_state_filter} text={self.job_text_filter or '-'} class={self.class_filter or '-'} asset={self.asset_filter or '-'} module={self.module_filter or '-'}"
-        self.safe_addstr(2, 2, filter_line[: w - 4])
+        self.safe_addstr(filter_y, 2, filter_line[: w - 4])
 
         left_w = max(38, w // 2)
         right_w = w - left_w - 1
-        top = 3
+        top = filter_y + 1
         # Reserve three bottom rows:
         #   separator
         #   menu/help keys

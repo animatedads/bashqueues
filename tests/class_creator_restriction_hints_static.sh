@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.51"' queuebash.sh || fail "version not 0.17.20"
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 
 grep -q 'add_restriction' queuemgr_panel.py || fail "Class Creator missing add_restriction row"
 grep -q 'def build_class_restriction_record' queuemgr_panel.py || fail "missing hint-driven restriction builder"

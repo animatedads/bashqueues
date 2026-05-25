@@ -18,6 +18,6 @@ count_def() {
 [[ "$(count_def _queue_select_user_queue)" == "1" ]] || fail "expected exactly one _queue_select_user_queue()"
 [[ "$(grep -c '^_queue_selected_user_for_display()' queuebash.sh || true)" == "1" ]] || fail "expected exactly one _queue_selected_user_for_display()"
 
-grep -q 'QUEUEBASH_VERSION="0.17.51"' queuebash.sh || fail "queuebash version not bumped to 0.17.20"
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 
 pass "selected-user helper definitions are singleton-clean"

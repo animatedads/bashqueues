@@ -3,8 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 - <<'PY'
 from pathlib import Path
+import re
 q=Path('queuebash.sh').read_text()
-assert 'QUEUEBASH_VERSION="0.17.51"' in q
+assert re.search(r'QUEUEBASH_VERSION=\"0\.[0-9]+\.[0-9]+\"', q)
 assert '_queue_cron_command()' in q
 assert 'cron|crontab|cron-bridge)' in q
 assert Path('bin/bashqueues-cron-ticker.py').exists()

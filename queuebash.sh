@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.51"
+QUEUEBASH_VERSION="0.17.53"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -5423,13 +5423,155 @@ _queue_security_policy_statement_name() {
     printf '%s\n' "${QUEUEBASH_CLASS_POLICY_STATEMENT:-default}"
 }
 
+_queue_policy_words_merge_unique() {
+    local existing="${1:-}" incoming="${2:-}" word out=""
+    for word in $existing $incoming; do
+        [[ -n "$word" ]] || continue
+        if ! _queue_security_policy_value_in_list "$word" "$out"; then
+            out="${out:+$out }$word"
+        fi
+    done
+    printf '%s\n' "$out"
+}
+
+_queue_policy_requirement_rank() {
+    case "${1,,}" in
+        authorisation|authorization) echo 3 ;;
+        reason) echo 2 ;;
+        reason-or-authorisation|reason-or-authorization|either) echo 1 ;;
+        off|none|"") echo 0 ;;
+        *) echo 1 ;;
+    esac
+}
+
+_queue_policy_requirement_max() {
+    local current="${1:-}" incoming="${2:-}" cr ir
+    [[ -n "$incoming" ]] || { printf '%s\n' "$current"; return 0; }
+    cr="$(_queue_policy_requirement_rank "$current")"
+    ir="$(_queue_policy_requirement_rank "$incoming")"
+    if [[ "$ir" -gt "$cr" ]]; then
+        printf '%s\n' "$incoming"
+    else
+        printf '%s\n' "$current"
+    fi
+}
+
+_queue_policy_signature_requirement_rank() {
+    case "${1,,}" in
+        always|required) echo 3 ;;
+        if-trusted-key|if-trusted-keys|trusted|auto|"") echo 2 ;;
+        off|none|legacy) echo 1 ;;
+        *) echo 2 ;;
+    esac
+}
+
+_queue_policy_signature_requirement_max() {
+    local current="${1:-}" incoming="${2:-}" cr ir
+    [[ -n "$incoming" ]] || { printf '%s\n' "$current"; return 0; }
+    cr="$(_queue_policy_signature_requirement_rank "$current")"
+    ir="$(_queue_policy_signature_requirement_rank "$incoming")"
+    if [[ "$ir" -gt "$cr" ]]; then
+        printf '%s\n' "$incoming"
+    else
+        printf '%s\n' "$current"
+    fi
+}
+
+_queue_policy_source_file_var() {
+    local file="${1:-}" var="${2:-}"
+    [[ -n "$file" && -n "$var" && -f "$file" ]] || return 0
+    (
+        unset "$var"
+        # Policy statement files are trusted bashqueues policy data files.
+        # shellcheck disable=SC1090
+        source "$file" >/dev/null 2>&1 || exit 0
+        printf '%s\n' "${!var:-}"
+    )
+}
+
 _queue_security_policy_statement_source() {
-    local name="${1:-$(_queue_security_policy_statement_name)}" file
-    file="$(_queue_policy_file class-statement "$name" 2>/dev/null || true)"
-    [[ -n "$file" && -f "$file" ]] || return 1
-    # Policy statements are bash data files with the same admin/root/bundled
-    # precedence as sandbox/seccomp policy files.
-    source "$file" >/dev/null 2>&1 || return 1
+    local requested="${1:-}" name file names seen=0
+    local agg_user_sandbox="" agg_user_seccomp="" agg_exception_req="" agg_weak_req=""
+    local agg_weak_sandbox="" agg_weak_seccomp="" agg_block_classes="" agg_block_hashes=""
+    local agg_block_words="" agg_block_patterns="" agg_block_class_req="" agg_block_command_req=""
+    local agg_sig_req="" val
+
+    if [[ -n "$requested" ]]; then
+        file="$(_queue_policy_file class-statement "$requested" 2>/dev/null || true)"
+        [[ -n "$file" && -f "$file" ]] || return 1
+        # shellcheck disable=SC1090
+        source "$file" >/dev/null 2>&1 || return 1
+        return 0
+    fi
+
+    names="$(_queue_policy_list class-statement 2>/dev/null || true)"
+    if [[ -z "$names" ]]; then
+        names="$(_queue_security_policy_statement_name)"
+    fi
+
+    for name in $names; do
+        file="$(_queue_policy_file class-statement "$name" 2>/dev/null || true)"
+        [[ -n "$file" && -f "$file" ]] || continue
+        seen=1
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_USER_SANDBOX_POLICIES)"
+        agg_user_sandbox="$(_queue_policy_words_merge_unique "$agg_user_sandbox" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_USER_SECCOMP_POLICIES)"
+        agg_user_seccomp="$(_queue_policy_words_merge_unique "$agg_user_seccomp" "$val")"
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE)"
+        agg_exception_req="$(_queue_policy_requirement_max "$agg_exception_req" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_WEAK_POLICY_REQUIRE)"
+        agg_weak_req="$(_queue_policy_requirement_max "$agg_weak_req" "$val")"
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_SANDBOX_REASON_REQUIRED)"
+        agg_weak_sandbox="$(_queue_policy_words_merge_unique "$agg_weak_sandbox" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_SECCOMP_REASON_REQUIRED)"
+        agg_weak_seccomp="$(_queue_policy_words_merge_unique "$agg_weak_seccomp" "$val")"
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_CLASS_NAMES)"
+        agg_block_classes="$(_queue_policy_words_merge_unique "$agg_block_classes" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_COMMAND_HASHES)"
+        agg_block_hashes="$(_queue_policy_words_merge_unique "$agg_block_hashes" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_COMMAND_WORDS)"
+        agg_block_words="$(_queue_policy_words_merge_unique "$agg_block_words" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_COMMAND_NAMES)"
+        agg_block_words="$(_queue_policy_words_merge_unique "$agg_block_words" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_COMMAND_PATTERNS)"
+        agg_block_patterns="$(_queue_policy_words_merge_unique "$agg_block_patterns" "$val")"
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_CLASS_REQUIRE)"
+        agg_block_class_req="$(_queue_policy_requirement_max "$agg_block_class_req" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_COMMAND_REQUIRE)"
+        agg_block_command_req="$(_queue_policy_requirement_max "$agg_block_command_req" "$val")"
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED)"
+        agg_sig_req="$(_queue_policy_signature_requirement_max "$agg_sig_req" "$val")"
+
+        # Source every discovered statement so trusted signer variables and any
+        # future scalar policy knobs are visible.  Known cumulative knobs are
+        # normalised back to aggregate values below so one statement cannot
+        # accidentally erase another statement's emergency blocks.
+        # shellcheck disable=SC1090
+        source "$file" >/dev/null 2>&1 || true
+    done
+
+    [[ "$seen" -eq 1 ]] || return 1
+
+    CLASS_POLICY_USER_SANDBOX_POLICIES="$agg_user_sandbox"
+    CLASS_POLICY_USER_SECCOMP_POLICIES="$agg_user_seccomp"
+    CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE="${agg_exception_req:-${CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE:-reason-or-authorisation}}"
+    CLASS_POLICY_WEAK_POLICY_REQUIRE="${agg_weak_req:-${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}}"
+    CLASS_POLICY_SANDBOX_REASON_REQUIRED="$agg_weak_sandbox"
+    CLASS_POLICY_SECCOMP_REASON_REQUIRED="$agg_weak_seccomp"
+    CLASS_POLICY_BLOCK_CLASS_NAMES="$agg_block_classes"
+    CLASS_POLICY_BLOCK_COMMAND_HASHES="$agg_block_hashes"
+    CLASS_POLICY_BLOCK_COMMAND_WORDS="$agg_block_words"
+    CLASS_POLICY_BLOCK_COMMAND_NAMES="$agg_block_words"
+    CLASS_POLICY_BLOCK_COMMAND_PATTERNS="$agg_block_patterns"
+    CLASS_POLICY_BLOCK_CLASS_REQUIRE="${agg_block_class_req:-${CLASS_POLICY_BLOCK_CLASS_REQUIRE:-authorisation}}"
+    CLASS_POLICY_BLOCK_COMMAND_REQUIRE="${agg_block_command_req:-${CLASS_POLICY_BLOCK_COMMAND_REQUIRE:-authorisation}}"
+    CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="${agg_sig_req:-${CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED:-if-trusted-key}}"
 }
 
 _queue_security_policy_value_in_list() {
@@ -6781,6 +6923,40 @@ _queue_policy_sha256() {
     else
         wc -c < "$file" | awk '{print "size:"$1}'
     fi
+}
+
+_queue_policy_explain_effective_class_statement() {
+    local name file
+    echo "=== effective class-statement policy ==="
+    echo "mode: merged"
+    echo "loaded files:"
+    while IFS= read -r name; do
+        [[ -n "$name" ]] || continue
+        file="$(_queue_policy_file class-statement "$name" 2>/dev/null || true)"
+        [[ -n "$file" && -f "$file" ]] || continue
+        printf '  %-20s %-8s %s\n' "$name" "$(_queue_policy_origin "$file")" "$file"
+    done < <(_queue_policy_list class-statement)
+
+    if ! _queue_security_policy_statement_source >/dev/null 2>&1; then
+        echo "status: no class-statement policy files found"
+        return 1
+    fi
+
+    echo
+    echo "effective values:"
+    printf '  CLASS_POLICY_USER_SANDBOX_POLICIES=%q\n' "${CLASS_POLICY_USER_SANDBOX_POLICIES:-}"
+    printf '  CLASS_POLICY_USER_SECCOMP_POLICIES=%q\n' "${CLASS_POLICY_USER_SECCOMP_POLICIES:-}"
+    printf '  CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE=%q\n' "${CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE:-}"
+    printf '  CLASS_POLICY_WEAK_POLICY_REQUIRE=%q\n' "${CLASS_POLICY_WEAK_POLICY_REQUIRE:-}"
+    printf '  CLASS_POLICY_SANDBOX_REASON_REQUIRED=%q\n' "${CLASS_POLICY_SANDBOX_REASON_REQUIRED:-}"
+    printf '  CLASS_POLICY_SECCOMP_REASON_REQUIRED=%q\n' "${CLASS_POLICY_SECCOMP_REASON_REQUIRED:-}"
+    printf '  CLASS_POLICY_BLOCK_CLASS_NAMES=%q\n' "${CLASS_POLICY_BLOCK_CLASS_NAMES:-}"
+    printf '  CLASS_POLICY_BLOCK_CLASS_REQUIRE=%q\n' "${CLASS_POLICY_BLOCK_CLASS_REQUIRE:-}"
+    printf '  CLASS_POLICY_BLOCK_COMMAND_HASHES=%q\n' "${CLASS_POLICY_BLOCK_COMMAND_HASHES:-}"
+    printf '  CLASS_POLICY_BLOCK_COMMAND_WORDS=%q\n' "${CLASS_POLICY_BLOCK_COMMAND_WORDS:-${CLASS_POLICY_BLOCK_COMMAND_NAMES:-}}"
+    printf '  CLASS_POLICY_BLOCK_COMMAND_PATTERNS=%q\n' "${CLASS_POLICY_BLOCK_COMMAND_PATTERNS:-}"
+    printf '  CLASS_POLICY_BLOCK_COMMAND_REQUIRE=%q\n' "${CLASS_POLICY_BLOCK_COMMAND_REQUIRE:-}"
+    printf '  CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED=%q\n' "${CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED:-}"
 }
 
 _queue_policy_quote_array_assignment() {
@@ -10054,15 +10230,102 @@ _queue_cron_explain_file() {
     echo
 }
 
+
+_queue_cron_systemd_unit_state() {
+    local unit="$1"
+    if ! command -v systemctl >/dev/null 2>&1; then
+        printf 'systemctl unavailable\n'
+        return 0
+    fi
+    local active enabled
+    active="$(systemctl is-active "$unit" 2>/dev/null || true)"
+    enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+    [[ -n "$active" ]] || active="unknown"
+    [[ -n "$enabled" ]] || enabled="unknown"
+    printf '%s / %s\n' "$active" "$enabled"
+}
+
+_queue_cron_count_active_entries_file() {
+    local f="$1" raw n=0
+    [[ -r "$f" ]] || { printf '0\n'; return 0; }
+    while IFS= read -r raw || [[ -n "$raw" ]]; do
+        if _queue_cron_is_entry_line "$raw"; then
+            n=$((n+1))
+        fi
+    done < "$f"
+    printf '%s\n' "$n"
+}
+
+_queue_cron_latest_marker() {
+    local d="$(_queue_cron_state_dir)" latest=""
+    [[ -d "$d" ]] || { printf 'none\n'; return 0; }
+    latest="$(find "$d" -maxdepth 1 -type f -name '*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
+    [[ -n "$latest" ]] || { printf 'none\n'; return 0; }
+    if command -v stat >/dev/null 2>&1; then
+        printf '%s (%s)\n' "$(basename "$latest")" "$(stat -c '%y' "$latest" 2>/dev/null | cut -d'.' -f1)"
+    else
+        printf '%s\n' "$(basename "$latest")"
+    fi
+}
+
+_queue_cron_status() {
+    local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" state="$(_queue_cron_state_dir)" ticker f files=0 entries=0 n
+    ticker="$(_queue_cron_ticker_path)"
+    echo "=== bashqueues cron status ==="
+    echo "ticker:        ${ticker:-not found}"
+    echo "user spool:    $d"
+    if [[ -d "$d" ]]; then
+        echo "spool mode:    $(stat -c '%a %U:%G' "$d" 2>/dev/null || echo unknown)"
+        for f in "$d"/*; do
+            [[ -f "$f" ]] || continue
+            files=$((files+1))
+            n="$(_queue_cron_count_active_entries_file "$f")"
+            entries=$((entries+n))
+        done
+    else
+        echo "spool mode:    missing"
+    fi
+    echo "user files:    $files"
+    echo "user entries:  $entries"
+
+    files=0; entries=0
+    echo "system dir:    $d2"
+    if [[ -d "$d2" ]]; then
+        for f in "$d2"/*; do
+            [[ -f "$f" ]] || continue
+            files=$((files+1))
+            n="$(_queue_cron_count_active_entries_file "$f")"
+            entries=$((entries+n))
+        done
+    fi
+    echo "system files:  $files"
+    echo "system entries: $entries"
+    echo "state dir:     $state"
+    echo "last marker:   $(_queue_cron_latest_marker)"
+    echo "cron timer:    $(_queue_cron_systemd_unit_state bashqueues-cron.timer)"
+    echo "cron service:  $(_queue_cron_systemd_unit_state bashqueues-cron.service)"
+    echo "daemon service: $(_queue_cron_systemd_unit_state bashqueues-daemon.service)"
+}
+
+_queue_cron_test() {
+    local ticker
+    _queue_cron_status
+    ticker="$(_queue_cron_ticker_path)"
+    [[ -n "$ticker" ]] || { echo; echo "preview: ticker not found"; return 127; }
+    echo
+    echo "=== dry-run tick preview ==="
+    "$ticker" --dryrun "$@"
+}
+
 _queue_cron_command() {
-    local action="${1:-status}"
+    local action="${1:-list}"
     case "$action" in
         root|roots)
             echo "spool:  $(_queue_cron_spool_dir)"
             echo "system: $(_queue_cron_system_dir)"
             echo "state:  $(_queue_cron_state_dir)"
             ;;
-        list|ls|status|"")
+        list|ls|"")
             shift || true
             local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" f any=0 list_all=0 selected="${QUEUEBASH_SELECTED_USER:-}"
             [[ "${1:-}" == "--all" ]] && list_all=1
@@ -10097,6 +10360,14 @@ _queue_cron_command() {
                 done
             fi
             [[ "$any" -eq 1 ]] || echo "No system bashqueues cron.d files."
+            ;;
+        status|stat)
+            shift || true
+            _queue_cron_status "$@"
+            ;;
+        test|doctor|check)
+            shift || true
+            _queue_cron_test "$@"
             ;;
         explain|why)
             shift || true
@@ -10202,7 +10473,7 @@ _queue_cron_command() {
             echo "Removed bashqueues crontab: $target_user"
             ;;
         *)
-            echo "Usage: queue cron root|list [--all]|explain [user|--all|system]|class [USER] ENTRY CLASS|--clear|show [user]|preview [--now ISO]|tick [--dryrun]|edit [user]|remove [user]" >&2
+            echo "Usage: queue cron root|status|test|list [--all]|explain [user|--all|system]|class [USER] ENTRY CLASS|--clear|show [user]|preview [--now ISO]|tick [--dryrun]|edit [user]|remove [user]" >&2
             return 2
             ;;
     esac
@@ -11889,8 +12160,8 @@ EOF
                 show|explain)
                     local kind="${2:-}" name="${3:-}" file found_kind="" found_count=0 k
                     if [[ -z "$kind" ]]; then
-                        kind="class-statement"
-                        name="$(_queue_security_policy_statement_name)"
+                        _queue_policy_explain_effective_class_statement
+                        return $?
                     elif [[ -z "$name" ]]; then
                         # Friendly shorthand: queue policy show policyblock-test
                         # or queue policy explain.  Prefer the active class-statement

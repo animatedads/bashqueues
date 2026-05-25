@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 pass() { echo "[PASS] $*"; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.51"' queuebash.sh || fail "version not bumped"
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 
 grep -q 'runtime:only_local_sockets' caps.d/runtime.sh || fail "runtime:only_local_sockets facility missing"
 grep -q 'runtime:only_port' caps.d/runtime.sh || fail "runtime:only_port facility missing"

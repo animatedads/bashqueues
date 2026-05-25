@@ -601,6 +601,8 @@ Use the F2 command line for:
 ```text
 cron list
 cron root
+cron status
+cron test
 cron tick --dryrun
 ```
 

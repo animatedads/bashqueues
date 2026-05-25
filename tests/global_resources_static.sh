@@ -3,9 +3,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 - <<'PY'
 from pathlib import Path
+import re
 q = Path('queuebash.sh').read_text()
 p = Path('queuemgr_panel.py').read_text()
-assert 'QUEUEBASH_VERSION="0.17.51"' in q
+assert re.search(r'QUEUEBASH_VERSION=\"0\.[0-9]+\.[0-9]+\"', q)
 for needle in [
     'queue_class_global_exclusive_claim()',
     'queue_class_global_shared_claim()',

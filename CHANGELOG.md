@@ -1,3 +1,18 @@
+## 0.17.53 - Merged class-statement policy gate
+
+- The execution policy gate now loads and merges every discovered `class-statement` policy returned by `queue policy list`, instead of only sourcing the active/default statement.
+- Cumulative class-statement controls such as `CLASS_POLICY_BLOCK_CLASS_NAMES`, command block lists, weak-policy lists, selectable sandbox/seccomp lists, and authorisation requirements are merged so one policy file cannot erase another file's emergency block.
+- `queue policy explain` with no arguments now shows the effective merged class-statement policy, including the files loaded and the effective block/authorisation values.
+- Added `tests/class_statement_merge_static.sh`, including a runtime regression where a cron-generated class blocked from `policyblock-test.env` is moved to `pol_block` without running the payload.
+
+## 0.17.52 - Panel tab wrapping and cron health commands
+
+- Queue Manager top-level tabs now wrap over two rows, keeping all hotkey-labelled views visible on normal terminals as the UI grows.
+- Added `queue cron status` to show ticker/spool/state paths, user/system crontab counts, latest dispatch marker, and relevant systemd unit states.
+- Added `queue cron test` as a status-plus-dry-run tick check for cron bridge diagnostics.
+- Converted stale static-test version pins to version-shape assertions so routine version bumps stop causing noisy test churn.
+- Reworked `sandbox_unset_submit_static.sh` to use line-number analysis instead of broad awk pattern ranges.
+
 ## 0.17.51 - Cron class directives and test maintenance
 
 - Added local crontab class directives using `#class CLASS`, so operators can route a specific cron entry to an existing bashqueues class without hand-editing generated class hashes.

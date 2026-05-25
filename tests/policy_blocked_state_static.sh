@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-grep -q 'QUEUEBASH_VERSION="0.17.51"' queuebash.sh
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh
 grep -q 'pol_block' queuebash.sh
 grep -q '_queue_job_policy_execution_check' queuebash.sh
 grep -q 'No class claims, asset preflight checks, dynamic preflight checks, global claims, or payload launch were attempted' queuebash.sh

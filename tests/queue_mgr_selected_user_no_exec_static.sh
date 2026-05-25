@@ -12,7 +12,7 @@ pass() { echo "[PASS] $*"; }
 
 bash -n "$q" || fail "queuebash syntax"
 
-grep -q 'QUEUEBASH_VERSION="0.17.51"' "$q" || fail "queuebash version not 0.17.20"
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' "$q" || fail "queuebash version string missing/malformed"
 
 may_eval_block="$(awk '/^_queue_command_may_evaluate_queue_code\(\)/,/^}/ { print }' "$q")"
 [[ -n "$may_eval_block" ]] || fail "_queue_command_may_evaluate_queue_code block missing"

@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 pass(){ echo "[PASS] $*"; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.51"' queuebash.sh || fail "version not bumped"
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 [[ -f caps.d/runtime.sh ]] || fail "caps.d/runtime.sh missing"
 ! [[ -f assets.d/net_usage.sh ]] || fail "assets.d/net_usage.sh must remain removed"
 

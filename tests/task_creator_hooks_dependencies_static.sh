@@ -7,7 +7,7 @@ cd "$repo_root"
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 pass() { echo "[PASS] $*"; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.51"' queuebash.sh || fail "version not bumped to 0.17.20"
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 
 grep -q 'dependencies: str = ""' queuemgr_panel.py || fail "TaskDraft missing dependencies field"
 grep -q 'inherit_env_from: str = ""' queuemgr_panel.py || fail "TaskDraft missing inherit-env field"

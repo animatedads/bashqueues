@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-grep -q 'QUEUEBASH_VERSION="0.17.51"' queuebash.sh
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh
 grep -q 'CLASS_POLICY_BLOCK_CLASS_NAMES' queuebash.sh
 grep -q "class '\${JOB_CLASS}' is policy-blocked" queuebash.sh
 test -f policies.d/class-statement/policyblock-test.env

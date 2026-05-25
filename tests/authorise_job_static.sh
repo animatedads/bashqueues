@@ -3,10 +3,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 - <<'PY'
 from pathlib import Path
+import re
 q = Path('queuebash.sh').read_text()
 panel = Path('queuemgr_panel.py').read_text()
 cron = Path('bin/bashqueues-cron-ticker.py').read_text()
-assert 'QUEUEBASH_VERSION="0.17.51"' in q
+assert re.search(r'QUEUEBASH_VERSION=\"0\.[0-9]+\.[0-9]+\"', q)
 assert 'user="${QUEUEBASH_SELECTED_USER:-}"' in q
 assert '_queue_root_owner_user 2>/dev/null' in q
 assert '_queue_authorise_job()' in q
