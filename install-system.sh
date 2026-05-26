@@ -135,7 +135,7 @@ for item in queuemgr_panel.py queuemgr.sh publish_to_github.sh COPYING_NOTE.md; 
   install -m 0755 "$src_dir/$item" "$share_dir/$item"
 done
 
-for dir in assets.d caps.d classes policies.d docs bin systemd tests; do
+for dir in assets.d caps.d reporters.d classes policies.d docs bin systemd tests; do
   [[ -d "$src_dir/$dir" ]] || continue
   install -d -m 0755 "$share_dir/$dir"
   # Preserve tree contents but do not delete local additions under share.

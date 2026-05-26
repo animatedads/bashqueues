@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.63"
+QUEUEBASH_VERSION="0.17.65"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -347,6 +347,41 @@ _queue_install_bundled_asset_plugins() {
     shopt -u nullglob
 }
 
+
+_queue_install_bundled_reporter_plugins() {
+    local root="$(_queue_root)"
+    local source_dir="${QUEUEBASH_REPORTER_PLUGIN_SOURCE_DIR:-}"
+    local src dst base script_dir
+
+    if [[ -z "$source_dir" ]]; then
+        if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+            if [[ -n "$script_dir" && -d "$script_dir/reporters.d" ]]; then
+                source_dir="$script_dir/reporters.d"
+            fi
+        fi
+    fi
+
+    if [[ -z "$source_dir" && -d "./reporters.d" ]]; then
+        source_dir="./reporters.d"
+    fi
+
+    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
+
+    mkdir -p "$root/reporters.d"
+    shopt -s nullglob
+    for src in "$source_dir"/*.sh; do
+        [[ -f "$src" ]] || continue
+        base="$(basename "$src")"
+        dst="$root/reporters.d/$base"
+        if [[ ! -e "$dst" && ! -e "$root/reporters.d/.disabled/$base" ]]; then
+            cp "$src" "$dst"
+            chmod +x "$dst" 2>/dev/null || true
+        fi
+    done
+    shopt -u nullglob
+}
+
 _queue_install_bundled_cap_plugins() {
     local root="$(_queue_root)"
     local source_dir="${QUEUEBASH_CAP_PLUGIN_SOURCE_DIR:-}"
@@ -422,7 +457,7 @@ _queue_init() {
     local default_class="${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}"
     local default_file="$root/classes/$default_class.env"
 
-    mkdir -p "$root"/{pending,running,paused,done,failed,pol_blocked,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,caps.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets}
+    mkdir -p "$root"/{pending,running,paused,done,failed,pol_blocked,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,caps.d,reporters.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets}
 
     if [[ ! -f "$default_file" ]]; then
         cat > "$default_file" <<'EOF'
@@ -447,6 +482,7 @@ EOF
     _queue_install_bundled_classes
     _queue_install_bundled_asset_plugins
     _queue_install_bundled_cap_plugins
+    _queue_install_bundled_reporter_plugins
     _queue_install_bundled_policies
 
 }
@@ -4619,6 +4655,141 @@ _queue_json_escape() {
     printf '%s' "$s"
 }
 
+
+_queue_reporting_policy_candidates() {
+    local root script_dir
+    root="$(_queue_root)"
+    if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+    fi
+    printf '%s\n' \
+        "/etc/bashqueues/reporting.env" \
+        "/etc/bashqueues/policies.d/reporting/default.env" \
+        "$root/policies.d/reporting/default.env" \
+        "$root/reporting.env"
+    if [[ -n "${script_dir:-}" ]]; then
+        printf '%s\n' "$script_dir/policies.d/reporting/default.env"
+    fi
+}
+
+_queue_reporting_source_config() {
+    local f
+    while IFS= read -r f; do
+        [[ -r "$f" ]] || continue
+        # Reporting policy files are trusted local env-style policy/config files.
+        # They define destinations and enablement flags, not shell supplied by jobs.
+        # shellcheck disable=SC1090
+        source "$f"
+    done < <(_queue_reporting_policy_candidates)
+}
+
+_queue_reporter_plugin_looks_like_plugin() {
+    local plugin="$1"
+    [[ -f "$plugin" ]] || return 1
+    grep -Eq '^[[:space:]]*(function[[:space:]]+)?queue_reporter_handle_event[[:space:]]*(\(\))?[[:space:]]*\{' "$plugin" 2>/dev/null || return 1
+    return 0
+}
+
+_queue_reporter_scan() {
+    local root="$(_queue_root)" plugin base
+    shopt -s nullglob
+    for plugin in "$root/reporters.d"/*.sh; do
+        [[ -f "$plugin" ]] || continue
+        base="$(basename "$plugin")"
+        if ! _queue_reporter_plugin_looks_like_plugin "$plugin"; then
+            echo "INVALID helper=$base not_reporter_plugin"
+            continue
+        fi
+        (
+            exec </dev/null
+            export QUEUEBASH_REPORTER_DISCOVERY=1
+            source "$plugin" >/dev/null 2>&1 || { echo "INVALID helper=$base source_failed"; exit 0; }
+            if declare -F queue_reporter_facilities >/dev/null 2>&1; then
+                queue_reporter_facilities | awk -v helper="$base" 'NF {print $0 "\t" helper}'
+            else
+                printf 'reporter:%s\tEvent reporter plugin\t%s\n' "${base%.sh}" "$base"
+            fi
+        )
+    done | awk '
+        /^INVALID / { if (!seen_invalid[$0]++) print; next }
+        { key=$1; if (key == "") next; if (!seen[key]++) print }
+    '
+    shopt -u nullglob
+}
+
+_queue_reporters_list_json() {
+    local first=0 line facility rest helper
+    printf '{"queue_root":"%s","reporters":[' "$(_queue_json_escape "$(_queue_root)")"
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        _queue_json_comma first
+        if [[ "$line" == INVALID* ]]; then
+            printf '{"valid":false,"raw":"%s"}' "$(_queue_json_escape "$line")"
+            continue
+        fi
+        facility="${line%%[[:space:]]*}"
+        rest="${line#${facility}}"; rest="${rest# }"
+        helper="${line##*$'\t'}"
+        printf '{"valid":true,"facility":"%s","detail":"%s","helper":"%s"}' \
+            "$(_queue_json_escape "$facility")" "$(_queue_json_escape "$rest")" "$(_queue_json_escape "$helper")"
+    done < <(_queue_reporter_scan | sort)
+    printf ']}\n'
+}
+
+
+_queue_reporter_csv_has() {
+    local list="${1:-}" needle="${2:-}" item
+    list="${list// /}"
+    IFS=',' read -r -a _qb_reporter_csv_items <<< "$list"
+    for item in "${_qb_reporter_csv_items[@]}"; do
+        [[ "$item" == "$needle" || "$item" == "*" ]] && return 0
+    done
+    return 1
+}
+
+_queue_report_event() {
+    local event="$1" job_id="${2:-}" job_name="${3:-}" state="${4:-}" extra="${5:-}" ts="${6:-}"
+    local root plugin base rc=0 sync enabled short
+
+    root="$(_queue_root)"
+    _queue_reporting_source_config
+
+    [[ "${QUEUEBASH_REPORTING_DISABLE:-0}" == "1" ]] && return 0
+    enabled="${QUEUEBASH_REPORTERS:-${QUEUEBASH_REPORTER_PLUGINS:-}}"
+    [[ -n "$enabled" ]] || return 0
+    mkdir -p "$root/logs"
+    sync="${QUEUEBASH_REPORTING_SYNC:-0}"
+
+    shopt -s nullglob
+    for plugin in "$root/reporters.d"/*.sh; do
+        [[ -f "$plugin" ]] || continue
+        base="$(basename "$plugin")"
+        short="${base%.sh}"
+        _queue_reporter_csv_has "$enabled" "$short" || _queue_reporter_csv_has "$enabled" "$base" || continue
+        _queue_reporter_plugin_looks_like_plugin "$plugin" || continue
+
+        if [[ "$sync" == "1" ]]; then
+            (
+                exec </dev/null
+                export QUEUEBASH_EVENT_TS="$ts" QUEUEBASH_EVENT_NAME="$event" QUEUEBASH_EVENT_JOB_ID="$job_id" \
+                    QUEUEBASH_EVENT_JOB_NAME="$job_name" QUEUEBASH_EVENT_STATE="$state" QUEUEBASH_EVENT_DETAIL="$extra"
+                source "$plugin" >/dev/null 2>&1 || exit 0
+                queue_reporter_handle_event "$event" "$job_id" "$job_name" "$state" "$extra" "$ts"
+            ) 2>>"$root/logs/reporters.err" || rc=1
+        else
+            (
+                exec </dev/null >/dev/null 2>>"$root/logs/reporters.err"
+                export QUEUEBASH_EVENT_TS="$ts" QUEUEBASH_EVENT_NAME="$event" QUEUEBASH_EVENT_JOB_ID="$job_id" \
+                    QUEUEBASH_EVENT_JOB_NAME="$job_name" QUEUEBASH_EVENT_STATE="$state" QUEUEBASH_EVENT_DETAIL="$extra"
+                source "$plugin" >/dev/null 2>&1 || exit 0
+                queue_reporter_handle_event "$event" "$job_id" "$job_name" "$state" "$extra" "$ts"
+            ) &
+        fi
+    done
+    shopt -u nullglob
+    return "$rc"
+}
+
 _queue_log_event() {
     local event="$1"
     local job_id="${2:-}"
@@ -4643,6 +4814,8 @@ _queue_log_event() {
         fi
         printf '}\n'
     } >> "$root/events.jsonl"
+
+    _queue_report_event "$event" "$job_id" "$job_name" "$state" "$extra" "$ts" 2>/dev/null || true
 }
 
 _queue_job_file_state() {
@@ -13486,6 +13659,25 @@ EOF
             _queue_class_refresh_from_dir "$src_dir"
             ;;
 
+
+        reporters|reporting)
+            local action="${1:-list}"
+            case "$action" in
+                list|"")
+                    if [[ "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then
+                        _queue_reporters_list_json
+                    else
+                        echo "=== queue reporter plugins ==="
+                        _queue_reporter_scan | sort
+                    fi
+                    ;;
+                *)
+                    echo "Usage: queue reporters list [--json]" >&2
+                    return 2
+                    ;;
+            esac
+            ;;
+
         assets|facilities)
             local action="${1:-list}"
             case "$action" in
@@ -15504,7 +15696,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit submit-at submit-in list ls find show status stat explain deps dependencies waiting blocked scheduled schedule tail stream follow class classes assets facilities claims resources pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V backup reevaluate re-evaluate recheck policy-reevaluate help --help -h"
+    local commands="--dryrun -n submit submit-at submit-in list ls find show status stat explain deps dependencies waiting blocked scheduled schedule tail stream follow class classes assets facilities reporters reporting claims resources pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V backup reevaluate re-evaluate recheck policy-reevaluate help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )

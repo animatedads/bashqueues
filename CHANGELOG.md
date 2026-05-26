@@ -1,9 +1,25 @@
 ## 0.17.63 - queue dev execution flow graph
 
+## 0.17.65 - Microsoft reporting plugin
+
+- Added `reporters.d/ms.sh` for explicit opt-in Microsoft Notify event reporting.
+- Added reporting policy examples for Fabric/Sentinel/Log Analytics-style ingestion endpoints.
+- Added static and smoke coverage for Microsoft reporter discovery and dispatch.
+- Kept `assets.d/net_usage.sh` absent; `net:allowance` remains canonical in `assets.d/net.sh`.
+
 - Added `queue dev flow` / `queue dev graph` / `queue dev paths` for static function-call and branch-path analysis.
 - Flow output is JSON-first and reports function nodes, call edges, branch nodes, terminal return/exit nodes, and per-function callees.
 - Heredoc bodies are masked during flow analysis so embedded Python or other languages do not create false Bash branch noise.
 - Added regression tests for execution-flow JSON and heredoc masking.
+
+## 0.17.64 - Reporting plugin event observer
+
+- Added queue reporting plugins under `reporters.d/` with metadata-only discovery.
+- Added `queue reporters list [--json]`.
+- Added bundled SNMP INFORM reporter, disabled unless explicitly enabled/configured by reporting policy.
+- Added reporting policy template under `policies.d/reporting/default.env`.
+- Kept `assets.d/net_usage.sh` absent; `net:allowance` remains canonical in `assets.d/net.sh`.
+
 
 ## 0.17.62 - queue dev hardening
 
