@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.76"
+QUEUEBASH_VERSION="0.17.78"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -15130,16 +15130,30 @@ EOF
             echo "------------------------"
 
             local state f name submitted count total=0
-            for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+            # policy_blocked is a legacy compatibility state.  The canonical
+            # policy-blocked state is pol_blocked, so do not expose a separate
+            # policy_blocked statistic here.
+            for state in pending running paused done failed pol_blocked interrupted cancelled deleted; do
                 count=0
-                for f in "$root/$state"/*.job; do
-                    [[ -e "$f" ]] || continue
-                    name="$(_queue_job_name "$f")"
-                    submitted="$(grep '^SUBMITTED_AT=' "$f" 2>/dev/null | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
-                    [[ -n "$filter_name" && "$name" != "$filter_name" ]] && continue
-                    [[ "$today" -eq 1 && "$submitted" != "$today_prefix"* ]] && continue
-                    count=$((count + 1))
-                done
+                if [[ "$state" == "pending" ]]; then
+                    while IFS= read -r f; do
+                        [[ -f "$f" ]] || continue
+                        name="$(_queue_job_name "$f")"
+                        submitted="$(_queue_job_field_fast "$f" SUBMITTED_AT 2>/dev/null || true)"
+                        [[ -n "$filter_name" && "$name" != "$filter_name" ]] && continue
+                        [[ "$today" -eq 1 && "$submitted" != "$today_prefix"* ]] && continue
+                        count=$((count + 1))
+                    done < <(_queue_pending_job_files "$root")
+                else
+                    for f in "$root/$state"/*.job; do
+                        [[ -e "$f" ]] || continue
+                        name="$(_queue_job_name "$f")"
+                        submitted="$(_queue_job_field_fast "$f" SUBMITTED_AT 2>/dev/null || true)"
+                        [[ -n "$filter_name" && "$name" != "$filter_name" ]] && continue
+                        [[ "$today" -eq 1 && "$submitted" != "$today_prefix"* ]] && continue
+                        count=$((count + 1))
+                    done
+                fi
                 total=$((total + count))
                 printf "%-10s %6d\n" "$state:" "$count"
             done

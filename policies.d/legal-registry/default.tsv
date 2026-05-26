@@ -1,0 +1,7 @@
+# bashqueues legal registry template
+# Format:
+# id  legal_class  retention_until  jurisdiction_scope  destructive_allowed  export_allowed
+#
+# Examples:
+# dataset:case-123  LITIGATION_HOLD  2031-01-01  UK_DPA  0  1
+# dataset:reporting  NONE  -  UK_DPA,GDPR  1  1

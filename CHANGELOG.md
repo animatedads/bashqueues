@@ -1,3 +1,21 @@
+## 0.17.78 - stats pending bucket counts
+
+- Fixed `queue stats` pending counts to include priority-bucketed pending jobs under `pending/p*/`.
+- `queue stats` now normalises legacy flat `pending/*.job` files through the bucket-aware pending scanner before counting.
+- Removed the legacy `policy_blocked` statistic from `queue stats`; `pol_blocked` remains the canonical policy-blocked state.
+- Added static and smoke tests for bucket-aware pending stats and legacy `policy_blocked` omission.
+- Confirmed `assets.d/net_usage.sh` remains absent; `net:allowance` remains canonical in `assets.d/net.sh`.
+
+## 0.17.77 - FinOps/legal governance rails
+
+- Added `finops:anomaly_free` worker asset check backed by local `streams/finops.health`.
+- Added `bin/queue-finops-analyze` to compute rolling price baselines and atomically write health/cache files.
+- Added `assets.d/legal.sh` with registry-backed `legal:retention_respected` and `legal:jurisdiction_allowed`.
+- Added `CLOUD_MULTI_FINOPS_SENSITIVE`, `LEGAL_READONLY`, and `LEGAL_COMPLIANCE` class templates.
+- Added legal registry template and FinOps/legal governance documentation.
+- Added static and smoke tests for the FinOps/legal governance rail.
+- `assets.d/net_usage.sh` remains absent; `caps.d/net_usage.sh` may remain for compatibility.
+
 ## 0.17.76 - execution environment profiles
 
 - Added first-class execution environment profiles under `envs.d/` for `test`, `staging`, and `live`.

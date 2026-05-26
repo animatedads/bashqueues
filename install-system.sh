@@ -147,6 +147,9 @@ for dir in assets.d caps.d reporters.d classes envs.d policies.d docs bin system
   find "$share_dir/$dir" -type d -exec chmod 0755 {} + 2>/dev/null || true
   find "$share_dir/$dir" -type f -name '*.sh' -exec chmod 0755 {} + 2>/dev/null || true
   find "$share_dir/$dir" -type f ! -name '*.sh' -exec chmod 0644 {} + 2>/dev/null || true
+  if [[ "$dir" == "bin" ]]; then
+    find "$share_dir/$dir" -type f -exec chmod 0755 {} + 2>/dev/null || true
+  fi
 done
 
 # Install shared policy templates without overwriting site edits.
