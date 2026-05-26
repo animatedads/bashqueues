@@ -139,7 +139,7 @@ done
 # It can perform SSH/Git operations and must not be copied into /usr/local/share/bashqueues.
 rm -f -- "$share_dir/publish_to_github.sh"
 
-for dir in assets.d caps.d reporters.d classes policies.d docs bin systemd tests; do
+for dir in assets.d caps.d reporters.d classes envs.d policies.d docs bin systemd tests; do
   [[ -d "$src_dir/$dir" ]] || continue
   install -d -m 0755 "$share_dir/$dir"
   # Preserve tree contents but do not delete local additions under share.

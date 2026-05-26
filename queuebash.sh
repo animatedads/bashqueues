@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.75"
+QUEUEBASH_VERSION="0.17.76"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -264,6 +264,37 @@ _queue_install_bundled_classes() {
     shopt -u nullglob
 }
 
+_queue_install_bundled_env_profiles() {
+    local root="$(_queue_root)"
+    local source_dir="${QUEUEBASH_ENV_SOURCE_DIR:-}"
+    local src dst base script_dir
+
+    if [[ -z "$source_dir" ]]; then
+        if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+            if [[ -n "$script_dir" && -d "$script_dir/envs.d" ]]; then
+                source_dir="$script_dir/envs.d"
+            fi
+        fi
+    fi
+
+    if [[ -z "$source_dir" && -d "./envs.d" ]]; then
+        source_dir="./envs.d"
+    fi
+
+    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
+
+    mkdir -p "$root/envs.d"
+    shopt -s nullglob
+    for src in "$source_dir"/*.env; do
+        [[ -f "$src" ]] || continue
+        base="$(basename "$src")"
+        dst="$root/envs.d/$base"
+        [[ ! -e "$dst" && ! -e "$root/envs.d/.disabled/$base" ]] && cp "$src" "$dst"
+    done
+    shopt -u nullglob
+}
+
 
 _queue_obsolete_asset_plugins() {
     # Asset-side net_usage was removed. Runtime net usage accounting now lives
@@ -457,7 +488,7 @@ _queue_init() {
     local default_class="${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}"
     local default_file="$root/classes/$default_class.env"
 
-    mkdir -p "$root"/{pending,running,paused,done,failed,pol_blocked,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,caps.d,reporters.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets}
+    mkdir -p "$root"/{pending,running,paused,done,failed,pol_blocked,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,envs.d,assets.d,caps.d,reporters.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets}
 
     if [[ ! -f "$default_file" ]]; then
         cat > "$default_file" <<'EOF'
@@ -480,6 +511,7 @@ EOF
 
 
     _queue_install_bundled_classes
+    _queue_install_bundled_env_profiles
     _queue_install_bundled_asset_plugins
     _queue_install_bundled_cap_plugins
     _queue_install_bundled_reporter_plugins
@@ -1393,6 +1425,98 @@ _queue_class_refresh_one() {
     echo "Replaced class definition: $dst"
     [[ -n "$backup" ]] && echo "Backup: $backup"
     echo "Metadata: $meta"
+}
+
+
+# -----------------------------------------------------------------------------
+# Execution environment profiles (test/live/staging worlds)
+# -----------------------------------------------------------------------------
+_queue_env_valid_name() { [[ "${1:-}" =~ ^[A-Za-z0-9_.-]+$ ]]; }
+_queue_env_dir() { printf '%s/envs.d\n' "$(_queue_root)"; }
+_queue_env_file() { local name="${1:-}"; _queue_env_valid_name "$name" || return 2; printf '%s/%s.env\n' "$(_queue_env_dir)" "$name"; }
+
+_queue_env_load() {
+    local name="${1:-}" f
+    f="$(_queue_env_file "$name")" || return 2
+    [[ -f "$f" ]] || return 1
+    EXEC_ENV_NAME="" EXEC_ENV_LABEL="" EXEC_ENV_CHROOT_MODE="" EXEC_ENV_CHROOT_ROOT=""
+    EXEC_ENV_READONLY_ROOT="" EXEC_ENV_WRITABLE_PATHS="" EXEC_ENV_SECRET_SCOPE=""
+    EXEC_ENV_ENDPOINT_SCOPE="" EXEC_ENV_DATA_SCOPE="" EXEC_ENV_CONFIRMATION_REQUIRED=""
+    source "$f" >/dev/null 2>&1 || return 3
+    [[ -n "${EXEC_ENV_NAME:-}" ]] || EXEC_ENV_NAME="$name"
+    [[ "$EXEC_ENV_NAME" == "$name" ]] || return 4
+    return 0
+}
+
+_queue_env_validate_one() {
+    local name="${1:-}" json="${2:-0}" f rc=0 reason="ok" valid=false
+    f="$(_queue_env_file "$name" 2>/dev/null || true)"
+    if [[ -z "$f" ]]; then rc=2; reason="invalid_name"
+    elif [[ ! -f "$f" ]]; then rc=1; reason="not_found"
+    elif ! bash -n "$f" >/dev/null 2>&1; then rc=3; reason="syntax_error"
+    elif ! _queue_env_load "$name" >/dev/null 2>&1; then rc=4; reason="load_or_name_mismatch"
+    fi
+    [[ "$rc" -eq 0 ]] && valid=true
+    if [[ "$json" == "1" ]]; then
+        printf '{"name":"%s","valid":%s,"reason":"%s","file":"%s"}\n' "$(_queue_json_escape "$name")" "$valid" "$(_queue_json_escape "$reason")" "$(_queue_json_escape "$f")"
+    else
+        if [[ "$rc" -eq 0 ]]; then echo "env profile OK: $name"; echo "file: $f"; else echo "env profile invalid: $name reason=$reason file=$f" >&2; fi
+    fi
+    return "$rc"
+}
+
+_queue_env_list() {
+    local json=0 root f first=1 name
+    while [[ "$#" -gt 0 ]]; do case "$1" in --json|-j) json=1; shift ;; *) shift ;; esac; done
+    root="$(_queue_root)"; mkdir -p "$root/envs.d"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"queue_root":"%s","profiles":[' "$(_queue_json_escape "$root")"
+        shopt -s nullglob
+        for f in "$root/envs.d"/*.env; do [[ -f "$f" ]] || continue; name="$(basename "$f" .env)"; _queue_json_comma first; printf '{"name":"%s","file":"%s"}' "$(_queue_json_escape "$name")" "$(_queue_json_escape "$f")"; done
+        shopt -u nullglob
+        printf ']}\n'
+    else
+        printf '%-20s %s\n' "PROFILE" "FILE"
+        shopt -s nullglob
+        for f in "$root/envs.d"/*.env; do [[ -f "$f" ]] || continue; printf '%-20s %s\n' "$(basename "$f" .env)" "$f"; done
+        shopt -u nullglob
+    fi
+}
+
+_queue_env_show() {
+    local name="${1:-}" json=0 f
+    shift || true
+    while [[ "$#" -gt 0 ]]; do case "$1" in --json|-j) json=1; shift ;; *) shift ;; esac; done
+    [[ -n "$name" ]] || { echo "Usage: queue env show NAME [--json]" >&2; return 2; }
+    f="$(_queue_env_file "$name")" || { echo "queue env show: invalid profile name: $name" >&2; return 2; }
+    [[ -f "$f" ]] || { echo "queue env show: profile not found: $name" >&2; return 1; }
+    _queue_env_load "$name" || { echo "queue env show: profile failed validation: $name" >&2; return 3; }
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"name":"%s","file":"%s","label":"%s","chroot_mode":"%s","chroot_root":"%s","secret_scope":"%s","endpoint_scope":"%s","data_scope":"%s","confirmation_required":"%s"}\n' \
+          "$(_queue_json_escape "$EXEC_ENV_NAME")" "$(_queue_json_escape "$f")" "$(_queue_json_escape "${EXEC_ENV_LABEL:-}")" "$(_queue_json_escape "${EXEC_ENV_CHROOT_MODE:-off}")" "$(_queue_json_escape "${EXEC_ENV_CHROOT_ROOT:-}")" "$(_queue_json_escape "${EXEC_ENV_SECRET_SCOPE:-}")" "$(_queue_json_escape "${EXEC_ENV_ENDPOINT_SCOPE:-}")" "$(_queue_json_escape "${EXEC_ENV_DATA_SCOPE:-}")" "$(_queue_json_escape "${EXEC_ENV_CONFIRMATION_REQUIRED:-0}")"
+    else
+        echo "Execution environment: $EXEC_ENV_NAME"
+        echo "file:                  $f"
+        echo "label:                 ${EXEC_ENV_LABEL:-}"
+        echo "chroot mode:           ${EXEC_ENV_CHROOT_MODE:-off}"
+        echo "chroot root:           ${EXEC_ENV_CHROOT_ROOT:-}"
+        echo "readonly root:         ${EXEC_ENV_READONLY_ROOT:-0}"
+        echo "writable paths:        ${EXEC_ENV_WRITABLE_PATHS:-}"
+        echo "secret scope:          ${EXEC_ENV_SECRET_SCOPE:-}"
+        echo "endpoint scope:        ${EXEC_ENV_ENDPOINT_SCOPE:-}"
+        echo "data scope:            ${EXEC_ENV_DATA_SCOPE:-}"
+        echo "confirmation required: ${EXEC_ENV_CONFIRMATION_REQUIRED:-0}"
+    fi
+}
+
+_queue_env_command() {
+    case "${1:-list}" in
+        list|ls|"") shift || true; _queue_env_list "$@" ;;
+        show|explain) shift || true; _queue_env_show "$@" ;;
+        validate|check) shift || true; local name="${1:-}" json=0; shift || true; while [[ "$#" -gt 0 ]]; do case "$1" in --json|-j) json=1; shift ;; *) shift ;; esac; done; [[ -n "$name" ]] || { echo "Usage: queue env validate NAME [--json]" >&2; return 2; }; _queue_env_validate_one "$name" "$json" ;;
+        path) shift || true; local name="${1:-}"; [[ -n "$name" ]] || { echo "Usage: queue env path NAME" >&2; return 2; }; _queue_env_file "$name" ;;
+        *) echo "Usage: queue env list|show NAME|validate NAME|path NAME" >&2; return 2 ;;
+    esac
 }
 
 _queue_classes_refresh() {
@@ -4459,6 +4583,8 @@ _queue_class_load_defaults_for_class() {
         CLASS_DEFAULT_RUNTIME_CAP_PORTS=""
         CLASS_DEFAULT_SECCOMP_PROFILE=""
         CLASS_DEFAULT_SECCOMP_ALLOW=""
+        CLASS_EXEC_ENV=""
+        CLASS_DEFAULT_EXEC_ENV=""
 
         # Execution/cost caps.
         CLASS_DEFAULT_CPU_SECONDS=""
@@ -4496,6 +4622,7 @@ _queue_class_load_defaults_for_class() {
         [[ -n "${CLASS_DEFAULT_RUNTIME_CAP_PORTS:-}" ]] && printf 'RUNTIME_CAP_PORTS\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAP_PORTS"
         [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILE:-}" ]] && printf 'SECCOMP_PROFILE\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILE"
         [[ -n "${CLASS_DEFAULT_SECCOMP_ALLOW:-}" ]] && printf 'SECCOMP_ALLOW\t%s\n' "$CLASS_DEFAULT_SECCOMP_ALLOW"
+        [[ -n "${CLASS_DEFAULT_EXEC_ENV:-${CLASS_EXEC_ENV:-}}" ]] && printf 'EXEC_ENV\t%s\n' "${CLASS_DEFAULT_EXEC_ENV:-${CLASS_EXEC_ENV:-}}"
 
         [[ -n "${CLASS_DEFAULT_CPU_SECONDS:-}" ]] && printf 'CPU_SECONDS\t%s\n' "$CLASS_DEFAULT_CPU_SECONDS"
         [[ -n "${CLASS_DEFAULT_WALL_SECONDS:-}" ]] && printf 'WALL_SECONDS\t%s\n' "$CLASS_DEFAULT_WALL_SECONDS"
@@ -11866,6 +11993,10 @@ Usage:
   queue clear deleted [--dryrun]
   queue clear all [--dryrun]
 
+  queue env list
+  queue env show NAME [--json]
+  queue env validate NAME [--json]
+
   queue limits
   queue version
   queue help
@@ -13660,6 +13791,9 @@ queue() {
             ;;
         global|globals)
             _queue_global_command "$@"
+            ;;
+        env|envs|environment|environments)
+            _queue_env_command "$@"
             ;;
         draft|drafts)
             _queue_draft_command "$@"

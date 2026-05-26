@@ -1,3 +1,14 @@
+## 0.17.76 - execution environment profiles
+
+- Added first-class execution environment profiles under `envs.d/` for `test`, `staging`, and `live`.
+- Added `queue env list`, `queue env show NAME [--json]`, `queue env validate NAME [--json]`, and `queue env path NAME`.
+- Added `assets.d/env.sh` with `env:profile_valid`, `env:profile_required`, `env:secret_scope`, `env:endpoint_scope`, and `env:chroot_available`.
+- Added `CLASS_EXEC_ENV` / `CLASS_DEFAULT_EXEC_ENV` class default stamping as `EXEC_ENV` in job files.
+- Added `classes/ENV_TEST.env` and `classes/ENV_LIVE.env` templates.
+- Added execution environment documentation and static/smoke tests.
+- This is phase 1: metadata, UI, class linkage, and asset gates. Runner-level chroot/systemd `RootDirectory=` enforcement is deliberately reserved for a later release.
+- Confirmed `assets.d/net_usage.sh` remains absent; `net:allowance` remains canonical in `assets.d/net.sh`.
+
 ## 0.17.75 - integrity asset gates
 
 - Added `assets.d/integrity.sh` with `integrity:file_sha256`, `integrity:manifest_verified`, and `integrity:tree_manifest_verified`.
