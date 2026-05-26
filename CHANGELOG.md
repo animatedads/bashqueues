@@ -1,3 +1,22 @@
+
+## 0.17.74 - worker hotloop priority bucket dispatch fix
+
+- Store pending jobs in priority bucket directories at submit time so workers can walk pending work in priority order without repeatedly sorting/scoring the full pending set.
+- Rebucket pending jobs when `queue priority` changes PRIORITY.
+- Keep legacy `pending/*.job` discovery for queues created by older releases.
+- Move class/resource preflight to after the atomic pending-to-running claim to avoid all workers repeatedly preflighting the same top candidate.
+- Reduce expensive pending-to-running move failure diagnostics for normal multi-worker claim races.
+- Add worker priority bucket static and smoke tests.
+- Keep `assets.d/net_usage.sh` absent; `caps.d/net_usage.sh` remains allowed.
+
+## 0.17.73 - Cleared job audit listing
+
+- Added `queue cleared` / `queue clearance list` / `queue audit cleared` to list jobs that passed execution policy, class/resource checks, mandatory policy assets, dynamic preflight, and global claims.
+- Added JSON output for cleared-job audit processing, including clearance stage, policy statement, class, security exemption/authorisation summary, governance metadata, timings, return code, and command line.
+- Added `clearance` object to `queue status --json` for fast single-job automation checks.
+- Worker now stamps `JOB_CLEARED*` metadata and emits a `cleared` event immediately before payload dispatch.
+- Confirmed `assets.d/net_usage.sh` remains absent; `net:allowance` remains canonical in `assets.d/net.sh`.
+
 ## 0.17.72 - Endpoint sovereignty governance
 
 - Added `endpoint` asset family to extend sovereignty checks from worker placement to outbound submission endpoints.

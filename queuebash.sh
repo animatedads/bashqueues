@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.72"
+QUEUEBASH_VERSION="0.17.74"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -511,10 +511,134 @@ _queue_job_pri() {
     printf '%s\n' "$pri"
 }
 
+
+_queue_pending_bucket_key() {
+    # Higher numeric PRIORITY dispatches first. Invert into fixed-width key so
+    # shell glob order over pending/p*/ is priority order without worker-side sort.
+    local pri="${1:-10}"
+    [[ "$pri" =~ ^-?[0-9]+$ ]] || pri=10
+    printf 'p%010d\n' $((1000000000 - pri))
+}
+
+_queue_pending_path_for_priority() {
+    local id="$1"
+    local pri="${2:-10}"
+    local root="${3:-$(_queue_root)}"
+    printf '%s/pending/%s/%s.job\n' "$root" "$(_queue_pending_bucket_key "$pri")" "$id"
+}
+
+_queue_pending_job_files() {
+    local root="${1:-$(_queue_root)}"
+    local d f
+    shopt -s nullglob
+    for d in "$root/pending"/p*/; do
+        [[ -d "$d" ]] || continue
+        for f in "$d"*.job; do
+            [[ -f "$f" ]] && printf '%s\n' "$f"
+        done
+    done
+    for f in "$root/pending"/*.job; do
+        [[ -f "$f" ]] && printf '%s\n' "$f"
+    done
+    shopt -u nullglob
+}
+
+_queue_job_pending_path_by_id() {
+    local id="$1"
+    local root="${2:-$(_queue_root)}"
+    local f
+    [[ -n "$id" ]] || return 1
+    if [[ -f "$root/pending/$id.job" ]]; then
+        printf '%s\n' "$root/pending/$id.job"
+        return 0
+    fi
+    shopt -s nullglob
+    for f in "$root/pending"/p*/"$id.job"; do
+        if [[ -f "$f" ]]; then
+            shopt -u nullglob
+            printf '%s\n' "$f"
+            return 0
+        fi
+    done
+    shopt -u nullglob
+    return 1
+}
+
+_queue_job_is_pending_path() {
+    local f="$1"
+    local root="${2:-$(_queue_root)}"
+    case "$f" in
+        "$root/pending/"*.job|"$root/pending/"p*/*.job) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_queue_state_for_job_path() {
+    local f="$1"
+    local root="${2:-$(_queue_root)}"
+    case "$f" in
+        "$root/pending/"*.job|"$root/pending/"p*/*.job) printf 'pending\n' ;;
+        *) basename "$(dirname "$f")" ;;
+    esac
+}
+
+_queue_rebucket_pending_job() {
+    local f="$1"
+    local pri="${2:-10}"
+    local root="${3:-$(_queue_root)}"
+    local id dest
+    [[ -f "$f" ]] || return 1
+    _queue_job_is_pending_path "$f" "$root" || return 0
+    id="$(basename "$f" .job)"
+    dest="$(_queue_pending_path_for_priority "$id" "$pri" "$root")"
+    mkdir -p -- "$(dirname "$dest")"
+    [[ "$f" == "$dest" ]] && return 0
+    mv -f -- "$f" "$dest"
+}
+
+_queue_move_to_pending_bucket() {
+    local src="$1"
+    local id="${2:-}"
+    local root="${3:-$(_queue_root)}"
+    local pri dest
+    [[ -f "$src" ]] || return 1
+    [[ -n "$id" ]] || id="$(basename "$src" .job)"
+    pri="$(_queue_job_pri "$src" 2>/dev/null || echo 10)"
+    dest="$(_queue_pending_path_for_priority "$id" "$pri" "$root")"
+    mkdir -p -- "$(dirname "$dest")"
+    mv -f -- "$src" "$dest"
+}
+
+_queue_job_field_fast() {
+    local f="$1"
+    local key="$2"
+    local line val have=0
+    [[ -f "$f" ]] || return 1
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        case "$line" in
+            "$key="*) val="${line#*=}"; have=1 ;;
+        esac
+    done < "$f"
+    [[ "$have" -eq 1 ]] || return 1
+    val="${val%\'}"; val="${val#\'}"
+    val="${val%\"}"; val="${val#\"}"
+    printf '%s\n' "$val"
+}
+
 _queue_job_id_and_names_for_completion() {
     local root="$(_queue_root)"
     local state f id name
     for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ "$state" == "pending" ]]; then
+            while IFS= read -r f; do
+                [[ -e "$f" ]] || continue
+                id="$(basename "$f" .job)"
+                name="$(_queue_job_name "$f")"
+                printf '%s\n' "$id"
+                [[ -n "$name" ]] && printf '%s\n' "$name"
+            done < <(_queue_pending_job_files "$root")
+            continue
+        fi
         for f in "$root/$state"/*.job; do
             [[ -e "$f" ]] || continue
             id="$(basename "$f" .job)"
@@ -538,6 +662,22 @@ _queue_find_jobs() {
     [[ -z "$needle" ]] && return 1
 
     for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ "$state" == "pending" ]]; then
+            while IFS= read -r f; do
+                [[ -e "$f" ]] || continue
+                id="$(basename "$f" .job)"
+                name="$(_queue_job_name "$f")"
+
+                if [[ "$id" == "$needle" ]]; then
+                    exact_qid+=( "$f" )
+                elif [[ "$name" == "$needle" ]]; then
+                    exact_name+=( "$f" )
+                elif [[ "$id" == "$needle"* ]]; then
+                    qid_prefix+=( "$f" )
+                fi
+            done < <(_queue_pending_job_files "$root")
+            continue
+        fi
         for f in "$root/$state"/*.job; do
             [[ -e "$f" ]] || continue
             id="$(basename "$f" .job)"
@@ -565,11 +705,12 @@ _queue_find_jobs() {
 }
 
 _queue_print_matches() {
+    local root="$(_queue_root)"
     local f id state name
     for f in "$@"; do
         [[ -e "$f" ]] || continue
         id="$(basename "$f" .job)"
-        state="$(basename "$(dirname "$f")")"
+        state="$(_queue_state_for_job_path "$f" "$root")"
         name="$(_queue_job_name "$f")"
         printf "  %-24s %-10s %s\n" "$id" "$state" "$name" >&2
     done
@@ -4065,10 +4206,10 @@ _queue_pending_candidate_summary() {
     local root="$(_queue_root)"
     local f
     shopt -s nullglob
-    for f in "$root/pending"/*.job; do
+    while IFS= read -r f; do
         [[ -f "$f" ]] || continue
         printf '%s %s class=%s\n' "$(basename "$f" .job)" "$(_queue_job_name "$f" 2>/dev/null || true)" "$(_queue_class_for_job_file "$f" 2>/dev/null || echo DEFAULT)"
-    done
+    done < <(_queue_pending_job_files "$root")
     shopt -u nullglob
 }
 
@@ -4138,7 +4279,6 @@ _queue_move_pending_to_running() {
     local err rc line
 
     _queue_dispatch_trace_log "$worker" "move pending->running start $id src=$job dst=$running"
-
     err="$(mktemp)"
     mv "$job" "$running" 2>"$err"
     rc="$?"
@@ -4149,8 +4289,15 @@ _queue_move_pending_to_running() {
         return 0
     fi
 
-    _queue_dispatch_trace_log "$worker" "move pending->running failed $id rc=$rc"
+    # Normal multi-worker race: another worker claimed this visible candidate
+    # between scan and mv.  Do not run the expensive failure diagnosis path.
+    if [[ ! -e "$job" && -e "$running" ]]; then
+        rm -f "$err"
+        _queue_dispatch_trace_log "$worker" "move pending->running lost-race $id"
+        return "$rc"
+    fi
 
+    _queue_dispatch_trace_log "$worker" "move pending->running failed $id rc=$rc"
     if [[ -s "$err" ]]; then
         while IFS= read -r line; do
             _queue_dispatch_trace_log "$worker" "move stderr $id: $line"
@@ -4392,94 +4539,63 @@ _queue_class_defaults_show() {
 }
 
 _queue_next_job() {
-    # Contract:
-    #   stdout MUST contain only the selected pending job path, or nothing.
-    #   Class/plugin/preflight output must never leak to stdout, because the
-    #   worker captures this function with command substitution and treats the
-    #   result as a path.
-    _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "entered _queue_next_job"
-
+    # stdout MUST contain only selected pending job path, or nothing.
+    # Pending is already priority-bucketed at submit/priority-change time, so
+    # worker selection is a cheap ordered tree walk.  Expensive class/resource
+    # preflight is deliberately left until after atomic claim move so rival
+    # workers do not all preflight the same top candidate.
+    local now_epoch="${1:-$(_queue_epoch_now)}"
     local root="$(_queue_root)"
-    local best=""
-    local best_pri="-999999"
-    local best_id=""
-    local f id pri
+    local f id retry_at not_before deps dep depfile
     local seen=0
-    local tmp class_rc line
 
-    shopt -s nullglob
-    for f in "$root/pending"/*.job; do
+    _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "entered _queue_next_job bucketed now=$now_epoch"
+
+    while IFS= read -r f; do
         [[ -f "$f" ]] || continue
-
         seen=$((seen + 1))
         id="$(basename "$f" .job)"
-        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "candidate $id $(_queue_job_name "$f" 2>/dev/null || true)"
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "candidate $id path=$f"
 
-        if ! _queue_job_retry_due "$f"; then
-            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id retry-not-due"
+        retry_at="$(_queue_job_field_fast "$f" RETRY_NOT_BEFORE_EPOCH 2>/dev/null || echo 0)"
+        retry_at="${retry_at:-0}"
+        [[ "$retry_at" =~ ^[0-9]+$ ]] || retry_at=0
+        if (( retry_at > now_epoch )); then
+            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id retry-not-due until=$retry_at"
             continue
         fi
 
-        if ! _queue_job_schedule_due "$f"; then
-            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id schedule-not-due"
+        not_before="$(_queue_job_field_fast "$f" NOT_BEFORE_EPOCH 2>/dev/null || echo 0)"
+        not_before="${not_before:-0}"
+        [[ "$not_before" =~ ^[0-9]+$ ]] || not_before=0
+        if (( not_before > now_epoch )); then
+            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id schedule-not-due until=$not_before"
             continue
         fi
 
-        if ! _queue_job_dependencies_satisfied "$f"; then
-            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id dependencies-not-satisfied"
-            continue
+        deps="$(_queue_job_field_fast "$f" DEPENDS_AFTER_SUCCESS 2>/dev/null || true)"
+        if [[ -n "$deps" ]]; then
+            for dep in $deps; do
+                [[ -f "$root/done/$dep.job" ]] && continue
+                depfile="$(_queue_job_pending_path_by_id "$dep" "$root" 2>/dev/null || true)"
+                [[ -z "$depfile" && -f "$root/running/$dep.job" ]] && depfile="$root/running/$dep.job"
+                [[ -z "$depfile" && -f "$root/paused/$dep.job" ]] && depfile="$root/paused/$dep.job"
+                _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id dependency-waiting dep=$dep"
+                continue 2
+            done
         fi
 
-        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "class check start $id"
-
-        tmp="$(mktemp)"
-        if _queue_class_available "$f" >"$tmp" 2>&1; then
-            class_rc=0
-        else
-            class_rc="$?"
-        fi
-
-        if [[ -s "$tmp" ]]; then
-            while IFS= read -r line; do
-                _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "class output $id: $line"
-            done < "$tmp"
-        fi
-        rm -f "$tmp"
-
-        if [[ "$class_rc" -ne 0 ]]; then
-            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id class-or-resource-blocked rc=$class_rc"
-            continue
-        fi
-
-        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "class check ok $id"
-
-        pri="$(_queue_job_pri "$f")"
-
-        if (( pri > best_pri )); then
-            best="$f"
-            best_pri="$pri"
-            best_id="$id"
-            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "best now $id pri=$pri"
-        elif (( pri == best_pri )); then
-            if [[ -z "$best_id" || "$id" < "$best_id" ]]; then
-                best="$f"
-                best_id="$id"
-                _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "best tie-break now $id pri=$pri"
-            fi
-        fi
-    done
-    shopt -u nullglob
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "selected $id path=$f"
+        printf '%s\n' "$f"
+        return 0
+    done < <(_queue_pending_job_files "$root")
 
     if [[ "$seen" -eq 0 ]]; then
         _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "no pending candidates found"
-    fi
-
-    if [[ -n "$best" ]]; then
-        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "selected $best_id pri=$best_pri"
-        printf '%s\n' "$best"
     else
-        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "no runnable candidate selected"
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "no due candidate selected seen=$seen"
     fi
+    return 1
 }
 
 _queue_extract_dryrun() {
@@ -4573,7 +4689,10 @@ _queue_clone_job_to_pending() {
     local new_id="$2"
     local note="$3"
     local root="$(_queue_root)"
-    local dest="$root/pending/$new_id.job"
+    local dest
+    dest="$(_queue_pending_path_for_priority "$new_id" "$(_queue_job_pri "$src_job" 2>/dev/null || echo 10)" "$root")"
+
+    mkdir -p -- "$(dirname "$dest")"
 
     (
         source "$src_job" 2>/dev/null || exit 1
@@ -4588,9 +4707,6 @@ _queue_clone_job_to_pending() {
             printf 'RETRY_NOT_BEFORE_EPOCH=%q\n' "0"
             printf 'NOT_BEFORE_EPOCH=%q\n' "0"
 
-            # Resubmit intentionally does not preserve old class-derived
-            # resource/cap defaults.  The current class definition is applied
-            # after this intent-only record is written.
             printf 'CPU_LIMIT=%q\n' ""
             printf 'MEM_LIMIT=%q\n' ""
             printf 'MAX_LOG_SIZE_BYTES=%q\n' "${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}"
@@ -5294,7 +5410,7 @@ _queue_log_event() {
 
 _queue_job_file_state() {
     local f="$1"
-    basename "$(dirname "$f")"
+    _queue_state_for_job_path "$f" "$(_queue_root)"
 }
 
 _queue_tail_log_for_job() {
@@ -5307,7 +5423,7 @@ _queue_tail_log_for_job() {
 
     [[ "$lines" =~ ^[0-9]+$ ]] || lines=40
 
-    state="$(basename "$(dirname "$f")")"
+    state="$(_queue_state_for_job_path "$f" "$root")"
     log="$(_queue_log_existing_path "$id")"
 
     if [[ ! -f "$log" ]]; then
@@ -5341,6 +5457,163 @@ _queue_tail_log_for_job() {
 }
 
 
+
+
+_queue_job_mark_cleared() {
+    local job_file="$1" id="$2" worker="${3:-}" class="${4:-}"
+    [[ -f "$job_file" ]] || return 0
+    local ts policy sandbox seccomp caps exemption_type exemption_action exemption_code exemption_detail jurisdiction classification
+    ts="$(date -Is 2>/dev/null || date)"
+    policy="${QUEUEBASH_CLASS_POLICY_STATEMENT:-default}"
+    sandbox="$(_queue_job_var_value "$job_file" SANDBOX_POLICY_NAME 2>/dev/null || true)"
+    seccomp="$(_queue_job_var_value "$job_file" SECCOMP_POLICY_NAME 2>/dev/null || true)"
+    caps="$(_queue_job_var_value "$job_file" RUNTIME_CAPS 2>/dev/null || true)"
+    exemption_type="$(_queue_job_var_value "$job_file" SECURITY_EXEMPTION_TYPE 2>/dev/null || true)"
+    exemption_action="$(_queue_job_var_value "$job_file" SECURITY_EXEMPTION_ACTION 2>/dev/null || true)"
+    exemption_code="$(_queue_job_var_value "$job_file" SECURITY_AUTHORISATION_CODE 2>/dev/null || true)"
+    exemption_detail="$(_queue_job_var_value "$job_file" SECURITY_EXEMPTION_DETAIL 2>/dev/null || true)"
+    jurisdiction="$(_queue_job_var_value "$job_file" QUEUEBASH_JURISDICTION 2>/dev/null || true)"
+    classification="$(_queue_job_var_value "$job_file" QUEUEBASH_CLASSIFICATION 2>/dev/null || true)"
+    {
+        printf '\n# Cleared for dispatch at %q\n' "$ts"
+        printf 'JOB_CLEARED=1\n'
+        printf 'JOB_CLEARED_AT=%q\n' "$ts"
+        printf 'JOB_CLEARED_BY=%q\n' "$worker"
+        printf 'JOB_CLEARED_CLASS=%q\n' "${class:-$(_queue_class_for_job_file "$job_file" 2>/dev/null || echo DEFAULT)}"
+        printf 'JOB_CLEARED_POLICY_STATEMENT=%q\n' "$policy"
+        printf 'JOB_CLEARED_STAGE=%q\n' "execution_policy,class_assets,mandatory_policy_assets,dynamic_preflight,global_claims"
+        [[ -n "$sandbox" ]] && printf 'JOB_CLEARED_SANDBOX_POLICY=%q\n' "$sandbox"
+        [[ -n "$seccomp" ]] && printf 'JOB_CLEARED_SECCOMP_POLICY=%q\n' "$seccomp"
+        [[ -n "$caps" ]] && printf 'JOB_CLEARED_RUNTIME_CAPS=%q\n' "$caps"
+        [[ -n "$exemption_type" ]] && printf 'JOB_CLEARED_SECURITY_EXEMPTION_TYPE=%q\n' "$exemption_type"
+        [[ -n "$exemption_action" ]] && printf 'JOB_CLEARED_SECURITY_EXEMPTION_ACTION=%q\n' "$exemption_action"
+        [[ -n "$exemption_code" ]] && printf 'JOB_CLEARED_SECURITY_AUTHORISATION_CODE=%q\n' "$exemption_code"
+        [[ -n "$exemption_detail" ]] && printf 'JOB_CLEARED_SECURITY_EXEMPTION_DETAIL=%q\n' "$exemption_detail"
+        [[ -n "$jurisdiction" ]] && printf 'JOB_CLEARED_JURISDICTION=%q\n' "$jurisdiction"
+        [[ -n "$classification" ]] && printf 'JOB_CLEARED_CLASSIFICATION=%q\n' "$classification"
+    } >> "$job_file" 2>/dev/null || true
+    _queue_log_event "cleared" "$id" "$(_queue_job_name "$job_file" 2>/dev/null || echo -)" "running" "worker=$worker class=${class:-$(_queue_class_for_job_file "$job_file" 2>/dev/null || echo DEFAULT)} policy=$policy"
+}
+
+_queue_csv_contains_word() {
+    local list="${1:-}" needle="${2:-}" item
+    [[ -n "$needle" ]] || return 1
+    list="${list// /}"
+    IFS=',' read -r -a _queue_csv_items <<< "$list"
+    for item in "${_queue_csv_items[@]}"; do
+        [[ "$item" == "$needle" || "$item" == "*" ]] && return 0
+    done
+    return 1
+}
+
+_queue_cleared_jobs_list() {
+    local json=0 states="running,done,failed,interrupted,cancelled,deleted" limit=0 since="" since_epoch=0 arg
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            --state|--states) states="${2:-}"; shift 2 ;;
+            --all-states|--all) states="pending,running,done,failed,interrupted,cancelled,deleted,pol_blocked,policy_blocked,paused"; shift ;;
+            --limit|-n) limit="${2:-0}"; shift 2 ;;
+            --since) since="${2:-}"; shift 2 ;;
+            --help|-h)
+                cat <<'EOF'
+Usage:
+  queue cleared [--json] [--state csv] [--limit N] [--since DATE]
+  queue clearance list [--json] [--state csv] [--limit N] [--since DATE]
+  queue audit cleared [--json] [--state csv] [--limit N] [--since DATE]
+
+Lists jobs that passed execution policy, class/resource checks, mandatory policy
+assets, dynamic preflight, and global claims and were cleared for dispatch.
+EOF
+                return 0 ;;
+            list) shift ;;
+            *) echo "queue cleared: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ "$limit" =~ ^[0-9]+$ ]] || { echo "queue cleared: --limit requires a numeric value" >&2; return 2; }
+    if [[ -n "$since" ]]; then
+        since_epoch="$(date -d "$since" +%s 2>/dev/null || echo 0)"
+        [[ "$since_epoch" =~ ^[0-9]+$ && "$since_epoch" -gt 0 ]] || { echo "queue cleared: cannot parse --since '$since'" >&2; return 2; }
+    fi
+
+    local root="$(_queue_root)" state f cleared_at cleared_epoch count=0 rows tmp
+    tmp="$(mktemp)"
+    for state in pending running done failed interrupted cancelled deleted pol_blocked policy_blocked paused; do
+        _queue_csv_contains_word "$states" "$state" || continue
+        for f in "$root/$state"/*.job; do
+            [[ -f "$f" ]] || continue
+            [[ "$(_queue_job_var_value "$f" JOB_CLEARED 2>/dev/null || true)" == "1" ]] || continue
+            cleared_at="$(_queue_job_var_value "$f" JOB_CLEARED_AT 2>/dev/null || true)"
+            cleared_epoch="$(date -d "$cleared_at" +%s 2>/dev/null || echo 0)"
+            if [[ "$since_epoch" -gt 0 && ( ! "$cleared_epoch" =~ ^[0-9]+$ || "$cleared_epoch" -lt "$since_epoch" ) ]]; then
+                continue
+            fi
+            printf '%s\t%s\n' "${cleared_at:-0000}" "$f" >> "$tmp"
+        done
+    done
+
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"cleared":['
+        local first=1 id name class policy sandbox seccomp caps cmd submitted started finished rc worker stage ex_type ex_action ex_code jurisdiction classification
+        while IFS=$'\t' read -r cleared_at f; do
+            [[ -f "$f" ]] || continue
+            if [[ "$limit" -gt 0 && "$count" -ge "$limit" ]]; then break; fi
+            state="$(_queue_state_for_job_path "$f" "$root")"
+            id="$(basename "$f" .job)"
+            name="$(_queue_job_name "$f" 2>/dev/null || true)"
+            class="$(_queue_job_var_value "$f" JOB_CLEARED_CLASS 2>/dev/null || _queue_class_for_job_file "$f" 2>/dev/null || echo DEFAULT)"
+            policy="$(_queue_job_var_value "$f" JOB_CLEARED_POLICY_STATEMENT 2>/dev/null || true)"
+            sandbox="$(_queue_job_var_value "$f" JOB_CLEARED_SANDBOX_POLICY 2>/dev/null || _queue_job_var_value "$f" SANDBOX_POLICY_NAME 2>/dev/null || true)"
+            seccomp="$(_queue_job_var_value "$f" JOB_CLEARED_SECCOMP_POLICY 2>/dev/null || _queue_job_var_value "$f" SECCOMP_POLICY_NAME 2>/dev/null || true)"
+            caps="$(_queue_job_var_value "$f" JOB_CLEARED_RUNTIME_CAPS 2>/dev/null || _queue_job_var_value "$f" RUNTIME_CAPS 2>/dev/null || true)"
+            cmd="$(_queue_job_command "$f" 2>/dev/null || true)"
+            submitted="$(_queue_job_var_value "$f" SUBMITTED_AT 2>/dev/null || true)"
+            started="$(_queue_job_var_value "$f" RUN_STARTED_AT 2>/dev/null || true)"
+            finished="$(_queue_job_var_value "$f" EXEC_FINISHED_AT 2>/dev/null || _queue_job_var_value "$f" FINISHED_AT 2>/dev/null || true)"
+            rc="$(_queue_job_var_value "$f" EXIT_CODE 2>/dev/null || true)"
+            worker="$(_queue_job_var_value "$f" JOB_CLEARED_BY 2>/dev/null || true)"
+            stage="$(_queue_job_var_value "$f" JOB_CLEARED_STAGE 2>/dev/null || true)"
+            ex_type="$(_queue_job_var_value "$f" JOB_CLEARED_SECURITY_EXEMPTION_TYPE 2>/dev/null || true)"
+            ex_action="$(_queue_job_var_value "$f" JOB_CLEARED_SECURITY_EXEMPTION_ACTION 2>/dev/null || true)"
+            ex_code="$(_queue_job_var_value "$f" JOB_CLEARED_SECURITY_AUTHORISATION_CODE 2>/dev/null || true)"
+            jurisdiction="$(_queue_job_var_value "$f" JOB_CLEARED_JURISDICTION 2>/dev/null || true)"
+            classification="$(_queue_job_var_value "$f" JOB_CLEARED_CLASSIFICATION 2>/dev/null || true)"
+            [[ "$first" -eq 0 ]] && printf ','
+            first=0
+            printf '{'
+            printf '"qid":"%s"' "$(_queue_json_escape "$id")"
+            printf ',"name":"%s","state":"%s","class":"%s"' "$(_queue_json_escape "$name")" "$(_queue_json_escape "$state")" "$(_queue_json_escape "$class")"
+            printf ',"cleared_at":"%s","cleared_by":"%s","policy_statement":"%s"' "$(_queue_json_escape "$cleared_at")" "$(_queue_json_escape "$worker")" "$(_queue_json_escape "$policy")"
+            printf ',"stage":"%s"' "$(_queue_json_escape "$stage")"
+            printf ',"security":{"sandbox":"%s","seccomp":"%s","runtime_caps":"%s","exemption_type":"%s","exemption_action":"%s","authorisation_code":"%s"}' \
+                "$(_queue_json_escape "$sandbox")" "$(_queue_json_escape "$seccomp")" "$(_queue_json_escape "$caps")" "$(_queue_json_escape "$ex_type")" "$(_queue_json_escape "$ex_action")" "$(_queue_json_escape "$ex_code")"
+            printf ',"governance":{"jurisdiction":"%s","classification":"%s"}' "$(_queue_json_escape "$jurisdiction")" "$(_queue_json_escape "$classification")"
+            printf ',"times":{"submitted_at":"%s","run_started_at":"%s","finished_at":"%s"}' "$(_queue_json_escape "$submitted")" "$(_queue_json_escape "$started")" "$(_queue_json_escape "$finished")"
+            printf ',"rc":"%s","command_line":"%s","job_file":"%s"' "$(_queue_json_escape "$rc")" "$(_queue_json_escape "$cmd")" "$(_queue_json_escape "$f")"
+            printf '}'
+            count=$((count + 1))
+        done < <(sort -r "$tmp")
+        printf '],"count":%s,"states":"%s"}\n' "$count" "$(_queue_json_escape "$states")"
+        rm -f "$tmp"
+        return 0
+    fi
+
+    printf '%-28s %-11s %-20s %-18s %-12s %s\n' "qid" "state" "cleared_at" "class" "policy" "name"
+    while IFS=$'\t' read -r cleared_at f; do
+        [[ -f "$f" ]] || continue
+        if [[ "$limit" -gt 0 && "$count" -ge "$limit" ]]; then break; fi
+        state="$(_queue_state_for_job_path "$f" "$root")"
+        local id name class policy
+        id="$(basename "$f" .job)"
+        name="$(_queue_job_name "$f" 2>/dev/null || true)"
+        class="$(_queue_job_var_value "$f" JOB_CLEARED_CLASS 2>/dev/null || _queue_class_for_job_file "$f" 2>/dev/null || echo DEFAULT)"
+        policy="$(_queue_job_var_value "$f" JOB_CLEARED_POLICY_STATEMENT 2>/dev/null || true)"
+        printf '%-28s %-11s %-20s %-18s %-12s %s\n' "$id" "$state" "${cleared_at:-}" "${class:-}" "${policy:-}" "$name"
+        count=$((count + 1))
+    done < <(sort -r "$tmp")
+    rm -f "$tmp"
+    printf 'cleared=%s states=%s\n' "$count" "$states"
+}
 
 _queue_status_job() {
     local target="${1:-}" json=0 tail_lines=20 arg
@@ -5389,7 +5662,7 @@ EOF
     f="${matches[0]}"
     local id state name pri class cmd submitted started finished rc duration run_pid run_pgid systemd_unit log log_size tail_text submission_line
     id="$(basename "$f" .job)"
-    state="$(basename "$(dirname "$f")")"
+    state="$(_queue_state_for_job_path "$f" "$root")"
     name="$(_queue_job_name "$f" 2>/dev/null || true)"
     pri="$(_queue_job_pri "$f" 2>/dev/null || echo 10)"
     class="$(_queue_class_for_job_file "$f" 2>/dev/null || _queue_job_var_value "$f" JOB_CLASS 2>/dev/null || echo DEFAULT)"
@@ -5425,6 +5698,12 @@ EOF
         printf ',"pids":{"run_pid":"%s","run_pgid":"%s","systemd_unit":"%s"}' \
             "$(_queue_json_escape "$run_pid")" "$(_queue_json_escape "$run_pgid")" "$(_queue_json_escape "$systemd_unit")"
         printf ',"rc":"%s"' "$(_queue_json_escape "$rc")"
+        printf ',"clearance":{"cleared":"%s","cleared_at":"%s","cleared_by":"%s","policy_statement":"%s","stage":"%s"}' \
+            "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED 2>/dev/null || true)")" \
+            "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED_AT 2>/dev/null || true)")" \
+            "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED_BY 2>/dev/null || true)")" \
+            "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED_POLICY_STATEMENT 2>/dev/null || true)")" \
+            "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED_STAGE 2>/dev/null || true)")"
         printf ',"log":{"path":"%s","size_bytes":%s,"tail_lines":%s,"tail":"%s"}' \
             "$(_queue_json_escape "$log")" "${log_size:-0}" "$tail_lines" "$(_queue_json_escape "$tail_text")"
         printf ',"job_file":"%s"' "$(_queue_json_escape "$f")"
@@ -5477,7 +5756,10 @@ _queue_clone_retry_to_pending() {
     local retry_done="$3"
     local not_before="$4"
     local root="$(_queue_root)"
-    local dest="$root/pending/$new_id.job"
+    local dest
+    dest="$(_queue_pending_path_for_priority "$new_id" "$(_queue_job_pri "$src_job" 2>/dev/null || echo 10)" "$root")"
+
+    mkdir -p -- "$(dirname "$dest")"
 
     (
         source "$src_job" 2>/dev/null || exit 1
@@ -7090,7 +7372,7 @@ _queue_job_append_security_exemption() {
 ' "$action"
     } >> "$jobf" 2>/dev/null || true
     id="$(basename "$jobf" .job)"
-    state="$(basename "$(dirname "$jobf")")"
+    state="$(_queue_state_for_job_path "$jobf" "$(_queue_root)")"
     _queue_log_event "security_exemption" "$id" "$(_queue_job_name "$jobf" 2>/dev/null || echo -)" "$state" "type=$type action=$action${code:+ code=$code}${detail:+ detail=$detail}" 2>/dev/null || true
 }
 
@@ -8553,7 +8835,7 @@ _queue_print_job_table() {
     for f in "$@"; do
         [[ -f "$f" ]] || continue
         id="$(basename "$f" .job)"
-        state="$(basename "$(dirname "$f")")"
+        state="$(_queue_state_for_job_path "$f" "$root")"
         pri="$(_queue_job_pri "$f")"
         name="$(_queue_job_name "$f")"
         ok="-"
@@ -8602,7 +8884,7 @@ _queue_print_job_table_json() {
         [[ -f "$f" ]] || continue
         _queue_json_comma first
         id="$(basename "$f" .job)"
-        state="$(basename "$(dirname "$f")")"
+        state="$(_queue_state_for_job_path "$f" "$root")"
         pri="$(_queue_job_pri "$f" 2>/dev/null || echo 10)"
         name="$(_queue_job_name "$f" 2>/dev/null || true)"
         ok=false; fail=false
@@ -9381,7 +9663,7 @@ _queue_maybe_gzip_log() {
             printf 'LOG_COMPRESSED_AT=%q\n' "$(date -Is)"
             printf 'LOG_PATH=%q\n' "$gz"
         } >> "$job"
-        _queue_log_event "log_compressed" "$id" "$(_queue_job_name "$job")" "$(basename "$(dirname "$job")")" "path=$gz"
+        _queue_log_event "log_compressed" "$id" "$(_queue_job_name "$job")" "$(_queue_state_for_job_path "$job" "$(_queue_root)")" "path=$gz"
     fi
 }
 
@@ -9391,7 +9673,7 @@ _queue_maybe_gzip_completed_job_log() {
     local state
 
     [[ -f "$job" ]] || return 0
-    state="$(basename "$(dirname "$job")")"
+    state="$(_queue_state_for_job_path "$job" "$(_queue_root)")"
 
     case "$state" in
         done|failed)
@@ -9713,7 +9995,7 @@ _queue_job_pending_dispatch_diagnose() {
     echo
     echo "Dispatch decision"
 
-    if [[ "$(basename "$(dirname "$f")")" != "pending" ]]; then
+    if ! _queue_job_is_pending_path "$f" "$root"; then
         echo "  status:            not pending"
         echo "  reason:            dispatch diagnosis only applies to pending jobs"
         return 0
@@ -10022,7 +10304,7 @@ _queue_explain_job() {
     local id state log log_display unit runner runner_used cpu mem maxlog largelog overflow pid pgid cmd pwd submit started finished exit_code duration log_bytes compressed log_path
 
     id="$(basename "$f" .job)"
-    state="$(basename "$(dirname "$f")")"
+    state="$(_queue_state_for_job_path "$f" "$root")"
 
     runner="$(_queue_job_var_value "$f" RUNNER)"
     runner="${runner:-${QUEUEBASH_RUNNER:-auto}}"
@@ -10635,7 +10917,7 @@ _queue_health_pending_dependency_warnings() {
     local root="$(_queue_root)"
     local f dep deps name any=0
 
-    for f in "$root/pending"/*.job; do
+    while IFS= read -r f; do
         [[ -e "$f" ]] || continue
         name="$(_queue_job_name "$f" 2>/dev/null || echo "-")"
         deps="$(_queue_health_dependency_tokens_for_file "$f")"
@@ -10655,7 +10937,7 @@ _queue_health_pending_dependency_warnings() {
                 any=1
             fi
         done
-    done
+    done < <(_queue_pending_job_files "$root")
 
     [[ "$any" -eq 0 ]] && echo "OK no pending dependency warnings"
     return 0
@@ -10665,7 +10947,7 @@ _queue_health_pending_cycle_warnings() {
     local root="$(_queue_root)"
     local f name deps dep depfile depdeps dep2 any=0
 
-    for f in "$root/pending"/*.job; do
+    while IFS= read -r f; do
         [[ -e "$f" ]] || continue
         name="$(_queue_job_name "$f" 2>/dev/null || echo "")"
         deps="$(_queue_health_dependency_tokens_for_file "$f")"
@@ -10679,16 +10961,15 @@ _queue_health_pending_cycle_warnings() {
             fi
 
             depfile=""
-            if [[ -f "$root/pending/$dep.job" ]]; then
-                depfile="$root/pending/$dep.job"
-            else
-                for depfile in "$root/pending"/*.job; do
+            depfile="$(_queue_job_pending_path_by_id "$dep" "$root" 2>/dev/null || true)"
+            if [[ -z "$depfile" ]]; then
+                while IFS= read -r depfile; do
                     [[ -e "$depfile" ]] || { depfile=""; break; }
                     if [[ "$(_queue_job_name "$depfile" 2>/dev/null || true)" == "$dep" ]]; then
                         break
                     fi
                     depfile=""
-                done
+                done < <(_queue_pending_job_files "$root")
             fi
 
             [[ -z "$depfile" || ! -f "$depfile" ]] && continue
@@ -10701,7 +10982,7 @@ _queue_health_pending_cycle_warnings() {
                 fi
             done
         done
-    done
+    done < <(_queue_pending_job_files "$root")
 
     [[ "$any" -eq 0 ]] && echo "OK no simple dependency cycles detected"
     return 0
@@ -11491,6 +11772,7 @@ Usage:
   queue ls   [--state all|pending|running|paused|done|failed|pol_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
   queue find <text>
   queue show <qid|exact-job-name> [--tail N|--full]
+  queue cleared [--json] [--state csv] [--limit N] [--since DATE]
   queue tail <qid|exact-job-name>
   queue pids <qid|exact-job-name>
   queue metrics <qid|exact-job-name>
@@ -11912,7 +12194,7 @@ _queue_pol_blocked_reevaluate() {
     local files=()
     if [[ -n "$target" ]]; then
         while IFS= read -r f; do
-            state="$(basename "$(dirname "$f")")"
+            state="$(_queue_state_for_job_path "$f" "$root")"
             [[ "$state" == "pol_blocked" || "$state" == "policy_blocked" ]] && files+=("$f")
         done < <(_queue_find_jobs "$target")
     else
@@ -11929,15 +12211,17 @@ _queue_pol_blocked_reevaluate() {
         checked=$((checked + 1))
         if _queue_job_policy_execution_check "$f" >/dev/null 2>&1; then
             if [[ "$local_dryrun" -eq 1 ]]; then
-                echo "DRYRUN: would requeue $id from $(basename "$(dirname "$f")") -> pending"
+                echo "DRYRUN: would requeue $id from $(_queue_state_for_job_path "$f" "$root") -> pending"
             else
                 {
                     echo "REEVALUATED_AT=$(printf '%q' "$(date -Is)")"
-                    echo "REEVALUATED_FROM=$(printf '%q' "$(basename "$(dirname "$f")")")"
+                    echo "REEVALUATED_FROM=$(printf '%q' "$(_queue_state_for_job_path "$f" "$root")")"
                     echo "STATE=$(printf '%q' pending)"
                 } >> "$f"
-                mv -f "$f" "$root/pending/$id.job"
-                _queue_log_event "pol_blocked_reevaluated" "$id" "$(_queue_job_name "$root/pending/$id.job" 2>/dev/null || echo -)" "pending" "result=requeued"
+                _queue_move_to_pending_bucket "$f" "$id" "$root"
+                local requeued_path
+                requeued_path="$(_queue_job_pending_path_by_id "$id" "$root" 2>/dev/null || true)"
+                _queue_log_event "pol_blocked_reevaluated" "$id" "$(_queue_job_name "$requeued_path" 2>/dev/null || echo -)" "pending" "result=requeued"
                 echo "Requeued $id -> pending"
             fi
             moved=$((moved + 1))
@@ -13629,7 +13913,8 @@ queue() {
             fi
 
             local id="$(_queue_id)"
-            local job="$root/pending/$id.job"
+            local job
+            job="$(_queue_pending_path_for_priority "$id" "$priority" "$root")"
 
             if [[ "$local_dryrun" -eq 1 ]]; then
                 if [[ "$json_output" -eq 1 ]]; then
@@ -13678,6 +13963,8 @@ queue() {
                 fi
                 return 0
             fi
+
+            mkdir -p -- "$(dirname "$job")"
 
             {
                 printf 'JOB_ID=%q\n' "$id"
@@ -13804,19 +14091,35 @@ queue() {
             for state in pending running paused done failed pol_blocked interrupted cancelled deleted; do
                 [[ "$filter_state" != "all" && "$filter_state" != "$state" ]] && continue
 
-                for f in "$root/$state"/*.job; do
-                    [[ -e "$f" ]] || continue
+                if [[ "$state" == "pending" ]]; then
+                    while IFS= read -r f; do
+                        [[ -e "$f" ]] || continue
 
-                    id="$(basename "$f" .job)"
-                    name="$(_queue_job_name "$f")"
-                    pri="$(_queue_job_pri "$f")"
-                    line="$(_queue_job_command "$f")"
+                        id="$(basename "$f" .job)"
+                        name="$(_queue_job_name "$f")"
+                        pri="$(_queue_job_pri "$f")"
+                        line="$(_queue_job_command "$f")"
 
-                    [[ -n "$filter_name" && "$name" != *"$filter_name"* ]] && continue
-                    [[ -n "$filter_text" && "$id $state $pri $name $line" != *"$filter_text"* ]] && continue
+                        [[ -n "$filter_name" && "$name" != *"$filter_name"* ]] && continue
+                        [[ -n "$filter_text" && "$id $state $pri $name $line" != *"$filter_text"* ]] && continue
 
-                    jobs+=( "$f" )
-                done
+                        jobs+=( "$f" )
+                    done < <(_queue_pending_job_files "$root")
+                else
+                    for f in "$root/$state"/*.job; do
+                        [[ -e "$f" ]] || continue
+
+                        id="$(basename "$f" .job)"
+                        name="$(_queue_job_name "$f")"
+                        pri="$(_queue_job_pri "$f")"
+                        line="$(_queue_job_command "$f")"
+
+                        [[ -n "$filter_name" && "$name" != *"$filter_name"* ]] && continue
+                        [[ -n "$filter_text" && "$id $state $pri $name $line" != *"$filter_text"* ]] && continue
+
+                        jobs+=( "$f" )
+                    done
+                fi
             done
 
             if [[ "$json_output" -eq 1 ]]; then
@@ -13838,7 +14141,7 @@ queue() {
 
         scheduled|schedule)
             local f any=0
-            for f in "$root/pending"/*.job; do
+            while IFS= read -r f; do
                 [[ -e "$f" ]] || continue
                 if ! _queue_job_schedule_due "$f"; then
                     any=1
@@ -13848,7 +14151,7 @@ queue() {
                     echo "Dependencies:"
                     _queue_job_dependencies_status "$f" | sed 's/^/  /'
                 fi
-            done
+            done < <(_queue_pending_job_files "$root")
             [[ "$any" -eq 0 ]] && echo "No pending jobs are waiting on schedule."
             return 0
             ;;
@@ -13856,7 +14159,7 @@ queue() {
 
         waiting|blocked)
             local f any=0
-            for f in "$root/pending"/*.job; do
+            while IFS= read -r f; do
                 [[ -e "$f" ]] || continue
                 _queue_job_dependencies_satisfied "$f" && continue
                 any=1
@@ -13864,7 +14167,7 @@ queue() {
                 echo "Job: $(basename "$f" .job)  Name: $(_queue_job_name "$f")"
                 echo "Dependencies:"
                 _queue_job_dependencies_status "$f" | sed 's/^/  /'
-            done
+            done < <(_queue_pending_job_files "$root")
             [[ "$any" -eq 0 ]] && echo "No pending jobs are waiting on dependencies."
             return 0
             ;;
@@ -13885,7 +14188,7 @@ queue() {
             local shown=0
             for f in "${matches[@]}"; do
                 echo "=============================================================================="
-                echo "Job: $(basename "$f" .job)  State: $(basename "$(dirname "$f")")  Name: $(_queue_job_name "$f")"
+                echo "Job: $(basename "$f" .job)  State: $(_queue_state_for_job_path "$f" "$root")  Name: $(_queue_job_name "$f")"
                 echo "Dependencies:"
                 _queue_job_dependencies_status "$f" | sed 's/^/  /'
                 shown=$((shown + 1))
@@ -13982,6 +14285,22 @@ queue() {
             _queue_status_job "$@"
             ;;
 
+        cleared|clearance|clearances)
+            if [[ "${1:-}" == "list" ]]; then shift; fi
+            _queue_cleared_jobs_list "$@"
+            ;;
+
+        audit)
+            case "${1:-}" in
+                cleared|clearance|clearances)
+                    shift
+                    if [[ "${1:-}" == "list" ]]; then shift; fi
+                    _queue_cleared_jobs_list "$@"
+                    ;;
+                *) echo "Usage: queue audit cleared [--json] [--state csv] [--limit N] [--since DATE]" >&2; return 2 ;;
+            esac
+            ;;
+
         show)
             local target="$1"
             shift || true
@@ -14018,7 +14337,7 @@ queue() {
             local id state log_path
             for f in "${matches[@]}"; do
                 id="$(basename "$f" .job)"
-                state="$(basename "$(dirname "$f")")"
+                state="$(_queue_state_for_job_path "$f" "$root")"
                 echo "=============================================================================="
                 echo "JOB: $id   STATE: $state"
                 echo "=============================================================================="
@@ -14789,7 +15108,7 @@ EOF
             for f in "${matches[@]}"; do
                 local id state name
                 id="$(basename "$f" .job)"
-                state="$(basename "$(dirname "$f")")"
+                state="$(_queue_state_for_job_path "$f" "$root")"
                 name="$(_queue_job_name "$f")"
                 echo "Job: $id  State: $state  Name: $name"
                 echo "on-success: $(_queue_job_array_summary "$f" ON_SUCCESS)"
@@ -14911,6 +15230,7 @@ EOF
                     else
                         sed -i "/^JOB_NAME=/a PRIORITY=$new_priority" "$f"
                     fi
+                    _queue_rebucket_pending_job "$f" "$new_priority" "$root"
                     echo "Priority for $id set to $new_priority"
                 fi
                 changed=$((changed + 1))
@@ -15073,7 +15393,7 @@ EOF
             for f in "${matches[@]}"; do
                 local id state dest
                 id="$(basename "$f" .job)"
-                state="$(basename "$(dirname "$f")")"
+                state="$(_queue_state_for_job_path "$f" "$root")"
                 dest="$root/$dest_state/$id.job"
 
                 if [[ "$state" == "$dest_state" ]]; then
@@ -15158,8 +15478,10 @@ EOF
                         echo "UNPAUSED_AT=$(printf '%q' "$(date -Is)")"
                         echo "UNPAUSED_TO=pending"
                     } >> "$f"
-                    mv -f "$f" "$root/pending/$id.job"
-                    _queue_log_event "unpaused" "$id" "$(_queue_job_name "$root/pending/$id.job")" "pending" "from=paused"
+                    _queue_move_to_pending_bucket "$f" "$id" "$root"
+                    local unpaused_path
+                    unpaused_path="$(_queue_job_pending_path_by_id "$id" "$root" 2>/dev/null || true)"
+                    _queue_log_event "unpaused" "$id" "$(_queue_job_name "$unpaused_path")" "pending" "from=paused"
                     echo "Unpaused $id -> pending"
                 fi
             done
@@ -15217,8 +15539,15 @@ EOF
                         echo "UNDELETED_AT=$(printf '%q' "$(date -Is)")"
                         echo "UNDELETED_TO=$(printf '%q' "$restore_state")"
                     } >> "$f"
-                    mv -f "$f" "$root/$restore_state/$id.job"
-                    _queue_log_event "undeleted" "$id" "$(_queue_job_name "$root/$restore_state/$id.job")" "$restore_state" "from=deleted"
+                    if [[ "$restore_state" == "pending" ]]; then
+                        _queue_move_to_pending_bucket "$f" "$id" "$root"
+                        local restored_path
+                        restored_path="$(_queue_job_pending_path_by_id "$id" "$root" 2>/dev/null || true)"
+                    else
+                        mv -f "$f" "$root/$restore_state/$id.job"
+                        local restored_path="$root/$restore_state/$id.job"
+                    fi
+                    _queue_log_event "undeleted" "$id" "$(_queue_job_name "$restored_path")" "$restore_state" "from=deleted"
                     echo "Restored $id to $restore_state"
                 fi
             done
@@ -15252,7 +15581,7 @@ EOF
             local f state
             while IFS= read -r f; do
                 all_matches+=( "$f" )
-                state="$(basename "$(dirname "$f")")"
+                state="$(_queue_state_for_job_path "$f" "$root")"
                 [[ "$state" == "failed" || "$state" == "interrupted" || "$state" == "pol_blocked" || "$state" == "policy_blocked" ]] && matches+=( "$f" )
             done < <(_queue_find_jobs "$target")
 
@@ -15407,7 +15736,7 @@ EOF
             if [[ "$local_dryrun" -eq 1 ]]; then
                 echo "DRYRUN: would run queue with $workers worker(s)"
                 local next_job
-                next_job="$(_queue_next_job)"
+                next_job="$(_queue_next_job "$(_queue_epoch_now)")"
                 if [[ -n "$next_job" ]]; then
                     echo "DRYRUN: next job would be $(basename "$next_job" .job) ($(_queue_job_name "$next_job"))"
                 else
@@ -15861,361 +16190,328 @@ _queue_worker_external_move_state() {
     printf '%s\n' "missing"
 }
 
-_queue_worker() {
-    export QUEUEBASH_WORKER_ID="${worker_id:-${1:-?}}"
-    _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "entered worker loop"
-    _queue_init
-
-    local worker_id="$1"
-    local root="$(_queue_root)"
-
-
+_queue_worker () 
+{ 
+    export QUEUEBASH_WORKER_ID="${worker_id:-${1:-?}}";
+    _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "entered worker loop";
+    _queue_init;
+    local worker_id="$1";
+    local root="$(_queue_root)";
     while true; do
-        local job
-        job="$(_queue_next_job)"
-        [[ -n "$job" ]] || break
-
-        local id
-        id="$(basename "$job" .job)"
-
-        local running="$root/running/$id.job"
-        local done="$root/done/$id.job"
-        local failed="$root/failed/$id.job"
-        local policy_blocked="$root/pol_blocked/$id.job"
-        local log="$root/logs/$id.log"
-
+        local job current_epoch;
+        current_epoch="$(_queue_epoch_now)";
+        job="$(_queue_next_job "$current_epoch" || true)";
+        [[ -n "$job" ]] || break;
+        local id;
+        id="$(basename "$job" .job)";
+        local running="$root/running/$id.job";
+        local done="$root/done/$id.job";
+        local failed="$root/failed/$id.job";
+        local policy_blocked="$root/pol_blocked/$id.job";
+        local log="$root/logs/$id.log";
         if ! _queue_move_pending_to_running "$job" "$running" "$id" "${worker_id:-${1:-?}}"; then
-            # Avoid burning CPU forever on a filesystem/path collision.
-            sleep "${QUEUEBASH_MOVE_FAIL_SLEEP:-1}"
-            continue
-        fi
-
-        local policy_reason=""
+            [[ -e "$job" ]] && sleep "${QUEUEBASH_MOVE_FAIL_SLEEP:-1}";
+            continue;
+        fi;
+        if ! _queue_class_available "$running" > /dev/null 2>&1; then
+            _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "class/resource unavailable after claim $id";
+            _queue_move_to_pending_bucket "$running" "$id" "$root" 2> /dev/null || true;
+            _queue_log_event "class_blocked" "$id" "$(_queue_job_name "$(_queue_job_pending_path_by_id "$id" "$root" 2> /dev/null || true)" 2> /dev/null || echo "-")" "pending" "worker=$worker_id stage=postclaim_preflight";
+            continue;
+        fi;
+        local policy_reason="";
         if ! policy_reason="$(_queue_job_policy_execution_check "$running" 2>&1)"; then
-            _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "policy blocked $id: $policy_reason"
-            {
-                echo "=== queue job $id : $(_queue_job_name "$running" 2>/dev/null || echo -) ==="
-                echo "pol_blocked: $(date -Is)"
-                echo "state: pol_blocked"
-                echo "worker: $worker_id"
-                echo
-                echo "POLICY_BLOCKED"
-                echo "$policy_reason"
-                echo
+            _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "policy blocked $id: $policy_reason";
+            { 
+                echo "=== queue job $id : $(_queue_job_name "$running" 2> /dev/null || echo -) ===";
+                echo "pol_blocked: $(date -Is)";
+                echo "state: pol_blocked";
+                echo "worker: $worker_id";
+                echo;
+                echo "POLICY_BLOCKED";
+                echo "$policy_reason";
+                echo;
                 echo "No class claims, asset preflight checks, dynamic preflight checks, global claims, or payload launch were attempted."
-            } > "$log" 2>&1
-            {
+            } > "$log" 2>&1;
+            { 
                 printf '
 # Policy blocked by worker at %q
-' "$(date -Is 2>/dev/null || date)"
+' "$(date -Is 2> /dev/null || date)";
                 printf 'POLICY_BLOCKED=1
-'
+';
                 printf 'POLICY_BLOCKED_AT=%q
-' "$(date -Is 2>/dev/null || date)"
+' "$(date -Is 2> /dev/null || date)";
                 printf 'POLICY_BLOCKED_REASON=%q
 ' "$policy_reason"
-            } >> "$running"
-            _queue_append_summary_to_job "$running" 78 "$log"
-            mkdir -p "$root/pol_blocked"
-            mv "$running" "$policy_blocked"
-            _queue_job_stream_temp_cleanup "$id"
-            _queue_log_event "pol_blocked" "$id" "$(_queue_job_name "$policy_blocked" 2>/dev/null || echo -)" "pol_blocked" "worker=$worker_id"
-            echo "[worker $worker_id] pol_blocked $id"
-            continue
-        fi
-
-        _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "claim acquire start $id"
+            } >> "$running";
+            _queue_append_summary_to_job "$running" 78 "$log";
+            mkdir -p "$root/pol_blocked";
+            mv "$running" "$policy_blocked";
+            _queue_job_stream_temp_cleanup "$id";
+            _queue_log_event "pol_blocked" "$id" "$(_queue_job_name "$policy_blocked" 2> /dev/null || echo -)" "pol_blocked" "worker=$worker_id";
+            echo "[worker $worker_id] pol_blocked $id";
+            continue;
+        fi;
+        _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "claim acquire start $id";
         if ! _queue_class_claim_job "$running" "$id"; then
-            _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "claim acquire failed $id"
-            mv "$running" "$root/pending/$id.job" 2>/dev/null || true
-            _queue_log_event "class_blocked" "$id" "$(_queue_job_name "$root/pending/$id.job" 2>/dev/null || echo "-")" "pending" "worker=$worker_id"
-            continue
-        fi
-        _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "claim acquire ok $id"
-
-        _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "about to run $id"
-        echo "[worker $worker_id] running $id"
-        _queue_log_event "started" "$id" "$(_queue_job_name "$running")" "running" "worker=$worker_id"
-
-        (
-            source "$running"
-            cd "$PWD_AT_SUBMIT" || exit 98
-            _queue_source_env_drop_if_requested "$running"
-            _queue_export_job_ipc_env "$JOB_ID"
-            export -f queue_output 2>/dev/null || true
-            stream_public_fifo="$(_queue_create_stream_fifo_for_job "$JOB_ID" 2>/dev/null || true)"
-
-            {
-                echo "=== queue job $JOB_ID : $JOB_NAME ==="
-                echo "started: $(date -Is)"
-                echo "pwd: $PWD"
-                echo "output_env: ${QUEUEBASH_OUTPUT_ENV:-}"
-                echo "helper_dir: ${QUEUEBASH_HELPER_DIR:-}"
-                [[ -n "${QUEUEBASH_INHERITED_ENV_FROM:-}" ]] && echo "inherited_env_from: ${QUEUEBASH_INHERITED_ENV_FROM:-}"
-                [[ -n "${QUEUEBASH_INHERITED_ENV_KEYS:-}" ]] && echo "inherited_env_keys: ${QUEUEBASH_INHERITED_ENV_KEYS:-}"
-                auto_required_file_keys="$(_queue_auto_required_file_keys_from_env | xargs echo 2>/dev/null || true)"
-                [[ -n "$auto_required_file_keys" ]] && echo "auto_required_files: $auto_required_file_keys"
-                [[ -n "${stream_public_fifo:-}" ]] && echo "stream_fifo: $stream_public_fifo"
-                printf "command:"
-                printf " %q" "${COMMAND[@]}"
-                echo
-                echo
-
-                runner_requested="${RUNNER:-${QUEUEBASH_RUNNER:-auto}}"
-                runner_planned="$(_queue_runner_for_job "$runner_requested" "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${RUN_USER:-}" || true)"
-                _queue_apply_security_exception_overlays_for_current_job
-                {
-                    printf 'SANDBOX_LEVEL=%q\n' "${SANDBOX_LEVEL:-off}"
-                    [[ -n "${RUNTIME_CAPS:-}" ]] && printf 'RUNTIME_CAPS=%q\n' "${RUNTIME_CAPS:-}"
-                    [[ -n "${RUNTIME_CAP_PORTS:-}" ]] && printf 'RUNTIME_CAP_PORTS=%q\n' "${RUNTIME_CAP_PORTS:-}"
-                    [[ -n "${SECCOMP_PROFILE:-}" ]] && printf 'SECCOMP_PROFILE=%q\n' "${SECCOMP_PROFILE:-}"
-                    [[ -n "${SECCOMP_ALLOW:-}" ]] && printf 'SECCOMP_ALLOW=%q\n' "${SECCOMP_ALLOW:-}"
-                } >> "$running"
-                limit_status="$(_queue_limit_status_text "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")"
-                [[ "$runner_planned" == "systemd" ]] && limit_status="systemd-run-user-service-pipe"
-                if [[ -n "${CPU_LIMIT:-}" || -n "${MEM_LIMIT:-}" ]]; then
-                    echo "resource_limit_request: cpu=${CPU_LIMIT:-} mem=${MEM_LIMIT:-} runner=${runner_requested:-auto} planned=${runner_planned:-} status=$limit_status"
-                    if [[ "$limit_status" != "systemd-run-user-service-pipe" ]]; then
-                        echo "WARNING: resource limits were requested but are NOT enforced in this shell/session."
-                    fi
-                fi
-                if [[ -n "${SANDBOX_LEVEL:-}" ]]; then
-                    echo "sandbox_request: level=${SANDBOX_LEVEL:-} runner=${runner_planned:-}"
-                fi
-                if [[ -n "${TIMEOUT:-}" ]]; then
-                    echo "timeout_request: timeout=${TIMEOUT:-} effective_timeout=${effective_timeout:-none} kill_after=${KILL_AFTER:-} billing_unit=${BILLING_UNIT_SECONDS:-} billing_cycles=${BILLING_CYCLES:-} billing_grace=${BILLING_GRACE_SECONDS:-} wrapper=coreutils-timeout"
-                    if ! command -v timeout >/dev/null 2>&1; then
-                        echo "WARNING: TIMEOUT requested but command 'timeout' is not available; payload launch will fail."
-                    fi
-                fi
-
-                _queue_preflight_auto_required_files
-                preflight_rc="$?"
-                if [[ "$preflight_rc" -ne 0 ]]; then
-                    echo
-                    echo "PRE_FLIGHT_REQUIRE_FILE_FAILED: exit_code=$preflight_rc"
-                    exit "$preflight_rc"
-                fi
-
-                runner_used="$(_queue_runner_for_job "${RUNNER:-${QUEUEBASH_RUNNER:-auto}}" "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")"
-                {
-                    printf 'RUNNER_USED=%q\n' "$runner_used"
-                } >> "$running"
-                effective_timeout="$(_queue_caps_effective_timeout_for_current_job 2>/dev/null || true)"
-                mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${PWD_AT_SUBMIT:-$PWD}" "$runner_used" "${effective_timeout:-}" "${KILL_AFTER:-}" "${SANDBOX_LEVEL:-}" "${RUN_USER:-}" "${COMMAND[@]}")
-                echo "systemd_user_bus: $(_queue_systemd_user_service_status_text)"
-                if _queue_root_running_foreign_payload_user "${RUN_USER:-}"; then echo "foreign_run_user_runner_policy: root-foreign-user-auto-direct run_user=${RUN_USER:-}"; fi
-                printf "launch_argv:"
-                printf " %q" "${payload_cmd[@]}"
-                printf "\n"
-                max_log_bytes="$(_queue_job_log_max_bytes "$running")"
-                log_overflow_policy="$(_queue_job_log_policy "$running")"
-
-                stream_logger_stdout_pid=""
-                stream_logger_stderr_pid=""
-                stream_stdout_fifo=""
-                stream_stderr_fifo=""
-                use_stream_logger=0
-                if [[ "${ALLOW_LARGE_LOG:-0}" != "1" && "$log_overflow_policy" != "allow" && "$log_overflow_policy" != "kill" && "$max_log_bytes" =~ ^[0-9]+$ && "$max_log_bytes" -gt 0 ]]; then
-                    stream_stdout_fifo="$root/logs/.${JOB_ID}.stdout.fifo"
-                    stream_stderr_fifo="$root/logs/.${JOB_ID}.stderr.fifo"
-                    rm -f -- "$stream_stdout_fifo" "$stream_stderr_fifo"
-                    mkfifo "$stream_stdout_fifo" "$stream_stderr_fifo"
-                    use_stream_logger=1
-                    _queue_stream_logger "$JOB_ID" "$running" "$log" "stdout" "$max_log_bytes" < "$stream_stdout_fifo" &
-                    stream_logger_stdout_pid="$!"
-                    _queue_stream_logger "$JOB_ID" "$running" "$log" "stderr" "$max_log_bytes" < "$stream_stderr_fifo" &
-                    stream_logger_stderr_pid="$!"
-                    "${payload_cmd[@]}" > "$stream_stdout_fifo" 2> "$stream_stderr_fifo" &
-                else
-                    "${payload_cmd[@]}" &
-                fi
-                cmd_pid="$!"
-
-                cmd_pgid="$(ps -o pgid= -p "$cmd_pid" 2>/dev/null | tr -d '[:space:]')"
-                {
-                    printf 'RUN_PID=%q\n' "$cmd_pid"
-                    printf 'RUN_PGID=%q\n' "$cmd_pgid"
-                    printf 'RUN_STARTED_AT=%q\n' "$(date -Is)"
-                    [[ -n "${QUEUEBASH_INHERITED_ENV_FROM:-}" ]] && printf 'QUEUEBASH_INHERITED_ENV_FROM=%q\n' "$QUEUEBASH_INHERITED_ENV_FROM"
-                    [[ -n "${QUEUEBASH_INHERITED_ENV_KEYS:-}" ]] && printf 'QUEUEBASH_INHERITED_ENV_KEYS=%q\n' "$QUEUEBASH_INHERITED_ENV_KEYS"
-                } >> "$running"
-
-                _queue_log_worker_record "$use_stream_logger" "$log" "run_pid: $cmd_pid" "run_pgid: $cmd_pgid"
-                _queue_log_event "pid_recorded" "$JOB_ID" "$JOB_NAME" "running" "pid=$cmd_pid pgid=$cmd_pgid"
-
-                runtime_caps_watchdog_pid=""
-                if [[ -n "${RUNTIME_CAPS:-}" ]]; then
-                    _queue_log_worker_record "$use_stream_logger" "$log" "runtime_caps: ${RUNTIME_CAPS:-} interval=${RUNTIME_CAP_INTERVAL:-1} monitor=lsof/proc"
-                    _queue_runtime_caps_watchdog "$running" "$log" "$cmd_pid" "$cmd_pgid" &
-                    runtime_caps_watchdog_pid="$!"
-                fi
-
-                max_log_bytes="$(_queue_job_log_max_bytes "$running")"
-                log_overflow_policy="$(_queue_job_log_policy "$running")"
-                if [[ "${ALLOW_LARGE_LOG:-0}" != "1" && "$log_overflow_policy" == "kill" && "$max_log_bytes" =~ ^[0-9]+$ && "$max_log_bytes" -gt 0 ]]; then
-                    _queue_log_watchdog "$JOB_ID" "$running" "$log" "$cmd_pid" "$max_log_bytes" &
-                    log_watchdog_pid="$!"
-                else
-                    log_watchdog_pid=""
-                fi
-
-                wait "$cmd_pid"
-                rc="$?"
-
-                # The payload is gone, but stream readers may still be appending.
-                # Wait for them before writing footer or other post-run records.
-                _queue_wait_stream_loggers "${stream_logger_stdout_pid:-}" "${stream_logger_stderr_pid:-}"
-
-                [[ -n "${stream_stdout_fifo:-}" ]] && rm -f -- "$stream_stdout_fifo" 2>/dev/null || true
-                [[ -n "${stream_stderr_fifo:-}" ]] && rm -f -- "$stream_stderr_fifo" 2>/dev/null || true
-                if [[ -n "${log_watchdog_pid:-}" ]]; then
-                    kill "$log_watchdog_pid" >/dev/null 2>&1 || true
-                    wait "$log_watchdog_pid" >/dev/null 2>&1 || true
-                fi
-                if [[ -n "${runtime_caps_watchdog_pid:-}" ]]; then
-                    kill "$runtime_caps_watchdog_pid" >/dev/null 2>&1 || true
-                    wait "$runtime_caps_watchdog_pid" >/dev/null 2>&1 || true
-                fi
-                if grep -q '^RUNTIME_CAP_VIOLATED=1$' "$running" 2>/dev/null; then
-                    rc=96
-                fi
-                _queue_record_systemd_unit_if_seen "$running" "$log"
-
-                log_bytes_now="$(_queue_log_size_bytes "$log")"
-                max_log_bytes="$(_queue_job_log_max_bytes "$running")"
-                if [[ "$max_log_bytes" -gt 0 && "$log_bytes_now" -gt "$max_log_bytes" ]]; then
-                    _queue_log_worker_record "$use_stream_logger" "$log" "" "LOG_OVERFLOW_WARNING: log size ${log_bytes_now} exceeded cap ${max_log_bytes}"
-                    _queue_log_event "log_overflow_warning" "$JOB_ID" "$JOB_NAME" "running" "bytes=$log_bytes_now cap=$max_log_bytes"
-                    if [[ "$log_overflow_policy" == "kill" ]] && grep -q '^LOG_OVERFLOW=1$' "$running" 2>/dev/null; then
-                        rc=97
-                    fi
-                fi
-
-                _queue_log_worker_record "$use_stream_logger" "$log" "" "finished: $(date -Is)" "exit_code: $rc"
-
-                exit "$rc"
-            } > "$log" 2>&1
-        )
-
-        local rc="$?"
-
+            _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "claim acquire failed $id";
+            _queue_move_to_pending_bucket "$running" "$id" "$root" 2> /dev/null || true;
+            local class_blocked_path;
+            class_blocked_path="$(_queue_job_pending_path_by_id "$id" "$root" 2> /dev/null || true)";
+            _queue_log_event "class_blocked" "$id" "$(_queue_job_name "$class_blocked_path" 2> /dev/null || echo "-")" "pending" "worker=$worker_id";
+            continue;
+        fi;
+        _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "claim acquire ok $id";
+        _queue_job_mark_cleared "$running" "$id" "${worker_id:-${1:-?}}" "$(_queue_class_for_job_file "$running" 2> /dev/null || echo DEFAULT)";
+        _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "about to run $id";
+        echo "[worker $worker_id] running $id";
+        _queue_log_event "started" "$id" "$(_queue_job_name "$running")" "running" "worker=$worker_id";
+        ( set +e;
+        source "$running";
+        cd "$PWD_AT_SUBMIT" || exit 98;
+        _queue_source_env_drop_if_requested "$running";
+        _queue_export_job_ipc_env "$JOB_ID";
+        export -f queue_output 2> /dev/null || true;
+        stream_public_fifo="$(_queue_create_stream_fifo_for_job "$JOB_ID" 2> /dev/null || true)";
+        { 
+            echo "=== queue job $JOB_ID : $JOB_NAME ===";
+            echo "started: $(date -Is)";
+            echo "pwd: $PWD";
+            echo "output_env: ${QUEUEBASH_OUTPUT_ENV:-}";
+            echo "helper_dir: ${QUEUEBASH_HELPER_DIR:-}";
+            [[ -n "${QUEUEBASH_INHERITED_ENV_FROM:-}" ]] && echo "inherited_env_from: ${QUEUEBASH_INHERITED_ENV_FROM:-}";
+            [[ -n "${QUEUEBASH_INHERITED_ENV_KEYS:-}" ]] && echo "inherited_env_keys: ${QUEUEBASH_INHERITED_ENV_KEYS:-}";
+            auto_required_file_keys="$(_queue_auto_required_file_keys_from_env | xargs echo 2> /dev/null || true)";
+            [[ -n "$auto_required_file_keys" ]] && echo "auto_required_files: $auto_required_file_keys";
+            [[ -n "${stream_public_fifo:-}" ]] && echo "stream_fifo: $stream_public_fifo";
+            printf "command:";
+            printf " %q" "${COMMAND[@]}";
+            echo;
+            echo;
+            runner_requested="${RUNNER:-${QUEUEBASH_RUNNER:-auto}}";
+            runner_planned="$(_queue_runner_for_job "$runner_requested" "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${RUN_USER:-}" || true)";
+            _queue_apply_security_exception_overlays_for_current_job;
+            { 
+                printf 'SANDBOX_LEVEL=%q\n' "${SANDBOX_LEVEL:-off}";
+                [[ -n "${RUNTIME_CAPS:-}" ]] && printf 'RUNTIME_CAPS=%q\n' "${RUNTIME_CAPS:-}";
+                [[ -n "${RUNTIME_CAP_PORTS:-}" ]] && printf 'RUNTIME_CAP_PORTS=%q\n' "${RUNTIME_CAP_PORTS:-}";
+                [[ -n "${SECCOMP_PROFILE:-}" ]] && printf 'SECCOMP_PROFILE=%q\n' "${SECCOMP_PROFILE:-}";
+                [[ -n "${SECCOMP_ALLOW:-}" ]] && printf 'SECCOMP_ALLOW=%q\n' "${SECCOMP_ALLOW:-}"
+            } >> "$running";
+            limit_status="$(_queue_limit_status_text "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")";
+            [[ "$runner_planned" == "systemd" ]] && limit_status="systemd-run-user-service-pipe";
+            if [[ -n "${CPU_LIMIT:-}" || -n "${MEM_LIMIT:-}" ]]; then
+                echo "resource_limit_request: cpu=${CPU_LIMIT:-} mem=${MEM_LIMIT:-} runner=${runner_requested:-auto} planned=${runner_planned:-} status=$limit_status";
+                if [[ "$limit_status" != "systemd-run-user-service-pipe" ]]; then
+                    echo "WARNING: resource limits were requested but are NOT enforced in this shell/session.";
+                fi;
+            fi;
+            if [[ -n "${SANDBOX_LEVEL:-}" ]]; then
+                echo "sandbox_request: level=${SANDBOX_LEVEL:-} runner=${runner_planned:-}";
+            fi;
+            if [[ -n "${TIMEOUT:-}" ]]; then
+                echo "timeout_request: timeout=${TIMEOUT:-} effective_timeout=${effective_timeout:-none} kill_after=${KILL_AFTER:-} billing_unit=${BILLING_UNIT_SECONDS:-} billing_cycles=${BILLING_CYCLES:-} billing_grace=${BILLING_GRACE_SECONDS:-} wrapper=coreutils-timeout";
+                if ! command -v timeout > /dev/null 2>&1; then
+                    echo "WARNING: TIMEOUT requested but command 'timeout' is not available; payload launch will fail.";
+                fi;
+            fi;
+            _queue_preflight_auto_required_files;
+            preflight_rc="$?";
+            if [[ "$preflight_rc" -ne 0 ]]; then
+                echo;
+                echo "PRE_FLIGHT_REQUIRE_FILE_FAILED: exit_code=$preflight_rc";
+                exit "$preflight_rc";
+            fi;
+            runner_used="$(_queue_runner_for_job "${RUNNER:-${QUEUEBASH_RUNNER:-auto}}" "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")";
+            { 
+                printf 'RUNNER_USED=%q\n' "$runner_used"
+            } >> "$running";
+            effective_timeout="$(_queue_caps_effective_timeout_for_current_job 2> /dev/null || true)";
+            mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${PWD_AT_SUBMIT:-$PWD}" "$runner_used" "${effective_timeout:-}" "${KILL_AFTER:-}" "${SANDBOX_LEVEL:-}" "${RUN_USER:-}" "${COMMAND[@]}");
+            echo "systemd_user_bus: $(_queue_systemd_user_service_status_text)";
+            if _queue_root_running_foreign_payload_user "${RUN_USER:-}"; then
+                echo "foreign_run_user_runner_policy: root-foreign-user-auto-direct run_user=${RUN_USER:-}";
+            fi;
+            printf "launch_argv:";
+            printf " %q" "${payload_cmd[@]}";
+            printf "\n";
+            max_log_bytes="$(_queue_job_log_max_bytes "$running")";
+            log_overflow_policy="$(_queue_job_log_policy "$running")";
+            stream_logger_stdout_pid="";
+            stream_logger_stderr_pid="";
+            stream_stdout_fifo="";
+            stream_stderr_fifo="";
+            use_stream_logger=0;
+            if [[ "${ALLOW_LARGE_LOG:-0}" != "1" && "$log_overflow_policy" != "allow" && "$log_overflow_policy" != "kill" && "$max_log_bytes" =~ ^[0-9]+$ && "$max_log_bytes" -gt 0 ]]; then
+                stream_stdout_fifo="$root/logs/.${JOB_ID}.stdout.fifo";
+                stream_stderr_fifo="$root/logs/.${JOB_ID}.stderr.fifo";
+                rm -f -- "$stream_stdout_fifo" "$stream_stderr_fifo";
+                mkfifo "$stream_stdout_fifo" "$stream_stderr_fifo";
+                use_stream_logger=1;
+                _queue_stream_logger "$JOB_ID" "$running" "$log" "stdout" "$max_log_bytes" < "$stream_stdout_fifo" & stream_logger_stdout_pid="$!";
+                _queue_stream_logger "$JOB_ID" "$running" "$log" "stderr" "$max_log_bytes" < "$stream_stderr_fifo" & stream_logger_stderr_pid="$!";
+                "${payload_cmd[@]}" > "$stream_stdout_fifo" 2> "$stream_stderr_fifo" &
+            else
+                "${payload_cmd[@]}" &
+            fi;
+            cmd_pid="$!";
+            cmd_pgid="$(ps -o pgid= -p "$cmd_pid" 2> /dev/null | tr -d '[:space:]')";
+            { 
+                printf 'RUN_PID=%q\n' "$cmd_pid";
+                printf 'RUN_PGID=%q\n' "$cmd_pgid";
+                printf 'RUN_STARTED_AT=%q\n' "$(date -Is)";
+                [[ -n "${QUEUEBASH_INHERITED_ENV_FROM:-}" ]] && printf 'QUEUEBASH_INHERITED_ENV_FROM=%q\n' "$QUEUEBASH_INHERITED_ENV_FROM";
+                [[ -n "${QUEUEBASH_INHERITED_ENV_KEYS:-}" ]] && printf 'QUEUEBASH_INHERITED_ENV_KEYS=%q\n' "$QUEUEBASH_INHERITED_ENV_KEYS"
+            } >> "$running";
+            _queue_log_worker_record "$use_stream_logger" "$log" "run_pid: $cmd_pid" "run_pgid: $cmd_pgid";
+            _queue_log_event "pid_recorded" "$JOB_ID" "$JOB_NAME" "running" "pid=$cmd_pid pgid=$cmd_pgid";
+            runtime_caps_watchdog_pid="";
+            if [[ -n "${RUNTIME_CAPS:-}" ]]; then
+                _queue_log_worker_record "$use_stream_logger" "$log" "runtime_caps: ${RUNTIME_CAPS:-} interval=${RUNTIME_CAP_INTERVAL:-1} monitor=lsof/proc";
+                _queue_runtime_caps_watchdog "$running" "$log" "$cmd_pid" "$cmd_pgid" & runtime_caps_watchdog_pid="$!";
+            fi;
+            max_log_bytes="$(_queue_job_log_max_bytes "$running")";
+            log_overflow_policy="$(_queue_job_log_policy "$running")";
+            if [[ "${ALLOW_LARGE_LOG:-0}" != "1" && "$log_overflow_policy" == "kill" && "$max_log_bytes" =~ ^[0-9]+$ && "$max_log_bytes" -gt 0 ]]; then
+                _queue_log_watchdog "$JOB_ID" "$running" "$log" "$cmd_pid" "$max_log_bytes" & log_watchdog_pid="$!";
+            else
+                log_watchdog_pid="";
+            fi;
+            set +e;
+            wait "$cmd_pid";
+            rc="$?";
+            _queue_wait_stream_loggers "${stream_logger_stdout_pid:-}" "${stream_logger_stderr_pid:-}" || true;
+            [[ -n "${stream_stdout_fifo:-}" ]] && rm -f -- "$stream_stdout_fifo" 2> /dev/null || true;
+            [[ -n "${stream_stderr_fifo:-}" ]] && rm -f -- "$stream_stderr_fifo" 2> /dev/null || true;
+            if [[ -n "${log_watchdog_pid:-}" ]]; then
+                kill "$log_watchdog_pid" > /dev/null 2>&1 || true;
+                wait "$log_watchdog_pid" > /dev/null 2>&1 || true;
+            fi;
+            if [[ -n "${runtime_caps_watchdog_pid:-}" ]]; then
+                kill "$runtime_caps_watchdog_pid" > /dev/null 2>&1 || true;
+                wait "$runtime_caps_watchdog_pid" > /dev/null 2>&1 || true;
+            fi;
+            if grep -q '^RUNTIME_CAP_VIOLATED=1$' "$running" 2> /dev/null; then
+                rc=96;
+            fi;
+            _queue_record_systemd_unit_if_seen "$running" "$log" || true;
+            log_bytes_now="$(_queue_log_size_bytes "$log")";
+            max_log_bytes="$(_queue_job_log_max_bytes "$running")";
+            if [[ "$max_log_bytes" -gt 0 && "$log_bytes_now" -gt "$max_log_bytes" ]]; then
+                _queue_log_worker_record "$use_stream_logger" "$log" "" "LOG_OVERFLOW_WARNING: log size ${log_bytes_now} exceeded cap ${max_log_bytes}";
+                _queue_log_event "log_overflow_warning" "$JOB_ID" "$JOB_NAME" "running" "bytes=$log_bytes_now cap=$max_log_bytes";
+                if [[ "$log_overflow_policy" == "kill" ]] && grep -q '^LOG_OVERFLOW=1$' "$running" 2> /dev/null; then
+                    rc=97;
+                fi;
+            fi;
+            _queue_log_worker_record "$use_stream_logger" "$log" "" "finished: $(date -Is)" "exit_code: $rc";
+            exit "$rc"
+        } > "$log" 2>&1 );
+        local rc="$?";
         if [[ "$rc" -eq 0 ]]; then
             if [[ -f "$running" ]]; then
-                _queue_append_summary_to_job "$running" 0 "$log"
-                mv "$running" "$done"
-                _queue_job_stream_temp_cleanup "$id"
-                _queue_log_event "done" "$id" "$(_queue_job_name "$done")" "done" "exit_code=0"
-                echo "[worker $worker_id] done $id"
-
+                _queue_append_summary_to_job "$running" 0 "$log";
+                mv "$running" "$done";
+                _queue_job_stream_temp_cleanup "$id";
+                _queue_log_event "done" "$id" "$(_queue_job_name "$done")" "done" "exit_code=0";
+                echo "[worker $worker_id] done $id";
                 if _queue_job_has_array "$done" ON_SUCCESS; then
-                    (
-                        source "$done"
-                        cd "$PWD_AT_SUBMIT" || exit 98
-                        {
-                            echo
-                            echo "=== on-success hook for $JOB_ID ==="
-                            echo "started: $(date -Is)"
-                            printf "hook:"
-                            printf " %q" "${ON_SUCCESS[@]}"
-                            echo
-                            "${ON_SUCCESS[@]}"
-                            hook_rc="$?"
-                            echo "hook_exit_code: $hook_rc"
-                            echo "finished: $(date -Is)"
-                        } >> "$log" 2>&1
-                    )
-                fi
-                _queue_maybe_gzip_completed_job_log "$id" "$done"
+                    ( source "$done";
+                    cd "$PWD_AT_SUBMIT" || exit 98;
+                    { 
+                        echo;
+                        echo "=== on-success hook for $JOB_ID ===";
+                        echo "started: $(date -Is)";
+                        printf "hook:";
+                        printf " %q" "${ON_SUCCESS[@]}";
+                        echo;
+                        "${ON_SUCCESS[@]}";
+                        hook_rc="$?";
+                        echo "hook_exit_code: $hook_rc";
+                        echo "finished: $(date -Is)"
+                    } >> "$log" 2>&1 );
+                fi;
+                _queue_maybe_gzip_completed_job_log "$id" "$done";
             else
-                external_state="$(_queue_worker_external_move_state "$id")"
+                external_state="$(_queue_worker_external_move_state "$id")";
                 if [[ "$external_state" == "cancelled" ]]; then
-                    _queue_log_event "worker_observed_cancelled" "$id" "$JOB_NAME" "cancelled" "worker=$worker_id rc=0"
-                    echo "[worker $worker_id] cancelled $id (operator moved record while worker was finishing)"
+                    _queue_log_event "worker_observed_cancelled" "$id" "$JOB_NAME" "cancelled" "worker=$worker_id rc=0";
+                    echo "[worker $worker_id] cancelled $id (operator moved record while worker was finishing)";
                 else
-                    echo "[worker $worker_id] done $id but queue record was moved externally to $external_state; no success/failure hook run by worker"
-                fi
-            fi
+                    echo "[worker $worker_id] done $id but queue record was moved externally to $external_state; no success/failure hook run by worker";
+                fi;
+            fi;
         else
             if [[ -f "$running" ]]; then
                 if _queue_should_retry_failed_job "$running"; then
-                    retry_done_old="$(grep '^RETRIES_DONE=' "$running" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
-                    retry_done_old="${retry_done_old:-0}"
-                    retry_done_new=$((retry_done_old + 1))
-                    retry_backoff="$(grep '^RETRY_BACKOFF=' "$running" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
-                    retry_backoff="${retry_backoff:-0}"
-                    [[ "$retry_backoff" =~ ^[0-9]+$ ]] || retry_backoff=0
-                    not_before=$(( $(_queue_epoch_now) + retry_backoff ))
+                    retry_done_old="$(grep '^RETRIES_DONE=' "$running" 2> /dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2> /dev/null)";
+                    retry_done_old="${retry_done_old:-0}";
+                    retry_done_new=$((retry_done_old + 1));
+                    retry_backoff="$(grep '^RETRY_BACKOFF=' "$running" 2> /dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2> /dev/null)";
+                    retry_backoff="${retry_backoff:-0}";
+                    [[ "$retry_backoff" =~ ^[0-9]+$ ]] || retry_backoff=0;
+                    not_before=$(( $(_queue_epoch_now) + retry_backoff ));
                     if _queue_job_has_array "$running" ON_RETRY_FAILURE; then
-                        (
-                            source "$running"
-                            cd "$PWD_AT_SUBMIT" || exit 98
-                            {
-                                echo
-                                echo "=== on-retry-failure hook for $JOB_ID ==="
-                                echo "started: $(date -Is)"
-                                printf "hook:"
-                                printf " %q" "${ON_RETRY_FAILURE[@]}"
-                                echo
-                                "${ON_RETRY_FAILURE[@]}"
-                                hook_rc="$?"
-                                echo "hook_exit_code: $hook_rc"
-                                echo "finished: $(date -Is)"
-                            } >> "$log" 2>&1
-                        )
-                    fi
-
-                    retry_id="$(_queue_id)"
-                    _queue_clone_retry_to_pending "$running" "$retry_id" "$retry_done_new" "$not_before"
-                    _queue_append_summary_to_job "$running" "$rc" "$log"
-                    mv "$running" "$failed"
-                    _queue_job_stream_temp_cleanup "$id"
-                    _queue_log_event "retry_scheduled" "$retry_id" "$(_queue_job_name "$root/pending/$retry_id.job")" "pending" "from=$id attempt=$retry_done_new backoff=$retry_backoff exit_code=$rc"
-                    _queue_log_event "failed_retrying" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc retry=$retry_id"
-                    echo "[worker $worker_id] failed $id rc=$rc; scheduled retry $retry_id attempt $retry_done_new after ${retry_backoff}s"
-                    _queue_maybe_gzip_completed_job_log "$id" "$failed"
-                    continue
-                fi
-
-                _queue_append_summary_to_job "$running" "$rc" "$log"
-                mv "$running" "$failed"
-                _queue_job_stream_temp_cleanup "$id"
-                _queue_log_event "failed" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc"
-                echo "[worker $worker_id] failed $id rc=$rc"
-
-                if _queue_job_has_array "$failed" ON_FAILURE; then
-                    (
-                        source "$failed"
-                        cd "$PWD_AT_SUBMIT" || exit 98
-                        {
-                            echo
-                            echo "=== on-failure hook for $JOB_ID ==="
-                            echo "started: $(date -Is)"
-                            printf "hook:"
-                            printf " %q" "${ON_FAILURE[@]}"
-                            echo
-                            "${ON_FAILURE[@]}"
-                            hook_rc="$?"
-                            echo "hook_exit_code: $hook_rc"
+                        ( source "$running";
+                        cd "$PWD_AT_SUBMIT" || exit 98;
+                        { 
+                            echo;
+                            echo "=== on-retry-failure hook for $JOB_ID ===";
+                            echo "started: $(date -Is)";
+                            printf "hook:";
+                            printf " %q" "${ON_RETRY_FAILURE[@]}";
+                            echo;
+                            "${ON_RETRY_FAILURE[@]}";
+                            hook_rc="$?";
+                            echo "hook_exit_code: $hook_rc";
                             echo "finished: $(date -Is)"
-                        } >> "$log" 2>&1
-                    )
-                fi
-                _queue_maybe_gzip_completed_job_log "$id" "$failed"
+                        } >> "$log" 2>&1 );
+                    fi;
+                    retry_id="$(_queue_id)";
+                    _queue_clone_retry_to_pending "$running" "$retry_id" "$retry_done_new" "$not_before";
+                    _queue_append_summary_to_job "$running" "$rc" "$log";
+                    mv "$running" "$failed";
+                    _queue_job_stream_temp_cleanup "$id";
+                    _queue_log_event "retry_scheduled" "$retry_id" "$(_queue_job_name "$(_queue_job_pending_path_by_id "$retry_id" "$root" 2> /dev/null || true)")" "pending" "from=$id attempt=$retry_done_new backoff=$retry_backoff exit_code=$rc";
+                    _queue_log_event "failed_retrying" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc retry=$retry_id";
+                    echo "[worker $worker_id] failed $id rc=$rc; scheduled retry $retry_id attempt $retry_done_new after ${retry_backoff}s";
+                    _queue_maybe_gzip_completed_job_log "$id" "$failed";
+                    continue;
+                fi;
+                _queue_append_summary_to_job "$running" "$rc" "$log";
+                mv "$running" "$failed";
+                _queue_job_stream_temp_cleanup "$id";
+                _queue_log_event "failed" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc";
+                echo "[worker $worker_id] failed $id rc=$rc";
+                if _queue_job_has_array "$failed" ON_FAILURE; then
+                    ( source "$failed";
+                    cd "$PWD_AT_SUBMIT" || exit 98;
+                    { 
+                        echo;
+                        echo "=== on-failure hook for $JOB_ID ===";
+                        echo "started: $(date -Is)";
+                        printf "hook:";
+                        printf " %q" "${ON_FAILURE[@]}";
+                        echo;
+                        "${ON_FAILURE[@]}";
+                        hook_rc="$?";
+                        echo "hook_exit_code: $hook_rc";
+                        echo "finished: $(date -Is)"
+                    } >> "$log" 2>&1 );
+                fi;
+                _queue_maybe_gzip_completed_job_log "$id" "$failed";
             else
-                external_state="$(_queue_worker_external_move_state "$id")"
+                external_state="$(_queue_worker_external_move_state "$id")";
                 if [[ "$external_state" == "cancelled" ]]; then
-                    _queue_log_event "worker_observed_cancelled" "$id" "$JOB_NAME" "cancelled" "worker=$worker_id rc=$rc"
-                    echo "[worker $worker_id] cancelled $id (operator cancellation observed; payload rc=$rc)"
+                    _queue_log_event "worker_observed_cancelled" "$id" "$JOB_NAME" "cancelled" "worker=$worker_id rc=$rc";
+                    echo "[worker $worker_id] cancelled $id (operator cancellation observed; payload rc=$rc)";
                 else
-                    echo "[worker $worker_id] failed $id rc=$rc but queue record was moved externally to $external_state; no failure hook run by worker"
-                fi
-            fi
-        fi
-
-        # Worker-side compression is intentionally targeted at the job just completed.
-        # Bulk scanning/compression is reserved for explicit: queue compress-logs.
-    done
+                    echo "[worker $worker_id] failed $id rc=$rc but queue record was moved externally to $external_state; no failure hook run by worker";
+                fi;
+            fi;
+        fi;
+    done;
+    return 0
 }
 
 # Legacy text QueueManager REPL removed in 0.16.14.
@@ -16230,7 +16526,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit submit-at submit-in list ls find show status stat explain deps dependencies waiting blocked scheduled schedule tail stream follow class classes assets facilities reporters reporting claims resources pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V backup reevaluate re-evaluate recheck policy-reevaluate help --help -h"
+    local commands="--dryrun -n submit submit-at submit-in list ls find show status stat cleared clearance audit explain deps dependencies waiting blocked scheduled schedule tail stream follow class classes assets facilities reporters reporting claims resources pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V backup reevaluate re-evaluate recheck policy-reevaluate help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
