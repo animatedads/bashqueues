@@ -1,5 +1,15 @@
 ## 0.17.70 - Cloud sovereignty and FinOps assets
 
+
+## 0.17.71 - Governance cron routing and security assets
+
+- Added policy-aware cron selector metadata: jurisdiction, classification, tags, and cost budget.
+- Added fail-closed CRON_POLICY_BLOCKED class for unroutable governed cron jobs.
+- Added legal registry and security classification policy files.
+- Added audit:stream_verified, crypto:volume_encrypted, and net:egress_policy governance assets.
+- Added SECURITY_* classes and additional cloud jurisdiction classes.
+- Preserved assets.d/net_usage.sh absence; net:allowance remains canonical.
+
 - Added multi-cloud sovereignty and FinOps asset helpers: `sovereign`, `finops`, and `gcp`.
 - Added `azure:auth_active` to the existing Azure asset helper.
 - Added legal-framework policy templates mapping GDPR/HIPAA/ITAR/UK_DPA to AWS/GCP/Azure region names.

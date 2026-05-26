@@ -17,6 +17,7 @@ net:tcp_endpoint	Checks that a TCP endpoint (host:port) is reachable and respond
 net:interface_state	Checks that a network interface exists and is in UP state
 net:interface_bandwidth	Checks that a network interface has available bandwidth headroom
 net:allowance	Checks a charged network interface counter is below an allowance before dispatch
+net:egress_policy	Checks that the worker egress policy matches a required network posture
 FACILITIES
 }
 
@@ -27,6 +28,7 @@ net:tcp_endpoint	target=host:port	params=timeout=5	example=queue_class_shared_as
 net:interface_state	target=interface name	params=none	example=queue_class_shared_asset net interface_state "wwan0"	notes=Blocks dispatch unless the interface exists and is UP.
 net:interface_bandwidth	target=interface name	params=max_usage_percent=80 sample_interval=1 max_rate_bytes_per_sec=125000000	example=queue_class_shared_asset net interface_bandwidth "eth0" max_usage_percent=80	notes=Blocks dispatch when sampled link usage exceeds the threshold.
 net:allowance	target=interface name	params=allowance_bytes=10G direction=rx_tx counter_file=/path/to/counter	example=queue_class_shared_asset net allowance "wwan0" allowance_bytes=10G direction=rx_tx	notes=Canonical charged-link allowance check. Blocks dispatch when a charged link has already exceeded its allowance.
+net:egress_policy	target=private-only|deny-all|public-ok	params=policy_file=/etc/bashqueues/egress-policy.env env_key=QUEUEBASH_EGRESS_POLICY	example=queue_class_shared_asset net egress_policy "private-only"	notes=Governance gate: blocks sensitive jobs unless the worker declares the required egress posture.
 EOF
 }
 
@@ -274,4 +276,27 @@ queue_asset_check_net_allowance() {
     fi
 
     echo "asset_check_ok: net:allowance iface=$iface used_bytes=$used allowance_bytes=$allowance_b direction=$direction"
+}
+
+
+queue_asset_check_net_egress_policy() {
+    local token="$1" required="${2:-}"; shift 2 || true
+    local policy_file env_key current
+    required="${required:-private-only}"
+    policy_file="$(queue_asset_param policy_file "$@" || echo /etc/bashqueues/egress-policy.env)"
+    env_key="$(queue_asset_param env_key "$@" || echo QUEUEBASH_EGRESS_POLICY)"
+    current="${!env_key:-}"
+    if [[ -z "$current" && -f "$policy_file" ]]; then
+        current="$(awk -F= -v k="$env_key" 'index($0,k"=")==1 {v=substr($0,length(k)+2); gsub(/^"|"$/,"",v); print v; exit}' "$policy_file" 2>/dev/null || true)"
+    fi
+    current="${current:-unknown}"
+    case "$required" in
+        public-ok|any) echo "asset_check_ok: $token required=$required current=$current"; return 0 ;;
+        private-only|private)
+            case "$current" in private-only|private|deny-all|airgap) echo "asset_check_ok: $token required=$required current=$current"; return 0 ;; esac ;;
+        deny-all|airgap)
+            case "$current" in deny-all|airgap) echo "asset_check_ok: $token required=$required current=$current"; return 0 ;; esac ;;
+    esac
+    echo "asset_check_blocked: net:egress_policy required=$required current=$current"
+    return 1
 }

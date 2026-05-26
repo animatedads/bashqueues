@@ -184,10 +184,21 @@ def _security_seccomp_rank(profile: str) -> int:
 
 def _class_defaults_for_user(user: str, qsrc: str, class_name: str) -> Dict[str, str]:
     root = _queue_root_for_user(user)
-    candidates = [root / "classes" / f"{class_name}.env"]
+    here = Path(__file__).resolve()
+    candidates = [
+        root / "classes" / f"{class_name}.env",
+        here.parent.parent / "classes" / f"{class_name}.env",
+        Path.cwd() / "classes" / f"{class_name}.env",
+        Path("/usr/local/share/bashqueues/classes") / f"{class_name}.env",
+    ]
     if qsrc:
         candidates.append(Path(qsrc).resolve().parent / "classes" / f"{class_name}.env")
+    seen = set()
     for f in candidates:
+        key = str(f)
+        if key in seen:
+            continue
+        seen.add(key)
         if f.exists():
             return _parse_env_assignments(f)
     return {}
@@ -286,8 +297,10 @@ def _cron_selector_path() -> Optional[Path]:
     return None
 
 
-def _cron_select_class(user: str, command: str, qsrc: str) -> Tuple[Optional[str], int, str]:
-    """Ask the optional selector for a class. Failure is non-fatal."""
+def _cron_select_class(user: str, command: str, qsrc: str, metadata: Optional[Dict[str, str]] = None) -> Tuple[Optional[str], int, str]:
+    """Ask the optional selector for a class. Failure is non-fatal unless
+    metadata-triggered selector fail-closed routing returns CRON_POLICY_BLOCKED.
+    """
     selector = _cron_selector_path()
     if selector is None:
         return None, 0, "selector disabled or not installed"
@@ -299,18 +312,30 @@ def _cron_select_class(user: str, command: str, qsrc: str) -> Tuple[Optional[str
     if qsrc:
         env.setdefault("QUEUEBASH_SOURCE", qsrc)
     try:
+        args = [
+            sys.executable,
+            str(selector),
+            "--command",
+            command,
+            "--user",
+            user,
+            "--json",
+            "--min-confidence",
+            str(min_conf),
+        ]
+        metadata = metadata or {}
+        if metadata.get("tags"):
+            args.extend(["--tags", metadata["tags"]])
+        if metadata.get("jurisdiction"):
+            args.extend(["--jurisdiction", metadata["jurisdiction"]])
+        if metadata.get("classification"):
+            args.extend(["--classification", metadata["classification"]])
+        if metadata.get("cost_budget"):
+            args.extend(["--cost-budget", metadata["cost_budget"]])
+        if metadata.get("fail_closed"):
+            args.append("--fail-closed")
         out = subprocess.check_output(
-            [
-                sys.executable,
-                str(selector),
-                "--command",
-                command,
-                "--user",
-                user,
-                "--json",
-                "--min-confidence",
-                str(min_conf),
-            ],
+            args,
             text=True,
             timeout=float(os.environ.get("QUEUEBASH_CRON_CLASS_SELECTOR_TIMEOUT", "5")),
             env=env,
@@ -327,7 +352,7 @@ def _cron_select_class(user: str, command: str, qsrc: str) -> Tuple[Optional[str
         return None, 0, f"selector_error={type(e).__name__}"
 
 
-def _resolve_cron_class(user: str, command: str, cron_source: str, line_no: int, qsrc: str, explicit_class: Optional[str], auth_code: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+def _resolve_cron_class(user: str, command: str, cron_source: str, line_no: int, qsrc: str, explicit_class: Optional[str], auth_code: Optional[str], metadata: Optional[Dict[str, str]] = None) -> Tuple[Optional[str], Optional[str]]:
     if explicit_class:
         if not _cron_class_below_minimum(user, qsrc, explicit_class):
             return explicit_class, None
@@ -339,7 +364,7 @@ def _resolve_cron_class(user: str, command: str, cron_source: str, line_no: int,
         )
         return None, None
 
-    selected_class, confidence, reason = _cron_select_class(user, command, qsrc)
+    selected_class, confidence, reason = _cron_select_class(user, command, qsrc, metadata)
     if not selected_class:
         return None, None
     if not _cron_class_below_minimum(user, qsrc, selected_class):
@@ -355,11 +380,11 @@ def _shell_single_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
-def dispatch(user: str, command: str, cron_source: str, line_no: int, dryrun: bool = False, explicit_class: Optional[str] = None, auth_code: Optional[str] = None) -> int:
+def dispatch(user: str, command: str, cron_source: str, line_no: int, dryrun: bool = False, explicit_class: Optional[str] = None, auth_code: Optional[str] = None, metadata: Optional[Dict[str, str]] = None) -> int:
     cname = stable_name(user, command)
     qname = cname
     qsrc = source_for_user(user)
-    explicit_class, auth_code = _resolve_cron_class(user, command, cron_source, line_no, qsrc, explicit_class, auth_code)
+    explicit_class, auth_code = _resolve_cron_class(user, command, cron_source, line_no, qsrc, explicit_class, auth_code, metadata)
     target_class = explicit_class or cname
     home = user_home(user)
     class_body = f"""# bashqueues generated cron bridge class: {cname}
@@ -464,15 +489,23 @@ def _parse_cron_assignment(line: str) -> Optional[Tuple[str, str]]:
 
 
 def _parse_comment_directive(line: str) -> Optional[Tuple[str, str]]:
-    """Parse local bashqueues cron directives, for example: #class NIGHTLY."""
+    """Parse local bashqueues cron directives, for example: #class NIGHTLY.
+
+    Governance metadata directives are intentionally side-effect free and are
+    passed to the cron class selector only when no explicit class is declared:
+      #jurisdiction GDPR
+      #classification SENSITIVE
+      #tags gdpr,compute
+      #cost-budget 0.05
+    """
     stripped = line.strip()
     if not stripped.startswith("#"):
         return None
     body = stripped[1:].strip()
-    m = re.match(r"(?i)^(?:bashqueues[-_])?(class|authorisation|authorization)\s+(.+?)\s*$", body)
+    m = re.match(r"(?i)^(?:bashqueues[-_])?(class|authorisation|authorization|tags|jurisdiction|classification|cost[-_]?budget)\s+(.+?)\s*$", body)
     if not m:
         return None
-    return m.group(1).lower(), m.group(2).strip().strip('"').strip("'")
+    return m.group(1).lower().replace("-", "_"), m.group(2).strip().strip('"').strip("'")
 
 
 def iter_user_crons(spool: Path) -> Iterable[Tuple[str, Path, int, str, List[str], str, Optional[str]]]:
@@ -484,6 +517,7 @@ def iter_user_crons(spool: Path) -> Iterable[Tuple[str, Path, int, str, List[str
         user = path.name
         active_class: Optional[str] = None
         active_authorisation: Optional[str] = None
+        active_metadata: Dict[str, str] = {}
         with path.open(errors="replace") as f:
             for n, line in enumerate(f, 1):
                 stripped = line.strip()
@@ -496,6 +530,16 @@ def iter_user_crons(spool: Path) -> Iterable[Tuple[str, Path, int, str, List[str
                         active_class = value or None
                     elif key in ("authorisation", "authorization"):
                         active_authorisation = value or None
+                    elif key == "tags":
+                        active_metadata["tags"] = value
+                    elif key == "jurisdiction":
+                        active_metadata["jurisdiction"] = value
+                        active_metadata.setdefault("fail_closed", "1")
+                    elif key == "classification":
+                        active_metadata["classification"] = value
+                        active_metadata.setdefault("fail_closed", "1")
+                    elif key == "cost_budget":
+                        active_metadata["cost_budget"] = value
                     continue
                 if stripped.startswith("#"):
                     continue
@@ -506,6 +550,16 @@ def iter_user_crons(spool: Path) -> Iterable[Tuple[str, Path, int, str, List[str
                         active_class = value or None
                     elif key in ("BASHQUEUES_AUTHORISATION", "BASHQUEUES_AUTHORIZATION"):
                         active_authorisation = value or None
+                    elif key == "BASHQUEUES_TAGS":
+                        active_metadata["tags"] = value
+                    elif key == "BASHQUEUES_JURISDICTION":
+                        active_metadata["jurisdiction"] = value
+                        active_metadata.setdefault("fail_closed", "1")
+                    elif key == "BASHQUEUES_CLASSIFICATION":
+                        active_metadata["classification"] = value
+                        active_metadata.setdefault("fail_closed", "1")
+                    elif key == "BASHQUEUES_COST_BUDGET":
+                        active_metadata["cost_budget"] = value
                     continue
                 expanded = expand_cron_macro(stripped, path, n, system=False)
                 if expanded is None:
@@ -514,7 +568,7 @@ def iter_user_crons(spool: Path) -> Iterable[Tuple[str, Path, int, str, List[str
                 if len(parts) != 6:
                     print(f"WARN invalid user cron {path}:{n}: expected 6 fields", file=sys.stderr)
                     continue
-                yield user, path, n, stripped, parts[:5], parts[5], active_class, active_authorisation
+                yield user, path, n, stripped, parts[:5], parts[5], active_class, active_authorisation, dict(active_metadata)
 
 
 def iter_system_crons(system_dir: Path) -> Iterable[Tuple[str, Path, int, str, List[str], str, Optional[str]]]:
@@ -525,6 +579,7 @@ def iter_system_crons(system_dir: Path) -> Iterable[Tuple[str, Path, int, str, L
             continue
         active_class: Optional[str] = None
         active_authorisation: Optional[str] = None
+        active_metadata: Dict[str, str] = {}
         with path.open(errors="replace") as f:
             for n, line in enumerate(f, 1):
                 stripped = line.strip()
@@ -537,6 +592,16 @@ def iter_system_crons(system_dir: Path) -> Iterable[Tuple[str, Path, int, str, L
                         active_class = value or None
                     elif key in ("authorisation", "authorization"):
                         active_authorisation = value or None
+                    elif key == "tags":
+                        active_metadata["tags"] = value
+                    elif key == "jurisdiction":
+                        active_metadata["jurisdiction"] = value
+                        active_metadata.setdefault("fail_closed", "1")
+                    elif key == "classification":
+                        active_metadata["classification"] = value
+                        active_metadata.setdefault("fail_closed", "1")
+                    elif key == "cost_budget":
+                        active_metadata["cost_budget"] = value
                     continue
                 if stripped.startswith("#"):
                     continue
@@ -547,6 +612,16 @@ def iter_system_crons(system_dir: Path) -> Iterable[Tuple[str, Path, int, str, L
                         active_class = value or None
                     elif key in ("BASHQUEUES_AUTHORISATION", "BASHQUEUES_AUTHORIZATION"):
                         active_authorisation = value or None
+                    elif key == "BASHQUEUES_TAGS":
+                        active_metadata["tags"] = value
+                    elif key == "BASHQUEUES_JURISDICTION":
+                        active_metadata["jurisdiction"] = value
+                        active_metadata.setdefault("fail_closed", "1")
+                    elif key == "BASHQUEUES_CLASSIFICATION":
+                        active_metadata["classification"] = value
+                        active_metadata.setdefault("fail_closed", "1")
+                    elif key == "BASHQUEUES_COST_BUDGET":
+                        active_metadata["cost_budget"] = value
                     continue
                 expanded = expand_cron_macro(stripped, path, n, system=True)
                 if expanded is None:
@@ -555,7 +630,7 @@ def iter_system_crons(system_dir: Path) -> Iterable[Tuple[str, Path, int, str, L
                 if len(parts) != 7:
                     print(f"WARN invalid system cron {path}:{n}: expected 7 fields", file=sys.stderr)
                     continue
-                yield parts[5], path, n, stripped, parts[:5], parts[6], active_class, active_authorisation
+                yield parts[5], path, n, stripped, parts[:5], parts[6], active_class, active_authorisation, dict(active_metadata)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -578,14 +653,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     state_dir = Path(ns.state_dir)
     rc = 0
     entries = list(iter_user_crons(Path(ns.spool_dir))) + list(iter_system_crons(Path(ns.system_dir)))
-    for user, path, line_no, raw_line, parts, command, explicit_class, auth_code in entries:
+    for user, path, line_no, raw_line, parts, command, explicit_class, auth_code, metadata in entries:
         try:
             if not should_run(parts, dt):
                 continue
             rid = run_id(str(path), user, line_no, raw_line, minute_key)
             if already_dispatched(state_dir, rid, ns.dryrun):
                 continue
-            drc = dispatch(user, command, f"{path}", line_no, dryrun=ns.dryrun, explicit_class=explicit_class, auth_code=auth_code)
+            drc = dispatch(user, command, f"{path}", line_no, dryrun=ns.dryrun, explicit_class=explicit_class, auth_code=auth_code, metadata=metadata)
             rc = rc or drc
         except Exception as e:
             print(f"ERROR {path}:{line_no}: {e}", file=sys.stderr)
