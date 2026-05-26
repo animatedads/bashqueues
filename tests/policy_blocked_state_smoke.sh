@@ -26,14 +26,14 @@ source ./queuebash.sh
 out="$(queue submit weak_with_reason --reason 'audit only' -- bash -c 'echo SHOULD_NOT_RUN')"
 id="$(printf '%s\n' "$out" | awk '/^Submitted / {print $2}')"
 [[ -n "$id" ]]
-queue run >/tmp/bq_policy_blocked_run.$$ 2>&1 || true
-[[ -f "$QUEUEBASH_ROOT/policy_blocked/$id.job" ]]
+queue run >/tmp/bq_pol_blocked_run.$$ 2>&1 || true
+[[ -f "$QUEUEBASH_ROOT/pol_blocked/$id.job" ]]
 [[ ! -f "$QUEUEBASH_ROOT/failed/$id.job" ]]
 [[ ! -f "$QUEUEBASH_ROOT/done/$id.job" ]]
-grep -q '^POLICY_BLOCKED=1$' "$QUEUEBASH_ROOT/policy_blocked/$id.job"
+grep -q '^POLICY_BLOCKED=1$' "$QUEUEBASH_ROOT/pol_blocked/$id.job"
 grep -q 'POLICY_BLOCKED' "$QUEUEBASH_ROOT/logs/$id.log"
 grep -q 'No class claims, asset preflight checks' "$QUEUEBASH_ROOT/logs/$id.log"
 ! grep -q 'SHOULD_NOT_RUN' "$QUEUEBASH_ROOT/logs/$id.log"
-rm -f /tmp/bq_policy_blocked_run.$$
+rm -f /tmp/bq_pol_blocked_run.$$
 
-echo '[PASS] policy-contrary jobs move to policy_blocked without running or retrying'
+echo '[PASS] policy-contrary jobs move to pol_blocked without running or retrying'

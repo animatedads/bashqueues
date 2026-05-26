@@ -1,9 +1,42 @@
+## 0.17.57 - Microsoft enterprise asset suite
+
+- Added first-class Microsoft-domain asset plugins: msad, entra, msfs, mscloud, exchange, teams, msdns, msca, winrm, azure, and vault.
+- Side-effecting Microsoft probes are explicit opt-in: Teams webhook posting requires allow_post=1 and Exchange test mail requires allow_send=1.
+- Added Microsoft asset discovery/static checks so `queue assets list --json` exposes the new facilities without executing network probes.
+- Added MSDOMAIN class template documentation for AD/Entra/Graph/Azure/WinRM-style workloads.
+
+## 0.17.55 - Programmatic JSON surfaces for dogfood automation
+
+## 0.17.56 - Asset listing noninteractive guard
+
+- Hardened `queue assets list` and `queue assets list --json` so discovery prefilters files before sourcing them.
+- Non-asset helper scripts under a damaged or hand-edited `assets.d` are now reported as `not_asset_plugin` and are not sourced.
+- Asset discovery now runs with stdin detached and `QUEUEBASH_ASSET_DISCOVERY=1` to prevent operator prompts during metadata listing.
+- Added static and smoke tests for noninteractive asset facility listing.
+
+
+- Added `--json` output for `queue submit`, returning the submitted QID, state, class, command line, job file, queue root, and priority without parsing human text.
+- Added `queue list --json` for machine-readable job inventory across queue states.
+- Added JSON inventory output for `queue classes list --json`, `queue assets list --json`, and `queue caps list --json`.
+- Added JSON audit output for `queue authorisation list --json` and `queue keys list --json`.
+- Added `queue explain <job> --json` as a compact machine-readable alias over the status object, while retaining the full human forensic explain by default.
+- Added `tests/json_programmatic_surfaces_static.sh` and `tests/json_programmatic_surfaces_smoke.sh` for the new JSON operator/automation surfaces.
+
+## 0.17.54 - Canonical pol_blocked state and compact job status
+
+- Standardised the policy-block terminal directory/state on `pol_blocked`; `pol_block` is no longer the filesystem target.
+- `queue authorise` now finds jobs in `pol_blocked`, while the old `policy_blocked` directory remains a hidden compatibility fallback for old queue roots.
+- Removed the old policy-block state spellings from normal user-facing state lists, completions, and help text.
+- Added `queue status <qid-or-exact-job-name> [--json] [--tail N]` for compact automated processing of QID, submission line, command, state, class, PID data, timing, return code, job file, log path, and log tail.
+- Detached workers started by `queue run --detach` now write to per-worker logs under `logs/` instead of inheriting the launcher stdout/stderr.
+- Added `tests/status_job_static.sh` and `tests/status_job_smoke.sh`.
+
 ## 0.17.53 - Merged class-statement policy gate
 
 - The execution policy gate now loads and merges every discovered `class-statement` policy returned by `queue policy list`, instead of only sourcing the active/default statement.
 - Cumulative class-statement controls such as `CLASS_POLICY_BLOCK_CLASS_NAMES`, command block lists, weak-policy lists, selectable sandbox/seccomp lists, and authorisation requirements are merged so one policy file cannot erase another file's emergency block.
 - `queue policy explain` with no arguments now shows the effective merged class-statement policy, including the files loaded and the effective block/authorisation values.
-- Added `tests/class_statement_merge_static.sh`, including a runtime regression where a cron-generated class blocked from `policyblock-test.env` is moved to `pol_block` without running the payload.
+- Added `tests/class_statement_merge_static.sh`, including a runtime regression where a cron-generated class blocked from `policyblock-test.env` is moved to `pol_blocked` without running the payload.
 
 ## 0.17.52 - Panel tab wrapping and cron health commands
 
@@ -77,10 +110,10 @@
 
 ## 0.17.51 - Policy re-evaluate, expiring exceptions, and queue backup
 
-- Added `queue reevaluate` to recheck existing `pol_block` jobs after policy changes or on-file authorisations.
+- Added `queue reevaluate` to recheck existing `pol_blocked` jobs after policy changes or on-file authorisations.
 - Added `--expires` / `--expires-at` to `queue exception add`; expired asset exceptions are ignored but retained for audit.
 - Added `queue backup create` and `queue backup restore` for filesystem queue snapshots.
-- Added docs for pol_block re-evaluation, time-limited exceptions, and queue backup/restore.
+- Added docs for pol_blocked re-evaluation, time-limited exceptions, and queue backup/restore.
 
 ## 0.17.41 - Queue sentinel control-plane loop
 
@@ -126,7 +159,7 @@
 - Resettable fields return to safe defaults, for example priority=10, retries=0, class default runner=auto.
 - Security exception fields can be cleared from the Task Creator by selecting the field and pressing Delete.
 
-## 0.17.51 - pol_block resubmission and exemption audit model
+## 0.17.51 - pol_blocked resubmission and exemption audit model
 
 
 ## 0.17.51 - policy command blocks and exemption visibility
@@ -142,8 +175,8 @@
 - Queue Manager Task Creator F10/Enter now edits security reason, authorisation code, and no-exemption fields.
 - Added docs for emergency policy command blocks.
 
-- Renamed the new policy-block terminal state to `pol_block` for screen-friendly Queue Manager display, while retaining legacy `policy_blocked` directory compatibility for existing jobs.
-- `queue resubmit` now accepts jobs in `pol_block` / legacy `policy_blocked` as well as `failed` and `interrupted`.
+- Renamed the new policy-block terminal state to `pol_blocked` for screen-friendly Queue Manager display, while retaining legacy `pol_blocked` directory compatibility for existing jobs.
+- `queue resubmit` now accepts jobs in `pol_blocked` / legacy `pol_blocked` as well as `failed` and `interrupted`.
 - Resubmitted jobs preserve security authorisation/exemption fields so an authorised policy-blocked command can be resubmitted after approval.
 - Submit and worker policy gates now look for any valid on-file command-bound authorisation for the same user and exact command hash; the user does not have to paste the code again until it expires.
 - Added explicit exemption audit categories:
@@ -155,13 +188,13 @@
 ## 0.17.33 - Policy-block test class policy
 
 - Added `policies.d/class-statement/policyblock-test.env`, a validation-only shared policy statement that policy-blocks jobs using class name `POLICYBLOCKED`.
-- Added `classes/POLICYBLOCKED.env` as a harmless test class for validating the `policy_blocked` terminal state.
+- Added `classes/POLICYBLOCKED.env` as a harmless test class for validating the `pol_blocked` terminal state.
 - Worker policy gate now supports `CLASS_POLICY_BLOCK_CLASS_NAMES` and reports the blocked class in the policy-block reason.
 - Added docs and regression tests for the policy-block test hook.
 
 ## 0.17.32 - Policy-blocked terminal state
 
-- Added `policy_blocked` as a terminal queue state for jobs that are contrary to the active shared/admin class-policy statement at execution time and do not have a valid standing grant or command-bound authorisation.
+- Added `pol_blocked` as a terminal queue state for jobs that are contrary to the active shared/admin class-policy statement at execution time and do not have a valid standing grant or command-bound authorisation.
 - Worker-side policy checking now happens before class claims, asset preflight, dynamic preflight, global claims, or payload launch.
 - Policy-blocked jobs are not retried; they must be resubmitted after a valid authorisation exists for the exact command.
 - Valid command-bound authorisations can be reused for unlimited resubmissions of the same command until expiry.

@@ -39,10 +39,10 @@ cat > "$tmp/snmpinform" <<'FAKE'
 printf '%s\n' "$*" > "${SNMP_INFORM_CAPTURE:?}"
 FAKE
 chmod +x "$tmp/snmpinform"
-SNMP_INFORM_CAPTURE="$tmp/inform.args" JOB_NAME=job JOB_ID=qid JOB_SNMP_STATE_INT=2 JOB_EXIT_REASON=pol_block \
+SNMP_INFORM_CAPTURE="$tmp/inform.args" JOB_NAME=job JOB_ID=qid JOB_SNMP_STATE_INT=2 JOB_EXIT_REASON=pol_blocked \
     bin/queue_snmp_inform.sh 10.0.0.250 alerts .1.3.6.1.4.1.99999.1
 
 grep -q '.1.3.6.1.4.1.99999.1.3 i 2' "$tmp/inform.args" || { cat "$tmp/inform.args" >&2; exit 1; }
-grep -q '.1.3.6.1.4.1.99999.1.4 s pol_block' "$tmp/inform.args" || { cat "$tmp/inform.args" >&2; exit 1; }
+grep -q '.1.3.6.1.4.1.99999.1.4 s pol_blocked' "$tmp/inform.args" || { cat "$tmp/inform.args" >&2; exit 1; }
 
 echo "[PASS] SNMP assets validate values and SNMP inform emits typed varbinds"

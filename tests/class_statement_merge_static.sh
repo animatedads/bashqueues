@@ -50,7 +50,7 @@ bash -lc '
     qid=$(printf "%s\n" "$out" | awk "{print \$2}")
     queue run >/dev/null 2>&1 || true
 
-    [[ -f "$QUEUEBASH_ROOT/pol_block/$qid.job" ]]
+    [[ -f "$QUEUEBASH_ROOT/pol_blocked/$qid.job" ]]
     if [[ -f "$QUEUEBASH_ROOT/logs/$qid.log" ]] && grep -q "should-not-run" "$QUEUEBASH_ROOT/logs/$qid.log"; then
         echo "blocked job payload appears to have run" >&2
         exit 1

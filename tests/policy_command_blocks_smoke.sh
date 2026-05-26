@@ -26,7 +26,7 @@ out="$(queue submit cmdblock -- echo SHOULD_NOT_RUN)"
 id="$(printf '%s\n' "$out" | awk '/^Submitted / {print $2}')"
 [[ -n "$id" ]]
 queue run >/tmp/bq_command_block_run.$$ 2>&1 || true
-[[ -f "$QUEUEBASH_ROOT/pol_block/$id.job" ]]
+[[ -f "$QUEUEBASH_ROOT/pol_blocked/$id.job" ]]
 grep -q "command word 'echo' is policy-blocked" "$QUEUEBASH_ROOT/logs/$id.log"
 ! grep -q '^SHOULD_NOT_RUN$' "$QUEUEBASH_ROOT/logs/$id.log"
 

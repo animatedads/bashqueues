@@ -7,7 +7,7 @@ suddenly known to be unsafe, an administrator can put a read-only policy under
 executing, including jobs submitted by cron.
 
 The worker checks command blocks before class claims, asset preflight, dynamic
-preflight, global claims, and payload launch.  A blocked job moves to `pol_block`
+preflight, global claims, and payload launch.  A blocked job moves to `pol_blocked`
 and is not retried.
 
 ## Policy variables

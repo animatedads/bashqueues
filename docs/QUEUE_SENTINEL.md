@@ -23,7 +23,7 @@ The sentinel currently performs these cheap checks:
 - removes dead detached-worker PID files;
 - marks definitely stale `running` jobs as `interrupted`;
 - applies the shared/admin class-statement policy gate to pending jobs;
-- moves policy-contrary jobs to `pol_block` without claims, preflight, or payload launch;
+- moves policy-contrary jobs to `pol_blocked` without claims, preflight, or payload launch;
 - evaluates only `deadline:monitor` and `deadline:panic` control-plane assets for jobs that are schedule-due and dependency-ready.
 
 ## Non-responsibilities

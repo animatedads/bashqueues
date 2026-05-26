@@ -16,13 +16,13 @@ out="$(queue submit pbtest --class POLICYBLOCKED --reason 'submit audit only' --
 id="$(printf '%s\n' "$out" | awk '/^Submitted / {print $2}')"
 [[ -n "$id" ]]
 queue sentinel --once >/tmp/bq_sentinel_policy.$$ 2>&1 || true
-[[ -f "$QUEUEBASH_ROOT/pol_block/$id.job" ]]
+[[ -f "$QUEUEBASH_ROOT/pol_blocked/$id.job" ]]
 [[ ! -f "$QUEUEBASH_ROOT/pending/$id.job" ]]
 [[ ! -f "$QUEUEBASH_ROOT/running/$id.job" ]]
-grep -q '^POLICY_BLOCKED=1$' "$QUEUEBASH_ROOT/pol_block/$id.job"
-grep -q '^POLICY_BLOCKED_BY=sentinel$' "$QUEUEBASH_ROOT/pol_block/$id.job"
+grep -q '^POLICY_BLOCKED=1$' "$QUEUEBASH_ROOT/pol_blocked/$id.job"
+grep -q '^POLICY_BLOCKED_BY=sentinel$' "$QUEUEBASH_ROOT/pol_blocked/$id.job"
 grep -q 'Blocked by cheap sentinel policy gate' "$QUEUEBASH_ROOT/logs/$id.log"
 ! grep -q 'SHOULD_NOT_RUN' "$QUEUEBASH_ROOT/logs/$id.log"
 rm -f /tmp/bq_sentinel_policy.$$
 
-echo '[PASS] sentinel moves policy-contrary pending jobs to pol_block without a worker'
+echo '[PASS] sentinel moves policy-contrary pending jobs to pol_blocked without a worker'

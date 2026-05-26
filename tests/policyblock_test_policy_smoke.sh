@@ -16,13 +16,13 @@ out="$(queue submit pbtest --class POLICYBLOCKED --reason 'submit audit only' --
 id="$(printf '%s\n' "$out" | awk '/^Submitted / {print $2}')"
 [[ -n "$id" ]]
 queue run >/tmp/bq_policyblock_test_run.$$ 2>&1 || true
-[[ -f "$QUEUEBASH_ROOT/pol_block/$id.job" ]]
+[[ -f "$QUEUEBASH_ROOT/pol_blocked/$id.job" ]]
 [[ ! -f "$QUEUEBASH_ROOT/failed/$id.job" ]]
 [[ ! -f "$QUEUEBASH_ROOT/done/$id.job" ]]
-grep -q '^POLICY_BLOCKED=1$' "$QUEUEBASH_ROOT/pol_block/$id.job"
+grep -q '^POLICY_BLOCKED=1$' "$QUEUEBASH_ROOT/pol_blocked/$id.job"
 grep -q "class 'POLICYBLOCKED' is policy-blocked" "$QUEUEBASH_ROOT/logs/$id.log"
 grep -q 'No class claims, asset preflight checks' "$QUEUEBASH_ROOT/logs/$id.log"
 ! grep -q 'SHOULD_NOT_RUN' "$QUEUEBASH_ROOT/logs/$id.log"
 rm -f /tmp/bq_policyblock_test_run.$$
 
-echo '[PASS] policyblock-test policy moves POLICYBLOCKED class jobs to pol_block'
+echo '[PASS] policyblock-test policy moves POLICYBLOCKED class jobs to pol_blocked'

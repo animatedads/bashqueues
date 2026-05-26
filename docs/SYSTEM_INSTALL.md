@@ -92,4 +92,4 @@ sudo ./install-system.sh --dryrun
 
 ## Safety behaviour
 
-The installer refuses to run unless it is root.  Installation steps are submitted to an isolated temporary queue after setting `QUEUEBASH_ALLOW_NONINTERACTIVE=1`, then `queue run` processes that queue.  If any installation job lands in `failed`, `pol_block`, or `interrupted`, the installer prints the job/log paths and exits non-zero.
+The installer refuses to run unless it is root.  Installation steps are submitted to an isolated temporary queue after setting `QUEUEBASH_ALLOW_NONINTERACTIVE=1`, then `queue run` processes that queue.  If any installation job lands in `failed`, `pol_blocked`, or `interrupted`, the installer prints the job/log paths and exits non-zero.

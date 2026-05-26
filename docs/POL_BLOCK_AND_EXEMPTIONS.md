@@ -1,8 +1,8 @@
-# pol_block and security exemption audit model
+# pol_blocked and security exemption audit model
 
-`pol_block` is the terminal state for a job that is contrary to the active shared/admin class-policy statement and does not have a valid exemption.
+`pol_blocked` is the terminal state for a job that is contrary to the active shared/admin class-policy statement and does not have a valid exemption.
 
-A `pol_block` job is not retried. It does not run class claims, asset preflight, dynamic preflight, global claims, or the payload. Once an administrator issues a valid command-bound authorisation for the exact command, the job can be resubmitted.
+A `pol_blocked` job is not retried. It does not run class claims, asset preflight, dynamic preflight, global claims, or the payload. Once an administrator issues a valid command-bound authorisation for the exact command, the job can be resubmitted.
 
 The same valid, unexpired, command-bound authorisation may be reused for unlimited resubmissions of the exact same command hash. The user does not need to paste the code every time; the queue checks the authorisations directory for a valid matching code.
 

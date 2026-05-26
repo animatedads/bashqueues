@@ -92,7 +92,7 @@ snmp:string_match   expect_str=TEXT match=exact|contains
 JOB_NAME="nightly-import" \
 JOB_ID="20260525_101500_123456" \
 JOB_SNMP_STATE_INT=2 \
-JOB_EXIT_REASON="pol_block command matched emergency policy" \
+JOB_EXIT_REASON="pol_blocked command matched emergency policy" \
   bin/queue_snmp_inform.sh 10.0.0.250 alerts
 ```
 
@@ -109,7 +109,7 @@ State integer convention:
 
 ```text
 1 failed
-2 pol_block
+2 pol_blocked
 3 security_cap_tripped
 4 auth_tampered
 ```

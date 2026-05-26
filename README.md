@@ -43,7 +43,16 @@ It is designed to be inspectable and recoverable using normal shell tools. The q
 
 ## Policy-blocked jobs
 
-Jobs that are contrary to the active shared/admin class-policy statement at execution time and do not have a valid standing grant or command-bound authorisation move to `pol_block`. This is a terminal state, not a retryable failure. The worker performs this check before class claims, asset preflight, dynamic preflight, global claims, or payload launch.
+Jobs that are contrary to the active shared/admin class-policy statement at execution time and do not have a valid standing grant or command-bound authorisation move to `pol_blocked`. This is a terminal state, not a retryable failure. The worker performs this check before class claims, asset preflight, dynamic preflight, global claims, or payload launch.
+
+Compact status for automation:
+
+```bash
+queue status QID
+queue status QID --json --tail 40
+```
+
+`queue status` is intentionally shorter than `queue explain` and includes the QID, synthetic submission line, command line, state, class, PID data, timing, return code, job file, log path, and recent log tail.
 
 After an admin issues a valid authorisation for the exact command, the command may be resubmitted with `--authorisation CODE`. The same command-bound code can be reused for unlimited resubmissions of that exact command until it expires.
 
@@ -3010,12 +3019,12 @@ When an operator such as `root` is working against another user's queue with `qu
 A validation-only policy is included at `policies.d/class-statement/policyblock-test.env`.
 When installed as a shared/admin class-policy statement and selected with
 `QUEUEBASH_CLASS_POLICY_STATEMENT=policyblock-test`, jobs submitted with
-`--class POLICYBLOCKED` move directly to the terminal `pol_block` state unless
+`--class POLICYBLOCKED` move directly to the terminal `pol_blocked` state unless
 they have a valid command-bound authorisation. See `docs/POLICYBLOCK_TEST.md`.
 
-### pol_block and security exemptions
+### pol_blocked and security exemptions
 
-Jobs blocked by a shared/admin class-policy statement now move to the terminal `pol_block` state. They do not retry and do not run preflight checks or payloads. After a valid command-bound authorisation exists, the same command can be resubmitted repeatedly until the authorisation expires. Exemptions are logged as `policy-approved`, `description-approved`, or `code-approved`.
+Jobs blocked by a shared/admin class-policy statement now move to the terminal `pol_blocked` state. They do not retry and do not run preflight checks or payloads. After a valid command-bound authorisation exists, the same command can be resubmitted repeatedly until the authorisation expires. Exemptions are logged as `policy-approved`, `description-approved`, or `code-approved`.
 
 ### Emergency policy command blocks
 
@@ -3040,7 +3049,7 @@ queue scheduler --interval 30 --detach   # alias
 queue daemon --interval 30 --detach      # sentinel plus --min-workers 1
 ```
 
-The sentinel currently removes dead detached-worker PID files, marks definitely stale running jobs as `interrupted`, moves policy-contrary pending jobs to `pol_block`, and evaluates only `deadline:monitor` / `deadline:panic` assets for due, dependency-ready jobs. With `--min-workers N` it also starts enough detached payload workers to maintain the requested minimum whenever at least one due, dependency-ready job exists. This lets deadline-driven priority boosts and bounded extra-worker starts happen before a payload worker becomes free, while keeping the control thread itself cheap.
+The sentinel currently removes dead detached-worker PID files, marks definitely stale running jobs as `interrupted`, moves policy-contrary pending jobs to `pol_blocked`, and evaluates only `deadline:monitor` / `deadline:panic` assets for due, dependency-ready jobs. With `--min-workers N` it also starts enough detached payload workers to maintain the requested minimum whenever at least one due, dependency-ready job exists. This lets deadline-driven priority boosts and bounded extra-worker starts happen before a payload worker becomes free, while keeping the control thread itself cheap.
 
 
 ### Queue Manager policy/global editors
@@ -3055,7 +3064,7 @@ Typed command entry preserves the first printable key that opened the command pr
 
 ### 0.17.51 operations additions
 
-- `queue reevaluate [--all|QID]` rechecks `pol_block` jobs after a policy change or new command-bound authorisation.
+- `queue reevaluate [--all|QID]` rechecks `pol_blocked` jobs after a policy change or new command-bound authorisation.
 - `queue exception add QID ASSET --reason TEXT --expires +2h` creates time-limited asset exceptions.
 - `queue backup create FILE.tar.gz` and `queue backup restore FILE.tar.gz --to DIR` provide filesystem backup/restore helpers.
 

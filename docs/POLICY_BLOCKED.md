@@ -1,6 +1,6 @@
 # Policy-blocked jobs
 
-`pol_block` is a terminal queue state for jobs that are contrary to the active shared/admin class-policy statement at execution time and do not have a valid standing grant or command-bound authorisation.
+`pol_blocked` is a terminal queue state for jobs that are contrary to the active shared/admin class-policy statement at execution time and do not have a valid standing grant or command-bound authorisation.
 
 The worker checks this before class claims, asset preflight, dynamic preflight, global claims, or payload launch.  A policy-blocked job therefore does not run preflight checks and is not retried.
 
@@ -14,7 +14,7 @@ Submit-time `--reason` is useful audit text, but it is not a durable permission 
 Without that, the job moves to:
 
 ```text
-$QUEUEBASH_ROOT/pol_block/<qid>.job
+$QUEUEBASH_ROOT/pol_blocked/<qid>.job
 ```
 
 The job log records `POLICY_BLOCKED` and states that no preflight or payload launch was attempted.
@@ -36,4 +36,4 @@ This is intentional.  It supports sensible administration: an admin can approve 
 Expiry still applies.  Once the authorisation expires, future submissions using that code are blocked by normal authorisation validation.
 
 
-Legacy name: older 0.17.32/0.17.33 jobs may still live under `policy_blocked`; current screen-facing state is `pol_block`.
+Legacy name: older 0.17.32/0.17.33 jobs may still live under `pol_blocked`; current screen-facing state is `pol_blocked`.

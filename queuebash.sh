@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.53"
+QUEUEBASH_VERSION="0.17.57"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -422,7 +422,7 @@ _queue_init() {
     local default_class="${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}"
     local default_file="$root/classes/$default_class.env"
 
-    mkdir -p "$root"/{pending,running,paused,done,failed,pol_block,policy_blocked,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,caps.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets}
+    mkdir -p "$root"/{pending,running,paused,done,failed,pol_blocked,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,assets.d,caps.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets}
 
     if [[ ! -f "$default_file" ]]; then
         cat > "$default_file" <<'EOF'
@@ -478,7 +478,7 @@ _queue_job_pri() {
 _queue_job_id_and_names_for_completion() {
     local root="$(_queue_root)"
     local state f id name
-    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
         for f in "$root/$state"/*.job; do
             [[ -e "$f" ]] || continue
             id="$(basename "$f" .job)"
@@ -501,7 +501,7 @@ _queue_find_jobs() {
 
     [[ -z "$needle" ]] && return 1
 
-    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
         for f in "$root/$state"/*.job; do
             [[ -e "$f" ]] || continue
             id="$(basename "$f" .job)"
@@ -1217,7 +1217,7 @@ _queue_class_explain() {
     echo "class file:       $f"
     if [[ -f "$f" ]]; then echo "exists:           yes"; echo; echo "Contents:"; sed 's/^/  /' "$f"; echo; echo "Validation:"; _queue_class_validate_file "$(basename "$f" .env)" "$f" && echo "  OK" || true; else echo "exists:           no"; fi
     echo; echo "Jobs referencing this class:"
-    refs="$(grep -R -l -E "^JOB_CLASS=['\"]?${class}['\"]?$|^JOB_CLASS=${class}$" "$(_queue_root)"/{pending,running,paused,done,failed,pol_block,policy_blocked,interrupted,cancelled,deleted} 2>/dev/null || true)"
+    refs="$(grep -R -l -E "^JOB_CLASS=['\"]?${class}['\"]?$|^JOB_CLASS=${class}$" "$(_queue_root)"/{pending,running,paused,done,failed,pol_blocked,policy_blocked,interrupted,cancelled,deleted} 2>/dev/null || true)"
     [[ -n "$refs" ]] && echo "$refs" || echo "  none"
     echo
     echo "Class defaults:"
@@ -1644,7 +1644,10 @@ _queue_asset_scan_duplicate_publishers() {
     shopt -s nullglob
     for plugin in "$root/assets.d"/*.sh; do
         [[ -f "$plugin" ]] || continue
+        _queue_asset_plugin_looks_like_plugin "$plugin" || continue
         (
+            exec </dev/null
+            export QUEUEBASH_ASSET_DISCOVERY=1
             source "$plugin" >/dev/null 2>&1 || exit 0
             declare -F queue_asset_facilities >/dev/null 2>&1 || exit 0
             queue_asset_facilities | awk -v helper="$(basename "$plugin")" '{print $1 "\t" helper}'
@@ -1668,17 +1671,43 @@ _queue_asset_scan_duplicate_publishers() {
     rm -f "$tmp"
 }
 
+_queue_asset_plugin_looks_like_plugin() {
+    local plugin="${1:-}"
+    [[ -f "$plugin" ]] || return 1
+
+    # Asset listing/discovery must be metadata-only and noninteractive.  In a
+    # broken or hand-edited root it is possible for assets.d to contain helper
+    # scripts or symlinks to a project root.  Do not source arbitrary shell just
+    # to find out that it is not an asset plugin: helpers such as
+    # publish_to_github.sh may perform SSH/Git work at source time or prompt.
+    grep -Eq '^[[:space:]]*(function[[:space:]]+)?queue_asset_facilities[[:space:]]*(\(\))?[[:space:]]*\{' "$plugin" 2>/dev/null || return 1
+    grep -Eq '^[[:space:]]*(function[[:space:]]+)?queue_asset_check_[A-Za-z0-9_]+_[A-Za-z0-9_]+[[:space:]]*(\(\))?[[:space:]]*\{' "$plugin" 2>/dev/null || return 1
+    return 0
+}
+
 _queue_asset_scan_facilities() {
     local root="$(_queue_root)"
-    local plugin
+    local plugin base
     shopt -s nullglob
     for plugin in "$root/assets.d"/*.sh; do
         [[ -f "$plugin" ]] || continue
+        base="$(basename "$plugin")"
+
+        if ! _queue_asset_plugin_looks_like_plugin "$plugin"; then
+            echo "INVALID helper=$base not_asset_plugin"
+            continue
+        fi
+
         (
-            source "$plugin" >/dev/null 2>&1 || { echo "INVALID helper=$(basename "$plugin") source_failed"; exit 0; }
+            # Hard noninteractive guard for discovery.  Facility publishers must
+            # not need stdin; if a plugin ignores this and prompts anyway, it
+            # sees EOF rather than the operator terminal.
+            exec </dev/null
+            export QUEUEBASH_ASSET_DISCOVERY=1
+            source "$plugin" >/dev/null 2>&1 || { echo "INVALID helper=$base source_failed"; exit 0; }
 
             if ! _queue_asset_contract_validate_loaded "$plugin" quiet >/dev/null; then
-                echo "INVALID helper=$(basename "$plugin") contract_failed"
+                echo "INVALID helper=$base contract_failed"
                 exit 0
             fi
 
@@ -2557,7 +2586,7 @@ _queue_draft_init() {
 _queue_job_file_for_id_any_state() {
     local id="$1"
     local state f
-    for state in pending running done failed pol_block policy_blocked cancelled deleted interrupted; do
+    for state in pending running done failed pol_blocked policy_blocked cancelled deleted interrupted; do
         f="$(_queue_root)/$state/$id.job"
         [[ -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
     done
@@ -4017,7 +4046,7 @@ _queue_move_failure_diagnose() {
     [[ -w "$root/pending" ]] && echo "move_failure: pending_dir_writable=1" || echo "move_failure: pending_dir_writable=0"
 
     local state f count=0
-    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
         f="$root/$state/$id.job"
         if [[ -e "$f" ]]; then
             echo "move_failure: duplicate_record=$state/$id.job"
@@ -4067,7 +4096,7 @@ _queue_duplicate_qids_report() {
     local state f id tmp
     tmp="$(mktemp)"
 
-    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
         shopt -s nullglob
         for f in "$root/$state"/*.job; do
             [[ -f "$f" ]] || continue
@@ -4664,6 +4693,122 @@ _queue_tail_log_for_job() {
     fi
 }
 
+
+
+_queue_status_job() {
+    local target="${1:-}" json=0 tail_lines=20 arg
+    shift || true
+
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            --tail|-n)
+                [[ -n "${2:-}" ]] || { echo "queue status: --tail requires a line count" >&2; return 2; }
+                tail_lines="$2"; shift 2 ;;
+            job)
+                shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage:
+  queue status <qid-or-exact-job-name> [--json] [--tail N]
+  queue status job <qid-or-exact-job-name> [--json] [--tail N]
+
+Compact machine/operator summary. Use `queue explain` for the full forensic rundown.
+EOF
+                return 0 ;;
+            *)
+                if [[ -z "$target" ]]; then target="$1"; shift; else echo "queue status: unexpected argument: $1" >&2; return 2; fi ;;
+        esac
+    done
+
+    [[ -n "$target" ]] || { echo "Usage: queue status <qid-or-exact-job-name> [--json] [--tail N]" >&2; return 2; }
+    [[ "$tail_lines" =~ ^[0-9]+$ ]] || { echo "queue status: --tail requires a numeric line count" >&2; return 2; }
+
+    local matches=() f exact_name_count
+    while IFS= read -r f; do matches+=( "$f" ); done < <(_queue_find_jobs "$target")
+    [[ "${#matches[@]}" -gt 0 ]] || { echo "queue status: no such QID or exact job name: $target" >&2; return 1; }
+    exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+    if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 ]]; then
+        echo "queue status: ambiguous QID prefix: $target" >&2
+        _queue_print_matches "${matches[@]}"
+        return 2
+    fi
+    if [[ "${#matches[@]}" -gt 1 ]]; then
+        echo "queue status: multiple jobs named '$target'; use a QID" >&2
+        _queue_print_matches "${matches[@]}"
+        return 2
+    fi
+
+    f="${matches[0]}"
+    local id state name pri class cmd submitted started finished rc duration run_pid run_pgid systemd_unit log log_size tail_text submission_line
+    id="$(basename "$f" .job)"
+    state="$(basename "$(dirname "$f")")"
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
+    pri="$(_queue_job_pri "$f" 2>/dev/null || echo 10)"
+    class="$(_queue_class_for_job_file "$f" 2>/dev/null || _queue_job_var_value "$f" JOB_CLASS 2>/dev/null || echo DEFAULT)"
+    cmd="$(_queue_job_command "$f" 2>/dev/null || true)"
+    submitted="$(_queue_job_var_value "$f" SUBMITTED_AT 2>/dev/null || true)"
+    started="$(_queue_job_var_value "$f" RUN_STARTED_AT 2>/dev/null || true)"
+    finished="$(_queue_job_var_value "$f" EXEC_FINISHED_AT 2>/dev/null || _queue_job_var_value "$f" FINISHED_AT 2>/dev/null || true)"
+    rc="$(_queue_job_var_value "$f" EXIT_CODE 2>/dev/null || true)"
+    duration="$(_queue_job_var_value "$f" DURATION_SECONDS 2>/dev/null || true)"
+    run_pid="$(_queue_job_var_value "$f" RUN_PID 2>/dev/null || true)"
+    run_pgid="$(_queue_job_var_value "$f" RUN_PGID 2>/dev/null || true)"
+    systemd_unit="$(_queue_job_var_value "$f" SYSTEMD_UNIT 2>/dev/null || true)"
+    log="$(_queue_log_existing_path "$id" 2>/dev/null || true)"
+    [[ -f "$log" ]] && log_size="$(wc -c < "$log" 2>/dev/null | tr -d ' ')" || log_size="0"
+    if [[ -f "$log" && "$tail_lines" -gt 0 ]]; then
+        tail_text="$(_queue_log_tail "$log" "$tail_lines" 2>/dev/null || true)"
+    else
+        tail_text=""
+    fi
+    submission_line="queue submit ${name:-$id} --class ${class:-DEFAULT} -- ${cmd}"
+
+    if [[ "$json" -eq 1 ]]; then
+        printf '{'
+        printf '"qid":"%s"' "$(_queue_json_escape "$id")"
+        printf ',"name":"%s"' "$(_queue_json_escape "$name")"
+        printf ',"state":"%s"' "$(_queue_json_escape "$state")"
+        printf ',"class":"%s"' "$(_queue_json_escape "$class")"
+        printf ',"priority":%s' "${pri:-10}"
+        printf ',"submission_line":"%s"' "$(_queue_json_escape "$submission_line")"
+        printf ',"command_line":"%s"' "$(_queue_json_escape "$cmd")"
+        printf ',"times":{"submitted_at":"%s","run_started_at":"%s","finished_at":"%s","duration_seconds":"%s"}' \
+            "$(_queue_json_escape "$submitted")" "$(_queue_json_escape "$started")" "$(_queue_json_escape "$finished")" "$(_queue_json_escape "$duration")"
+        printf ',"pids":{"run_pid":"%s","run_pgid":"%s","systemd_unit":"%s"}' \
+            "$(_queue_json_escape "$run_pid")" "$(_queue_json_escape "$run_pgid")" "$(_queue_json_escape "$systemd_unit")"
+        printf ',"rc":"%s"' "$(_queue_json_escape "$rc")"
+        printf ',"log":{"path":"%s","size_bytes":%s,"tail_lines":%s,"tail":"%s"}' \
+            "$(_queue_json_escape "$log")" "${log_size:-0}" "$tail_lines" "$(_queue_json_escape "$tail_text")"
+        printf ',"job_file":"%s"' "$(_queue_json_escape "$f")"
+        printf '}\n'
+        return 0
+    fi
+
+    echo "=============================================================================="
+    echo "QUEUEBASH STATUS: $id"
+    echo "=============================================================================="
+    printf '%-18s %s\n' "state:" "$state"
+    printf '%-18s %s\n' "name:" "${name:-}" 
+    printf '%-18s %s\n' "class:" "${class:-}"
+    printf '%-18s %s\n' "priority:" "${pri:-10}"
+    printf '%-18s %s\n' "submitted:" "${submitted:-}"
+    printf '%-18s %s\n' "started:" "${started:-}"
+    printf '%-18s %s\n' "finished:" "${finished:-}"
+    printf '%-18s %s\n' "rc:" "${rc:-}"
+    printf '%-18s %s\n' "RUN_PID:" "${run_pid:-}"
+    printf '%-18s %s\n' "RUN_PGID:" "${run_pgid:-}"
+    [[ -n "$systemd_unit" ]] && printf '%-18s %s\n' "systemd unit:" "$systemd_unit"
+    printf '%-18s %s\n' "command:" "$cmd"
+    printf '%-18s %s\n' "submission:" "$submission_line"
+    printf '%-18s %s\n' "job file:" "$f"
+    printf '%-18s %s\n' "log:" "${log:-} (${log_size:-0} bytes)"
+    if [[ -n "$tail_text" ]]; then
+        echo
+        echo "=== tail: last $tail_lines lines ==="
+        printf '%s\n' "$tail_text"
+    fi
+}
 
 _queue_epoch_now() {
     date +%s
@@ -6323,6 +6468,62 @@ _queue_authorisation_list() {
     shopt -u nullglob
 }
 
+_queue_authorisation_list_json() {
+    local f line code user admin status exp hash integrity first=0
+    printf '{"queue_root":"%s","authorisation_dir":"%s","authorisations":[' \
+        "$(_queue_json_escape "$(_queue_root)")" "$(_queue_json_escape "$(_queue_authorisation_dir)")"
+    shopt -s nullglob
+    for f in "$(_queue_authorisation_dir)"/*.env; do
+        [[ -f "$f" ]] || continue
+        if line="$(
+            AUTHORISATION_CODE=""; AUTHORISATION_ADMIN=""; AUTHORISATION_USER=""; AUTHORISATION_COMMAND_SHA256=""; AUTHORISATION_EXPIRES_AT="never"; AUTHORISATION_STATUS="unknown"; AUTHORISATION_COMMAND=()
+            # shellcheck disable=SC1090
+            [[ -r "$f" ]] || exit 8
+            source "$f" >/dev/null 2>&1 || exit 9
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${AUTHORISATION_CODE:-$(basename "$f" .env)}" "${AUTHORISATION_USER:-}" "${AUTHORISATION_ADMIN:-}" "${AUTHORISATION_STATUS:-}" "${AUTHORISATION_EXPIRES_AT:-}" "${AUTHORISATION_COMMAND_SHA256:-}"
+        )"; then
+            IFS=$'\t' read -r code user admin status exp hash <<< "$line"
+        else
+            code="$(basename "$f" .env)"; user=""; admin=""; status="invalid-source"; exp=""; hash=""
+        fi
+        integrity="$(_queue_authorisation_file_status "$f" 2>/dev/null || true)"
+        [[ -n "$integrity" ]] || integrity="invalid"
+        _queue_json_comma first
+        printf '{"code":"%s","user":"%s","admin":"%s","status":"%s","integrity":"%s","expires_at":"%s","command_sha256":"%s","file":"%s"}' \
+            "$(_queue_json_escape "$code")" "$(_queue_json_escape "$user")" "$(_queue_json_escape "$admin")" \
+            "$(_queue_json_escape "$status")" "$(_queue_json_escape "$integrity")" "$(_queue_json_escape "$exp")" \
+            "$(_queue_json_escape "$hash")" "$(_queue_json_escape "$f")"
+    done
+    shopt -u nullglob
+    printf ']}\n'
+}
+
+_queue_authorisation_keys_list_json() {
+    local f line name key_id alg status pub_sha first=0
+    printf '{"key_root":"%s","keys":[' "$(_queue_json_escape "$(_queue_authorisation_key_root)")"
+    shopt -s nullglob
+    for f in "$(_queue_authorisation_key_root)"/meta/*.env; do
+        line="$(KEY_NAME="" KEY_ID="" KEY_ALGORITHM="" KEY_STATUS="" PUBLIC_KEY_SHA256=""; source "$f" >/dev/null 2>&1 || exit 9; printf '%s\t%s\t%s\t%s\t%s\n' "${KEY_NAME:-$(basename "$f" .env)}" "${KEY_ID:-}" "${KEY_ALGORITHM:-}" "${KEY_STATUS:-}" "${PUBLIC_KEY_SHA256:-}")" || continue
+        IFS=$'\t' read -r name key_id alg status pub_sha <<< "$line"
+        _queue_json_comma first
+        printf '{"name":"%s","key_id":"%s","algorithm":"%s","status":"%s","public_sha256":"%s","meta_file":"%s"}' \
+            "$(_queue_json_escape "$name")" "$(_queue_json_escape "$key_id")" "$(_queue_json_escape "$alg")" \
+            "$(_queue_json_escape "$status")" "$(_queue_json_escape "$pub_sha")" "$(_queue_json_escape "$f")"
+    done
+    shopt -u nullglob
+    printf ']}\n'
+}
+
+_queue_submit_json_result() {
+    local status="$1" id="$2" name="$3" state="$4" priority="$5" job="$6" class="$7" cmdline="$8" dryrun="${9:-false}"
+    [[ "$priority" =~ ^-?[0-9]+$ ]] || priority=10
+    printf '{"status":"%s","qid":"%s","name":"%s","state":"%s","priority":%s,"class":"%s","command_line":"%s","job_file":"%s","queue_root":"%s","dryrun":%s}\n' \
+        "$(_queue_json_escape "$status")" "$(_queue_json_escape "$id")" "$(_queue_json_escape "$name")" \
+        "$(_queue_json_escape "$state")" "$priority" "$(_queue_json_escape "$class")" \
+        "$(_queue_json_escape "$cmdline")" "$(_queue_json_escape "$job")" "$(_queue_json_escape "$(_queue_root)")" "$dryrun"
+}
+
+
 _queue_authorisation_from_job_command() {
     local jobf="${1:-}"
     [[ -f "$jobf" ]] || return 1
@@ -7685,6 +7886,110 @@ _queue_print_job_table() {
 }
 
 
+_queue_json_comma() {
+    local __var="$1"
+    local __val="${!__var:-0}"
+    if [[ "$__val" -eq 0 ]]; then
+        printf -v "$__var" 1
+    else
+        printf ','
+    fi
+}
+
+_queue_print_job_table_json() {
+    local f id state pri name ok fail cmd class submitted started finished rc first=0
+    printf '{"queue_root":"%s","selected_user":"%s","jobs":[' \
+        "$(_queue_json_escape "$(_queue_root)")" \
+        "$(_queue_json_escape "$(_queue_selected_user_for_display)")"
+    for f in "$@"; do
+        [[ -f "$f" ]] || continue
+        _queue_json_comma first
+        id="$(basename "$f" .job)"
+        state="$(basename "$(dirname "$f")")"
+        pri="$(_queue_job_pri "$f" 2>/dev/null || echo 10)"
+        name="$(_queue_job_name "$f" 2>/dev/null || true)"
+        ok=false; fail=false
+        _queue_job_has_array "$f" ON_SUCCESS && ok=true
+        _queue_job_has_array "$f" ON_FAILURE && fail=true
+        cmd="$(_queue_job_command "$f" 2>/dev/null || true)"
+        class="$(_queue_class_for_job_file "$f" 2>/dev/null || _queue_job_var_value "$f" JOB_CLASS 2>/dev/null || echo DEFAULT)"
+        submitted="$(_queue_job_var_value "$f" SUBMITTED_AT 2>/dev/null || true)"
+        started="$(_queue_job_var_value "$f" RUN_STARTED_AT 2>/dev/null || true)"
+        finished="$(_queue_job_var_value "$f" EXEC_FINISHED_AT 2>/dev/null || _queue_job_var_value "$f" FINISHED_AT 2>/dev/null || true)"
+        rc="$(_queue_job_var_value "$f" EXIT_CODE 2>/dev/null || true)"
+        [[ "$pri" =~ ^-?[0-9]+$ ]] || pri=10
+        printf '{"qid":"%s","state":"%s","priority":%s,"name":"%s","class":"%s","ok_hook":%s,"fail_hook":%s,"command_line":"%s","times":{"submitted_at":"%s","run_started_at":"%s","finished_at":"%s"},"rc":"%s","job_file":"%s"}' \
+            "$(_queue_json_escape "$id")" "$(_queue_json_escape "$state")" "$pri" \
+            "$(_queue_json_escape "$name")" "$(_queue_json_escape "$class")" "$ok" "$fail" \
+            "$(_queue_json_escape "$cmd")" "$(_queue_json_escape "$submitted")" \
+            "$(_queue_json_escape "$started")" "$(_queue_json_escape "$finished")" \
+            "$(_queue_json_escape "$rc")" "$(_queue_json_escape "$f")"
+    done
+    printf ']}
+'
+}
+
+_queue_modules_list_json() {
+    local filter_kind="${1:-}" line kind name status path first=0
+    printf '{"queue_root":"%s","modules":[' "$(_queue_json_escape "$(_queue_root)")"
+    while IFS=$'\t' read -r kind name status path; do
+        [[ -z "$kind" ]] && continue
+        [[ -n "$filter_kind" && "$kind" != "$filter_kind" ]] && continue
+        _queue_json_comma first
+        printf '{"kind":"%s","name":"%s","status":"%s","path":"%s"}' \
+            "$(_queue_json_escape "$kind")" "$(_queue_json_escape "$name")" \
+            "$(_queue_json_escape "$status")" "$(_queue_json_escape "$path")"
+    done < <(_queue_modules_list | sort)
+    printf ']}
+'
+}
+
+_queue_classes_list_json() { _queue_modules_list_json class; }
+
+_queue_assets_list_json() {
+    local first=0 line facility family check rest helper status detail
+    printf '{"queue_root":"%s","facilities":[' "$(_queue_json_escape "$(_queue_root)")"
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        _queue_json_comma first
+        if [[ "$line" == INVALID* ]]; then
+            printf '{"valid":false,"raw":"%s"}' "$(_queue_json_escape "$line")"
+            continue
+        fi
+        facility="${line%%[[:space:]]*}"
+        rest="${line#${facility}}"; rest="${rest# }"
+        family="${facility%%:*}"
+        check="${facility#*:}"; [[ "$check" == "$facility" ]] && check=""
+        helper="$(_queue_asset_helper_path "$family" 2>/dev/null || true)"
+        printf '{"valid":true,"facility":"%s","family":"%s","check":"%s","detail":"%s","helper":"%s"}' \
+            "$(_queue_json_escape "$facility")" "$(_queue_json_escape "$family")" \
+            "$(_queue_json_escape "$check")" "$(_queue_json_escape "$rest")" \
+            "$(_queue_json_escape "$helper")"
+    done < <(_queue_asset_scan_facilities | sort)
+    printf ']}
+'
+}
+
+_queue_caps_list_json() {
+    local first=0 line family rest
+    printf '{"queue_root":"%s","capabilities":[' "$(_queue_json_escape "$(_queue_root)")"
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        _queue_json_comma first
+        if [[ "$line" == INVALID* ]]; then
+            printf '{"valid":false,"raw":"%s"}' "$(_queue_json_escape "$line")"
+            continue
+        fi
+        family="${line%%[[:space:]]*}"
+        rest="${line#${family}}"; rest="${rest# }"
+        printf '{"valid":true,"family":"%s","detail":"%s","raw":"%s"}' \
+            "$(_queue_json_escape "$family")" "$(_queue_json_escape "$rest")" "$(_queue_json_escape "$line")"
+    done < <(_queue_cap_plugins_list | sort)
+    printf ']}
+'
+}
+
+
 _queue_root_running_foreign_payload_user() {
     local run_user="${1:-${RUN_USER:-}}"
     [[ -n "$run_user" ]] || return 1
@@ -8643,7 +8948,7 @@ _queue_dep_token_status() {
     local root="$(_queue_root)"
     local state f name
 
-    for state in done failed pol_block policy_blocked cancelled interrupted running pending paused deleted; do
+    for state in done failed pol_blocked policy_blocked cancelled interrupted running pending paused deleted; do
         if [[ -f "$root/$state/$dep.job" ]]; then
             printf '%s\n' "$state"
             return 0
@@ -8803,7 +9108,7 @@ _queue_job_file_by_id_any_state() {
     local root="$(_queue_root)"
     local st f
 
-    for st in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+    for st in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
         f="$root/$st/$id.job"
         [[ -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
     done
@@ -8843,7 +9148,7 @@ _queue_job_history_children_ids() {
     local root="$(_queue_root)"
     local st f child
 
-    for st in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+    for st in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
         shopt -s nullglob
         for f in "$root/$st"/*.job; do
             child="$(
@@ -8949,7 +9254,7 @@ _queue_job_history() {
         id="$(basename "$f" .job)"
     else
         root="$(_queue_root)"
-        for st in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+        for st in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
             shopt -s nullglob
             for f in "$root/$st"/*.job; do
                 if ( source "$f" >/dev/null 2>&1 && [[ "${JOB_NAME:-}" == "$selector" ]] ); then
@@ -9289,7 +9594,7 @@ _queue_log_job_state_for_id() {
     local id="$1"
     local root="$(_queue_root)"
     local state
-    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
         if [[ -f "$root/$state/$id.job" ]]; then
             printf '%s\n' "$state"
             return 0
@@ -9302,7 +9607,7 @@ _queue_log_job_name_for_id() {
     local id="$1"
     local root="$(_queue_root)"
     local state
-    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
         if [[ -f "$root/$state/$id.job" ]]; then
             _queue_job_name "$root/$state/$id.job"
             return 0
@@ -9333,7 +9638,7 @@ _queue_log_job_file_for_id() {
     local id="$1"
     local root="$(_queue_root)"
     local state
-    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
         if [[ -f "$root/$state/$id.job" ]]; then
             printf '%s\n' "$root/$state/$id.job"
             return 0
@@ -9440,7 +9745,7 @@ _queue_clean_logs() {
                 [[ "$verbose" -eq 1 ]] && echo "SKIP state=$state not $state_filter: $path"
             elif [[ -z "$state_filter" && "$include_all" -ne 1 ]]; then
                 case "$state" in
-                    done|failed|pol_block|policy_blocked|interrupted|cancelled|deleted|orphan) ;;
+                    done|failed|pol_blocked|policy_blocked|interrupted|cancelled|deleted|orphan) ;;
                     *) eligible=0; [[ "$verbose" -eq 1 ]] && echo "SKIP unsafe state=$state: $path" ;;
                 esac
             fi
@@ -9486,7 +9791,7 @@ _queue_clean_logs() {
 # -------------------------------------------------------------------
 
 _queue_health_state_dirs() {
-    printf '%s\n' pending running paused done failed pol_block policy_blocked interrupted cancelled deleted logs workers outputs streams
+    printf '%s\n' pending running paused done failed pol_blocked interrupted cancelled deleted logs workers outputs streams
 }
 
 _queue_health_has_command() {
@@ -9618,7 +9923,7 @@ _queue_health_dependency_exists_any_state() {
 
     [[ -z "$token" ]] && return 1
 
-    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
         [[ -f "$root/$state/$token.job" ]] && return 0
         for f in "$root/$state"/*.job; do
             [[ -e "$f" ]] || continue
@@ -9897,7 +10202,7 @@ _queue_restore_print_non_deleted_matches() {
     local root="$(_queue_root)"
     local state f id name any=0
 
-    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled; do
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled; do
         for f in "$root/$state"/*.job; do
             [[ -e "$f" ]] || continue
             id="$(basename "$f" .job)"
@@ -10485,8 +10790,8 @@ Usage:
   queue [--dryrun] <command...>
   queue submit <name> [--dryrun] [--priority N|-p N] [--on-success <cmd...>] [--on-retry-failure <cmd...>] [--on-failure <cmd...>] -- <command...>
 
-  queue list [--state all|pending|running|paused|done|failed|pol_block|policy_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
-  queue ls   [--state all|pending|running|paused|done|failed|pol_block|policy_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
+  queue list [--state all|pending|running|paused|done|failed|pol_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
+  queue ls   [--state all|pending|running|paused|done|failed|pol_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
   queue find <text>
   queue show <qid|exact-job-name> [--tail N|--full]
   queue tail <qid|exact-job-name>
@@ -10717,7 +11022,7 @@ _queue_bind_submit_reference_to_qid() {
     [[ -z "$token" ]] && return 1
 
     # Already a visible QID.
-    for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
         if [[ -f "$root/$state/$token.job" ]]; then
             printf '%s\n' "$token"
             return 0
@@ -10897,7 +11202,7 @@ _queue_modules_explain() {
 }
 
 
-_queue_pol_block_reevaluate() {
+_queue_pol_blocked_reevaluate() {
     local target="" local_dryrun=0 root f id state reason moved=0 checked=0
     while [[ "$#" -gt 0 ]]; do
         case "$1" in
@@ -10911,15 +11216,15 @@ _queue_pol_block_reevaluate() {
     if [[ -n "$target" ]]; then
         while IFS= read -r f; do
             state="$(basename "$(dirname "$f")")"
-            [[ "$state" == "pol_block" || "$state" == "policy_blocked" ]] && files+=("$f")
+            [[ "$state" == "pol_blocked" || "$state" == "policy_blocked" ]] && files+=("$f")
         done < <(_queue_find_jobs "$target")
     else
-        for f in "$root/pol_block"/*.job "$root/policy_blocked"/*.job; do
+        for f in "$root/pol_blocked"/*.job "$root/policy_blocked"/*.job; do
             [[ -e "$f" ]] && files+=("$f")
         done
     fi
     if [[ "${#files[@]}" -eq 0 ]]; then
-        echo "queue reevaluate: no pol_block jobs matched${target:+: $target}" >&2
+        echo "queue reevaluate: no pol_blocked jobs matched${target:+: $target}" >&2
         return 1
     fi
     for f in "${files[@]}"; do
@@ -10935,18 +11240,18 @@ _queue_pol_block_reevaluate() {
                     echo "STATE=$(printf '%q' pending)"
                 } >> "$f"
                 mv -f "$f" "$root/pending/$id.job"
-                _queue_log_event "pol_block_reevaluated" "$id" "$(_queue_job_name "$root/pending/$id.job" 2>/dev/null || echo -)" "pending" "result=requeued"
+                _queue_log_event "pol_blocked_reevaluated" "$id" "$(_queue_job_name "$root/pending/$id.job" 2>/dev/null || echo -)" "pending" "result=requeued"
                 echo "Requeued $id -> pending"
             fi
             moved=$((moved + 1))
         else
             reason="$(_queue_job_policy_execution_check "$f" 2>&1 >/dev/null || true)"
-            echo "Still pol_block: $id"
+            echo "Still pol_blocked: $id"
             [[ -n "$reason" ]] && printf '  %s
 ' "$reason" | head -3
         fi
     done
-    echo "Reevaluated $checked pol_block job(s); requeued $moved."
+    echo "Reevaluated $checked pol_blocked job(s); requeued $moved."
 }
 
 _queue_backup_create() {
@@ -11108,7 +11413,7 @@ queue() {
             ;;
 
         reevaluate|re-evaluate|recheck|policy-reevaluate|pol-block-reevaluate)
-            _queue_pol_block_reevaluate "$@"
+            _queue_pol_blocked_reevaluate "$@"
             ;;
 
         backup)
@@ -11120,7 +11425,7 @@ queue() {
             ;;
         keys)
             case "${1:-list}" in
-                list|ls|"") _queue_authorisation_keys_list ;;
+                list|ls|"") if [[ "${1:-}" == "--json" || "${1:-}" == "-j" || "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then _queue_authorisation_keys_list_json; else _queue_authorisation_keys_list; fi ;;
                 show) shift; _queue_authorisation_keys_show "${1:-}" ;;
                 *) echo "Usage: queue keys list|show NAME" >&2; return 2 ;;
             esac
@@ -11132,7 +11437,7 @@ queue() {
             case "${1:-list}" in
                 generate|gen|new) shift; _queue_authorisation_generate "$@" ;;
                 job|stamp|authorise|authorize) shift; _queue_authorise_job "$@" ;;
-                list|ls|"") _queue_authorisation_list ;;
+                list|ls|"") if [[ "${1:-}" == "--json" || "${1:-}" == "-j" || "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then _queue_authorisation_list_json; else _queue_authorisation_list; fi ;;
                 policy|trust|trusted) _queue_authorisation_policy_show ;;
                 show)
                     shift
@@ -11230,6 +11535,7 @@ queue() {
             local not_before_epoch="${QUEUEBASH_SUBMIT_NOT_BEFORE_EPOCH:-0}"
             local schedule_label="${QUEUEBASH_SUBMIT_SCHEDULE_LABEL:-}"
             local local_dryrun="$dryrun"
+            local json_output=0
             local name="$1"
             shift || true
 
@@ -11246,6 +11552,10 @@ queue() {
                 case "$1" in
                     --dryrun|-n)
                         local_dryrun=1
+                        shift
+                        ;;
+                    --json|-j)
+                        json_output=1
                         shift
                         ;;
                     --priority|-p)
@@ -11449,6 +11759,10 @@ queue() {
             local job="$root/pending/$id.job"
 
             if [[ "$local_dryrun" -eq 1 ]]; then
+                if [[ "$json_output" -eq 1 ]]; then
+                    _queue_submit_json_result "dryrun" "$id" "$name" "pending" "$priority" "$job" "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$(printf '%q ' "$@" | sed 's/[[:space:]]*$//')" true
+                    return 0
+                fi
                 echo "DRYRUN: would submit job:"
                 echo "  id:       $id"
                 echo "  name:     $name"
@@ -11553,9 +11867,13 @@ queue() {
             _queue_append_class_defaults_to_job_file "$job" "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$id" "$name"
             _queue_append_policy_snapshot_to_job_file "$job"
 
-            echo "Submitted $id : $name priority=$priority"
-            if [[ "${not_before_epoch:-0}" =~ ^[0-9]+$ && "${not_before_epoch:-0}" -gt 0 ]]; then
-                echo "  scheduled for: $(date -d "@$not_before_epoch" -Is 2>/dev/null || echo "$not_before_epoch") ${schedule_label:+($schedule_label)}"
+            if [[ "$json_output" -eq 1 ]]; then
+                _queue_submit_json_result "submitted" "$id" "$name" "pending" "$priority" "$job" "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$(_queue_job_command "$job" 2>/dev/null || true)" false
+            else
+                echo "Submitted $id : $name priority=$priority"
+                if [[ "${not_before_epoch:-0}" =~ ^[0-9]+$ && "${not_before_epoch:-0}" -gt 0 ]]; then
+                    echo "  scheduled for: $(date -d "@$not_before_epoch" -Is 2>/dev/null || echo "$not_before_epoch") ${schedule_label:+($schedule_label)}"
+                fi
             fi
             _queue_log_event "submitted" "$id" "$name" "pending" "priority=$priority"
 
@@ -11582,6 +11900,7 @@ queue() {
             local filter_state="all"
             local filter_name=""
             local filter_text=""
+            local json_output=0
             local jobs=()
 
             while [[ "$#" -gt 0 ]]; do
@@ -11598,6 +11917,10 @@ queue() {
                         filter_text="$2"
                         shift 2
                         ;;
+                    --json|-j)
+                        json_output=1
+                        shift
+                        ;;
                     *)
                         break
                         ;;
@@ -11605,7 +11928,7 @@ queue() {
             done
 
             local state f id name pri line
-            for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+            for state in pending running paused done failed pol_blocked interrupted cancelled deleted; do
                 [[ "$filter_state" != "all" && "$filter_state" != "$state" ]] && continue
 
                 for f in "$root/$state"/*.job; do
@@ -11623,7 +11946,11 @@ queue() {
                 done
             done
 
-            _queue_print_job_table "${jobs[@]}"
+            if [[ "$json_output" -eq 1 ]]; then
+                _queue_print_job_table_json "${jobs[@]}"
+            else
+                _queue_print_job_table "${jobs[@]}"
+            fi
             ;;
 
         find)
@@ -11735,8 +12062,19 @@ queue() {
             ;;
 
         explain)
-            local target="$1"
-            [[ -z "$target" ]] && { echo "Usage: queue explain <qid-or-exact-job-name>" >&2; return 2; }
+            local target="" json_output=0 explain_tail=20
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --json|-j) json_output=1; shift ;;
+                    --tail|-n) explain_tail="${2:-20}"; shift 2 ;;
+                    *) if [[ -z "$target" ]]; then target="$1"; shift; else echo "queue explain: unexpected argument: $1" >&2; return 2; fi ;;
+                esac
+            done
+            [[ -z "$target" ]] && { echo "Usage: queue explain <qid-or-exact-job-name> [--json] [--tail N]" >&2; return 2; }
+            if [[ "$json_output" -eq 1 ]]; then
+                _queue_status_job "$target" --json --tail "$explain_tail"
+                return "$?"
+            fi
 
             local matches=()
             local f
@@ -11765,6 +12103,11 @@ queue() {
             echo "Explained $explained job(s)."
             ;;
 
+
+        status|stat)
+            if [[ "${1:-}" == "job" ]]; then shift; fi
+            _queue_status_job "$@"
+            ;;
 
         show)
             local target="$1"
@@ -11981,8 +12324,12 @@ EOF
             local action="${1:-list}"
             case "$action" in
                 list|"")
-                    echo "=== queue asset facilities ==="
-                    _queue_asset_scan_facilities | sort
+                    if [[ "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then
+                        _queue_assets_list_json
+                    else
+                        echo "=== queue asset facilities ==="
+                        _queue_asset_scan_facilities | sort
+                    fi
                     ;;
                 show)
                     local family="${2:-}"
@@ -12095,7 +12442,13 @@ EOF
 
         cap|caps)
             case "${1:-list}" in
-                list|facilities) _queue_cap_plugins_list ;;
+                list|facilities)
+                    if [[ "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then
+                        _queue_caps_list_json
+                    else
+                        _queue_cap_plugins_list
+                    fi
+                    ;;
                 show|explain)
                     local family="${2:-}"
                     [[ -n "$family" ]] || { echo "Usage: queue caps explain <family>" >&2; return 2; }
@@ -12279,9 +12632,13 @@ EOF
             local root="$(_queue_root)"
             case "$action" in
                 list|"")
-                    echo "=== queue classes ==="
                     mkdir -p "$root/classes"
-                    _queue_class_list_names
+                    if [[ "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then
+                        _queue_classes_list_json
+                    else
+                        echo "=== queue classes ==="
+                        _queue_class_list_names
+                    fi
                     ;;
                 show|cat)
                     local cname="${2:-}"
@@ -12389,7 +12746,7 @@ EOF
             echo "------------------------"
 
             local state f name submitted count total=0
-            for state in pending running paused done failed pol_block policy_blocked interrupted cancelled deleted; do
+            for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
                 count=0
                 for f in "$root/$state"/*.job; do
                     [[ -e "$f" ]] || continue
@@ -12985,7 +13342,7 @@ EOF
 
             if [[ -z "$target" ]]; then
                 echo "Usage: queue resubmit <qid-or-exact-job-name> [--force] [--dryrun] [--note TEXT]" >&2
-                echo "Resubmit clones failed/interrupted/pol_block job(s) into pending with new QID(s), preserving the failed originals." >&2
+                echo "Resubmit clones failed/interrupted/pol_blocked job(s) into pending with new QID(s), preserving the failed originals." >&2
                 return 2
             fi
 
@@ -13004,7 +13361,7 @@ EOF
             while IFS= read -r f; do
                 all_matches+=( "$f" )
                 state="$(basename "$(dirname "$f")")"
-                [[ "$state" == "failed" || "$state" == "interrupted" || "$state" == "pol_block" || "$state" == "policy_blocked" ]] && matches+=( "$f" )
+                [[ "$state" == "failed" || "$state" == "interrupted" || "$state" == "pol_blocked" || "$state" == "policy_blocked" ]] && matches+=( "$f" )
             done < <(_queue_find_jobs "$target")
 
             if [[ "${#all_matches[@]}" -eq 0 ]]; then
@@ -13013,7 +13370,7 @@ EOF
             fi
 
             if [[ "${#matches[@]}" -eq 0 ]]; then
-                echo "queue resubmit: matching job(s) found, but none are in failed, interrupted, or pol_block state:" >&2
+                echo "queue resubmit: matching job(s) found, but none are in failed, interrupted, or pol_blocked state:" >&2
                 _queue_print_matches "${all_matches[@]}"
                 return 1
             fi
@@ -13038,7 +13395,7 @@ EOF
                 new_id="$(_queue_id)"
 
                 if [[ "$local_dryrun" -eq 1 ]]; then
-                    echo "DRYRUN: would resubmit failed/interrupted/pol_block job:"
+                    echo "DRYRUN: would resubmit failed/interrupted/pol_blocked job:"
                     echo "  from:     $src_id"
                     echo "  new id:   $new_id"
                     echo "  name:     $name"
@@ -13054,9 +13411,9 @@ EOF
             done
 
             if [[ "$local_dryrun" -eq 1 ]]; then
-                echo "DRYRUN: would resubmit $count failed/interrupted/pol_block job(s)."
+                echo "DRYRUN: would resubmit $count failed/interrupted/pol_blocked job(s)."
             else
-                echo "Resubmitted $count failed/interrupted/pol_block job(s)."
+                echo "Resubmitted $count failed/interrupted/pol_blocked job(s)."
             fi
             ;;
 
@@ -13139,6 +13496,10 @@ EOF
                         local_dryrun=1
                         shift
                         ;;
+                    --json|-j)
+                        json_output=1
+                        shift
+                        ;;
                     *)
                         echo "queue $cmd: unexpected argument: $1" >&2
                         return 2
@@ -13167,10 +13528,12 @@ EOF
                 echo "Starting queue with $workers detached worker(s)"
                 local i wp
                 for ((i=1; i<=workers; i++)); do
-                    (_queue_worker "$i") &
+                    local worker_log
+                    worker_log="$root/logs/worker_$(date +%Y%m%d_%H%M%S)_${i}_$$.log"
+                    (_queue_worker "$i") >"$worker_log" 2>&1 &
                     wp="$!"
                     echo "$wp" > "$root/workers/worker_${wp}.pid"
-                    echo "  worker $i pid=$wp"
+                    echo "  worker $i pid=$wp log=$worker_log"
                 done
                 _queue_log_event "workers_started" "" "" "workers" "workers=$workers detached=1"
                 echo "Detached workers started. Use: queue workers
@@ -13197,7 +13560,7 @@ EOF
             local local_dryrun="$dryrun"
             [[ "${2:-}" == "--dryrun" || "${2:-}" == "-n" ]] && local_dryrun=1
             case "$what" in
-                done|failed|pol_block|policy_blocked|paused|interrupted|cancelled|deleted)
+                done|failed|pol_blocked|paused|interrupted|cancelled|deleted)
                     if [[ "$local_dryrun" -eq 1 ]]; then
                         echo "DRYRUN: would clear $what jobs:"
                         find "$root/$what" -maxdepth 1 -type f -name '*.job' -printf '  %f\n' 2>/dev/null
@@ -13209,14 +13572,14 @@ EOF
                 all)
                     if [[ "$local_dryrun" -eq 1 ]]; then
                         echo "DRYRUN: would clear all jobs and logs:"
-                        find "$root"/{pending,running,paused,done,failed,pol_block,policy_blocked,deleted,logs} -maxdepth 1 -type f -printf '  %p\n' 2>/dev/null
+                        find "$root"/{pending,running,paused,done,failed,pol_blocked,policy_blocked,deleted,logs} -maxdepth 1 -type f -printf '  %p\n' 2>/dev/null
                     else
-                        rm -f "$root"/{pending,running,paused,done,failed,pol_block,policy_blocked,cancelled,deleted}/*.job
+                        rm -f "$root"/{pending,running,paused,done,failed,pol_blocked,policy_blocked,cancelled,deleted}/*.job
                         rm -f "$root/logs"/*.log
                         echo "Cleared all jobs and logs"
                     fi
                     ;;
-                *) echo "Usage: queue clear done|failed|pol_block|policy_blocked|paused|interrupted|cancelled|deleted|all [--dryrun]" >&2; return 2 ;;
+                *) echo "Usage: queue clear done|failed|pol_blocked|paused|interrupted|cancelled|deleted|all [--dryrun]" >&2; return 2 ;;
             esac
             ;;
 
@@ -13359,21 +13722,21 @@ _queue_sentinel_running_jobs_fix_stale() {
     shopt -u nullglob
 }
 
-_queue_sentinel_move_pending_to_pol_block() {
+_queue_sentinel_move_pending_to_pol_blocked() {
     local jobf="$1" reason="$2" root id dest log name now
     root="$(_queue_root)"
     [[ -f "$jobf" ]] || return 0
     id="$(basename "$jobf" .job)"
     name="$(_queue_job_name "$jobf" 2>/dev/null || echo -)"
-    dest="$root/pol_block/$id.job"
+    dest="$root/pol_blocked/$id.job"
     log="$root/logs/$id.log"
     now="$(date -Is 2>/dev/null || date)"
-    mkdir -p "$root/pol_block" "$root/logs" 2>/dev/null || true
+    mkdir -p "$root/pol_blocked" "$root/logs" 2>/dev/null || true
 
     {
         echo "=== queue job $id : $name ==="
-        echo "pol_block: $now"
-        echo "state: pol_block"
+        echo "pol_blocked: $now"
+        echo "state: pol_blocked"
         echo "sentinel: $$"
         echo
         echo "POLICY_BLOCKED"
@@ -13394,8 +13757,8 @@ _queue_sentinel_move_pending_to_pol_block() {
 
     if mv "$jobf" "$dest" 2>/dev/null; then
         _queue_job_stream_temp_cleanup "$id"
-        _queue_log_event "pol_block" "$id" "$name" "pol_block" "sentinel=1"
-        echo "sentinel: pol_block $id"
+        _queue_log_event "pol_blocked" "$id" "$name" "pol_blocked" "sentinel=1"
+        echo "sentinel: pol_blocked $id"
     fi
 }
 
@@ -13407,7 +13770,7 @@ _queue_sentinel_check_pending_policy() {
         id="$(basename "$f" .job)"
         reason=""
         if ! reason="$(_queue_job_policy_execution_check "$f" 2>&1)"; then
-            _queue_sentinel_move_pending_to_pol_block "$f" "$reason"
+            _queue_sentinel_move_pending_to_pol_blocked "$f" "$reason"
         fi
     done
     shopt -u nullglob
@@ -13597,7 +13960,7 @@ _queue_worker_external_move_state() {
     local id="$1"
     local root="$(_queue_root)"
     local state
-    for state in cancelled deleted interrupted paused done failed pol_block policy_blocked pending; do
+    for state in cancelled deleted interrupted paused done failed pol_blocked policy_blocked pending; do
         if [[ -f "$root/$state/$id.job" ]]; then
             printf '%s\n' "$state"
             return 0
@@ -13626,7 +13989,7 @@ _queue_worker() {
         local running="$root/running/$id.job"
         local done="$root/done/$id.job"
         local failed="$root/failed/$id.job"
-        local policy_blocked="$root/pol_block/$id.job"
+        local policy_blocked="$root/pol_blocked/$id.job"
         local log="$root/logs/$id.log"
 
         if ! _queue_move_pending_to_running "$job" "$running" "$id" "${worker_id:-${1:-?}}"; then
@@ -13640,8 +14003,8 @@ _queue_worker() {
             _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "policy blocked $id: $policy_reason"
             {
                 echo "=== queue job $id : $(_queue_job_name "$running" 2>/dev/null || echo -) ==="
-                echo "pol_block: $(date -Is)"
-                echo "state: pol_block"
+                echo "pol_blocked: $(date -Is)"
+                echo "state: pol_blocked"
                 echo "worker: $worker_id"
                 echo
                 echo "POLICY_BLOCKED"
@@ -13661,11 +14024,11 @@ _queue_worker() {
 ' "$policy_reason"
             } >> "$running"
             _queue_append_summary_to_job "$running" 78 "$log"
-            mkdir -p "$root/pol_block"
+            mkdir -p "$root/pol_blocked"
             mv "$running" "$policy_blocked"
             _queue_job_stream_temp_cleanup "$id"
-            _queue_log_event "pol_block" "$id" "$(_queue_job_name "$policy_blocked" 2>/dev/null || echo -)" "pol_block" "worker=$worker_id"
-            echo "[worker $worker_id] pol_block $id"
+            _queue_log_event "pol_blocked" "$id" "$(_queue_job_name "$policy_blocked" 2>/dev/null || echo -)" "pol_blocked" "worker=$worker_id"
+            echo "[worker $worker_id] pol_blocked $id"
             continue
         fi
 
@@ -13975,7 +14338,7 @@ _queue_complete() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    local commands="--dryrun -n submit submit-at submit-in list ls find show explain deps dependencies waiting blocked scheduled schedule tail stream follow class classes assets facilities claims resources pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V backup reevaluate re-evaluate recheck policy-reevaluate help --help -h"
+    local commands="--dryrun -n submit submit-at submit-in list ls find show status stat explain deps dependencies waiting blocked scheduled schedule tail stream follow class classes assets facilities claims resources pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V backup reevaluate re-evaluate recheck policy-reevaluate help --help -h"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
@@ -14000,7 +14363,7 @@ _queue_complete() {
 
         list|ls)
             if [[ "$prev" == "--state" || "$prev" == "-s" ]]; then
-                COMPREPLY=( $(compgen -W "all pending running paused done failed pol_block policy_blocked interrupted cancelled deleted" -- "$cur") )
+                COMPREPLY=( $(compgen -W "all pending running paused done failed pol_blocked interrupted cancelled deleted" -- "$cur") )
                 return 0
             fi
             COMPREPLY=( $(compgen -W "--state -s --name -n --filter -f" -- "$cur") )
@@ -14298,7 +14661,7 @@ _queuemgr_complete() {
 
     case "$prev" in
         --state|-s)
-            COMPREPLY=( $(compgen -W "all pending running paused done failed pol_block policy_blocked interrupted cancelled deleted" -- "$cur") )
+            COMPREPLY=( $(compgen -W "all pending running paused done failed pol_blocked interrupted cancelled deleted" -- "$cur") )
             return 0
             ;;
         --filter|-f|--name|-n)

@@ -4,7 +4,7 @@
 It marks jobs using class name `POLICYBLOCKED` as policy-contrary.
 
 This is not intended as a normal production policy. It is a stable test hook for
-checking that the worker moves jobs into the terminal `pol_block` state before
+checking that the worker moves jobs into the terminal `pol_blocked` state before
 class claims, asset preflight, dynamic preflight, global claims, or payload launch.
 
 ## Install as shared/admin policy
@@ -30,7 +30,7 @@ queue run
 queue list
 ```
 
-Expected result: the job appears in `pol_block`, and the payload text does not
+Expected result: the job appears in `pol_blocked`, and the payload text does not
 appear in the job log.
 
 The block is command-authorisation compatible: if a valid, unexpired,
