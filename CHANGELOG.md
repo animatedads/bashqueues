@@ -1,3 +1,89 @@
+## 0.17.90 - interrogation privilege context
+
+- `queue-interrogate` now stamps captured user, UID/EUID, home, queue root, and privileged/root context into each run and campaign.
+- Candidate interrogation profiles now carry captured privilege metadata so approvals distinguish normal-user profiles from root/system-install profiles.
+- `queue profile interrogate explain` now displays a privilege context section and treats privileged/root profiles as risk blockers requiring explicit `--accept-risk`.
+- Added regression tests for root/su captured profiles and signed approval under explicit risk acknowledgement.
+
+## 0.17.88 - interrogation explain and signed approval gate
+
+- Added `queue profile interrogate explain NAME` as the review surface for candidate behavioural profiles; `review` is accepted as an alias.
+- `approve` now signs profiles by default, using `--signing-key`, `QUEUEBASH_PROFILE_SIGNING_KEY`, or a local `self:$USER` identity.
+- Approval now blocks on warnings by default and requires explicit `--accept-warnings`; higher-risk blockers such as network egress, broad `/tmp`, deleted files, listeners, or destructive syscalls also require `--accept-risk`.
+- Approved profiles now include `SIGNED_BY`, `SELF_SIGNED`, and a tamper-evident signature hash field.
+- Added regression tests for explain output, warning blocking, explicit risk acknowledgement, and signed approved profile metadata.
+
+## 0.17.87 - interrogation PID-scoped profile compilation
+
+- Changed generated network profile allow-lists to use PID-tree scoped `lsof.process.trace` evidence only.
+- Kept global `ss`/`lsof -i` samples as context fields, not as approved remote host/port policy input.
+- Filtered non-syscall status tokens such as `WEXITSTATUS` from generated seccomp profiles.
+- Fixed `FILEPROFILE_ALLOW_DELETED_FILES` so deleted-file access is allowed only when actually observed.
+- Added profile scope/warning metadata for broad path prefixes, deleted-file observations, listeners, and ignored global network context.
+- Added regression coverage for PID-scoped network compilation and global traffic contamination.
+
+## 0.17.85 - interrogation monitor root pid guard
+
+
+## 0.17.86 - interrogation drift bad-first detection
+
+- Improved interrogation campaign drift reports so a campaign whose first run is already expanded/bad still reports drift when later runs lose syscalls, ports, or file prefixes.
+- Added previous-run comparison and missing_* fields to `queue profile interrogate diff-runs`.
+- Added regression coverage for bad-first delayed-trigger campaigns.
+
+- Fixed `bin/queue-interrogate` under `set -u` so monitor PID discovery does not fail with `root_pid: unbound variable`.
+- Added regression coverage for repeated interrogation runs to ensure the campaign completes without monitor unset-variable noise.
+
+## 0.17.83 - Interrogation profiles
+
+## 0.17.84 - interrogation campaigns and pre-arm monitoring
+
+- Added `queue profile interrogate repeat` campaign mode for delayed/stateful behaviour.
+- Added `queue profile interrogate merge` to compile candidate profiles from a union of campaign runs.
+- Added `queue profile interrogate diff-runs` to detect drift between runs.
+- Added interrogation pre-arm delay so monitors start before short-lived payloads execute.
+- Added campaign static/smoke tests.
+
+
+- Added behavioural interrogation profile tooling for known-good task runs.
+- Added `queue profile interrogate` command surface for run/compile/approve/show/diff.
+- Added `bin/queue-interrogate` to collect strace, ss, lsof, and process traces.
+- Added `bin/queue-interrogate-compile` to generate should-be-signed candidate seccomp, network, and file profiles.
+- Added `secprofile`, `netprofile`, and `fileprofile` asset gates for approved/signed profile verification.
+- Added `INTERROGATE_PROFILE` and `SECURE_PROFILED` class templates.
+
+
+## 0.17.82 - history archive resolver consistency
+
+- Fixed `queue history` to use the same archive-aware job resolver as `queue explain`, `queue show`, `queue status`, `queue tail`, and `queue pids`.
+- `queue history <qid|name>` now resolves jobs archived under `clearance/<state>/`, including `clearance/failed/`.
+- Updated history chain/child lookups to include bucketed pending jobs and clearance archives.
+- Added regression tests proving archived failed jobs can be explained, shown, and viewed through history by both QID and job name.
+- Confirmed `assets.d/net_usage.sh` remains absent; `net:allowance` remains canonical in `assets.d/net.sh`.
+
+## 0.17.81 - explain archive, cleared audit display, and time helper cleanup
+
+- `queue explain` and `queue status` can now resolve jobs archived under `clearance/<state>/`.
+- `queue audit cleared` now displays archive-only cleared records with a clear source column and sane timestamp/class/policy fallbacks.
+- Added in-process Bash time helpers for common current-time paths to reduce unnecessary `date` forks in submit/worker/archive code.
+- Added regression tests for archived job explanation and cleared audit display.
+
+## 0.17.80 - clearance archive reader and dev comment changelog
+
+- Fixed `queue audit cleared` / `queue cleared` so archived records under `clearance/<state>/` are recognised when they carry archive metadata, even if they predate execution-clearance stamping.
+- Fixed archived job state reporting so `clearance/failed/<job>.job` reports state `failed` rather than relying on the archive directory shape incorrectly.
+- `queue dev comment` now appends to `CHANGELOG.md` by default; `--changelog` remains accepted and `--no-changelog` suppresses it for exceptional cases.
+- Added tests for archive-only clearance records and automatic changelog updates from `queue dev comment`.
+- Confirmed `assets.d/net_usage.sh` remains absent; `net:allowance` remains canonical in `assets.d/net.sh`.
+
+## 0.17.79 - clear archive audit preservation
+
+- Changed `queue clear <state>` to archive job records under `clearance/<state>/` instead of deleting them.
+- `queue audit cleared` / `queue cleared` now scan both live state directories and the clearance archive, so cleared terminal jobs remain auditable after `queue clear done`.
+- `queue clear all` archives job records and logs into the clearance area rather than destroying them.
+- Added static and smoke tests for cleared-job audit preservation after clear.
+- Confirmed `assets.d/net_usage.sh` remains absent; `net:allowance` remains canonical in `assets.d/net.sh`.
+
 ## 0.17.78 - stats pending bucket counts
 
 - Fixed `queue stats` pending counts to include priority-bucketed pending jobs under `pending/p*/`.
@@ -1732,3 +1818,10 @@ Initial public queuebash release:
 - `queue explain` now surfaces these security exceptions in the Exception overlays section.
 - Cron bridge now supports `BASHQUEUES_CLASS=` stateful crontab routing.
 - Auto-generated cron classes default to strict sandboxing and basic runtime caps.
+
+## 0.17.89 - Interrogation file path review
+
+- Added path-level destructive/write evidence extraction from raw strace traces for interrogation profiles.
+- Candidate file profiles now include FILEPROFILE_OBSERVED_DELETE_PATHS and FILEPROFILE_OBSERVED_WRITE_PATHS.
+- `queue profile interrogate explain` now displays observed delete/write paths and adds path evidence notes for destructive syscalls.
+- Added regression tests for unlink/write path extraction and explain output.

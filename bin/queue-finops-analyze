@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Analyze bashqueues FinOps pricing stream.
+
+Reads $QUEUEBASH_ROOT/streams/finops.pricing.jsonl, computes a rolling baseline
+per (provider, region, instanceType, market), writes:
+  - $QUEUEBASH_ROOT/streams/finops.anomalies.jsonl
+  - $QUEUEBASH_ROOT/streams/finops.health
+  - /var/tmp/queuebash_pricing_<region>_<instanceType>.txt
+
+All worker-visible files are written via temp+replace so asset checks never read
+partial floats or partial health records.
+"""
+from __future__ import annotations
+
+import argparse
+import collections
+import json
+import math
+import os
+import pathlib
+import re
+import sys
+import tempfile
+import time
+from typing import Dict, Iterable, List, Tuple
+
+
+def _safe_token(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", value or "unknown")
+
+
+def _atomic_write(path: pathlib.Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    tmp = pathlib.Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.replace(path)
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+
+
+def _read_jsonl(path: pathlib.Path) -> Iterable[dict]:
+    if not path.exists():
+        return []
+    out: List[dict] = []
+    with path.open(encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            try:
+                rec["price"] = float(rec["price"])
+                rec["provider"] = str(rec["provider"])
+                rec["region"] = str(rec["region"])
+                rec["instanceType"] = str(rec["instanceType"])
+                rec["market"] = str(rec.get("market") or "spot")
+            except (KeyError, TypeError, ValueError):
+                continue
+            out.append(rec)
+    return out
+
+
+def analyze(root: pathlib.Path, cache_dir: pathlib.Path, window: int, min_samples: int, z_warn: float, z_error: float) -> int:
+    pricing = root / "streams" / "finops.pricing.jsonl"
+    anomalies = root / "streams" / "finops.anomalies.jsonl"
+    health = root / "streams" / "finops.health"
+
+    buckets: Dict[Tuple[str, str, str, str], List[dict]] = collections.defaultdict(list)
+    for rec in _read_jsonl(pricing):
+        key = (rec["provider"], rec["region"], rec["instanceType"], rec["market"])
+        buckets[key].append(rec)
+
+    ts_now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    worst = "ok"
+    anomaly_lines: List[str] = []
+
+    for (provider, region, inst, market), recs in buckets.items():
+        recent = recs[-window:]
+        if not recent:
+            continue
+        latest = recent[-1]
+
+        cache = cache_dir / f"queuebash_pricing_{_safe_token(region)}_{_safe_token(inst)}.txt"
+        _atomic_write(cache, f"{latest['price']}\n")
+
+        if len(recent) < min_samples:
+            continue
+        prices = [float(r["price"]) for r in recent]
+        mean = sum(prices) / len(prices)
+        std = math.sqrt(sum((p - mean) ** 2 for p in prices) / len(prices)) or 1e-9
+        z = (float(latest["price"]) - mean) / std
+        severity = "error" if z >= z_error else ("warn" if z >= z_warn else "ok")
+        if severity == "ok":
+            continue
+        if severity == "error":
+            worst = "error"
+        elif worst != "error":
+            worst = "warn"
+        anomaly_lines.append(json.dumps({
+            "ts": ts_now,
+            "provider": provider,
+            "region": region,
+            "instanceType": inst,
+            "market": market,
+            "price": latest["price"],
+            "baselineMean": mean,
+            "baselineStd": std,
+            "zScore": z,
+            "severity": severity,
+        }, separators=(",", ":")))
+
+    if anomaly_lines:
+        anomalies.parent.mkdir(parents=True, exist_ok=True)
+        with anomalies.open("a", encoding="utf-8") as f:
+            for line in anomaly_lines:
+                f.write(line + "\n")
+
+    _atomic_write(health, f"{ts_now} finops={worst}\n")
+    return 0 if worst != "error" else 3
+
+
+def main(argv: List[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="Analyze bashqueues FinOps price stream")
+    ap.add_argument("--root", default=os.environ.get("QUEUEBASH_ROOT", str(pathlib.Path.home() / ".queuebash")))
+    ap.add_argument("--cache-dir", default=os.environ.get("QUEUEBASH_FINOPS_CACHE_DIR", "/var/tmp"))
+    ap.add_argument("--window", type=int, default=100)
+    ap.add_argument("--min-samples", type=int, default=5)
+    ap.add_argument("--z-warn", type=float, default=2.5)
+    ap.add_argument("--z-error", type=float, default=4.0)
+    ns = ap.parse_args(argv)
+    return analyze(pathlib.Path(ns.root), pathlib.Path(ns.cache_dir), ns.window, ns.min_samples, ns.z_warn, ns.z_error)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

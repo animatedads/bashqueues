@@ -12,7 +12,7 @@ fail(){ echo "[FAIL] $*" >&2; exit 1; }
 queue submit bucketed-one --priority 20 -- bash -c 'echo bucketed-one' >/dev/null
 queue submit bucketed-two --priority 5 -- bash -c 'echo bucketed-two' >/dev/null
 
-# Simulate an old pre-0.17.74 flat pending job left in pending/*.job.
+# Simulate an old pre-0.17.90 flat pending job left in pending/*.job.
 mkdir -p "$QUEUEBASH_ROOT/pending" "$QUEUEBASH_ROOT/policy_blocked"
 cat > "$QUEUEBASH_ROOT/pending/legacy_flat.job" <<'JOB'
 JOB_ID=legacy_flat

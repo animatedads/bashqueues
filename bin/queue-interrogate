@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# queue-interrogate - collect behavioural evidence for a command.
+set -euo pipefail
+usage(){ cat >&2 <<'EOF'
+Usage:
+  queue-interrogate run NAME [--pre-arm-delay SEC] -- command [args...]
+  queue-interrogate repeat NAME --count N [--pre-arm-delay SEC] -- command [args...]
+
+Creates interrogation run directories containing syscall, socket, lsof,
+process-tree, and metadata traces. repeat/campaign mode is for delayed or
+stateful behaviour that may not appear in a single run.
+EOF
+}
+_now_stamp(){ printf '%(%Y%m%d_%H%M%S)T' -1 2>/dev/null || date +%Y%m%d_%H%M%S; }
+_now_iso(){ printf '%(%Y-%m-%dT%H:%M:%S%z)T' -1 2>/dev/null || date -Is; }
+_now_epoch(){ printf '%(%s)T' -1 2>/dev/null || date +%s; }
+_safe_name(){ printf '%s' "$1" | sed 's/[^A-Za-z0-9_.-]/_/g'; }
+_root(){ printf '%s' "${QUEUEBASH_ROOT:-$HOME/.queuebash}"; }
+_parse_common(){ :; }
+
+_collect_process_pids(){
+  local root_pid="${1:-}"
+  [[ -n "$root_pid" ]] || return 0
+  local out="$root_pid"
+  if command -v pgrep >/dev/null 2>&1; then
+    # Walk children a few levels; cheap and robust enough for profiling.
+    local frontier="$root_pid" next p kids depth
+    for depth in 1 2 3 4; do
+      next=""
+      for p in $frontier; do
+        kids="$(pgrep -P "$p" 2>/dev/null | tr '\n' ' ' || true)"
+        [[ -n "$kids" ]] || continue
+        out="$out $kids"
+        next="$next $kids"
+      done
+      [[ -n "$next" ]] || break
+      frontier="$next"
+    done
+  fi
+  printf '%s\n' "$out"
+}
+
+_monitor(){
+  local pid="$1" out="$2" interval="$3"
+  : > "$out/net.ss.trace"
+  : > "$out/lsof.process.trace"
+  : > "$out/lsof.net.trace"
+  : > "$out/process.tree.trace"
+  while kill -0 "$pid" 2>/dev/null; do
+    {
+      printf '\n--- sample %s ---\n' "$(_now_epoch)"
+      if command -v ss >/dev/null 2>&1; then ss -H -tunap 2>/dev/null || true; fi
+    } >> "$out/net.ss.trace"
+
+    local pids pid_csv
+    pids="$(_collect_process_pids "$pid")"
+    pid_csv="$(printf '%s' "$pids" | tr ' ' ',' | sed 's/,,*/,/g; s/,$//')"
+    {
+      printf '\n--- sample %s ---\n' "$(_now_epoch)"
+      if command -v ps >/dev/null 2>&1; then ps -o pid,ppid,pgid,stat,comm,args -p $pids 2>/dev/null || true; fi
+    } >> "$out/process.tree.trace"
+    {
+      printf '\n--- sample %s ---\n' "$(_now_epoch)"
+      if command -v ps >/dev/null 2>&1; then ps -o pid,ppid,pgid,stat,comm,args -p $pids 2>/dev/null || true; fi
+      if command -v lsof >/dev/null 2>&1 && [[ -n "$pid_csv" ]]; then lsof -nP -p "$pid_csv" 2>/dev/null || true; fi
+    } >> "$out/lsof.process.trace"
+    {
+      printf '\n--- sample %s ---\n' "$(_now_epoch)"
+      if command -v lsof >/dev/null 2>&1; then lsof -nP -i 2>/dev/null || true; fi
+    } >> "$out/lsof.net.trace"
+    sleep "$interval" 2>/dev/null || sleep 1
+  done
+}
+
+_run_once(){
+  local name="$1" out="$2" pre_arm="$3"; shift 3
+  local interval="${QUEUEBASH_INTERROGATE_SAMPLE_INTERVAL:-0.2}"
+  mkdir -p "$out"
+  {
+    printf 'PROFILE_RUN_ID=%q\n' "$(basename "$out")"
+    printf 'PROFILE_NAME=%q\n' "$name"
+    printf 'PROFILE_STARTED_AT=%q\n' "$(_now_iso)"
+    printf 'PROFILE_PRE_ARM_DELAY=%q\n' "$pre_arm"
+    printf 'PROFILE_CAPTURED_USER=%q\n' "${USER:-$(id -un 2>/dev/null || echo unknown)}"
+    printf 'PROFILE_CAPTURED_UID=%q\n' "$(id -u 2>/dev/null || echo unknown)"
+    printf 'PROFILE_CAPTURED_EUID=%q\n' "$EUID"
+    printf 'PROFILE_CAPTURED_HOME=%q\n' "$HOME"
+    printf 'PROFILE_CAPTURED_QUEUE_ROOT=%q\n' "$(_root)"
+    if [[ "$(id -u 2>/dev/null || echo 1)" == "0" || "$EUID" == "0" ]]; then
+      printf 'PROFILE_PRIVILEGED_CONTEXT=1\n'
+    else
+      printf 'PROFILE_PRIVILEGED_CONTEXT=0\n'
+    fi
+    printf 'PROFILE_COMMAND='
+    printf '%q ' "$@"
+    printf '\n'
+  } > "$out/profile.env"
+  printf '%s\n' "$*" > "$out/command.txt"
+  : > "$out/syscalls.raw.trace"
+  : > "$out/syscalls.summary.txt"
+
+  local rc=0 pid mon
+  # Pre-arm by launching a tiny wrapper that sleeps before exec.  The monitor
+  # starts against the wrapper/strace tree before the real payload begins, which
+  # avoids missing very short-lived early behaviour.
+  if command -v strace >/dev/null 2>&1; then
+    strace -f -qq -o "$out/syscalls.raw.trace" -- bash -c 'delay="$1"; shift; sleep "$delay" 2>/dev/null || true; exec "$@"' bash "$pre_arm" "$@" &
+  else
+    echo "queue-interrogate: strace not found; running command without syscall trace" >&2
+    bash -c 'delay="$1"; shift; sleep "$delay" 2>/dev/null || true; exec "$@"' bash "$pre_arm" "$@" &
+  fi
+  pid=$!
+  _monitor "$pid" "$out" "$interval" & mon=$!
+  set +e
+  wait "$pid"; rc=$?
+  kill "$mon" >/dev/null 2>&1 || true
+  wait "$mon" >/dev/null 2>&1 || true
+  set -e
+  {
+    printf 'PROFILE_FINISHED_AT=%q\n' "$(_now_iso)"
+    printf 'PROFILE_EXIT_CODE=%q\n' "$rc"
+  } >> "$out/profile.env"
+  printf 'interrogation_profile=%s\n' "$out"
+  printf 'exit_code=%s\n' "$rc"
+  return "$rc"
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  run)
+    name="${1:-}"; shift || true
+    [[ -n "$name" ]] || { usage; exit 2; }
+    pre_arm="${QUEUEBASH_INTERROGATE_PRE_ARM_DELAY:-0.25}"
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        --pre-arm-delay) pre_arm="${2:-}"; shift 2 ;;
+        --pre-arm-delay=*) pre_arm="${1#*=}"; shift ;;
+        --) shift; break ;;
+        *) break ;;
+      esac
+    done
+    [[ "$#" -gt 0 ]] || { usage; exit 2; }
+    root="$(_root)"; safe_name="$(_safe_name "$name")"; run_id="$(_now_stamp)_${safe_name}_$$"; out="$root/profiles/interrogation/runs/$run_id"
+    _run_once "$name" "$out" "$pre_arm" "$@"
+    ;;
+  repeat|campaign)
+    name="${1:-}"; shift || true
+    [[ -n "$name" ]] || { usage; exit 2; }
+    count=1; pre_arm="${QUEUEBASH_INTERROGATE_PRE_ARM_DELAY:-0.25}"; continue_on_error=1
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        --count|-n) count="${2:-}"; shift 2 ;;
+        --count=*) count="${1#*=}"; shift ;;
+        --pre-arm-delay) pre_arm="${2:-}"; shift 2 ;;
+        --pre-arm-delay=*) pre_arm="${1#*=}"; shift ;;
+        --stop-on-error) continue_on_error=0; shift ;;
+        --) shift; break ;;
+        *) break ;;
+      esac
+    done
+    [[ "$count" =~ ^[0-9]+$ && "$count" -gt 0 ]] || { echo "queue-interrogate repeat: invalid --count '$count'" >&2; exit 2; }
+    [[ "$#" -gt 0 ]] || { usage; exit 2; }
+    root="$(_root)"; safe_name="$(_safe_name "$name")"; campaign_id="$(_now_stamp)_${safe_name}_campaign_$$"; campaign="$root/profiles/interrogation/campaigns/$campaign_id"
+    mkdir -p "$campaign"
+    {
+      printf 'CAMPAIGN_ID=%q\n' "$campaign_id"
+      printf 'CAMPAIGN_NAME=%q\n' "$name"
+      printf 'CAMPAIGN_COUNT=%q\n' "$count"
+      printf 'CAMPAIGN_PRE_ARM_DELAY=%q\n' "$pre_arm"
+      printf 'CAMPAIGN_STARTED_AT=%q\n' "$(_now_iso)"
+      printf 'CAMPAIGN_CAPTURED_USER=%q\n' "${USER:-$(id -un 2>/dev/null || echo unknown)}"
+      printf 'CAMPAIGN_CAPTURED_UID=%q\n' "$(id -u 2>/dev/null || echo unknown)"
+      printf 'CAMPAIGN_CAPTURED_EUID=%q\n' "$EUID"
+      printf 'CAMPAIGN_CAPTURED_HOME=%q\n' "$HOME"
+      printf 'CAMPAIGN_CAPTURED_QUEUE_ROOT=%q\n' "$(_root)"
+      if [[ "$(id -u 2>/dev/null || echo 1)" == "0" || "$EUID" == "0" ]]; then
+        printf 'CAMPAIGN_PRIVILEGED_CONTEXT=1\n'
+      else
+        printf 'CAMPAIGN_PRIVILEGED_CONTEXT=0\n'
+      fi
+      printf 'CAMPAIGN_COMMAND='
+      printf '%q ' "$@"
+      printf '\n'
+    } > "$campaign/campaign.env"
+    rc_final=0
+    for i in $(seq 1 "$count"); do
+      run_dir="$campaign/run-$(printf '%03d' "$i")"
+      if _run_once "$name" "$run_dir" "$pre_arm" "$@"; then :; else
+        rc=$?; rc_final="$rc"
+        [[ "$continue_on_error" == 1 ]] || break
+      fi
+    done
+    printf 'CAMPAIGN_FINISHED_AT=%q\n' "$(_now_iso)" >> "$campaign/campaign.env"
+    printf 'CAMPAIGN_EXIT_CODE=%q\n' "$rc_final" >> "$campaign/campaign.env"
+    printf 'interrogation_campaign=%s\n' "$campaign"
+    exit "$rc_final"
+    ;;
+  *) usage; exit 2 ;;
+esac

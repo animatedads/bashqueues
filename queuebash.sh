@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.78"
+QUEUEBASH_VERSION="0.17.90"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -488,7 +488,7 @@ _queue_init() {
     local default_class="${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}"
     local default_file="$root/classes/$default_class.env"
 
-    mkdir -p "$root"/{pending,running,paused,done,failed,pol_blocked,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,envs.d,assets.d,caps.d,reporters.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets}
+    mkdir -p "$root"/{pending,running,paused,done,failed,pol_blocked,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,envs.d,assets.d,caps.d,reporters.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets,clearance,clearance/done,clearance/failed,clearance/pol_blocked,clearance/interrupted,clearance/cancelled,clearance/deleted,clearance/paused,clearance/running,clearance/logs}
 
     if [[ ! -f "$default_file" ]]; then
         cat > "$default_file" <<'EOF'
@@ -520,12 +520,23 @@ EOF
 }
 
 _queue_now() {
-    date +"%Y%m%d_%H%M%S"
+    # Bash builtin timestamp; avoids forking `date` in submit/worker hot paths.
+    printf '%(%Y%m%d_%H%M%S)T\n' -1 2>/dev/null || date +"%Y%m%d_%H%M%S"
+}
+
+_queue_now_nonce() {
+    # Prefer Bash's EPOCHREALTIME to avoid `date +%N` forks during batch submits.
+    local er="${EPOCHREALTIME:-}"
+    if [[ "$er" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+        printf '%s' "${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+    else
+        date +%s%N
+    fi
 }
 
 _queue_id() {
-    # Include nanoseconds and PID to avoid collisions during rapid batch submission.
-    printf "%s_%s_%06d_%d" "$(_queue_now)" "$(date +%N)" "$RANDOM" "$$"
+    # Include a high-resolution in-process nonce and PID to avoid collisions during rapid batch submission.
+    printf "%s_%s_%06d_%d" "$(_queue_now)" "$(_queue_now_nonce)" "$RANDOM" "$$"
 }
 
 _queue_job_name() {
@@ -626,8 +637,13 @@ _queue_job_is_pending_path() {
 _queue_state_for_job_path() {
     local f="$1"
     local root="${2:-$(_queue_root)}"
+    local d
     case "$f" in
         "$root/pending/"*.job|"$root/pending/"p*/*.job) printf 'pending\n' ;;
+        "$root/clearance/"*/*.job)
+            d="$(dirname "$f")"
+            basename "$d"
+            ;;
         *) basename "$(dirname "$f")" ;;
     esac
 }
@@ -722,6 +738,7 @@ _queue_job_id_and_names_for_completion() {
 
 _queue_find_jobs() {
     # Exact QID wins; exact job name next; QID prefix last.
+    # Searches live jobs, bucketed pending jobs, and clearance archives.
     # No job-name prefix matching.
     local needle="$1"
     local root="$(_queue_root)"
@@ -764,6 +781,22 @@ _queue_find_jobs() {
         done
     done
 
+    shopt -s nullglob
+    for f in "$root/clearance"/*/*.job; do
+        [[ -e "$f" ]] || continue
+        id="$(basename "$f" .job)"
+        name="$(_queue_job_name "$f")"
+
+        if [[ "$id" == "$needle" ]]; then
+            exact_qid+=( "$f" )
+        elif [[ "$name" == "$needle" ]]; then
+            exact_name+=( "$f" )
+        elif [[ "$id" == "$needle"* ]]; then
+            qid_prefix+=( "$f" )
+        fi
+    done
+    shopt -u nullglob
+
     if [[ "${#exact_qid[@]}" -gt 0 ]]; then
         printf '%s\n' "${exact_qid[@]}"
     elif [[ "${#exact_name[@]}" -gt 0 ]]; then
@@ -774,7 +807,6 @@ _queue_find_jobs() {
         return 1
     fi
 }
-
 _queue_print_matches() {
     local root="$(_queue_root)"
     local f id state name
@@ -971,11 +1003,17 @@ _queue_job_dependencies_blocked() {
 }
 
 _queue_now_epoch() {
-    date +%s
+    printf '%(%s)T\n' -1 2>/dev/null || date +%s
 }
 
 _queue_now_iso() {
-    date -Is 2>/dev/null || date
+    local ts
+    if printf -v ts '%(%Y-%m-%dT%H:%M:%S%z)T' -1 2>/dev/null; then
+        # Convert +0000 to +00:00 to stay close to `date -Is`.
+        printf '%s:%s\n' "${ts:0:${#ts}-2}" "${ts: -2}"
+    else
+        date -Is 2>/dev/null || date
+    fi
 }
 
 _queue_parse_delay_seconds() {
@@ -1288,9 +1326,9 @@ _queue_class_replace() {
     ts="$(date +%Y%m%d_%H%M%S_%N)"; backup="$backup_dir/${class}.${ts}.env"; meta="$backup_dir/${class}.${ts}.meta"; tmp="$root/classes/.${class}.new.$$"
     if [[ -e "$dst" ]]; then
         cp -p "$dst" "$backup" || return 1
-        { printf 'class=%q\n' "$class"; printf 'backup=%q\n' "$backup"; printf 'original=%q\n' "$dst"; printf 'replaced_at=%q\n' "$(date -Is)"; printf 'source=%q\n' "$src"; } > "$meta"
+        { printf 'class=%q\n' "$class"; printf 'backup=%q\n' "$backup"; printf 'original=%q\n' "$dst"; printf 'replaced_at=%q\n' "$(_queue_now_iso)"; printf 'source=%q\n' "$src"; } > "$meta"
     else
-        { printf 'class=%q\n' "$class"; printf 'backup=%q\n' ""; printf 'original=%q\n' "$dst"; printf 'replaced_at=%q\n' "$(date -Is)"; printf 'source=%q\n' "$src"; printf 'created_new=1\n'; } > "$meta"
+        { printf 'class=%q\n' "$class"; printf 'backup=%q\n' ""; printf 'original=%q\n' "$dst"; printf 'replaced_at=%q\n' "$(_queue_now_iso)"; printf 'source=%q\n' "$src"; printf 'created_new=1\n'; } > "$meta"
     fi
     cp "$src" "$tmp" || { rm -f "$tmp"; return 1; }
     mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
@@ -1326,7 +1364,7 @@ _queue_class_delete() {
     [[ -z "$ref" ]] || { echo "queue classes delete: refusing because pending/running/paused jobs reference class: $class" >&2; echo "$ref" >&2; return 3; }
     archive_dir="$(_queue_class_archive_dir)"; mkdir -p "$archive_dir"; ts="$(date +%Y%m%d_%H%M%S_%N)"; archive="$archive_dir/${class}.${ts}.env"; meta="$archive_dir/${class}.${ts}.meta"
     mv "$dst" "$archive" || return 1
-    { printf 'class=%q\n' "$class"; printf 'archive=%q\n' "$archive"; printf 'original=%q\n' "$dst"; printf 'archived_at=%q\n' "$(date -Is)"; } > "$meta"
+    { printf 'class=%q\n' "$class"; printf 'archive=%q\n' "$archive"; printf 'original=%q\n' "$dst"; printf 'archived_at=%q\n' "$(_queue_now_iso)"; } > "$meta"
     echo "Archived queue class: $dst"; echo "Archive: $archive"
 }
 
@@ -1417,7 +1455,7 @@ _queue_class_refresh_one() {
         printf 'class=%q\n' "$name"
         printf 'backup=%q\n' "$backup"
         printf 'original=%q\n' "$dst"
-        printf 'replaced_at=%q\n' "$(date -Is 2>/dev/null || date)"
+        printf 'replaced_at=%q\n' "$(_queue_now_iso)"
         printf 'source=%q\n' "$src"
         printf 'created_new=%q\n' "$created_new"
     } > "$meta"
@@ -1755,7 +1793,7 @@ _queue_asset_delete_plugin() {
     ts="$(date +%Y%m%d_%H%M%S_%N)"
     archive="$archive_dir/${family}.${ts}.sh"; meta="$archive_dir/${family}.${ts}.meta"
     mv "$dst" "$archive" || return 1
-    { printf 'family=%q\n' "$family"; printf 'archive=%q\n' "$archive"; printf 'original=%q\n' "$dst"; printf 'archived_at=%q\n' "$(date -Is)"; } > "$meta"
+    { printf 'family=%q\n' "$family"; printf 'archive=%q\n' "$archive"; printf 'original=%q\n' "$dst"; printf 'archived_at=%q\n' "$(_queue_now_iso)"; } > "$meta"
     echo "Archived asset plugin: $dst"
     echo "Archive: $archive"
     _queue_log_event "asset_plugin_archived" "$family" "$family" "assets" "path=$dst archive=$archive" 2>/dev/null || true
@@ -1899,7 +1937,7 @@ _queue_asset_replace_plugin() {
             printf 'family=%q\n' "$family"
             printf 'backup=%q\n' "$backup"
             printf 'original=%q\n' "$dst"
-            printf 'replaced_at=%q\n' "$(date -Is)"
+            printf 'replaced_at=%q\n' "$(_queue_now_iso)"
             printf 'source=%q\n' "$src"
         } > "$meta"
     else
@@ -1907,7 +1945,7 @@ _queue_asset_replace_plugin() {
             printf 'family=%q\n' "$family"
             printf 'backup=%q\n' ""
             printf 'original=%q\n' "$dst"
-            printf 'replaced_at=%q\n' "$(date -Is)"
+            printf 'replaced_at=%q\n' "$(_queue_now_iso)"
             printf 'source=%q\n' "$src"
             printf 'created_new=1\n'
         } > "$meta"
@@ -2245,7 +2283,7 @@ _queue_exception_add() {
     norm="$(_queue_exception_normalize_key "$key")"
     mkdir -p "$(_queue_exception_dir)"
     f="$(_queue_exception_file "$id")"
-    created="$(date -Is 2>/dev/null || date)"
+    created="$(_queue_now_iso)"
     user="${USER:-unknown}"
 
     if [[ -f "$f" ]] && awk -F '	' -v k="$norm" '$1 == k { found=1 } END { exit !found }' "$f"; then
@@ -2599,7 +2637,7 @@ _queue_exception_explain_for_job() {
 
         age=""
         if [[ -n "$created_at" ]]; then
-            now_epoch="$(date +%s 2>/dev/null || echo 0)"
+            now_epoch="$(_queue_now_epoch 2>/dev/null || echo 0)"
             created_epoch="$(date -d "$created_at" +%s 2>/dev/null || echo 0)"
             if [[ "$now_epoch" =~ ^[0-9]+$ && "$created_epoch" =~ ^[0-9]+$ && "$created_epoch" -gt 0 && "$now_epoch" -ge "$created_epoch" ]]; then
                 age="$((now_epoch - created_epoch))s"
@@ -3640,7 +3678,7 @@ _queue_global_json_event() {
     local event="$1" claim="$2" mode="$3" qid="$4" queue_user="$5" queue_root="$6" class="$7" job_name="$8" detail="${9:-}"
     local ts log
     _queue_global_init >/dev/null 2>&1 || return 0
-    ts="$(date -Is 2>/dev/null || date)"
+    ts="$(_queue_now_iso)"
     log="$(_queue_global_events_log)"
     {
         printf '{"ts":"%s","event":"%s","claim":"%s","mode":"%s","qid":"%s","queue_user":"%s","queue_root":"%s","class":"%s","job_name":"%s","by_user":"%s"' \
@@ -3724,7 +3762,7 @@ _queue_global_claim_compact_file() {
     local file="$1" claim="$2" mode="$3" slots="$4" tmp now n=0 line qid qroot state
     [[ -f "$file" ]] || return 0
     tmp="$(mktemp)"
-    now="$(date -Is 2>/dev/null || date)"
+    now="$(_queue_now_iso)"
     {
         printf 'CLAIM_KEY=%q\n' "$claim"
         printf 'CLAIM_HASH=%q\n' "$(_queue_global_hash "$claim")"
@@ -3840,7 +3878,7 @@ _queue_global_claim_acquire_one() {
     }
     lock="$(_queue_global_lock_file "$claim")"
     file="$(_queue_global_claim_file "$claim")"
-    now="$(date -Is 2>/dev/null || date)"
+    now="$(_queue_now_iso)"
     (
         flock -x 9 || exit 1
         [[ -f "$file" ]] || : > "$file"
@@ -4301,7 +4339,7 @@ _queue_class_claim_job() {
     if [[ "$rc" -eq 0 ]]; then
         {
             printf 'JOB_CLASS_CLAIMED=%q\n' "$class"
-            printf 'JOB_CLASS_CLAIMED_AT=%q\n' "$(date -Is)"
+            printf 'JOB_CLASS_CLAIMED_AT=%q\n' "$(_queue_now_iso)"
         } >> "$f" 2>/dev/null || true
         _queue_log_event "class_claimed" "$id" "$(_queue_job_name "$f")" "running" "class=$class"
         return 0
@@ -4345,7 +4383,7 @@ _queue_dispatch_trace_log() {
 
     _queue_dispatch_trace_enabled || return 0
 
-    ts="$(date -Is 2>/dev/null || date)"
+    ts="$(_queue_now_iso)"
     mkdir -p "$root/workers"
     printf '%s worker=%s %s\n' "$ts" "$worker" "$msg" >> "$root/workers/dispatch.trace"
     printf '[worker %s trace] %s\n' "$worker" "$msg" >&2
@@ -4686,7 +4724,7 @@ _queue_append_class_defaults_to_job_file() {
     done < <(_queue_class_load_defaults_for_class "$class")
 
     if [[ "$applied" -gt 0 ]]; then
-        printf 'CLASS_DEFAULTS_APPLIED_AT=%q\n' "$(date -Is 2>/dev/null || date)" >> "$job_file"
+        printf 'CLASS_DEFAULTS_APPLIED_AT=%q\n' "$(_queue_now_iso)" >> "$job_file"
         printf 'CLASS_DEFAULTS_SOURCE=%q\n' "$class" >> "$job_file"
     fi
 }
@@ -4887,10 +4925,10 @@ _queue_clone_job_to_pending() {
             [[ -n "${SECURITY_EXEMPTION_DETAIL:-}" ]] && printf 'SECURITY_EXEMPTION_DETAIL=%q\n' "$SECURITY_EXEMPTION_DETAIL"
             [[ -n "${DEPENDS_AFTER_SUCCESS:-}" ]] && printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$DEPENDS_AFTER_SUCCESS"
             [[ -n "${INHERIT_ENV_FROM:-}" ]] && printf 'INHERIT_ENV_FROM=%q\n' "$INHERIT_ENV_FROM"
-            printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
+            printf 'SUBMITTED_AT=%q\n' "$(_queue_now_iso)"
             printf 'PWD_AT_SUBMIT=%q\n' "$PWD_AT_SUBMIT"
             printf 'RESUBMITTED_FROM=%q\n' "$JOB_ID"
-            printf 'RESUBMITTED_AT=%q\n' "$(date -Is)"
+            printf 'RESUBMITTED_AT=%q\n' "$(_queue_now_iso)"
             [[ -n "$note" ]] && printf 'RESUBMIT_NOTE=%q\n' "$note"
 
             printf 'COMMAND=('
@@ -5556,7 +5594,7 @@ _queue_log_event() {
     local ts
 
     mkdir -p "$root"
-    ts="$(date -Is)"
+    ts="$(_queue_now_iso)"
 
     {
         printf '{"ts":"%s","event":"%s","job_id":"%s","job_name":"%s","state":"%s"' \
@@ -5629,7 +5667,7 @@ _queue_job_mark_cleared() {
     local job_file="$1" id="$2" worker="${3:-}" class="${4:-}"
     [[ -f "$job_file" ]] || return 0
     local ts policy sandbox seccomp caps exemption_type exemption_action exemption_code exemption_detail jurisdiction classification
-    ts="$(date -Is 2>/dev/null || date)"
+    ts="$(_queue_now_iso)"
     policy="${QUEUEBASH_CLASS_POLICY_STATEMENT:-default}"
     sandbox="$(_queue_job_var_value "$job_file" SANDBOX_POLICY_NAME 2>/dev/null || true)"
     seccomp="$(_queue_job_var_value "$job_file" SECCOMP_POLICY_NAME 2>/dev/null || true)"
@@ -5661,6 +5699,59 @@ _queue_job_mark_cleared() {
     _queue_log_event "cleared" "$id" "$(_queue_job_name "$job_file" 2>/dev/null || echo -)" "running" "worker=$worker class=${class:-$(_queue_class_for_job_file "$job_file" 2>/dev/null || echo DEFAULT)} policy=$policy"
 }
 
+
+_queue_clearance_archive_root() {
+    printf '%s/clearance\n' "$(_queue_root)"
+}
+
+_queue_clearance_archive_job_file() {
+    local f="$1" state="$2" root="${3:-$(_queue_root)}"
+    local id dest_dir dest ts
+    [[ -f "$f" ]] || return 0
+    [[ -n "$state" ]] || state="$(_queue_state_for_job_path "$f" "$root" 2>/dev/null || echo unknown)"
+    id="$(basename "$f" .job)"
+    dest_dir="$root/clearance/$state"
+    mkdir -p -- "$dest_dir"
+    dest="$dest_dir/$id.job"
+    if [[ -e "$dest" ]]; then
+        ts="$(date +%Y%m%d_%H%M%S_%N 2>/dev/null || date +%s)"
+        dest="$dest_dir/${id}.${ts}.job"
+    fi
+    {
+        printf '\n# Archived by queue clear at %q\n' "$(_queue_now_iso)"
+        printf 'QUEUE_CLEARED_ARCHIVED=1\n'
+        printf 'QUEUE_CLEARED_ARCHIVED_AT=%q\n' "$(_queue_now_iso)"
+        printf 'QUEUE_CLEARED_ARCHIVED_FROM=%q\n' "$state"
+    } >> "$f" 2>/dev/null || true
+    mv -- "$f" "$dest"
+}
+
+_queue_clearance_archive_log_file() {
+    local f="$1" root="${2:-$(_queue_root)}" dest_dir dest base ts
+    [[ -f "$f" ]] || return 0
+    dest_dir="$root/clearance/logs"
+    mkdir -p -- "$dest_dir"
+    base="$(basename "$f")"
+    dest="$dest_dir/$base"
+    if [[ -e "$dest" ]]; then
+        ts="$(date +%Y%m%d_%H%M%S_%N 2>/dev/null || date +%s)"
+        dest="$dest_dir/${base}.${ts}"
+    fi
+    mv -- "$f" "$dest"
+}
+
+_queue_cleared_candidate_files_for_state() {
+    local root="$1" state="$2" f
+    shopt -s nullglob
+    for f in "$root/$state"/*.job; do
+        [[ -f "$f" ]] && printf '%s\n' "$f"
+    done
+    for f in "$root/clearance/$state"/*.job; do
+        [[ -f "$f" ]] && printf '%s\n' "$f"
+    done
+    shopt -u nullglob
+}
+
 _queue_csv_contains_word() {
     local list="${1:-}" needle="${2:-}" item
     [[ -n "$needle" ]] || return 1
@@ -5678,7 +5769,7 @@ _queue_cleared_jobs_list() {
         case "${1:-}" in
             --json|-j) json=1; shift ;;
             --state|--states) states="${2:-}"; shift 2 ;;
-            --all-states|--all) states="pending,running,done,failed,interrupted,cancelled,deleted,pol_blocked,policy_blocked,paused"; shift ;;
+            --all-states|--all) states="pending,running,done,failed,interrupted,cancelled,deleted,pol_blocked,paused"; shift ;;
             --limit|-n) limit="${2:-0}"; shift 2 ;;
             --since) since="${2:-}"; shift 2 ;;
             --help|-h)
@@ -5688,8 +5779,11 @@ Usage:
   queue clearance list [--json] [--state csv] [--limit N] [--since DATE]
   queue audit cleared [--json] [--state csv] [--limit N] [--since DATE]
 
-Lists jobs that passed execution policy, class/resource checks, mandatory policy
-assets, dynamic preflight, and global claims and were cleared for dispatch.
+Lists jobs cleared for dispatch and jobs archived by `queue clear`.
+
+clear_source values:
+  execution  job was stamped JOB_CLEARED before payload launch
+  archive    job record was archived by queue clear
 EOF
                 return 0 ;;
             list) shift ;;
@@ -5702,40 +5796,49 @@ EOF
         [[ "$since_epoch" =~ ^[0-9]+$ && "$since_epoch" -gt 0 ]] || { echo "queue cleared: cannot parse --since '$since'" >&2; return 2; }
     fi
 
-    local root="$(_queue_root)" state f cleared_at cleared_epoch count=0 rows tmp
+    local root="$(_queue_root)" state f cleared_at archived_at cleared_epoch count=0 tmp source sort_at
     tmp="$(mktemp)"
-    for state in pending running done failed interrupted cancelled deleted pol_blocked policy_blocked paused; do
+    for state in pending running done failed interrupted cancelled deleted pol_blocked paused; do
         _queue_csv_contains_word "$states" "$state" || continue
-        for f in "$root/$state"/*.job; do
+        while IFS= read -r f; do
             [[ -f "$f" ]] || continue
-            [[ "$(_queue_job_var_value "$f" JOB_CLEARED 2>/dev/null || true)" == "1" ]] || continue
-            cleared_at="$(_queue_job_var_value "$f" JOB_CLEARED_AT 2>/dev/null || true)"
-            cleared_epoch="$(date -d "$cleared_at" +%s 2>/dev/null || echo 0)"
+            if [[ "$(_queue_job_var_value "$f" JOB_CLEARED 2>/dev/null || true)" == "1" ]]; then
+                source="execution"
+            elif [[ "$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED 2>/dev/null || true)" == "1" ]]; then
+                source="archive"
+            else
+                continue
+            fi
+            cleared_at="$(_queue_job_var_first_value "$f" JOB_CLEARED_AT QUEUE_CLEARED_ARCHIVED_AT 2>/dev/null || true)"
+            archived_at="$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED_AT 2>/dev/null || true)"
+            sort_at="${cleared_at:-${archived_at:-0000}}"
+            cleared_epoch="$(date -d "$sort_at" +%s 2>/dev/null || echo 0)"
             if [[ "$since_epoch" -gt 0 && ( ! "$cleared_epoch" =~ ^[0-9]+$ || "$cleared_epoch" -lt "$since_epoch" ) ]]; then
                 continue
             fi
-            printf '%s\t%s\n' "${cleared_at:-0000}" "$f" >> "$tmp"
-        done
+            printf '%s\t%s\t%s\n' "${sort_at:-0000}" "$source" "$f" >> "$tmp"
+        done < <(_queue_cleared_candidate_files_for_state "$root" "$state")
     done
 
     if [[ "$json" -eq 1 ]]; then
         printf '{"cleared":['
-        local first=1 id name class policy sandbox seccomp caps cmd submitted started finished rc worker stage ex_type ex_action ex_code jurisdiction classification
-        while IFS=$'\t' read -r cleared_at f; do
+        local first=1 id name class policy sandbox seccomp caps cmd submitted started finished rc worker stage ex_type ex_action ex_code jurisdiction classification archive_from job_cleared
+        while IFS=$'\t' read -r cleared_at source f; do
             [[ -f "$f" ]] || continue
             if [[ "$limit" -gt 0 && "$count" -ge "$limit" ]]; then break; fi
             state="$(_queue_state_for_job_path "$f" "$root")"
             id="$(basename "$f" .job)"
             name="$(_queue_job_name "$f" 2>/dev/null || true)"
-            class="$(_queue_job_var_value "$f" JOB_CLEARED_CLASS 2>/dev/null || _queue_class_for_job_file "$f" 2>/dev/null || echo DEFAULT)"
-            policy="$(_queue_job_var_value "$f" JOB_CLEARED_POLICY_STATEMENT 2>/dev/null || true)"
-            sandbox="$(_queue_job_var_value "$f" JOB_CLEARED_SANDBOX_POLICY 2>/dev/null || _queue_job_var_value "$f" SANDBOX_POLICY_NAME 2>/dev/null || true)"
-            seccomp="$(_queue_job_var_value "$f" JOB_CLEARED_SECCOMP_POLICY 2>/dev/null || _queue_job_var_value "$f" SECCOMP_POLICY_NAME 2>/dev/null || true)"
-            caps="$(_queue_job_var_value "$f" JOB_CLEARED_RUNTIME_CAPS 2>/dev/null || _queue_job_var_value "$f" RUNTIME_CAPS 2>/dev/null || true)"
+            class="$(_queue_job_var_first_value "$f" JOB_CLEARED_CLASS JOB_CLASS CLASS 2>/dev/null || echo DEFAULT)"
+            [[ -n "$class" ]] || class="DEFAULT"
+            policy="$(_queue_job_var_first_value "$f" JOB_CLEARED_POLICY_STATEMENT SECURITY_POLICY_STATEMENT 2>/dev/null || true)"
+            sandbox="$(_queue_job_var_first_value "$f" JOB_CLEARED_SANDBOX_POLICY SANDBOX_POLICY_NAME 2>/dev/null || true)"
+            seccomp="$(_queue_job_var_first_value "$f" JOB_CLEARED_SECCOMP_POLICY SECCOMP_POLICY_NAME 2>/dev/null || true)"
+            caps="$(_queue_job_var_first_value "$f" JOB_CLEARED_RUNTIME_CAPS RUNTIME_CAPS 2>/dev/null || true)"
             cmd="$(_queue_job_command "$f" 2>/dev/null || true)"
             submitted="$(_queue_job_var_value "$f" SUBMITTED_AT 2>/dev/null || true)"
             started="$(_queue_job_var_value "$f" RUN_STARTED_AT 2>/dev/null || true)"
-            finished="$(_queue_job_var_value "$f" EXEC_FINISHED_AT 2>/dev/null || _queue_job_var_value "$f" FINISHED_AT 2>/dev/null || true)"
+            finished="$(_queue_job_var_first_value "$f" EXEC_FINISHED_AT FINISHED_AT 2>/dev/null || true)"
             rc="$(_queue_job_var_value "$f" EXIT_CODE 2>/dev/null || true)"
             worker="$(_queue_job_var_value "$f" JOB_CLEARED_BY 2>/dev/null || true)"
             stage="$(_queue_job_var_value "$f" JOB_CLEARED_STAGE 2>/dev/null || true)"
@@ -5744,13 +5847,17 @@ EOF
             ex_code="$(_queue_job_var_value "$f" JOB_CLEARED_SECURITY_AUTHORISATION_CODE 2>/dev/null || true)"
             jurisdiction="$(_queue_job_var_value "$f" JOB_CLEARED_JURISDICTION 2>/dev/null || true)"
             classification="$(_queue_job_var_value "$f" JOB_CLEARED_CLASSIFICATION 2>/dev/null || true)"
+            archived_at="$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED_AT 2>/dev/null || true)"
+            archive_from="$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED_FROM 2>/dev/null || true)"
+            job_cleared="$(_queue_job_var_value "$f" JOB_CLEARED 2>/dev/null || true)"
             [[ "$first" -eq 0 ]] && printf ','
             first=0
             printf '{'
             printf '"qid":"%s"' "$(_queue_json_escape "$id")"
             printf ',"name":"%s","state":"%s","class":"%s"' "$(_queue_json_escape "$name")" "$(_queue_json_escape "$state")" "$(_queue_json_escape "$class")"
-            printf ',"cleared_at":"%s","cleared_by":"%s","policy_statement":"%s"' "$(_queue_json_escape "$cleared_at")" "$(_queue_json_escape "$worker")" "$(_queue_json_escape "$policy")"
-            printf ',"stage":"%s"' "$(_queue_json_escape "$stage")"
+            printf ',"clear_source":"%s","cleared_at":"%s","archived_at":"%s","archive_from":"%s","execution_cleared":%s' \
+                "$(_queue_json_escape "$source")" "$(_queue_json_escape "$cleared_at")" "$(_queue_json_escape "$archived_at")" "$(_queue_json_escape "$archive_from")" "$([[ "$job_cleared" == "1" ]] && echo true || echo false)"
+            printf ',"cleared_by":"%s","policy_statement":"%s","stage":"%s"' "$(_queue_json_escape "$worker")" "$(_queue_json_escape "$policy")" "$(_queue_json_escape "$stage")"
             printf ',"security":{"sandbox":"%s","seccomp":"%s","runtime_caps":"%s","exemption_type":"%s","exemption_action":"%s","authorisation_code":"%s"}' \
                 "$(_queue_json_escape "$sandbox")" "$(_queue_json_escape "$seccomp")" "$(_queue_json_escape "$caps")" "$(_queue_json_escape "$ex_type")" "$(_queue_json_escape "$ex_action")" "$(_queue_json_escape "$ex_code")"
             printf ',"governance":{"jurisdiction":"%s","classification":"%s"}' "$(_queue_json_escape "$jurisdiction")" "$(_queue_json_escape "$classification")"
@@ -5764,23 +5871,26 @@ EOF
         return 0
     fi
 
-    printf '%-28s %-11s %-20s %-18s %-12s %s\n' "qid" "state" "cleared_at" "class" "policy" "name"
-    while IFS=$'\t' read -r cleared_at f; do
+    printf '%-36s %-11s %-10s %-25s %-16s %-16s %s\n' "qid" "state" "source" "cleared_or_archived_at" "class" "policy" "name"
+    while IFS=$'\t' read -r cleared_at source f; do
         [[ -f "$f" ]] || continue
         if [[ "$limit" -gt 0 && "$count" -ge "$limit" ]]; then break; fi
         state="$(_queue_state_for_job_path "$f" "$root")"
-        local id name class policy
+        local id name class policy display_at
         id="$(basename "$f" .job)"
         name="$(_queue_job_name "$f" 2>/dev/null || true)"
-        class="$(_queue_job_var_value "$f" JOB_CLEARED_CLASS 2>/dev/null || _queue_class_for_job_file "$f" 2>/dev/null || echo DEFAULT)"
-        policy="$(_queue_job_var_value "$f" JOB_CLEARED_POLICY_STATEMENT 2>/dev/null || true)"
-        printf '%-28s %-11s %-20s %-18s %-12s %s\n' "$id" "$state" "${cleared_at:-}" "${class:-}" "${policy:-}" "$name"
+        class="$(_queue_job_var_first_value "$f" JOB_CLEARED_CLASS JOB_CLASS CLASS 2>/dev/null || echo DEFAULT)"
+        [[ -n "$class" ]] || class="DEFAULT"
+        policy="$(_queue_job_var_first_value "$f" JOB_CLEARED_POLICY_STATEMENT SECURITY_POLICY_STATEMENT 2>/dev/null || true)"
+        [[ -n "$policy" ]] || policy="-"
+        display_at="${cleared_at:-$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED_AT 2>/dev/null || true)}"
+        [[ -n "$display_at" ]] || display_at="unknown"
+        printf '%-36s %-11s %-10s %-25s %-16s %-16s %s\n' "$id" "$state" "$source" "$display_at" "${class:-DEFAULT}" "$policy" "$name"
         count=$((count + 1))
     done < <(sort -r "$tmp")
     rm -f "$tmp"
     printf 'cleared=%s states=%s\n' "$count" "$states"
 }
-
 _queue_status_job() {
     local target="${1:-}" json=0 tail_lines=20 arg
     shift || true
@@ -5934,7 +6044,7 @@ _queue_clone_retry_to_pending() {
             printf 'JOB_ID=%q\n' "$new_id"
             printf 'JOB_NAME=%q\n' "$JOB_NAME"
             printf 'PRIORITY=%q\n' "${PRIORITY:-10}"
-            printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
+            printf 'SUBMITTED_AT=%q\n' "$(_queue_now_iso)"
             printf 'PWD_AT_SUBMIT=%q\n' "$PWD_AT_SUBMIT"
             printf 'RETRY_OF=%q\n' "$JOB_ID"
             printf 'RETRIES_MAX=%q\n' "${RETRIES_MAX:-0}"
@@ -6036,10 +6146,10 @@ _queue_append_summary_to_job() {
 
     local started finished start_epoch finish_epoch duration log_bytes
     started="$(grep '^RUN_STARTED_AT=' "$job" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
-    finished="$(date -Is)"
+    finished="$(_queue_now_iso)"
 
     start_epoch="$(date -d "$started" +%s 2>/dev/null || echo 0)"
-    finish_epoch="$(date +%s)"
+    finish_epoch="$(_queue_now_epoch)"
     if [[ "$start_epoch" =~ ^[0-9]+$ && "$start_epoch" -gt 0 ]]; then
         duration=$((finish_epoch - start_epoch))
     else
@@ -6196,7 +6306,7 @@ _queue_expiry_to_epoch() {
             local rel="${v#+}" secs now
             secs="$(_queue_duration_to_seconds "$rel" 2>/dev/null || true)"
             [[ "$secs" =~ ^[0-9]+$ ]] || return 1
-            now="$(date +%s 2>/dev/null || echo 0)"
+            now="$(_queue_now_epoch 2>/dev/null || echo 0)"
             [[ "$now" =~ ^[0-9]+$ ]] || return 1
             echo $((now + secs))
             ;;
@@ -6212,7 +6322,7 @@ _queue_expiry_is_expired() {
     local exp now
     exp="$(_queue_expiry_to_epoch "$expires" 2>/dev/null || true)"
     [[ "$exp" =~ ^[0-9]+$ ]] || return 1
-    now="$(date +%s 2>/dev/null || echo 0)"
+    now="$(_queue_now_epoch 2>/dev/null || echo 0)"
     [[ "$now" =~ ^[0-9]+$ ]] || return 1
     (( now >= exp ))
 }
@@ -6412,7 +6522,7 @@ _queue_net_usage_job_start_record() {
     [[ -n "$iface" ]] || return 0
     counter="$(_queue_netdev_counter_bytes "$iface" "$dir" "$counter_file" 2>/dev/null || true)"
     [[ "$counter" =~ ^[0-9]+$ ]] || return 0
-    now="$(date -Is 2>/dev/null || date)"
+    now="$(_queue_now_iso)"
 
     {
         printf 'NET_USAGE_INTERFACE=%q\n' "$iface"
@@ -6437,7 +6547,7 @@ _queue_net_usage_job_finish_record() {
     end="$(_queue_netdev_counter_bytes "$iface" "$dir" "$counter_file" 2>/dev/null || true)"
     [[ "$end" =~ ^[0-9]+$ ]] || return 0
     (( end >= start )) && used=$((end - start)) || used=0
-    now="$(date -Is 2>/dev/null || date)"
+    now="$(_queue_now_iso)"
 
     if [[ -n "$limit" ]]; then
         limit_b="$(_queue_parse_bytes "$limit" 2>/dev/null || echo "$limit")"
@@ -7110,7 +7220,7 @@ _queue_authorisation_keygen() {
     chmod 0600 "$priv" 2>/dev/null || true
     openssl pkey -in "$priv" -pubout -out "$pub" >/dev/null 2>&1 || { rm -f "$priv"; echo "queue keygen $kind: openssl failed deriving public key" >&2; return 1; }
     chmod 0644 "$pub" 2>/dev/null || true
-    created="$(date -Is 2>/dev/null || date)"
+    created="$(_queue_now_iso)"
     pub_sha="$(_queue_authorisation_public_key_sha256_file "$pub")"
     key_id="${pub_sha:0:16}"
     pub_b64="$(_queue_base64_one_line "$pub")"
@@ -7410,7 +7520,7 @@ _queue_authorisation_generate() {
     file="$(_queue_authorisation_file "$code")" || return 2
     [[ ! -e "$file" ]] || { echo "queue authorisation generate: code already exists: $code" >&2; return 1; }
     mkdir -p "$(dirname "$file")"
-    created="$(date -Is 2>/dev/null || date)"
+    created="$(_queue_now_iso)"
     sign_line="$(_queue_authorisation_sign_fields "$code" "$admin" "$user" "$cmd_hash" "$created" "$expires" "$reason" "$key_name" 2>/dev/null || true)"
     IFS=$'\t' read -r sig_key sig_payload_sha sig_b64 <<< "$sign_line"
     sig_need="$(_queue_authorisation_signature_admin_requirement "$admin" 2>/dev/null || true)"
@@ -7485,7 +7595,7 @@ _queue_authorisation_validate() {
         cmd_hash="$(_queue_command_hash_from_args "$@")"
         [[ -n "${AUTHORISATION_COMMAND_SHA256:-}" && "$cmd_hash" == "$AUTHORISATION_COMMAND_SHA256" ]] || { echo "queue $reason_context: authorisation $code does not match this command" >&2; exit 13; }
         if [[ -n "${AUTHORISATION_EXPIRES_AT:-}" && "${AUTHORISATION_EXPIRES_AT}" != "never" ]]; then
-            now="$(date +%s 2>/dev/null || echo 0)"; exp="$(date -d "$AUTHORISATION_EXPIRES_AT" +%s 2>/dev/null || echo 0)"
+            now="$(_queue_now_epoch 2>/dev/null || echo 0)"; exp="$(date -d "$AUTHORISATION_EXPIRES_AT" +%s 2>/dev/null || echo 0)"
             [[ "$exp" -le 0 || "$now" -le "$exp" ]] || { echo "queue $reason_context: authorisation $code expired at $AUTHORISATION_EXPIRES_AT" >&2; exit 14; }
         fi
         sig_status="$(_queue_authorisation_verify_signature_loaded)" || { echo "queue $reason_context: authorisation $code signature check failed: $sig_status" >&2; exit 16; }
@@ -7527,7 +7637,7 @@ _queue_job_append_security_exemption() {
     {
         printf '
 # Security exemption recorded at %q
-' "$(date -Is 2>/dev/null || date)"
+' "$(_queue_now_iso)"
         printf 'SECURITY_EXEMPTION_TYPE=%q
 ' "$type"
         [[ -n "$detail" ]] && printf 'SECURITY_EXEMPTION_DETAIL=%q
@@ -7560,7 +7670,7 @@ _queue_authorisation_file_status() {
         fi
         if [[ -n "${AUTHORISATION_EXPIRES_AT:-}" && "${AUTHORISATION_EXPIRES_AT}" != "never" ]]; then
             local now exp
-            now="$(date +%s 2>/dev/null || echo 0)"
+            now="$(_queue_now_epoch 2>/dev/null || echo 0)"
             exp="$(date -d "$AUTHORISATION_EXPIRES_AT" +%s 2>/dev/null || echo 0)"
             if [[ "$exp" -gt 0 && "$now" -gt "$exp" ]]; then
                 echo "invalid-expired"
@@ -7714,7 +7824,7 @@ _queue_authorise_job() {
     file="$(_queue_authorisation_file "$code")" || return 2
     [[ ! -e "$file" ]] || { echo "queue authorise: code already exists: $code" >&2; return 1; }
     cmd_hash="$(_queue_authorisation_from_job_command "$jobf")" || { echo "queue authorise: job has no readable COMMAND array: $qid" >&2; return 1; }
-    created="$(date -Is 2>/dev/null || date)"
+    created="$(_queue_now_iso)"
     sign_line="$(_queue_authorisation_sign_fields "$code" "$admin" "$user" "$cmd_hash" "$created" "$expires" "$reason" "$key_name" 2>/dev/null || true)"
     IFS=$'\t' read -r sig_key sig_payload_sha sig_b64 <<< "$sign_line"
     sig_need="$(_queue_authorisation_signature_admin_requirement "$admin" 2>/dev/null || true)"
@@ -8337,7 +8447,7 @@ _queue_append_policy_snapshot_to_job_file() {
         # shellcheck disable=SC1090
         source "$job_file" >/dev/null 2>&1 || exit 0
 
-        printf 'SECURITY_POLICY_SNAPSHOT_AT=%q\n' "$(date -Is 2>/dev/null || date)"
+        printf 'SECURITY_POLICY_SNAPSHOT_AT=%q\n' "$(_queue_now_iso)"
 
         sandbox_name="$(_queue_sandbox_normalise_level "${SANDBOX_LEVEL:-off}")"
         if [[ -n "$sandbox_name" ]]; then
@@ -8723,7 +8833,7 @@ _queue_runtime_caps_watchdog() {
     normalised_caps="$(_queue_runtime_caps_normalise "${RUNTIME_CAPS:-}" 2>/dev/null || true)"
     unknown_caps="$(_queue_runtime_caps_unknown_list "${RUNTIME_CAPS:-}" 2>/dev/null || true)"
     if [[ -n "$unknown_caps" ]]; then
-        now="$(date -Is 2>/dev/null || date)"
+        now="$(_queue_now_iso)"
         {
             printf 'RUNTIME_CAP_WARNING=%q\n' "unknown runtime cap(s): $unknown_caps"
             printf 'RUNTIME_CAPS_NORMALISED=%q\n' "$normalised_caps"
@@ -8777,7 +8887,7 @@ _queue_runtime_caps_watchdog() {
             fi
 
             if [[ -n "$reason" ]]; then
-                now="$(date -Is 2>/dev/null || date)"
+                now="$(_queue_now_iso)"
                 {
                     printf 'RUNTIME_CAP_VIOLATED=%q\n' "1"
                     printf 'RUNTIME_CAP_VIOLATED_AT=%q\n' "$now"
@@ -8976,7 +9086,7 @@ _queue_mark_interrupted() {
     dest="$root/interrupted/$id.job"
 
     {
-        echo "INTERRUPTED_AT=$(printf '%q' "$(date -Is)")"
+        echo "INTERRUPTED_AT=$(printf '%q' "$(_queue_now_iso)")"
         echo "INTERRUPTED_REASON=$(printf '%q' "$reason")"
         echo "INTERRUPTED_FROM=running"
     } >> "$f"
@@ -9826,7 +9936,7 @@ _queue_maybe_gzip_log() {
     if [[ -f "$gz" && -f "$job" ]]; then
         {
             printf 'LOG_COMPRESSED=%q\n' "1"
-            printf 'LOG_COMPRESSED_AT=%q\n' "$(date -Is)"
+            printf 'LOG_COMPRESSED_AT=%q\n' "$(_queue_now_iso)"
             printf 'LOG_PATH=%q\n' "$gz"
         } >> "$job"
         _queue_log_event "log_compressed" "$id" "$(_queue_job_name "$job")" "$(_queue_state_for_job_path "$job" "$(_queue_root)")" "path=$gz"
@@ -9894,7 +10004,7 @@ _queue_mark_log_stream_suppressed() {
     marker="$(_queue_log_overflow_marker_path "$id" "$stream")"
     [[ -e "$marker" ]] && return 0
     : > "$marker" 2>/dev/null || true
-    ts="$(date -Is)"
+    ts="$(_queue_now_iso)"
 
     {
         echo
@@ -10026,12 +10136,12 @@ _queue_log_watchdog() {
                 {
                     echo
                     echo "LOG_OVERFLOW_ERROR: log size ${size} exceeded cap ${max_bytes}; terminating job"
-                    echo "LOG_OVERFLOW_AT=$(date -Is)"
+                    echo "LOG_OVERFLOW_AT=$(_queue_now_iso)"
                 } >> "$log" 2>/dev/null || true
 
                 {
                     printf 'LOG_OVERFLOW=%q\n' "1"
-                    printf 'LOG_OVERFLOW_AT=%q\n' "$(date -Is)"
+                    printf 'LOG_OVERFLOW_AT=%q\n' "$(_queue_now_iso)"
                     printf 'LOG_OVERFLOW_BYTES=%q\n' "$size"
                     printf 'LOG_OVERFLOW_CAP=%q\n' "$max_bytes"
                 } >> "$job" 2>/dev/null || true
@@ -10070,6 +10180,19 @@ _queue_job_var_value() {
     local f="$1"
     local key="$2"
     grep "^${key}=" "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null
+}
+
+_queue_job_var_first_value() {
+    local f="$1" key value
+    shift || true
+    for key in "$@"; do
+        value="$(_queue_job_var_value "$f" "$key" 2>/dev/null || true)"
+        if [[ -n "$value" ]]; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+    done
+    return 1
 }
 
 _queue_human_bytes() {
@@ -10167,7 +10290,7 @@ _queue_job_pending_dispatch_diagnose() {
         return 0
     fi
 
-    now="$(date +%s)"
+    now="$(_queue_now_epoch)"
     not_before="$(_queue_file_not_before_epoch "$f")"
     if [[ "$not_before" =~ ^[0-9]+$ && "$not_before" -gt "$now" ]]; then
         echo "  status:            blocked"
@@ -10253,20 +10376,40 @@ _queue_job_file_by_id_any_state() {
     local root="$(_queue_root)"
     local st f
 
+    [[ -n "$id" ]] || return 1
+
+    # Prefer the shared resolver so all command surfaces agree on where a job
+    # may live: bucketed pending dirs, live terminal dirs, and clearance archives.
+    while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        [[ "$(basename "$f" .job)" == "$id" ]] || continue
+        printf '%s\n' "$f"
+        return 0
+    done < <(_queue_find_jobs "$id" 2>/dev/null || true)
+
+    # Conservative compatibility fallback for very early queue roots.
     for st in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ "$st" == "pending" ]]; then
+            while IFS= read -r f; do
+                [[ -f "$f" && "$(basename "$f" .job)" == "$id" ]] && { printf '%s\n' "$f"; return 0; }
+            done < <(_queue_pending_job_files "$root" 2>/dev/null || true)
+            continue
+        fi
         f="$root/$st/$id.job"
         [[ -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
     done
+
+    shopt -s nullglob
+    for f in "$root/clearance"/*/"$id.job"; do
+        [[ -f "$f" ]] && { printf '%s\n' "$f"; shopt -u nullglob; return 0; }
+    done
+    shopt -u nullglob
     return 1
 }
 
 _queue_job_state_for_file() {
     local f="$1"
-    local root="$(_queue_root)"
-    local rel
-
-    rel="${f#"$root"/}"
-    printf '%s\n' "${rel%%/*}"
+    _queue_state_for_job_path "$f" "$(_queue_root)"
 }
 
 _queue_job_history_chain_ids() {
@@ -10293,9 +10436,34 @@ _queue_job_history_children_ids() {
     local root="$(_queue_root)"
     local st f child
 
-    for st in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+    {
+        for st in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+            if [[ "$st" == "pending" ]]; then
+                while IFS= read -r f; do
+                    [[ -f "$f" ]] || continue
+                    child="$(
+                        RESUBMITTED_FROM=""
+                        source "$f" >/dev/null 2>&1 || exit 0
+                        [[ "${RESUBMITTED_FROM:-}" == "$start" ]] && printf '%s\n' "${JOB_ID:-$(basename "$f" .job)}"
+                    )"
+                    [[ -n "$child" ]] && printf '%s\n' "$child"
+                done < <(_queue_pending_job_files "$root" 2>/dev/null || true)
+                continue
+            fi
+            shopt -s nullglob
+            for f in "$root/$st"/*.job; do
+                child="$(
+                    RESUBMITTED_FROM=""
+                    source "$f" >/dev/null 2>&1 || exit 0
+                    [[ "${RESUBMITTED_FROM:-}" == "$start" ]] && printf '%s\n' "${JOB_ID:-$(basename "$f" .job)}"
+                )"
+                [[ -n "$child" ]] && printf '%s\n' "$child"
+            done
+            shopt -u nullglob
+        done
+
         shopt -s nullglob
-        for f in "$root/$st"/*.job; do
+        for f in "$root/clearance"/*/*.job; do
             child="$(
                 RESUBMITTED_FROM=""
                 source "$f" >/dev/null 2>&1 || exit 0
@@ -10304,7 +10472,7 @@ _queue_job_history_children_ids() {
             [[ -n "$child" ]] && printf '%s\n' "$child"
         done
         shopt -u nullglob
-    done | sort -u
+    } | sort -u
 }
 
 _queue_job_history_events_for_id() {
@@ -10386,8 +10554,8 @@ _queue_job_history_print_one() {
 
 _queue_job_history() {
     local selector="${1:-}"
-    local id="" f root st
-    local -a ids
+    local id="" f
+    local -a ids matches
     local child
 
     if [[ -z "$selector" ]]; then
@@ -10395,19 +10563,10 @@ _queue_job_history() {
         return 2
     fi
 
-    if f="$(_queue_job_file_by_id_any_state "$selector" 2>/dev/null)"; then
+    mapfile -t matches < <(_queue_find_jobs "$selector" 2>/dev/null || true)
+    if [[ "${#matches[@]}" -gt 0 ]]; then
+        f="${matches[0]}"
         id="$(basename "$f" .job)"
-    else
-        root="$(_queue_root)"
-        for st in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
-            shopt -s nullglob
-            for f in "$root/$st"/*.job; do
-                if ( source "$f" >/dev/null 2>&1 && [[ "${JOB_NAME:-}" == "$selector" ]] ); then
-                    id="$(basename "$f" .job)"
-                fi
-            done
-            shopt -u nullglob
-        done
     fi
 
     [[ -n "$id" ]] || {
@@ -10523,6 +10682,18 @@ _queue_explain_job() {
     [[ -n "$duration" ]] && printf "%-20s %ss\n" "duration:" "$duration"
     schedule_status="$(_queue_job_schedule_status "$f" 2>/dev/null || echo due)"
     printf "%-20s %s\n" "schedule:" "$schedule_status"
+    printf "%-20s %s\n" "job file:" "$f"
+    if [[ "$f" == "$root/clearance/"*"/"*.job ]]; then
+        echo
+        echo "Clearance archive"
+        printf "  %-18s %s\n" "archived:" "$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED_AT 2>/dev/null || echo unknown)"
+        printf "  %-18s %s\n" "archived from:" "$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED_FROM 2>/dev/null || echo "$state")"
+        if [[ "$(_queue_job_var_value "$f" JOB_CLEARED 2>/dev/null || true)" == "1" ]]; then
+            printf "  %-18s %s\n" "execution clear:" "$(_queue_job_var_value "$f" JOB_CLEARED_AT 2>/dev/null || echo recorded)"
+        else
+            printf "  %-18s %s\n" "execution clear:" "not recorded; archived by queue clear"
+        fi
+    fi
     echo
 
     echo "Runner"
@@ -10800,7 +10971,7 @@ _queue_mark_log_cleaned() {
     local job
     local ts
 
-    ts="$(date -Is)"
+    ts="$(_queue_now_iso)"
     job="$(_queue_log_job_file_for_id "$id" 2>/dev/null || true)"
 
     if [[ -n "$job" && -f "$job" ]]; then
@@ -11027,7 +11198,7 @@ _queue_health_mark_interrupted() {
     dest="$root/interrupted/$id.job"
 
     {
-        printf 'INTERRUPTED_AT=%q\n' "$(date -Is)"
+        printf 'INTERRUPTED_AT=%q\n' "$(_queue_now_iso)"
         printf 'INTERRUPTED_REASON=%q\n' "stale-running-detected-by-health"
         printf 'INTERRUPTED_FROM=%q\n' "running"
     } >> "$f"
@@ -12384,7 +12555,7 @@ _queue_pol_blocked_reevaluate() {
                 echo "DRYRUN: would requeue $id from $(_queue_state_for_job_path "$f" "$root") -> pending"
             else
                 {
-                    echo "REEVALUATED_AT=$(printf '%q' "$(date -Is)")"
+                    echo "REEVALUATED_AT=$(printf '%q' "$(_queue_now_iso)")"
                     echo "REEVALUATED_FROM=$(printf '%q' "$(_queue_state_for_job_path "$f" "$root")")"
                     echo "STATE=$(printf '%q' pending)"
                 } >> "$f"
@@ -12792,19 +12963,20 @@ _queue_dev_backup_verify() {
 }
 
 _queue_dev_comment() {
-    local file="" fn="" message="" changelog=0 json=0 ts tmp line_start line_end backup range locked=0
+    local file="" fn="" message="" changelog=1 json=0 ts tmp line_start line_end backup range locked=0
     while [[ "$#" -gt 0 ]]; do
         case "${1:-}" in
             --file) file="${2:-}"; shift 2 ;;
             --function) fn="${2:-}"; shift 2 ;;
             --message) message="${2:-}"; shift 2 ;;
             --changelog) changelog=1; shift ;;
+            --no-changelog) changelog=0; shift ;;
             --json|-j) json=1; shift ;;
             --help|-h) _queue_dev_usage; return 0 ;;
             *) echo "queue dev comment: unexpected argument: $1" >&2; return 2 ;;
         esac
     done
-    [[ -n "$file" && -n "$fn" && -n "$message" ]] || { echo "Usage: queue dev comment --file FILE --function FUNCTION --message TEXT [--changelog] [--json]" >&2; return 2; }
+    [[ -n "$file" && -n "$fn" && -n "$message" ]] || { echo "Usage: queue dev comment --file FILE --function FUNCTION --message TEXT [--changelog|--no-changelog] [--json]" >&2; return 2; }
     _queue_dev_valid_function_name "$fn" || { echo "queue dev comment: invalid function name: $fn" >&2; return 2; }
     [[ -f "$file" ]] || { echo "queue dev comment: target file not found: $file" >&2; return 1; }
 
@@ -12854,7 +13026,15 @@ PYDEV_COMMENT
     [[ "$locked" -eq 1 ]] && _queue_dev_unlock
 
     if [[ "$changelog" -eq 1 ]]; then
-        printf '\n- %s — AI-PATCH %s in `%s`: %s\n' "$ts" "$fn" "$file" "$message" >> CHANGELOG.md
+        local changelog_file="CHANGELOG.md"
+        if [[ ! -f "$changelog_file" ]]; then
+            changelog_file="$(dirname "$file")/CHANGELOG.md"
+        fi
+        if [[ ! -f "$changelog_file" ]]; then
+            changelog_file="CHANGELOG.md"
+            printf '# Changelog\n' > "$changelog_file"
+        fi
+        printf '\n- %s — AI-PATCH %s in `%s`: %s\n' "$ts" "$fn" "$file" "$message" >> "$changelog_file"
     fi
     if [[ "$json" -eq 1 ]]; then
         printf '{"status":"commented","function":"%s","file":"%s","line_start":%s,"backup":"%s","timestamp":"%s","changelog":%s}\n' \
@@ -13625,6 +13805,103 @@ _queue_backup_command() {
     esac
 }
 
+_queue_profile_helper_path() {
+    local helper="$1" here cand
+    [[ -n "$helper" ]] || return 1
+    if command -v "$helper" >/dev/null 2>&1; then
+        command -v "$helper"
+        return 0
+    fi
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    for cand in \
+        "$here/bin/$helper" \
+        "$here/../bin/$helper" \
+        "/usr/local/share/bashqueues/bin/$helper" \
+        "$HOME/.queuebash/bin/$helper"; do
+        [[ -x "$cand" ]] && { printf '%s\n' "$cand"; return 0; }
+    done
+    return 1
+}
+
+_queue_profile_command() {
+    local family="${1:-}"; shift || true
+    case "$family" in
+        interrogate|interrogation|behaviour|behavior)
+            local sub="${1:-run}"; shift || true
+            case "$sub" in
+                run)
+                    local helper
+                    helper="$(_queue_profile_helper_path queue-interrogate)" || { echo "queue profile interrogate run: helper not found: queue-interrogate" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" run "$@"
+                    ;;
+                repeat|campaign)
+                    local helper
+                    helper="$(_queue_profile_helper_path queue-interrogate)" || { echo "queue profile interrogate repeat: helper not found: queue-interrogate" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" repeat "$@"
+                    ;;
+                compile)
+                    local helper
+                    helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate compile: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" compile "$@"
+                    ;;
+                merge)
+                    local helper
+                    helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate merge: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" merge "$@"
+                    ;;
+                diff-runs|drift)
+                    local helper
+                    helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate diff-runs: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" diff-runs "$@"
+                    ;;
+                approve|sign)
+                    local helper
+                    helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate approve: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" approve "$@"
+                    ;;
+                explain|review)
+                    local helper
+                    helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate explain: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" explain "$@"
+                    ;;
+                show)
+                    local helper
+                    helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate show: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" show "$@"
+                    ;;
+                diff)
+                    local helper
+                    helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate diff: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" diff "$@"
+                    ;;
+                *)
+                    echo "Usage: queue profile interrogate run|repeat NAME -- command | compile DIR --name NAME | merge CAMPAIGN --name NAME | diff-runs CAMPAIGN | explain NAME | approve NAME | show NAME | diff NAME DIR" >&2
+                    return 2
+                    ;;
+            esac
+            ;;
+        syscalls|syscall)
+            # Compatibility shorthand for the syscall-only part of interrogation profiles.
+            _queue_profile_command interrogate "$@"
+            ;;
+        *)
+            cat >&2 <<'EOF'
+Usage:
+  queue profile interrogate run NAME [--pre-arm-delay SEC] -- command [args...]
+  queue profile interrogate repeat NAME --count N [--pre-arm-delay SEC] -- command [args...]
+  queue profile interrogate compile PROFILE_DIR --name NAME
+  queue profile interrogate merge CAMPAIGN_DIR --name NAME
+  queue profile interrogate diff-runs CAMPAIGN_DIR
+  queue profile interrogate explain NAME [--json]
+  queue profile interrogate approve NAME [--kind seccomp|net|file|all] [--signing-key KEY] [--accept-warnings] [--accept-risk]
+  queue profile interrogate show NAME
+  queue profile interrogate diff NAME PROFILE_DIR
+EOF
+            return 2
+            ;;
+    esac
+}
+
 queue() {
     local dryrun=0
 
@@ -13794,6 +14071,9 @@ queue() {
             ;;
         env|envs|environment|environments)
             _queue_env_command "$@"
+            ;;
+        profile|profiles)
+            _queue_profile_command "$@"
             ;;
         draft|drafts)
             _queue_draft_command "$@"
@@ -14177,7 +14457,7 @@ queue() {
                 if [[ "${#inherit_env_from[@]}" -gt 0 ]]; then
                     printf 'INHERIT_ENV_FROM=%q\n' "${inherit_env_from[*]}"
                 fi
-                printf 'SUBMITTED_AT=%q\n' "$(date -Is)"
+                printf 'SUBMITTED_AT=%q\n' "$(_queue_now_iso)"
                 printf 'PWD_AT_SUBMIT=%q\n' "$PWD"
 
                 printf 'COMMAND=('
@@ -15523,7 +15803,7 @@ EOF
                 fi
 
                 {
-                    echo "CANCELLED_AT=$(printf '%q' "$(date -Is)")"
+                    echo "CANCELLED_AT=$(printf '%q' "$(_queue_now_iso)")"
                     echo "CANCELLED_FROM=$(printf '%q' "$state")"
                     echo "CANCEL_SIGNAL=$(printf '%q' "$sig")"
                     [[ -n "$unit" ]] && echo "CANCEL_SYSTEMD_UNIT=$(printf '%q' "$unit")"
@@ -15600,14 +15880,14 @@ EOF
                     fi
                     if [[ "$local_dryrun" -ne 1 ]]; then
                         {
-                            echo "PAUSED_AT=$(printf '%q' "$(date -Is)")"
+                            echo "PAUSED_AT=$(printf '%q' "$(_queue_now_iso)")"
                             echo "PAUSED_FROM=$(printf '%q' "$state")"
                         } >> "$f"
                     fi
                 else
                     if [[ "$local_dryrun" -ne 1 ]]; then
                         {
-                            echo "DELETED_AT=$(printf '%q' "$(date -Is)")"
+                            echo "DELETED_AT=$(printf '%q' "$(_queue_now_iso)")"
                             echo "DELETED_FROM=$(printf '%q' "$state")"
                         } >> "$f"
                     fi
@@ -15662,7 +15942,7 @@ EOF
                     echo "DRYRUN: would unpause $id -> pending"
                 else
                     {
-                        echo "UNPAUSED_AT=$(printf '%q' "$(date -Is)")"
+                        echo "UNPAUSED_AT=$(printf '%q' "$(_queue_now_iso)")"
                         echo "UNPAUSED_TO=pending"
                     } >> "$f"
                     _queue_move_to_pending_bucket "$f" "$id" "$root"
@@ -15723,7 +16003,7 @@ EOF
                     echo "DRYRUN: would restore $id to $restore_state"
                 else
                     {
-                        echo "UNDELETED_AT=$(printf '%q' "$(date -Is)")"
+                        echo "UNDELETED_AT=$(printf '%q' "$(_queue_now_iso)")"
                         echo "UNDELETED_TO=$(printf '%q' "$restore_state")"
                     } >> "$f"
                     if [[ "$restore_state" == "pending" ]]; then
@@ -15839,7 +16119,7 @@ EOF
             [[ "$interval" =~ ^[0-9]+$ ]] || interval=1
             while true; do
                 clear
-                echo "queuebash watch - $(date -Is)"
+                echo "queuebash watch - $(_queue_now_iso)"
                 echo
                 queue stats
                 echo
@@ -15970,21 +16250,41 @@ EOF
             case "$what" in
                 done|failed|pol_blocked|paused|interrupted|cancelled|deleted)
                     if [[ "$local_dryrun" -eq 1 ]]; then
-                        echo "DRYRUN: would clear $what jobs:"
+                        echo "DRYRUN: would archive $what jobs:"
                         find "$root/$what" -maxdepth 1 -type f -name '*.job' -printf '  %f\n' 2>/dev/null
                     else
-                        rm -f "$root/$what"/*.job
-                        echo "Cleared $what jobs"
+                        local f archived_count=0
+                        shopt -s nullglob
+                        for f in "$root/$what"/*.job; do
+                            [[ -f "$f" ]] || continue
+                            _queue_clearance_archive_job_file "$f" "$what" "$root"
+                            archived_count=$((archived_count + 1))
+                        done
+                        shopt -u nullglob
+                        echo "Cleared $what jobs (archived $archived_count record(s))"
                     fi
                     ;;
                 all)
                     if [[ "$local_dryrun" -eq 1 ]]; then
-                        echo "DRYRUN: would clear all jobs and logs:"
-                        find "$root"/{pending,running,paused,done,failed,pol_blocked,policy_blocked,deleted,logs} -maxdepth 1 -type f -printf '  %p\n' 2>/dev/null
+                        echo "DRYRUN: would archive all jobs and logs:"
+                        find "$root"/{pending,running,paused,done,failed,pol_blocked,policy_blocked,interrupted,cancelled,deleted,logs} -maxdepth 1 -type f -printf '  %p\n' 2>/dev/null
                     else
-                        rm -f "$root"/{pending,running,paused,done,failed,pol_blocked,policy_blocked,cancelled,deleted}/*.job
-                        rm -f "$root/logs"/*.log
-                        echo "Cleared all jobs and logs"
+                        local state f archived_jobs=0 archived_logs=0
+                        shopt -s nullglob
+                        for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+                            for f in "$root/$state"/*.job; do
+                                [[ -f "$f" ]] || continue
+                                _queue_clearance_archive_job_file "$f" "$state" "$root"
+                                archived_jobs=$((archived_jobs + 1))
+                            done
+                        done
+                        for f in "$root/logs"/*.log "$root/logs"/*.log.gz; do
+                            [[ -f "$f" ]] || continue
+                            _queue_clearance_archive_log_file "$f" "$root"
+                            archived_logs=$((archived_logs + 1))
+                        done
+                        shopt -u nullglob
+                        echo "Cleared all jobs and logs (archived $archived_jobs job record(s), $archived_logs log file(s))"
                     fi
                     ;;
                 *) echo "Usage: queue clear done|failed|pol_blocked|paused|interrupted|cancelled|deleted|all [--dryrun]" >&2; return 2 ;;
@@ -16138,7 +16438,7 @@ _queue_sentinel_move_pending_to_pol_blocked() {
     name="$(_queue_job_name "$jobf" 2>/dev/null || echo -)"
     dest="$root/pol_blocked/$id.job"
     log="$root/logs/$id.log"
-    now="$(date -Is 2>/dev/null || date)"
+    now="$(_queue_now_iso)"
     mkdir -p "$root/pol_blocked" "$root/logs" 2>/dev/null || true
 
     {
@@ -16411,7 +16711,7 @@ _queue_worker ()
             _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "policy blocked $id: $policy_reason";
             { 
                 echo "=== queue job $id : $(_queue_job_name "$running" 2> /dev/null || echo -) ===";
-                echo "pol_blocked: $(date -Is)";
+                echo "pol_blocked: $(_queue_now_iso)";
                 echo "state: pol_blocked";
                 echo "worker: $worker_id";
                 echo;
@@ -16462,7 +16762,7 @@ _queue_worker ()
         stream_public_fifo="$(_queue_create_stream_fifo_for_job "$JOB_ID" 2> /dev/null || true)";
         { 
             echo "=== queue job $JOB_ID : $JOB_NAME ===";
-            echo "started: $(date -Is)";
+            echo "started: $(_queue_now_iso)";
             echo "pwd: $PWD";
             echo "output_env: ${QUEUEBASH_OUTPUT_ENV:-}";
             echo "helper_dir: ${QUEUEBASH_HELPER_DIR:-}";
@@ -16546,7 +16846,7 @@ _queue_worker ()
             { 
                 printf 'RUN_PID=%q\n' "$cmd_pid";
                 printf 'RUN_PGID=%q\n' "$cmd_pgid";
-                printf 'RUN_STARTED_AT=%q\n' "$(date -Is)";
+                printf 'RUN_STARTED_AT=%q\n' "$(_queue_now_iso)";
                 [[ -n "${QUEUEBASH_INHERITED_ENV_FROM:-}" ]] && printf 'QUEUEBASH_INHERITED_ENV_FROM=%q\n' "$QUEUEBASH_INHERITED_ENV_FROM";
                 [[ -n "${QUEUEBASH_INHERITED_ENV_KEYS:-}" ]] && printf 'QUEUEBASH_INHERITED_ENV_KEYS=%q\n' "$QUEUEBASH_INHERITED_ENV_KEYS"
             } >> "$running";
@@ -16591,7 +16891,7 @@ _queue_worker ()
                     rc=97;
                 fi;
             fi;
-            _queue_log_worker_record "$use_stream_logger" "$log" "" "finished: $(date -Is)" "exit_code: $rc";
+            _queue_log_worker_record "$use_stream_logger" "$log" "" "finished: $(_queue_now_iso)" "exit_code: $rc";
             exit "$rc"
         } > "$log" 2>&1 );
         local rc="$?";
@@ -16608,14 +16908,14 @@ _queue_worker ()
                     { 
                         echo;
                         echo "=== on-success hook for $JOB_ID ===";
-                        echo "started: $(date -Is)";
+                        echo "started: $(_queue_now_iso)";
                         printf "hook:";
                         printf " %q" "${ON_SUCCESS[@]}";
                         echo;
                         "${ON_SUCCESS[@]}";
                         hook_rc="$?";
                         echo "hook_exit_code: $hook_rc";
-                        echo "finished: $(date -Is)"
+                        echo "finished: $(_queue_now_iso)"
                     } >> "$log" 2>&1 );
                 fi;
                 _queue_maybe_gzip_completed_job_log "$id" "$done";
@@ -16644,14 +16944,14 @@ _queue_worker ()
                         { 
                             echo;
                             echo "=== on-retry-failure hook for $JOB_ID ===";
-                            echo "started: $(date -Is)";
+                            echo "started: $(_queue_now_iso)";
                             printf "hook:";
                             printf " %q" "${ON_RETRY_FAILURE[@]}";
                             echo;
                             "${ON_RETRY_FAILURE[@]}";
                             hook_rc="$?";
                             echo "hook_exit_code: $hook_rc";
-                            echo "finished: $(date -Is)"
+                            echo "finished: $(_queue_now_iso)"
                         } >> "$log" 2>&1 );
                     fi;
                     retry_id="$(_queue_id)";
@@ -16676,14 +16976,14 @@ _queue_worker ()
                     { 
                         echo;
                         echo "=== on-failure hook for $JOB_ID ===";
-                        echo "started: $(date -Is)";
+                        echo "started: $(_queue_now_iso)";
                         printf "hook:";
                         printf " %q" "${ON_FAILURE[@]}";
                         echo;
                         "${ON_FAILURE[@]}";
                         hook_rc="$?";
                         echo "hook_exit_code: $hook_rc";
-                        echo "finished: $(date -Is)"
+                        echo "finished: $(_queue_now_iso)"
                     } >> "$log" 2>&1 );
                 fi;
                 _queue_maybe_gzip_completed_job_log "$id" "$failed";

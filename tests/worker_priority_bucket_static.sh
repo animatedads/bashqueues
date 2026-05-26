@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 q="$ROOT/queuebash.sh"
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -q '^QUEUEBASH_VERSION="0.17.78"' "$q" || fail "version is not 0.17.78"
+grep -q '^QUEUEBASH_VERSION="0.17.90"' "$q" || fail "version is not 0.17.90"
 grep -q '_queue_pending_bucket_key()' "$q" || fail "missing pending bucket key helper"
 grep -q '_queue_pending_path_for_priority()' "$q" || fail "missing pending path helper"
 grep -q '_queue_pending_job_files()' "$q" || fail "missing pending tree iterator"

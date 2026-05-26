@@ -1,0 +1,835 @@
+#!/usr/bin/env python3
+"""Compile bashqueues interrogation traces into signed-candidate profiles.
+
+This tool deliberately creates *candidate* profiles first.  `approve` promotes a
+candidate to the approved tree and stamps it with a tamper-evident SHA256 over
+its profile content.  It is not a substitute for the wider bashqueues code/key
+trust model; the generated profiles advertise SHOULD_BE_SIGNED=1 so class assets
+can refuse unsigned/candidate policy.
+"""
+from __future__ import annotations
+import argparse, hashlib, json, os, re, shutil, sys, time
+from pathlib import Path
+from typing import Iterable
+
+SYSCALL_NOISE = {"total", "syscall", "WEXITSTATUS", "WIFEXITED", "WIFSIGNALED", "WTERMSIG", "SIGCHLD"}
+PROFILE_KINDS = ("seccomp", "net", "file")
+
+
+def root() -> Path:
+    return Path(os.environ.get("QUEUEBASH_ROOT", str(Path.home() / ".queuebash")))
+
+
+def base_root(out_root: str | None = None) -> Path:
+    return Path(out_root) if out_root else root() / "profiles" / "interrogation"
+
+
+def safe_name(name: str) -> str:
+    s = re.sub(r"[^A-Za-z0-9_.-]+", "_", name.strip())
+    return s or "profile"
+
+
+def read_text(path: Path) -> str:
+    try:
+        return path.read_text(errors="replace")
+    except FileNotFoundError:
+        return ""
+
+
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if not path.exists():
+        return out
+    for raw in path.read_text(errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        out[k.strip()] = v.strip().strip("\"").strip("'")
+    return out
+
+
+def parse_privilege_context(profile_dir: Path) -> dict:
+    env = _read_env_file(profile_dir / "profile.env")
+    user = env.get("PROFILE_CAPTURED_USER", "")
+    uid = env.get("PROFILE_CAPTURED_UID", "")
+    euid = env.get("PROFILE_CAPTURED_EUID", "")
+    home = env.get("PROFILE_CAPTURED_HOME", "")
+    qroot = env.get("PROFILE_CAPTURED_QUEUE_ROOT", "")
+    privileged = env.get("PROFILE_PRIVILEGED_CONTEXT", "")
+    if not privileged:
+        privileged = "1" if uid == "0" or euid == "0" or user == "root" or qroot.startswith("/root/") else "0"
+    return {
+        "users": [user] if user else [],
+        "uids": [uid] if uid else [],
+        "euids": [euid] if euid else [],
+        "homes": [home] if home else [],
+        "queue_roots": [qroot] if qroot else [],
+        "privileged_context": privileged == "1",
+        "root_profile": uid == "0" or euid == "0" or user == "root" or qroot.startswith("/root/"),
+    }
+
+def parse_syscalls(profile_dir: Path) -> list[str]:
+    """Parse syscall names from raw/summary strace output.
+
+    Only lower-case Linux syscall tokens are accepted.  This deliberately
+    filters status/macros such as WEXITSTATUS that can appear in trace text but
+    are not syscalls and must never be emitted into a seccomp allow-list.
+    """
+    text = read_text(profile_dir / "syscalls.raw.trace") + "\n" + read_text(profile_dir / "syscalls.summary.txt")
+    calls: set[str] = set()
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("%") or line.startswith("------"):
+            continue
+        # raw strace: 12345 openat(AT_FDCWD, ...
+        m = re.search(r"(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)\(", line)
+        if m:
+            cand = m.group(1)
+        else:
+            # strace -c summary: fields ... syscall
+            parts = line.split()
+            cand = parts[-1] if parts else ""
+        if not cand or cand in SYSCALL_NOISE:
+            continue
+        # Linux syscall names are lower-case.  Reject macros/status helpers.
+        if re.match(r"^[a-z][a-z0-9_]*$", cand):
+            calls.add(cand)
+    return sorted(calls)
+
+def _host_port(token: str) -> tuple[str, str] | None:
+    token = token.strip().strip('(),')
+    m = re.search(r"([A-Za-z0-9_.:-]+):(\d{1,5})$", token)
+    if not m:
+        return None
+    host, port = m.group(1), m.group(2)
+    if not (0 < int(port) <= 65535):
+        return None
+    return host, port
+
+
+def _parse_lsof_network_lines(text: str) -> dict:
+    ports: set[str] = set(); protos: set[str] = set(); listeners = False; remotes: set[str] = set()
+    for line in text.splitlines():
+        low = line.lower()
+        if " tcp " in f" {low} " or "tcp" in low:
+            protos.add("tcp")
+        if " udp " in f" {low} " or "udp" in low:
+            protos.add("udp")
+        if "listen" in low:
+            listeners = True
+        # lsof connection form: local:ephemeral->remote:service.
+        for host, port in re.findall(r"->([A-Za-z0-9_.:-]+):(\d{1,5})", line):
+            if 0 < int(port) <= 65535:
+                ports.add(port); remotes.add(host)
+        # UDP association without arrow may still show host:port.  For PID scoped
+        # lsof this is acceptable evidence, but avoid wildcard/local listeners.
+        if "->" not in line and (" UDP " in line or " TCP " in line):
+            hp = _host_port(line.split()[-1] if line.split() else "")
+            if hp:
+                host, port = hp
+                if not host.startswith(("127.", "::1", "0.0.0.0", "*")):
+                    ports.add(port); remotes.add(host)
+    return {"protocols": sorted(protos), "remote_ports": sorted(ports, key=lambda x:int(x)), "remote_hosts": sorted(remotes), "opened_listener": listeners}
+
+
+def _parse_global_ss_context(profile_dir: Path) -> dict:
+    """Parse global ss/lsof network evidence as context only, not policy input."""
+    text = read_text(profile_dir / "net.ss.trace") + "\n" + read_text(profile_dir / "lsof.net.trace")
+    ports: set[str] = set(); remotes: set[str] = set(); protos: set[str] = set(); listeners = False
+    for line in text.splitlines():
+        low = line.lower()
+        if "listen" in low:
+            listeners = True
+        if "tcp" in low: protos.add("tcp")
+        if "udp" in low: protos.add("udp")
+        for host, port in re.findall(r"->([A-Za-z0-9_.:-]+):(\d{1,5})", line):
+            if 0 < int(port) <= 65535:
+                ports.add(port); remotes.add(host)
+        parts = line.split()
+        if len(parts) >= 6 and parts[0].lower() in {"tcp", "udp", "tcp6", "udp6"}:
+            hp = _host_port(parts[5])
+            if hp:
+                host, port = hp
+                if not host.startswith(("127.", "::1", "0.0.0.0", "*")):
+                    ports.add(port); remotes.add(host)
+    return {"protocols": sorted(protos), "remote_ports": sorted(ports, key=lambda x:int(x)), "remote_hosts": sorted(remotes), "opened_listener": listeners}
+
+
+def parse_net(profile_dir: Path) -> dict:
+    """Return PID-tree scoped network evidence.
+
+    net.ss.trace and lsof.net.trace are machine-wide context and can include
+    browser/mail/DHCP/background traffic.  They are intentionally excluded from
+    generated allow-lists.  Only lsof.process.trace, collected with -p against
+    the profiled PID tree, is used for candidate policy.
+    """
+    scoped = _parse_lsof_network_lines(read_text(profile_dir / "lsof.process.trace"))
+    context = _parse_global_ss_context(profile_dir)
+    scoped["scope"] = "pid_tree"
+    scoped["global_context"] = context
+    scoped["global_context_ignored"] = bool(context.get("remote_ports") or context.get("remote_hosts"))
+    return scoped
+
+def _first_absolute_quoted_paths(line: str) -> list[str]:
+    """Return absolute pathname-looking quoted args from one strace line."""
+    out: list[str] = []
+    for m in re.finditer(r'"((?:/|\./|\.\./)[^"\\]*(?:\\.[^"\\]*)*)"', line):
+        raw = m.group(1).replace('\\"', '"')
+        if raw.startswith("./") or raw.startswith("../"):
+            # Relative paths are still useful evidence but cannot be safely
+            # policy-scoped without a captured cwd, so keep them visibly relative.
+            out.append(raw)
+        elif raw.startswith("/"):
+            out.append(raw)
+    return out
+
+
+def parse_syscall_file_paths(profile_dir: Path) -> dict[str, list[str]]:
+    """Extract path-level evidence from raw strace when available.
+
+    lsof gives us what stayed open long enough to sample.  For short scripts,
+    destructive actions such as unlink('/tmp/counter.txt') may complete before
+    lsof observes the file.  This parser gives explain/review a path-level
+    reason for otherwise coarse destructive syscalls.  It is evidence for human
+    review, not a full path enforcement engine.
+    """
+    text = read_text(profile_dir / "syscalls.raw.trace")
+    delete_syscalls = {"unlink", "unlinkat", "rmdir"}
+    create_write_syscalls = {"mkdir", "mkdirat", "rename", "renameat", "renameat2"}
+    delete_paths: set[str] = set()
+    write_paths: set[str] = set()
+    for line in text.splitlines():
+        m = re.search(r"(?:^|\s)([a-z][a-z0-9_]*)\(", line.strip())
+        if not m:
+            continue
+        call = m.group(1)
+        paths = _first_absolute_quoted_paths(line)
+        if not paths:
+            continue
+        if call in delete_syscalls:
+            delete_paths.update(paths)
+        elif call in create_write_syscalls:
+            write_paths.update(paths)
+        elif call in {"open", "openat", "openat2", "creat"}:
+            # Only count obvious write/create/truncate opens as write-path evidence.
+            if re.search(r"O_(WRONLY|RDWR|CREAT|TRUNC|APPEND)", line):
+                write_paths.update(paths)
+    return {"delete_paths": sorted(delete_paths), "write_paths": sorted(write_paths)}
+
+
+def parse_files(profile_dir: Path) -> dict:
+    text = read_text(profile_dir / "lsof.process.trace")
+    prefixes: set[str] = set(); exact: set[str] = set(); deleted = False; unix_sockets: set[str] = set()
+    for line in text.splitlines():
+        if " deleted" in line or "(deleted)" in line:
+            deleted = True
+        # lsof NAME column paths.  Keep broad prefixes to avoid brittle per-lib exact matching.
+        m = re.search(r"\s(/[^\s]+)", line)
+        if not m:
+            continue
+        path = m.group(1)
+        exact.add(path)
+        if path.startswith("/run/") and "sock" in path:
+            unix_sockets.add(path)
+        parts = Path(path).parts
+        if len(parts) >= 3 and parts[1] in {"usr", "lib", "lib64", "etc", "opt", "home", "root", "tmp", "var", "run"}:
+            prefixes.add("/" + parts[1] + ("/" + parts[2] if parts[1] in {"usr", "opt", "var"} and len(parts) > 2 else ""))
+    trace_paths = parse_syscall_file_paths(profile_dir)
+    return {
+        "allowed_read_prefixes": sorted(prefixes),
+        "observed_paths_sample": sorted(list(exact))[:200],
+        "opened_deleted_files": deleted,
+        "unix_sockets": sorted(unix_sockets),
+        "observed_delete_paths": trace_paths["delete_paths"],
+        "observed_write_paths": trace_paths["write_paths"],
+    }
+
+
+
+
+def _profile_warnings(syscalls: list[str], net: dict, files: dict) -> list[str]:
+    warnings: set[str] = set()
+    if any(s for s in syscalls if not re.match(r"^[a-z][a-z0-9_]*$", s)):
+        warnings.add("non_syscall_tokens_filtered")
+    prefixes = set(files.get("allowed_read_prefixes", []))
+    if "/home" in prefixes:
+        warnings.add("broad_home_prefix")
+    if "/tmp" in prefixes:
+        warnings.add("broad_tmp_prefix")
+    if files.get("opened_deleted_files"):
+        warnings.add("deleted_files_observed")
+    if net.get("global_context_ignored"):
+        warnings.add("global_network_context_ignored")
+    if net.get("opened_listener"):
+        warnings.add("listener_observed")
+    return sorted(warnings)
+
+
+def merge_profile_data(profile_dirs: list[Path]) -> tuple[list[str], dict, dict]:
+    """Return unioned syscall/net/file data across one or more run dirs."""
+    all_sys: set[str] = set()
+    protocols: set[str] = set(); remote_ports: set[str] = set(); remote_hosts: set[str] = set(); opened_listener = False; global_ignored = False
+    global_ports: set[str] = set(); global_hosts: set[str] = set()
+    prefixes: set[str] = set(); sample_paths: list[str] = []; deleted = False; unix_sockets: set[str] = set()
+    observed_delete_paths: set[str] = set(); observed_write_paths: set[str] = set()
+    seen_sample: set[str] = set()
+    captured_users: set[str] = set(); captured_uids: set[str] = set(); captured_euids: set[str] = set(); captured_homes: set[str] = set(); captured_queue_roots: set[str] = set()
+    privileged_context = False; root_profile = False
+    for d in profile_dirs:
+        all_sys.update(parse_syscalls(d))
+        n = parse_net(d)
+        protocols.update(n.get("protocols", [])); remote_ports.update(n.get("remote_ports", [])); remote_hosts.update(n.get("remote_hosts", [])); opened_listener = opened_listener or bool(n.get("opened_listener"))
+        global_ignored = global_ignored or bool(n.get("global_context_ignored"))
+        gc = n.get("global_context", {}) or {}
+        global_ports.update(gc.get("remote_ports", [])); global_hosts.update(gc.get("remote_hosts", []))
+        f = parse_files(d)
+        prefixes.update(f.get("allowed_read_prefixes", [])); deleted = deleted or bool(f.get("opened_deleted_files")); unix_sockets.update(f.get("unix_sockets", []))
+        observed_delete_paths.update(f.get("observed_delete_paths", [])); observed_write_paths.update(f.get("observed_write_paths", []))
+        pc = parse_privilege_context(d)
+        captured_users.update(pc.get("users", [])); captured_uids.update(pc.get("uids", [])); captured_euids.update(pc.get("euids", [])); captured_homes.update(pc.get("homes", [])); captured_queue_roots.update(pc.get("queue_roots", []))
+        privileged_context = privileged_context or bool(pc.get("privileged_context")); root_profile = root_profile or bool(pc.get("root_profile"))
+        for path in f.get("observed_paths_sample", []):
+            if path not in seen_sample and len(sample_paths) < 200:
+                seen_sample.add(path); sample_paths.append(path)
+    net = {"scope": "pid_tree", "protocols": sorted(protocols), "remote_ports": sorted(remote_ports, key=lambda x:int(x)), "remote_hosts": sorted(remote_hosts), "opened_listener": opened_listener, "global_context_ignored": global_ignored, "global_context_remote_ports": sorted(global_ports, key=lambda x:int(x)), "global_context_remote_hosts": sorted(global_hosts)}
+    privilege = {"captured_users": sorted(captured_users), "captured_uids": sorted(captured_uids), "captured_euids": sorted(captured_euids), "captured_homes": sorted(captured_homes), "captured_queue_roots": sorted(captured_queue_roots), "privileged_context": privileged_context, "root_profile": root_profile}
+    net["privilege"] = privilege
+    files = {"scope": "pid_tree", "allowed_read_prefixes": sorted(prefixes), "observed_paths_sample": sample_paths, "opened_deleted_files": deleted, "unix_sockets": sorted(unix_sockets), "observed_delete_paths": sorted(observed_delete_paths), "observed_write_paths": sorted(observed_write_paths), "privilege": privilege}
+    warnings = _profile_warnings(sorted(all_sys), net, files)
+    if privileged_context:
+        warnings.append("privileged_context_observed")
+    if root_profile:
+        warnings.append("root_profile_observed")
+    warnings = sorted(set(warnings))
+    net["warnings"] = warnings; files["warnings"] = warnings
+    return sorted(all_sys), net, files
+
+def write_candidate_set(name: str, source_dir: Path, syscalls: list[str], net: dict, files: dict, out_root: str | None = None, copy_to: Path | None = None) -> dict:
+    broot = base_root(out_root); cand = broot / "candidates"; outputs = {}
+    for kind, data in [("seccomp", syscalls), ("net", net), ("file", files)]:
+        lines = candidate_lines(kind, name, source_dir, data)
+        out = cand / f"{name}.{kind}.env"
+        sha = write_env(out, lines)
+        if copy_to is not None:
+            copy_to.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(out, copy_to / f"candidate.{kind}.env")
+        outputs[kind] = {"path": str(out), "sha256": sha}
+    return outputs
+
+def content_hash(lines: Iterable[str]) -> str:
+    data = "\n".join(lines).encode("utf-8") + b"\n"
+    return hashlib.sha256(data).hexdigest()
+
+
+def write_env(path: Path, lines: list[str]) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def candidate_lines(kind: str, name: str, source_dir: Path, data: dict | list[str]) -> list[str]:
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    prefix = {"seccomp":"SECPROFILE", "net":"NETPROFILE", "file":"FILEPROFILE"}[kind]
+    lines = [
+        f"{prefix}_NAME={name}",
+        f"{prefix}_STATUS=candidate",
+        f"{prefix}_SHOULD_BE_SIGNED=1",
+        f"{prefix}_SIGNED=0",
+        f"{prefix}_GENERATED_AT={now}",
+        f"{prefix}_SOURCE_DIR={source_dir}",
+    ]
+    privilege = {}
+    if isinstance(data, dict):
+        privilege = data.get("privilege", {}) or {}
+    lines += [
+        f"{prefix}_CAPTURED_USERS={','.join(privilege.get('captured_users', []))}",
+        f"{prefix}_CAPTURED_UIDS={','.join(privilege.get('captured_uids', []))}",
+        f"{prefix}_CAPTURED_EUIDS={','.join(privilege.get('captured_euids', []))}",
+        f"{prefix}_CAPTURED_HOMES={','.join(privilege.get('captured_homes', []))}",
+        f"{prefix}_CAPTURED_QUEUE_ROOTS={','.join(privilege.get('captured_queue_roots', []))}",
+        f"{prefix}_PRIVILEGED_CONTEXT={1 if privilege.get('privileged_context') else 0}",
+        f"{prefix}_ROOT_PROFILE={1 if privilege.get('root_profile') else 0}",
+    ]
+    if kind == "seccomp":
+        syscalls = list(data)  # type: ignore[arg-type]
+        lines.append("SECPROFILE_SCOPE=pid_tree")
+        lines.append(f"SECPROFILE_ALLOWED_SYSCALLS={','.join(syscalls)}")
+        lines.append("SECPROFILE_DEFAULT_ACTION=kill")
+    elif kind == "net":
+        d = data  # type: ignore[assignment]
+        lines += [
+            "NETPROFILE_SCOPE=pid_tree",
+            "NETPROFILE_GLOBAL_SS_USED=0",
+            f"NETPROFILE_ALLOWED_PROTOCOLS={','.join(d['protocols'])}",
+            f"NETPROFILE_ALLOWED_REMOTE_PORTS={','.join(d['remote_ports'])}",
+            f"NETPROFILE_ALLOWED_REMOTE_HOSTS={','.join(d['remote_hosts'])}",
+            f"NETPROFILE_DENY_LISTEN={1 if d['opened_listener'] else 0}",
+            f"NETPROFILE_CONTEXT_REMOTE_PORTS_IGNORED={','.join(d.get('global_context_remote_ports', []))}",
+            f"NETPROFILE_CONTEXT_REMOTE_HOSTS_IGNORED={','.join(d.get('global_context_remote_hosts', []))}",
+            f"NETPROFILE_WARNINGS={','.join(d.get('warnings', []))}",
+        ]
+    elif kind == "file":
+        d = data  # type: ignore[assignment]
+        lines += [
+            "FILEPROFILE_SCOPE=pid_tree",
+            f"FILEPROFILE_ALLOWED_READ_PREFIXES={','.join(d['allowed_read_prefixes'])}",
+            f"FILEPROFILE_ALLOW_DELETED_FILES={1 if d['opened_deleted_files'] else 0}",
+            f"FILEPROFILE_ALLOWED_UNIX_SOCKETS={','.join(d['unix_sockets'])}",
+            f"FILEPROFILE_OBSERVED_DELETE_PATHS={','.join(d.get('observed_delete_paths', []))}",
+            f"FILEPROFILE_OBSERVED_WRITE_PATHS={','.join(d.get('observed_write_paths', []))}",
+            f"FILEPROFILE_WARNINGS={','.join(d.get('warnings', []))}",
+        ]
+    return lines
+
+
+def compile_cmd(ns: argparse.Namespace) -> int:
+    pdir = Path(ns.profile_dir).resolve()
+    name = safe_name(ns.name)
+    syscalls, net, files = merge_profile_data([pdir])
+    summary = {"name": name, "source_dir": str(pdir), "syscalls": syscalls, "net": net, "file": files}
+    (pdir / "profile.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    outputs = write_candidate_set(name, pdir, syscalls, net, files, ns.out_root, copy_to=pdir)
+    if ns.json:
+        print(json.dumps({"name": name, "status": "candidate", "outputs": outputs}, indent=2))
+    else:
+        print(f"candidate={name}")
+        for kind in PROFILE_KINDS:
+            print(f"{kind}={outputs[kind]['path']}")
+    return 0
+
+
+def _campaign_run_dirs(campaign_dir: Path) -> list[Path]:
+    return sorted([p for p in campaign_dir.iterdir() if p.is_dir() and (p / "profile.env").exists()])
+
+
+def merge_cmd(ns: argparse.Namespace) -> int:
+    src = Path(ns.source).resolve()
+    if src.is_dir() and (src / "campaign.env").exists():
+        dirs = _campaign_run_dirs(src)
+        source_label = src
+        merged_dir = src / "merged"
+    else:
+        dirs = [Path(x).resolve() for x in ([ns.source] + list(ns.profile_dirs or []))]
+        source_label = dirs[0]
+        merged_dir = source_label / "merged"
+    if not dirs:
+        print("merge: no profile run directories found", file=sys.stderr); return 1
+    name = safe_name(ns.name)
+    syscalls, net, files = merge_profile_data(dirs)
+    merged_dir.mkdir(parents=True, exist_ok=True)
+    summary = {"name": name, "source": str(source_label), "runs": [str(d) for d in dirs], "syscalls": syscalls, "net": net, "file": files}
+    (merged_dir / "profile.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    outputs = write_candidate_set(name, source_label, syscalls, net, files, ns.out_root, copy_to=merged_dir)
+    if ns.json:
+        print(json.dumps({"name": name, "status": "candidate", "runs": len(dirs), "merged_dir": str(merged_dir), "outputs": outputs}, indent=2))
+    else:
+        print(f"candidate={name}")
+        print(f"runs={len(dirs)}")
+        print(f"merged={merged_dir}")
+        for kind in PROFILE_KINDS:
+            print(f"{kind}={outputs[kind]['path']}")
+    return 0
+
+
+def diff_runs_cmd(ns: argparse.Namespace) -> int:
+    campaign = Path(ns.campaign_dir).resolve()
+    dirs = _campaign_run_dirs(campaign)
+    if len(dirs) < 2:
+        print("diff-runs: need at least two run directories in a campaign", file=sys.stderr); return 1
+
+    # Compare against the first run and also against the immediately previous
+    # run.  Delayed-trigger tests can start with a bad/expanded run because
+    # state already existed before the campaign.  A pure "new versus run-001"
+    # comparison then misses the fact that later runs are materially different.
+    # Recording both added and missing behaviour makes drift visible whichever
+    # side of the transition is captured as run-001.
+    def as_sets(d: Path) -> dict[str, set[str]]:
+        syscalls, net, files = merge_profile_data([d])
+        return {
+            "syscalls": set(syscalls),
+            "remote_ports": set(net["remote_ports"]),
+            "file_prefixes": set(files["allowed_read_prefixes"]),
+        }
+
+    base = as_sets(dirs[0])
+    prev = base
+    rows=[]; drift=False
+    for d in dirs[1:]:
+        cur = as_sets(d)
+        item = {
+            "run": d.name,
+            "new_syscalls": sorted(cur["syscalls"]-base["syscalls"]),
+            "missing_syscalls": sorted(base["syscalls"]-cur["syscalls"]),
+            "new_remote_ports": sorted(cur["remote_ports"]-base["remote_ports"], key=lambda x:int(x)),
+            "missing_remote_ports": sorted(base["remote_ports"]-cur["remote_ports"], key=lambda x:int(x)),
+            "new_file_prefixes": sorted(cur["file_prefixes"]-base["file_prefixes"]),
+            "missing_file_prefixes": sorted(base["file_prefixes"]-cur["file_prefixes"]),
+            "changed_from_previous": {
+                "new_syscalls": sorted(cur["syscalls"]-prev["syscalls"]),
+                "missing_syscalls": sorted(prev["syscalls"]-cur["syscalls"]),
+                "new_remote_ports": sorted(cur["remote_ports"]-prev["remote_ports"], key=lambda x:int(x)),
+                "missing_remote_ports": sorted(prev["remote_ports"]-cur["remote_ports"], key=lambda x:int(x)),
+                "new_file_prefixes": sorted(cur["file_prefixes"]-prev["file_prefixes"]),
+                "missing_file_prefixes": sorted(prev["file_prefixes"]-cur["file_prefixes"]),
+            },
+        }
+        if any(item[k] for k in ("new_syscalls", "missing_syscalls", "new_remote_ports", "missing_remote_ports", "new_file_prefixes", "missing_file_prefixes")):
+            drift=True
+        if any(item["changed_from_previous"][k] for k in item["changed_from_previous"]):
+            drift=True
+        rows.append(item)
+        prev = cur
+    report = {"campaign": str(campaign), "baseline_run": dirs[0].name, "drift_detected": drift, "runs": rows}
+    (campaign / "drift.report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    if ns.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print(f"campaign={campaign}")
+        print(f"baseline={dirs[0].name}")
+        print(f"drift_detected={1 if drift else 0}")
+        for r in rows:
+            keys = ("new_syscalls", "missing_syscalls", "new_remote_ports", "missing_remote_ports", "new_file_prefixes", "missing_file_prefixes")
+            prev_changed = r.get("changed_from_previous", {})
+            if any(r[k] for k in keys) or any(prev_changed.get(k) for k in prev_changed):
+                print(f"run={r['run']}")
+                for key in keys:
+                    if r[key]: print(f"  {key}=" + ",".join(r[key]))
+                if any(prev_changed.get(k) for k in prev_changed):
+                    print("  changed_from_previous=1")
+    return 0 if not ns.fail_on_drift or not drift else 3
+
+def profile_file(broot: Path, name: str, kind: str, approved: bool = False) -> Path:
+    return broot / ("approved" if approved else "candidates") / f"{safe_name(name)}.{kind}.env"
+
+
+def _read_env(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if not path.exists():
+        return out
+    for raw in path.read_text(errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        out[k.strip()] = v.strip().strip('"').strip("'")
+    return out
+
+
+def _csv(value: str) -> list[str]:
+    return [x.strip() for x in (value or "").split(",") if x.strip()]
+
+
+def _destructive_syscalls(syscalls: set[str]) -> list[str]:
+    risky = {
+        "unlink", "unlinkat", "rmdir", "rename", "renameat", "renameat2",
+        "mkdir", "mkdirat", "chmod", "fchmod", "fchmodat", "chown",
+        "fchown", "fchownat", "mount", "umount2", "ptrace", "kill", "tgkill",
+        "execveat",
+    }
+    return sorted(syscalls & risky)
+
+
+def _review_profile(name: str, broot: Path, prefer_approved: bool = False) -> dict:
+    name = safe_name(name)
+    profile_state = "approved" if prefer_approved else "candidate"
+    files: dict[str, Path] = {}
+    data: dict[str, dict[str, str]] = {}
+    for kind in PROFILE_KINDS:
+        f = profile_file(broot, name, kind, approved=prefer_approved)
+        if not f.exists() and not prefer_approved:
+            # If a candidate is missing but an approved profile exists, review that
+            # rather than claiming the profile is absent.
+            alt = profile_file(broot, name, kind, approved=True)
+            if alt.exists():
+                f = alt
+                profile_state = "approved"
+        files[kind] = f
+        data[kind] = _read_env(f)
+
+    warnings: set[str] = set()
+    blockers: set[str] = set()
+    notes: list[str] = []
+
+    missing = [k for k, f in files.items() if not f.exists()]
+    if missing:
+        blockers.add("missing_profile_kind:" + ",".join(missing))
+
+    sec = data.get("seccomp", {})
+    net = data.get("net", {})
+    fil = data.get("file", {})
+    syscalls = set(_csv(sec.get("SECPROFILE_ALLOWED_SYSCALLS", "")))
+    net_ports = _csv(net.get("NETPROFILE_ALLOWED_REMOTE_PORTS", ""))
+    net_hosts = _csv(net.get("NETPROFILE_ALLOWED_REMOTE_HOSTS", ""))
+    net_protocols = _csv(net.get("NETPROFILE_ALLOWED_PROTOCOLS", ""))
+    file_prefixes = _csv(fil.get("FILEPROFILE_ALLOWED_READ_PREFIXES", ""))
+    observed_delete_paths = _csv(fil.get("FILEPROFILE_OBSERVED_DELETE_PATHS", ""))
+    observed_write_paths = _csv(fil.get("FILEPROFILE_OBSERVED_WRITE_PATHS", ""))
+    captured_users = sorted(set(_csv(sec.get("SECPROFILE_CAPTURED_USERS", "")) + _csv(net.get("NETPROFILE_CAPTURED_USERS", "")) + _csv(fil.get("FILEPROFILE_CAPTURED_USERS", ""))))
+    captured_uids = sorted(set(_csv(sec.get("SECPROFILE_CAPTURED_UIDS", "")) + _csv(net.get("NETPROFILE_CAPTURED_UIDS", "")) + _csv(fil.get("FILEPROFILE_CAPTURED_UIDS", ""))))
+    captured_euids = sorted(set(_csv(sec.get("SECPROFILE_CAPTURED_EUIDS", "")) + _csv(net.get("NETPROFILE_CAPTURED_EUIDS", "")) + _csv(fil.get("FILEPROFILE_CAPTURED_EUIDS", ""))))
+    captured_homes = sorted(set(_csv(sec.get("SECPROFILE_CAPTURED_HOMES", "")) + _csv(net.get("NETPROFILE_CAPTURED_HOMES", "")) + _csv(fil.get("FILEPROFILE_CAPTURED_HOMES", ""))))
+    captured_queue_roots = sorted(set(_csv(sec.get("SECPROFILE_CAPTURED_QUEUE_ROOTS", "")) + _csv(net.get("NETPROFILE_CAPTURED_QUEUE_ROOTS", "")) + _csv(fil.get("FILEPROFILE_CAPTURED_QUEUE_ROOTS", ""))))
+    privileged_context = any(d.get(k) == "1" for d in (sec, net, fil) for k in ("SECPROFILE_PRIVILEGED_CONTEXT", "NETPROFILE_PRIVILEGED_CONTEXT", "FILEPROFILE_PRIVILEGED_CONTEXT"))
+    root_profile = any(d.get(k) == "1" for d in (sec, net, fil) for k in ("SECPROFILE_ROOT_PROFILE", "NETPROFILE_ROOT_PROFILE", "FILEPROFILE_ROOT_PROFILE"))
+
+    for key in ("SECPROFILE_WARNINGS", "NETPROFILE_WARNINGS", "FILEPROFILE_WARNINGS"):
+        for d in (sec, net, fil):
+            warnings.update(_csv(d.get(key, "")))
+
+    if net_ports or net_hosts or net_protocols:
+        warnings.add("network_egress_allowed")
+        # Network is not always forbidden, but it must not be approved by accident.
+        blockers.add("network_egress_requires_review")
+    if privileged_context:
+        warnings.add("privileged_context_observed")
+        blockers.add("privileged_profile_requires_review")
+        notes.append("profile was captured in a privileged/root-capable context")
+    if root_profile:
+        warnings.add("root_profile_observed")
+        blockers.add("root_profile_requires_review")
+        notes.append("profile was captured as root or under /root queue root")
+    if net.get("NETPROFILE_DENY_LISTEN") == "1":
+        blockers.add("listener_observed")
+    if "/tmp" in file_prefixes:
+        warnings.add("broad_tmp_prefix")
+        blockers.add("broad_tmp_requires_review")
+    if "/home" in file_prefixes:
+        warnings.add("broad_home_prefix")
+    if fil.get("FILEPROFILE_ALLOW_DELETED_FILES") == "1":
+        warnings.add("deleted_files_observed")
+        blockers.add("deleted_files_require_review")
+    destructive = _destructive_syscalls(syscalls)
+    if destructive:
+        warnings.add("destructive_syscalls_observed")
+        blockers.add("destructive_syscalls_require_review")
+        if observed_delete_paths:
+            notes.append("destructive syscall path evidence observed: " + ",".join(observed_delete_paths[:8]))
+        else:
+            notes.append("destructive syscall observed, but no path evidence was extracted from trace")
+    if "global_network_context_ignored" in warnings:
+        notes.append("global ss/lsof network context was observed but ignored for PID-scoped allow-lists")
+    if not net_ports and not net_hosts and net.get("NETPROFILE_CONTEXT_REMOTE_PORTS_IGNORED"):
+        notes.append("background network traffic was seen outside the profiled PID tree and was not approved")
+
+    # Approval policy can be tightened by administrators later.  Default is strict:
+    # warnings stop casual approval unless acknowledged; blockers require explicit risk acceptance.
+    decision = "approvable"
+    if warnings:
+        decision = "approval_requires_accept_warnings"
+    if blockers:
+        decision = "approval_requires_accept_risk"
+    if missing:
+        decision = "not_approvable"
+
+    return {
+        "name": name,
+        "profile_state": profile_state,
+        "files": {k: str(v) for k, v in files.items()},
+        "warnings": sorted(warnings),
+        "blockers": sorted(blockers),
+        "decision": decision,
+        "summary": {
+            "seccomp_syscalls": len(syscalls),
+            "network_protocols": net_protocols,
+            "network_remote_ports": net_ports,
+            "network_remote_hosts": net_hosts,
+            "file_prefixes": file_prefixes,
+            "observed_delete_paths": observed_delete_paths,
+            "observed_write_paths": observed_write_paths,
+            "destructive_syscalls": destructive,
+            "privilege": {
+                "captured_users": captured_users,
+                "captured_uids": captured_uids,
+                "captured_euids": captured_euids,
+                "captured_homes": captured_homes,
+                "captured_queue_roots": captured_queue_roots,
+                "privileged_context": privileged_context,
+                "root_profile": root_profile,
+            },
+            "signed": {
+                "seccomp": sec.get("SECPROFILE_SIGNED", "0"),
+                "net": net.get("NETPROFILE_SIGNED", "0"),
+                "file": fil.get("FILEPROFILE_SIGNED", "0"),
+            },
+        },
+        "notes": notes,
+    }
+
+
+def explain_cmd(ns: argparse.Namespace) -> int:
+    broot = base_root(ns.out_root)
+    review = _review_profile(ns.name, broot, prefer_approved=bool(ns.approved))
+    if ns.json:
+        print(json.dumps(review, indent=2, sort_keys=True))
+        return 0 if review["decision"] != "not_approvable" else 1
+    print(f"profile: {review['name']}")
+    print(f"state:   {review['profile_state']}")
+    print(f"decision: {review['decision']}")
+    print()
+    print("files:")
+    for kind in PROFILE_KINDS:
+        print(f"  {kind:<8} {review['files'].get(kind,'')}")
+    print()
+    s = review["summary"]
+    print("behaviour summary:")
+    print(f"  seccomp_syscalls:      {s['seccomp_syscalls']}")
+    print(f"  network_protocols:     {','.join(s['network_protocols']) or '-'}")
+    print(f"  network_remote_ports:  {','.join(s['network_remote_ports']) or '-'}")
+    print(f"  network_remote_hosts:  {','.join(s['network_remote_hosts']) or '-'}")
+    print(f"  file_prefixes:         {','.join(s['file_prefixes']) or '-'}")
+    print(f"  observed_delete_paths: {','.join(s.get('observed_delete_paths', [])) or '-'}")
+    print(f"  observed_write_paths:  {','.join(s.get('observed_write_paths', [])) or '-'}")
+    print(f"  destructive_syscalls:  {','.join(s['destructive_syscalls']) or '-'}")
+    priv = s.get('privilege', {})
+    print("privilege context:")
+    print(f"  captured_users:        {','.join(priv.get('captured_users', [])) or '-'}")
+    print(f"  captured_uids:         {','.join(priv.get('captured_uids', [])) or '-'}")
+    print(f"  captured_euids:        {','.join(priv.get('captured_euids', [])) or '-'}")
+    print(f"  captured_homes:        {','.join(priv.get('captured_homes', [])) or '-'}")
+    print(f"  captured_queue_roots:  {','.join(priv.get('captured_queue_roots', [])) or '-'}")
+    print(f"  privileged_context:    {1 if priv.get('privileged_context') else 0}")
+    print(f"  root_profile:          {1 if priv.get('root_profile') else 0}")
+    print()
+    print("warnings:")
+    if review["warnings"]:
+        for w in review["warnings"]:
+            print(f"  - {w}")
+    else:
+        print("  - none")
+    print("blockers:")
+    if review["blockers"]:
+        for b in review["blockers"]:
+            print(f"  - {b}")
+    else:
+        print("  - none")
+    if review["notes"]:
+        print("notes:")
+        for n in review["notes"]:
+            print(f"  - {n}")
+    print()
+    print("approval:")
+    if review["decision"] == "approvable":
+        print(f"  queue profile interrogate approve {review['name']}")
+    elif review["decision"] == "approval_requires_accept_warnings":
+        print(f"  queue profile interrogate approve {review['name']} --accept-warnings")
+    elif review["decision"] == "approval_requires_accept_risk":
+        print(f"  queue profile interrogate approve {review['name']} --accept-warnings --accept-risk")
+    else:
+        print("  not approvable until missing profile files are fixed")
+    return 0 if review["decision"] != "not_approvable" else 1
+
+
+def sign_profile(path: Path, kind: str, signing_key: str, self_signed: bool) -> list[str]:
+    prefix = {"seccomp":"SECPROFILE", "net":"NETPROFILE", "file":"FILEPROFILE"}[kind]
+    raw_lines = path.read_text(errors="replace").splitlines()
+    filtered = [ln for ln in raw_lines if not re.match(rf"^{prefix}_(STATUS|SIGNED|SIGNED_AT|SIGNED_BY|SELF_SIGNED|SIGNING_KEY|SIGNATURE_SHA256)=", ln)]
+    out = []
+    for ln in filtered:
+        if ln.startswith(f"{prefix}_SHOULD_BE_SIGNED="):
+            out.append(f"{prefix}_SHOULD_BE_SIGNED=1")
+        else:
+            out.append(ln)
+    out.append(f"{prefix}_STATUS=approved")
+    out.append(f"{prefix}_SIGNED=1")
+    out.append(f"{prefix}_SIGNED_AT={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}")
+    out.append(f"{prefix}_SIGNED_BY={signing_key}")
+    out.append(f"{prefix}_SELF_SIGNED={1 if self_signed else 0}")
+    # This is a local tamper-evident signature stamp.  It deliberately records
+    # the signing key identity; integration with the broader queue code-key trust
+    # store can later replace/strengthen this without changing profile consumers.
+    sig = content_hash(out)
+    out.append(f"{prefix}_SIGNATURE_SHA256={sig}")
+    return out
+
+
+def approve_cmd(ns: argparse.Namespace) -> int:
+    name = safe_name(ns.name); broot = base_root(ns.out_root)
+    review = _review_profile(name, broot, prefer_approved=False)
+    if review["decision"] == "not_approvable":
+        print(f"approve: profile {name} is not approvable: " + ",".join(review["blockers"]), file=sys.stderr)
+        return 2
+    if review["warnings"] and not ns.accept_warnings:
+        print(f"approve: profile {name} has warnings; run `queue profile interrogate explain {name}` and use --accept-warnings if approved", file=sys.stderr)
+        return 3
+    if review["blockers"] and not ns.accept_risk:
+        print(f"approve: profile {name} has risk blockers; run `queue profile interrogate explain {name}` and use --accept-risk only after review", file=sys.stderr)
+        return 4
+    signing_key = ns.signing_key or os.environ.get("QUEUEBASH_PROFILE_SIGNING_KEY") or f"self:{os.environ.get('USER') or os.environ.get('LOGNAME') or 'unknown'}"
+    self_signed = signing_key.startswith("self:")
+    kinds = PROFILE_KINDS if ns.kind == "all" else (ns.kind,)
+    approved = {}
+    for kind in kinds:
+        src = profile_file(broot, name, kind, approved=False)
+        if not src.exists():
+            print(f"missing candidate: {src}", file=sys.stderr); return 1
+        lines = sign_profile(src, kind, signing_key, self_signed)
+        dst = profile_file(broot, name, kind, approved=True)
+        write_env(dst, lines)
+        approved[kind] = str(dst)
+    if ns.json: print(json.dumps({"name": name, "approved": approved, "signed_by": signing_key, "self_signed": self_signed}, indent=2))
+    else:
+        print(f"approved={name}")
+        print(f"signed_by={signing_key}")
+        print(f"self_signed={1 if self_signed else 0}")
+        for k,v in approved.items(): print(f"{k}={v}")
+    return 0
+
+
+def show_cmd(ns: argparse.Namespace) -> int:
+    name = safe_name(ns.name); broot = base_root(ns.out_root)
+    rows=[]
+    for approved in (True, False):
+        for kind in PROFILE_KINDS:
+            f=profile_file(broot,name,kind,approved)
+            if f.exists(): rows.append((kind, "approved" if approved else "candidate", str(f)))
+    if ns.json: print(json.dumps({"name":name,"profiles":[{"kind":k,"state":s,"path":p} for k,s,p in rows]}, indent=2))
+    else:
+        print(f"profile: {name}")
+        for k,s,p in rows: print(f"  {k:<8} {s:<9} {p}")
+    return 0 if rows else 1
+
+
+def diff_cmd(ns: argparse.Namespace) -> int:
+    # Minimal first-pass diff: compile observed sets in memory and compare with approved profiles.
+    name = safe_name(ns.name); pdir = Path(ns.profile_dir).resolve(); broot=base_root(ns.out_root)
+    observed = {"seccomp": set(parse_syscalls(pdir)), "net": set(parse_net(pdir)["remote_ports"]), "file": set(parse_files(pdir)["allowed_read_prefixes"])}
+    keys = {"seccomp":"SECPROFILE_ALLOWED_SYSCALLS", "net":"NETPROFILE_ALLOWED_REMOTE_PORTS", "file":"FILEPROFILE_ALLOWED_READ_PREFIXES"}
+    rc=0; result={}
+    for kind in PROFILE_KINDS:
+        f=profile_file(broot,name,kind,approved=True)
+        if not f.exists(): rc=1; result[kind]={"error":"approved profile missing"}; continue
+        vals=set()
+        for ln in f.read_text(errors='replace').splitlines():
+            if ln.startswith(keys[kind]+"="):
+                vals=set(x for x in ln.split('=',1)[1].split(',') if x)
+        new=sorted(observed[kind]-vals); missing=sorted(vals-observed[kind])
+        if new: rc=1
+        result[kind]={"new":new,"missing":missing}
+    if ns.json: print(json.dumps(result, indent=2))
+    else:
+        for kind,d in result.items():
+            print(f"{kind}:")
+            if "error" in d: print(f"  {d['error']}"); continue
+            print("  new:     " + (", ".join(d['new']) or "-"))
+            print("  missing: " + (", ".join(d['missing']) or "-"))
+    return rc
+
+
+def main(argv=None) -> int:
+    ap=argparse.ArgumentParser(description="Compile bashqueues interrogation profiles")
+    sub=ap.add_subparsers(dest="cmd", required=True)
+    c=sub.add_parser("compile"); c.add_argument("profile_dir"); c.add_argument("--name", required=True); c.add_argument("--out-root"); c.add_argument("--json", action="store_true"); c.set_defaults(func=compile_cmd)
+    m=sub.add_parser("merge"); m.add_argument("source"); m.add_argument("profile_dirs", nargs="*"); m.add_argument("--name", required=True); m.add_argument("--out-root"); m.add_argument("--json", action="store_true"); m.set_defaults(func=merge_cmd)
+    dr=sub.add_parser("diff-runs"); dr.add_argument("campaign_dir"); dr.add_argument("--fail-on-drift", action="store_true"); dr.add_argument("--json", action="store_true"); dr.set_defaults(func=diff_runs_cmd)
+    a=sub.add_parser("approve"); a.add_argument("name"); a.add_argument("--kind", choices=("all",)+PROFILE_KINDS, default="all"); a.add_argument("--out-root"); a.add_argument("--signing-key"); a.add_argument("--accept-warnings", action="store_true"); a.add_argument("--accept-risk", action="store_true"); a.add_argument("--json", action="store_true"); a.set_defaults(func=approve_cmd)
+    e=sub.add_parser("explain"); e.add_argument("name"); e.add_argument("--out-root"); e.add_argument("--approved", action="store_true"); e.add_argument("--json", action="store_true"); e.set_defaults(func=explain_cmd)
+    r=sub.add_parser("review"); r.add_argument("name"); r.add_argument("--out-root"); r.add_argument("--approved", action="store_true"); r.add_argument("--json", action="store_true"); r.set_defaults(func=explain_cmd)
+    s=sub.add_parser("show"); s.add_argument("name"); s.add_argument("--out-root"); s.add_argument("--json", action="store_true"); s.set_defaults(func=show_cmd)
+    d=sub.add_parser("diff"); d.add_argument("name"); d.add_argument("profile_dir"); d.add_argument("--out-root"); d.add_argument("--json", action="store_true"); d.set_defaults(func=diff_cmd)
+    ns=ap.parse_args(argv); return ns.func(ns)
+
+if __name__ == "__main__":
+    raise SystemExit(main())
