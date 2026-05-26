@@ -1,3 +1,12 @@
+## 0.17.72 - Endpoint sovereignty governance
+
+- Added `endpoint` asset family to extend sovereignty checks from worker placement to outbound submission endpoints.
+- Added `endpoint:jurisdiction_allowed`, `endpoint:region_allowed`, `endpoint:command_jurisdiction_allowed`, and `endpoint:command_region_allowed`.
+- Added endpoint-to-region policy maps under `policies.d/endpoint-jurisdiction/default.env` and compatibility `policies.d/endpoint_jurisdiction.env`.
+- Added command-line endpoint scanning so mandatory policy assets can block jobs that try to submit UK/GDPR/HIPAA/etc. data to disallowed mapped regions.
+- Added endpoint governance documentation and regression tests.
+- Confirmed `assets.d/net_usage.sh` remains absent; `net:allowance` remains canonical in `assets.d/net.sh`.
+
 ## 0.17.70 - Cloud sovereignty and FinOps assets
 
 
