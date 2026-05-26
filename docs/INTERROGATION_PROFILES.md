@@ -193,3 +193,32 @@ SECPROFILE_SIGNATURE_SHA256=...
 
 `review` is accepted as an alias for `explain`, but `explain` is the preferred
 verb because it matches the rest of the queue diagnostic surface.
+
+## Profile signature verification
+
+Approved interrogation profiles are signed with a tamper-evident SHA256 stamp.
+Use:
+
+```bash
+queue profile interrogate verify NAME
+```
+
+The verifier checks that approved seccomp/net/file profiles exist, are marked
+approved/signed, and that the recorded signature hash still matches the profile
+content. Trust policy can then narrow accepted signers:
+
+```bash
+queue profile interrogate verify NAME --allow-self-signed 0
+queue profile interrogate verify NAME --required-signer ops-release
+```
+
+Class assets can enforce the same policy:
+
+```bash
+queue_class_shared_asset secprofile profile_verified NAME allow_self_signed=0 required_signer=ops-release
+queue_class_shared_asset netprofile profile_verified NAME allow_self_signed=0 required_signer=ops-release
+queue_class_shared_asset fileprofile profile_verified NAME allow_self_signed=0 required_signer=ops-release
+```
+
+Self-signed profiles remain useful for development and test. Live, legal,
+root/system installer, or destructive classes should require a trusted signer.

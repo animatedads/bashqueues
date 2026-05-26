@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.90"' queuebash.sh || fail "version not bumped to 0.17.90"
+grep -q 'QUEUEBASH_VERSION="0.17.92"' queuebash.sh || fail "version not bumped to 0.17.92"
 grep -q 'finops:anomaly_free' assets.d/finops.sh || fail "finops anomaly facility missing"
 grep -q 'queue_asset_check_finops_anomaly_free' assets.d/finops.sh || fail "finops anomaly checker missing"
 grep -q 'legal:retention_respected' assets.d/legal.sh || fail "legal retention facility missing"

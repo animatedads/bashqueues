@@ -53,22 +53,25 @@ def _read_env_file(path: Path) -> dict[str, str]:
 
 def parse_privilege_context(profile_dir: Path) -> dict:
     env = _read_env_file(profile_dir / "profile.env")
-    user = env.get("PROFILE_CAPTURED_USER", "")
+    env_user = env.get("PROFILE_ENV_USER", "")
+    effective_user = env.get("PROFILE_EFFECTIVE_USER", env.get("PROFILE_CAPTURED_USER", ""))
     uid = env.get("PROFILE_CAPTURED_UID", "")
     euid = env.get("PROFILE_CAPTURED_EUID", "")
     home = env.get("PROFILE_CAPTURED_HOME", "")
     qroot = env.get("PROFILE_CAPTURED_QUEUE_ROOT", "")
     privileged = env.get("PROFILE_PRIVILEGED_CONTEXT", "")
     if not privileged:
-        privileged = "1" if uid == "0" or euid == "0" or user == "root" or qroot.startswith("/root/") else "0"
+        privileged = "1" if uid == "0" or euid == "0" or effective_user == "root" or qroot.startswith("/root/") else "0"
     return {
-        "users": [user] if user else [],
+        "users": [effective_user] if effective_user else [],
+        "env_users": [env_user] if env_user else [],
+        "effective_users": [effective_user] if effective_user else [],
         "uids": [uid] if uid else [],
         "euids": [euid] if euid else [],
         "homes": [home] if home else [],
         "queue_roots": [qroot] if qroot else [],
         "privileged_context": privileged == "1",
-        "root_profile": uid == "0" or euid == "0" or user == "root" or qroot.startswith("/root/"),
+        "root_profile": uid == "0" or euid == "0" or effective_user == "root" or qroot.startswith("/root/"),
     }
 
 def parse_syscalls(profile_dir: Path) -> list[str]:
@@ -250,6 +253,73 @@ def parse_files(profile_dir: Path) -> dict:
 
 
 
+def _path_zone(path: str) -> str:
+    p = (path or "").strip()
+    if not p:
+        return "unknown"
+    if p.startswith("/usr/local/bin"):
+        return "system_bin"
+    if p.startswith("/usr/local/share/bashqueues"):
+        return "system_share"
+    if p.startswith("/usr/local"):
+        return "system_local"
+    if p.startswith("/etc"):
+        return "system_config"
+    if p.startswith("/root"):
+        return "root_home"
+    if p.startswith("/home"):
+        return "user_home"
+    if p.startswith("/tmp/bashqueues-") or p.startswith("/tmp/tmp."):
+        return "temporary_runtime"
+    if p.startswith("/tmp"):
+        return "temporary"
+    if p.startswith("/dev"):
+        return "device"
+    if p.startswith("/proc"):
+        return "proc"
+    if p.startswith("/usr/bin"):
+        return "system_bin"
+    if p.startswith("/usr/lib") or p.startswith("/usr/lib64") or p.startswith("/lib"):
+        return "system_library"
+    if p.startswith("/var"):
+        return "var_state"
+    if p.startswith("./"):
+        return "relative_install_tree"
+    return "other"
+
+
+def path_impact_summary(files: dict) -> dict[str, list[str]]:
+    """Classify observed path evidence into review-friendly zones.
+
+    Raw path lists are still retained for forensic detail; this summary lets
+    `explain` show that an installer touched system_bin/system_share/system_config
+    rather than forcing a reviewer to read thousands of comma-separated paths.
+    """
+    impact: dict[str, set[str]] = {}
+    def add(op: str, paths):
+        for raw in paths or []:
+            zone = _path_zone(str(raw))
+            impact.setdefault(zone, set()).add(op)
+    add("read", files.get("allowed_read_prefixes", []))
+    add("delete", files.get("observed_delete_paths", []))
+    add("write", files.get("observed_write_paths", []))
+    return {zone: sorted(ops) for zone, ops in sorted(impact.items())}
+
+
+def format_path_impact(impact: dict[str, list[str]]) -> str:
+    return ";".join(f"{zone}:{','.join(ops)}" for zone, ops in sorted((impact or {}).items()))
+
+
+def parse_path_impact(value: str) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for item in (value or "").split(";"):
+        if not item or ":" not in item:
+            continue
+        zone, ops = item.split(":", 1)
+        out[zone] = [x for x in ops.split(",") if x]
+    return out
+
+
 def _profile_warnings(syscalls: list[str], net: dict, files: dict) -> list[str]:
     warnings: set[str] = set()
     if any(s for s in syscalls if not re.match(r"^[a-z][a-z0-9_]*$", s)):
@@ -276,7 +346,7 @@ def merge_profile_data(profile_dirs: list[Path]) -> tuple[list[str], dict, dict]
     prefixes: set[str] = set(); sample_paths: list[str] = []; deleted = False; unix_sockets: set[str] = set()
     observed_delete_paths: set[str] = set(); observed_write_paths: set[str] = set()
     seen_sample: set[str] = set()
-    captured_users: set[str] = set(); captured_uids: set[str] = set(); captured_euids: set[str] = set(); captured_homes: set[str] = set(); captured_queue_roots: set[str] = set()
+    captured_users: set[str] = set(); captured_env_users: set[str] = set(); captured_effective_users: set[str] = set(); captured_uids: set[str] = set(); captured_euids: set[str] = set(); captured_homes: set[str] = set(); captured_queue_roots: set[str] = set()
     privileged_context = False; root_profile = False
     for d in profile_dirs:
         all_sys.update(parse_syscalls(d))
@@ -289,15 +359,16 @@ def merge_profile_data(profile_dirs: list[Path]) -> tuple[list[str], dict, dict]
         prefixes.update(f.get("allowed_read_prefixes", [])); deleted = deleted or bool(f.get("opened_deleted_files")); unix_sockets.update(f.get("unix_sockets", []))
         observed_delete_paths.update(f.get("observed_delete_paths", [])); observed_write_paths.update(f.get("observed_write_paths", []))
         pc = parse_privilege_context(d)
-        captured_users.update(pc.get("users", [])); captured_uids.update(pc.get("uids", [])); captured_euids.update(pc.get("euids", [])); captured_homes.update(pc.get("homes", [])); captured_queue_roots.update(pc.get("queue_roots", []))
+        captured_users.update(pc.get("users", [])); captured_env_users.update(pc.get("env_users", [])); captured_effective_users.update(pc.get("effective_users", [])); captured_uids.update(pc.get("uids", [])); captured_euids.update(pc.get("euids", [])); captured_homes.update(pc.get("homes", [])); captured_queue_roots.update(pc.get("queue_roots", []))
         privileged_context = privileged_context or bool(pc.get("privileged_context")); root_profile = root_profile or bool(pc.get("root_profile"))
         for path in f.get("observed_paths_sample", []):
             if path not in seen_sample and len(sample_paths) < 200:
                 seen_sample.add(path); sample_paths.append(path)
     net = {"scope": "pid_tree", "protocols": sorted(protocols), "remote_ports": sorted(remote_ports, key=lambda x:int(x)), "remote_hosts": sorted(remote_hosts), "opened_listener": opened_listener, "global_context_ignored": global_ignored, "global_context_remote_ports": sorted(global_ports, key=lambda x:int(x)), "global_context_remote_hosts": sorted(global_hosts)}
-    privilege = {"captured_users": sorted(captured_users), "captured_uids": sorted(captured_uids), "captured_euids": sorted(captured_euids), "captured_homes": sorted(captured_homes), "captured_queue_roots": sorted(captured_queue_roots), "privileged_context": privileged_context, "root_profile": root_profile}
+    privilege = {"captured_users": sorted(captured_users), "captured_env_users": sorted(captured_env_users), "captured_effective_users": sorted(captured_effective_users), "captured_uids": sorted(captured_uids), "captured_euids": sorted(captured_euids), "captured_homes": sorted(captured_homes), "captured_queue_roots": sorted(captured_queue_roots), "privileged_context": privileged_context, "root_profile": root_profile}
     net["privilege"] = privilege
     files = {"scope": "pid_tree", "allowed_read_prefixes": sorted(prefixes), "observed_paths_sample": sample_paths, "opened_deleted_files": deleted, "unix_sockets": sorted(unix_sockets), "observed_delete_paths": sorted(observed_delete_paths), "observed_write_paths": sorted(observed_write_paths), "privilege": privilege}
+    files["path_impact"] = path_impact_summary(files)
     warnings = _profile_warnings(sorted(all_sys), net, files)
     if privileged_context:
         warnings.append("privileged_context_observed")
@@ -332,7 +403,7 @@ def write_env(path: Path, lines: list[str]) -> str:
 
 def candidate_lines(kind: str, name: str, source_dir: Path, data: dict | list[str]) -> list[str]:
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    prefix = {"seccomp":"SECPROFILE", "net":"NETPROFILE", "file":"FILEPROFILE"}[kind]
+    prefix = _prefix_for_kind(kind)
     lines = [
         f"{prefix}_NAME={name}",
         f"{prefix}_STATUS=candidate",
@@ -346,6 +417,8 @@ def candidate_lines(kind: str, name: str, source_dir: Path, data: dict | list[st
         privilege = data.get("privilege", {}) or {}
     lines += [
         f"{prefix}_CAPTURED_USERS={','.join(privilege.get('captured_users', []))}",
+        f"{prefix}_CAPTURED_ENV_USERS={','.join(privilege.get('captured_env_users', []))}",
+        f"{prefix}_CAPTURED_EFFECTIVE_USERS={','.join(privilege.get('captured_effective_users', []))}",
         f"{prefix}_CAPTURED_UIDS={','.join(privilege.get('captured_uids', []))}",
         f"{prefix}_CAPTURED_EUIDS={','.join(privilege.get('captured_euids', []))}",
         f"{prefix}_CAPTURED_HOMES={','.join(privilege.get('captured_homes', []))}",
@@ -380,6 +453,7 @@ def candidate_lines(kind: str, name: str, source_dir: Path, data: dict | list[st
             f"FILEPROFILE_ALLOWED_UNIX_SOCKETS={','.join(d['unix_sockets'])}",
             f"FILEPROFILE_OBSERVED_DELETE_PATHS={','.join(d.get('observed_delete_paths', []))}",
             f"FILEPROFILE_OBSERVED_WRITE_PATHS={','.join(d.get('observed_write_paths', []))}",
+            f"FILEPROFILE_PATH_IMPACT={format_path_impact(d.get('path_impact', {}))}",
             f"FILEPROFILE_WARNINGS={','.join(d.get('warnings', []))}",
         ]
     return lines
@@ -568,12 +642,15 @@ def _review_profile(name: str, broot: Path, prefer_approved: bool = False) -> di
     observed_delete_paths = _csv(fil.get("FILEPROFILE_OBSERVED_DELETE_PATHS", ""))
     observed_write_paths = _csv(fil.get("FILEPROFILE_OBSERVED_WRITE_PATHS", ""))
     captured_users = sorted(set(_csv(sec.get("SECPROFILE_CAPTURED_USERS", "")) + _csv(net.get("NETPROFILE_CAPTURED_USERS", "")) + _csv(fil.get("FILEPROFILE_CAPTURED_USERS", ""))))
+    captured_env_users = sorted(set(_csv(sec.get("SECPROFILE_CAPTURED_ENV_USERS", "")) + _csv(net.get("NETPROFILE_CAPTURED_ENV_USERS", "")) + _csv(fil.get("FILEPROFILE_CAPTURED_ENV_USERS", ""))))
+    captured_effective_users = sorted(set(_csv(sec.get("SECPROFILE_CAPTURED_EFFECTIVE_USERS", "")) + _csv(net.get("NETPROFILE_CAPTURED_EFFECTIVE_USERS", "")) + _csv(fil.get("FILEPROFILE_CAPTURED_EFFECTIVE_USERS", "")) + captured_users))
     captured_uids = sorted(set(_csv(sec.get("SECPROFILE_CAPTURED_UIDS", "")) + _csv(net.get("NETPROFILE_CAPTURED_UIDS", "")) + _csv(fil.get("FILEPROFILE_CAPTURED_UIDS", ""))))
     captured_euids = sorted(set(_csv(sec.get("SECPROFILE_CAPTURED_EUIDS", "")) + _csv(net.get("NETPROFILE_CAPTURED_EUIDS", "")) + _csv(fil.get("FILEPROFILE_CAPTURED_EUIDS", ""))))
     captured_homes = sorted(set(_csv(sec.get("SECPROFILE_CAPTURED_HOMES", "")) + _csv(net.get("NETPROFILE_CAPTURED_HOMES", "")) + _csv(fil.get("FILEPROFILE_CAPTURED_HOMES", ""))))
     captured_queue_roots = sorted(set(_csv(sec.get("SECPROFILE_CAPTURED_QUEUE_ROOTS", "")) + _csv(net.get("NETPROFILE_CAPTURED_QUEUE_ROOTS", "")) + _csv(fil.get("FILEPROFILE_CAPTURED_QUEUE_ROOTS", ""))))
     privileged_context = any(d.get(k) == "1" for d in (sec, net, fil) for k in ("SECPROFILE_PRIVILEGED_CONTEXT", "NETPROFILE_PRIVILEGED_CONTEXT", "FILEPROFILE_PRIVILEGED_CONTEXT"))
     root_profile = any(d.get(k) == "1" for d in (sec, net, fil) for k in ("SECPROFILE_ROOT_PROFILE", "NETPROFILE_ROOT_PROFILE", "FILEPROFILE_ROOT_PROFILE"))
+    path_impact = parse_path_impact(fil.get("FILEPROFILE_PATH_IMPACT", "")) or path_impact_summary({"allowed_read_prefixes": file_prefixes, "observed_delete_paths": observed_delete_paths, "observed_write_paths": observed_write_paths})
 
     for key in ("SECPROFILE_WARNINGS", "NETPROFILE_WARNINGS", "FILEPROFILE_WARNINGS"):
         for d in (sec, net, fil):
@@ -624,10 +701,17 @@ def _review_profile(name: str, broot: Path, prefer_approved: bool = False) -> di
     if missing:
         decision = "not_approvable"
 
+    signature_status = {}
+    for k in PROFILE_KINDS:
+        # explain is primarily a review surface, so report the state actually being shown.
+        vf = verify_profile_file(files[k], k, allow_self_signed=True, required_signers=[]) if files[k].exists() else {"exists": False, "verified": False, "signature_valid": False, "signer_trusted": False, "signed_by": "", "self_signed": "0", "error": "missing_profile"}
+        signature_status[k] = {kk: vf.get(kk) for kk in ("exists", "status", "signed", "signed_by", "self_signed", "signature_valid", "signer_trusted", "verified", "error")}
+
     return {
         "name": name,
         "profile_state": profile_state,
         "files": {k: str(v) for k, v in files.items()},
+        "signature_status": signature_status,
         "warnings": sorted(warnings),
         "blockers": sorted(blockers),
         "decision": decision,
@@ -640,8 +724,11 @@ def _review_profile(name: str, broot: Path, prefer_approved: bool = False) -> di
             "observed_delete_paths": observed_delete_paths,
             "observed_write_paths": observed_write_paths,
             "destructive_syscalls": destructive,
+            "path_impact": path_impact,
             "privilege": {
                 "captured_users": captured_users,
+                "captured_env_users": captured_env_users,
+                "captured_effective_users": captured_effective_users,
                 "captured_uids": captured_uids,
                 "captured_euids": captured_euids,
                 "captured_homes": captured_homes,
@@ -673,6 +760,11 @@ def explain_cmd(ns: argparse.Namespace) -> int:
     for kind in PROFILE_KINDS:
         print(f"  {kind:<8} {review['files'].get(kind,'')}")
     print()
+    print("signature status:")
+    for kind in PROFILE_KINDS:
+        sig = review.get("signature_status", {}).get(kind, {})
+        print(f"  {kind:<8} signed_by={sig.get('signed_by') or '-'} self_signed={sig.get('self_signed') or '0'} signature_valid={1 if sig.get('signature_valid') else 0} signer_trusted={1 if sig.get('signer_trusted') else 0} verified={1 if sig.get('verified') else 0} error={sig.get('error') or '-'}")
+    print()
     s = review["summary"]
     print("behaviour summary:")
     print(f"  seccomp_syscalls:      {s['seccomp_syscalls']}")
@@ -683,8 +775,17 @@ def explain_cmd(ns: argparse.Namespace) -> int:
     print(f"  observed_delete_paths: {','.join(s.get('observed_delete_paths', [])) or '-'}")
     print(f"  observed_write_paths:  {','.join(s.get('observed_write_paths', [])) or '-'}")
     print(f"  destructive_syscalls:  {','.join(s['destructive_syscalls']) or '-'}")
+    impact = s.get('path_impact', {}) or {}
+    print("path impact:")
+    if impact:
+        for zone, ops in sorted(impact.items()):
+            print(f"  {zone:<20} {','.join(ops)}")
+    else:
+        print("  -")
     priv = s.get('privilege', {})
     print("privilege context:")
+    print(f"  effective_users:       {','.join(priv.get('captured_effective_users', [])) or ','.join(priv.get('captured_users', [])) or '-'}")
+    print(f"  env_users:             {','.join(priv.get('captured_env_users', [])) or '-'}")
     print(f"  captured_users:        {','.join(priv.get('captured_users', [])) or '-'}")
     print(f"  captured_uids:         {','.join(priv.get('captured_uids', [])) or '-'}")
     print(f"  captured_euids:        {','.join(priv.get('captured_euids', [])) or '-'}")
@@ -722,8 +823,105 @@ def explain_cmd(ns: argparse.Namespace) -> int:
     return 0 if review["decision"] != "not_approvable" else 1
 
 
+def _prefix_for_kind(kind: str) -> str:
+    return {"seccomp":"SECPROFILE", "net":"NETPROFILE", "file":"FILEPROFILE"}[kind]
+
+
+def _signature_content_lines(path: Path, kind: str) -> list[str]:
+    """Return the canonical lines used for the current tamper-evident stamp.
+
+    0.17.88 signed approved profiles by hashing all profile lines except the
+    signature field itself.  Keep that stable so existing approved profiles
+    continue to verify.
+    """
+    prefix = _prefix_for_kind(kind)
+    if not path.exists():
+        return []
+    return [ln for ln in path.read_text(errors="replace").splitlines()
+            if not re.match(rf"^{prefix}_SIGNATURE_SHA256=", ln)]
+
+
+def _signature_hash(path: Path, kind: str) -> str:
+    return hashlib.sha256(("\n".join(_signature_content_lines(path, kind)) + "\n").encode("utf-8")).hexdigest()
+
+
+def _signer_allowed(signed_by: str, self_signed: bool, allow_self_signed: bool, required_signers: list[str]) -> tuple[bool, str]:
+    if required_signers and signed_by not in required_signers:
+        return False, "signer_not_required"
+    if self_signed and not allow_self_signed:
+        return False, "self_signed_not_allowed"
+    return True, "trusted"
+
+
+def verify_profile_file(path: Path, kind: str, allow_self_signed: bool = True, required_signers: list[str] | None = None) -> dict:
+    required_signers = required_signers or []
+    prefix = _prefix_for_kind(kind)
+    data = _read_env(path)
+    result = {
+        "kind": kind,
+        "path": str(path),
+        "exists": path.exists(),
+        "status": data.get(f"{prefix}_STATUS", ""),
+        "signed": data.get(f"{prefix}_SIGNED", "0"),
+        "should_be_signed": data.get(f"{prefix}_SHOULD_BE_SIGNED", ""),
+        "signed_by": data.get(f"{prefix}_SIGNED_BY", ""),
+        "self_signed": data.get(f"{prefix}_SELF_SIGNED", "0"),
+        "expected_signature": data.get(f"{prefix}_SIGNATURE_SHA256", ""),
+        "actual_signature": "",
+        "signature_valid": False,
+        "signer_trusted": False,
+        "trust_reason": "not_checked",
+        "verified": False,
+        "error": "",
+    }
+    if not path.exists():
+        result["error"] = "missing_profile"
+        return result
+    if result["status"] != "approved" or result["should_be_signed"] != "1" or result["signed"] != "1":
+        result["error"] = "unsigned_or_candidate"
+        return result
+    result["actual_signature"] = _signature_hash(path, kind)
+    result["signature_valid"] = bool(result["expected_signature"] and result["expected_signature"] == result["actual_signature"])
+    if not result["signature_valid"]:
+        result["error"] = "signature_mismatch"
+        return result
+    self_signed = result["self_signed"] == "1" or result["signed_by"].startswith("self:")
+    trusted, reason = _signer_allowed(result["signed_by"], self_signed, allow_self_signed, required_signers)
+    result["signer_trusted"] = trusted
+    result["trust_reason"] = reason
+    if not trusted:
+        result["error"] = reason
+        return result
+    result["verified"] = True
+    result["error"] = ""
+    return result
+
+
+def verify_cmd(ns: argparse.Namespace) -> int:
+    name = safe_name(ns.name); broot = base_root(ns.out_root)
+    kinds = PROFILE_KINDS if ns.kind == "all" else (ns.kind,)
+    allow_self = str(ns.allow_self_signed).lower() not in {"0", "no", "false", "off"}
+    required = [x.strip() for x in (ns.required_signer or "").split(",") if x.strip()]
+    rows = []
+    rc = 0
+    for kind in kinds:
+        f = profile_file(broot, name, kind, approved=True)
+        r = verify_profile_file(f, kind, allow_self_signed=allow_self, required_signers=required)
+        rows.append(r)
+        if not r["verified"]:
+            rc = 1
+    if ns.json:
+        print(json.dumps({"name": name, "verified": rc == 0, "profiles": rows}, indent=2, sort_keys=True))
+    else:
+        print(f"profile: {name}")
+        print(f"verified: {1 if rc == 0 else 0}")
+        for r in rows:
+            print(f"  {r['kind']:<8} signature_valid={1 if r['signature_valid'] else 0} signer_trusted={1 if r['signer_trusted'] else 0} signed_by={r['signed_by'] or '-'} self_signed={r['self_signed'] or '0'} error={r['error'] or '-'}")
+    return rc
+
+
 def sign_profile(path: Path, kind: str, signing_key: str, self_signed: bool) -> list[str]:
-    prefix = {"seccomp":"SECPROFILE", "net":"NETPROFILE", "file":"FILEPROFILE"}[kind]
+    prefix = _prefix_for_kind(kind)
     raw_lines = path.read_text(errors="replace").splitlines()
     filtered = [ln for ln in raw_lines if not re.match(rf"^{prefix}_(STATUS|SIGNED|SIGNED_AT|SIGNED_BY|SELF_SIGNED|SIGNING_KEY|SIGNATURE_SHA256)=", ln)]
     out = []
@@ -827,6 +1025,7 @@ def main(argv=None) -> int:
     a=sub.add_parser("approve"); a.add_argument("name"); a.add_argument("--kind", choices=("all",)+PROFILE_KINDS, default="all"); a.add_argument("--out-root"); a.add_argument("--signing-key"); a.add_argument("--accept-warnings", action="store_true"); a.add_argument("--accept-risk", action="store_true"); a.add_argument("--json", action="store_true"); a.set_defaults(func=approve_cmd)
     e=sub.add_parser("explain"); e.add_argument("name"); e.add_argument("--out-root"); e.add_argument("--approved", action="store_true"); e.add_argument("--json", action="store_true"); e.set_defaults(func=explain_cmd)
     r=sub.add_parser("review"); r.add_argument("name"); r.add_argument("--out-root"); r.add_argument("--approved", action="store_true"); r.add_argument("--json", action="store_true"); r.set_defaults(func=explain_cmd)
+    v=sub.add_parser("verify"); v.add_argument("name"); v.add_argument("--kind", choices=("all",)+PROFILE_KINDS, default="all"); v.add_argument("--out-root"); v.add_argument("--allow-self-signed", default="1"); v.add_argument("--required-signer", default=""); v.add_argument("--json", action="store_true"); v.set_defaults(func=verify_cmd)
     s=sub.add_parser("show"); s.add_argument("name"); s.add_argument("--out-root"); s.add_argument("--json", action="store_true"); s.set_defaults(func=show_cmd)
     d=sub.add_parser("diff"); d.add_argument("name"); d.add_argument("profile_dir"); d.add_argument("--out-root"); d.add_argument("--json", action="store_true"); d.set_defaults(func=diff_cmd)
     ns=ap.parse_args(argv); return ns.func(ns)

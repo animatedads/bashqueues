@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
-grep -q 'QUEUEBASH_VERSION="0.17.90"' queuebash.sh || fail "version not bumped to 0.17.90"
+grep -q 'QUEUEBASH_VERSION="0.17.92"' queuebash.sh || fail "version not bumped to 0.17.92"
 grep -q 'explain|review' queuebash.sh || fail "profile explain/review route missing"
 grep -q 'approval_requires_accept_risk' bin/queue-interrogate-compile || fail "risk approval gate missing"
 grep -q 'SIGNED_BY' bin/queue-interrogate-compile || fail "signed_by stamp missing"

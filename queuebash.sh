@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.90"
+QUEUEBASH_VERSION="0.17.92"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -13859,6 +13859,11 @@ _queue_profile_command() {
                     helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate approve: helper not found: queue-interrogate-compile" >&2; return 1; }
                     QUEUEBASH_ROOT="$(_queue_root)" "$helper" approve "$@"
                     ;;
+                verify)
+                    local helper
+                    helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate verify: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" verify "$@"
+                    ;;
                 explain|review)
                     local helper
                     helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate explain: helper not found: queue-interrogate-compile" >&2; return 1; }
@@ -13875,7 +13880,7 @@ _queue_profile_command() {
                     QUEUEBASH_ROOT="$(_queue_root)" "$helper" diff "$@"
                     ;;
                 *)
-                    echo "Usage: queue profile interrogate run|repeat NAME -- command | compile DIR --name NAME | merge CAMPAIGN --name NAME | diff-runs CAMPAIGN | explain NAME | approve NAME | show NAME | diff NAME DIR" >&2
+                    echo "Usage: queue profile interrogate run|repeat NAME -- command | compile DIR --name NAME | merge CAMPAIGN --name NAME | diff-runs CAMPAIGN | explain NAME | approve NAME | verify NAME | show NAME | diff NAME DIR" >&2
                     return 2
                     ;;
             esac
@@ -13894,6 +13899,7 @@ Usage:
   queue profile interrogate diff-runs CAMPAIGN_DIR
   queue profile interrogate explain NAME [--json]
   queue profile interrogate approve NAME [--kind seccomp|net|file|all] [--signing-key KEY] [--accept-warnings] [--accept-risk]
+  queue profile interrogate verify NAME [--kind seccomp|net|file|all] [--allow-self-signed 0|1] [--required-signer NAME]
   queue profile interrogate show NAME
   queue profile interrogate diff NAME PROFILE_DIR
 EOF

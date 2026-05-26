@@ -1,3 +1,18 @@
+## 0.17.92 - profile signature verification
+
+- Added `queue profile interrogate verify NAME` to verify approved seccomp, net, and file profiles without running a job.
+- Profile verification now recomputes the tamper-evident signature hash and reports signer/self-signed trust decisions.
+- `secprofile`, `netprofile`, and `fileprofile` assets now support `allow_self_signed=0|1` and `required_signer=name[,name]` policy parameters.
+- `queue profile interrogate explain` now includes signature validity and trust state for each profile kind.
+- Added regression coverage for tamper detection, self-signed blocking, and required-signer policy.
+
+## 0.17.91 - interrogation effective user and path impact summary
+
+- Capture both environment user and effective user for interrogation runs, so `su`/root captures no longer appear as user hc3 with uid 0.
+- Carry effective-user context into candidate seccomp/net/file profiles.
+- Add path-impact classification to interrogation candidates and `queue profile interrogate explain`, summarising system bin/share/config, root home, user home, temporary runtime, device/proc and other path zones.
+- Keep the raw observed write/delete path evidence for detailed review while making privileged installer reviews readable.
+
 ## 0.17.90 - interrogation privilege context
 
 - `queue-interrogate` now stamps captured user, UID/EUID, home, queue root, and privileged/root context into each run and campaign.

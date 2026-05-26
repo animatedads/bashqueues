@@ -81,9 +81,18 @@ _run_once(){
     printf 'PROFILE_NAME=%q\n' "$name"
     printf 'PROFILE_STARTED_AT=%q\n' "$(_now_iso)"
     printf 'PROFILE_PRE_ARM_DELAY=%q\n' "$pre_arm"
-    printf 'PROFILE_CAPTURED_USER=%q\n' "${USER:-$(id -un 2>/dev/null || echo unknown)}"
-    printf 'PROFILE_CAPTURED_UID=%q\n' "$(id -u 2>/dev/null || echo unknown)"
-    printf 'PROFILE_CAPTURED_EUID=%q\n' "$EUID"
+    local env_user effective_user uid euid
+    env_user="${USER:-${LOGNAME:-unknown}}"
+    effective_user="$(id -un 2>/dev/null || echo unknown)"
+    uid="$(id -u 2>/dev/null || echo unknown)"
+    euid="$EUID"
+    printf 'PROFILE_ENV_USER=%q\n' "$env_user"
+    printf 'PROFILE_EFFECTIVE_USER=%q\n' "$effective_user"
+    # PROFILE_CAPTURED_USER is kept for compatibility, but now records the
+    # effective account rather than the possibly inherited USER environment.
+    printf 'PROFILE_CAPTURED_USER=%q\n' "$effective_user"
+    printf 'PROFILE_CAPTURED_UID=%q\n' "$uid"
+    printf 'PROFILE_CAPTURED_EUID=%q\n' "$euid"
     printf 'PROFILE_CAPTURED_HOME=%q\n' "$HOME"
     printf 'PROFILE_CAPTURED_QUEUE_ROOT=%q\n' "$(_root)"
     if [[ "$(id -u 2>/dev/null || echo 1)" == "0" || "$EUID" == "0" ]]; then

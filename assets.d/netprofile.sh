@@ -14,7 +14,7 @@ queue_asset_hints() {
     cat <<'EOF_HINTS'
 netprofile:profile_exists	target=profile name	params=profile_file=/path profile_root=/path	example=queue_class_shared_asset netprofile profile_exists wget_google	notes=Finds approved interrogation network/port profiles.
 netprofile:profile_signed	target=profile name	params=profile_file=/path profile_root=/path	example=queue_class_shared_asset netprofile profile_signed wget_google	notes=Requires SHOULD_BE_SIGNED=1, STATUS=approved, SIGNED=1.
-netprofile:profile_verified	target=profile name	params=profile_file=/path profile_root=/path	example=queue_class_shared_asset netprofile profile_verified wget_google	notes=Verifies the SHA256 stamp over the approved profile content.
+netprofile:profile_verified	target=profile name	params=profile_file=/path profile_root=/path allow_self_signed=1 required_signer=name[,name]	example=queue_class_shared_asset netprofile profile_verified wget_google allow_self_signed=0 required_signer=ops-release	notes=Verifies the SHA256 stamp and signer trust policy over the approved profile content.
 EOF_HINTS
 }
 
@@ -40,6 +40,35 @@ _queue_asset_netprofile_file() {
 _queue_asset_netprofile_get() { grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2-; }
 _queue_asset_netprofile_sig_content() { grep -Ev '^NETPROFILE_SIGNATURE_SHA256=' "$1" 2>/dev/null; }
 _queue_asset_netprofile_hash() { _queue_asset_netprofile_sig_content "$1" | sha256sum | awk '{print $1}'; }
+_queue_asset_netprofile_csv_has() {
+    local needle="$1" list="$2" x
+    IFS=',' read -r -a _queue_asset_netprofile_items <<< "$list"
+    for x in "${_queue_asset_netprofile_items[@]}"; do
+        x="${x//[[:space:]]/}"
+        [[ "$x" == "$needle" ]] && return 0
+    done
+    return 1
+}
+_queue_asset_netprofile_trust_ok() {
+    local file="$1" shift_dummy="${2:-}"; shift || true
+    local allow_self required signed_by self_signed
+    allow_self="$(queue_asset_param allow_self_signed "$@" || echo 1)"
+    required="$(queue_asset_param required_signer "$@" || true)"
+    signed_by="$(_queue_asset_netprofile_get "$file" NETPROFILE_SIGNED_BY)"
+    self_signed="$(_queue_asset_netprofile_get "$file" NETPROFILE_SELF_SIGNED)"
+    if [[ -n "$required" ]] && ! _queue_asset_netprofile_csv_has "$signed_by" "$required"; then
+        echo "asset_check_blocked: netprofile:profile_verified signer_not_required signed_by=${signed_by:-unknown} required=$required"
+        return 1
+    fi
+    case "$allow_self" in 0|no|false|off)
+        if [[ "$self_signed" == "1" || "$signed_by" == self:* ]]; then
+            echo "asset_check_blocked: netprofile:profile_verified self_signed_not_allowed signed_by=${signed_by:-unknown}"
+            return 1
+        fi
+        ;;
+    esac
+    return 0
+}
 
 queue_asset_check_netprofile_profile_exists() {
     local token="$1" name="$2" f; shift 2 || true
@@ -61,11 +90,13 @@ queue_asset_check_netprofile_profile_signed() {
 }
 
 queue_asset_check_netprofile_profile_verified() {
-    local token="$1" name="$2" f expected actual; shift 2 || true
+    local token="$1" name="$2" f expected actual signed_by; shift 2 || true
     queue_asset_check_netprofile_profile_signed "$token" "$name" "$@" >/dev/null || return 1
     f="$(_queue_asset_netprofile_file "$name" "$@" 2>/dev/null || true)"
     expected="$(_queue_asset_netprofile_get "$f" NETPROFILE_SIGNATURE_SHA256)"
     actual="$(_queue_asset_netprofile_hash "$f")"
     [[ -n "$expected" && "$expected" == "$actual" ]] || { echo "asset_check_blocked: netprofile:profile_verified signature_mismatch name=$name"; return 1; }
-    echo "asset_check_ok: netprofile:profile_verified name=$name"
+    _queue_asset_netprofile_trust_ok "$f" _ "$@" || return 1
+    signed_by="$(_queue_asset_netprofile_get "$f" NETPROFILE_SIGNED_BY)"
+    echo "asset_check_ok: netprofile:profile_verified name=$name signed_by=${signed_by:-unknown}"
 }
