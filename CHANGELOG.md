@@ -1,9 +1,18 @@
+## 0.17.75 - integrity asset gates
+
+- Added `assets.d/integrity.sh` with `integrity:file_sha256`, `integrity:manifest_verified`, and `integrity:tree_manifest_verified`.
+- Added `classes/IMMUTABLE_PAYLOAD.env` as a strict template for critical jobs that must run only against approved script/config manifests.
+- Added integrity asset documentation and static/smoke tests.
+- Manifest verification refuses manifests under `$QUEUEBASH_ROOT` by default unless `allow_user_manifest=1` is explicitly supplied.
+- Confirmed `assets.d/net_usage.sh` remains absent; `net:allowance` remains canonical in `assets.d/net.sh`.
+
 
 ## 0.17.74 - worker hotloop priority bucket dispatch fix
 
 - Store pending jobs in priority bucket directories at submit time so workers can walk pending work in priority order without repeatedly sorting/scoring the full pending set.
 - Rebucket pending jobs when `queue priority` changes PRIORITY.
-- Keep legacy `pending/*.job` discovery for queues created by older releases.
+- Normalise legacy `pending/*.job` files into priority buckets before ordered scanning, so old pending jobs keep correct priority order.
+- Remove empty priority bucket directories after rebucketing/ordered scans.
 - Move class/resource preflight to after the atomic pending-to-running claim to avoid all workers repeatedly preflighting the same top candidate.
 - Reduce expensive pending-to-running move failure diagnostics for normal multi-worker claim races.
 - Add worker priority bucket static and smoke tests.

@@ -28,7 +28,9 @@ queue priority low 150 >/dev/null
 rebucketed="$(_queue_next_job "$(date +%s)")"
 [[ "$(grep -E '^JOB_NAME=' "$rebucketed" | cut -d= -f2-)" == "low" ]] || fail "priority change did not rebucket low to first: $rebucketed"
 
-# Legacy flat pending compatibility.
+# Legacy flat pending compatibility: old pending/*.job files are normalised
+# into priority buckets before ordered scanning, so they do not remain as a
+# permanent mixed-format root-pending file.
 mkdir -p "$QUEUEBASH_ROOT/pending"
 cat > "$QUEUEBASH_ROOT/pending/legacy.job" <<'EOF'
 JOB_ID=legacy
@@ -38,9 +40,22 @@ COMMAND='echo legacy'
 STATE=pending
 EOF
 found=0
+legacy_path=""
 while IFS= read -r f; do
-  [[ "$f" == "$QUEUEBASH_ROOT/pending/legacy.job" ]] && found=1
+  case "$f" in
+    "$QUEUEBASH_ROOT/pending"/p*/legacy.job) found=1; legacy_path="$f" ;;
+  esac
 done < <(_queue_pending_job_files "$QUEUEBASH_ROOT")
-[[ "$found" -eq 1 ]] || fail "legacy flat pending job was not discovered"
+[[ "$found" -eq 1 ]] || fail "legacy flat pending job was not normalised into a priority bucket"
+[[ ! -e "$QUEUEBASH_ROOT/pending/legacy.job" ]] || fail "legacy flat pending job remained in root pending directory"
+[[ "$legacy_path" == "$QUEUEBASH_ROOT/pending/p0999999995/legacy.job" ]] || fail "legacy pending job moved to wrong bucket: $legacy_path"
+
+# Rebucketing a pending job should remove the old empty bucket.
+queue submit cleanup --priority 20 -- bash -c 'echo cleanup' >/dev/null
+cleanup_id="$(queue list --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print([j["qid"] for j in d["jobs"] if j["name"]=="cleanup"][0])')"
+[[ -d "$QUEUEBASH_ROOT/pending/p0999999980" ]] || fail "cleanup job was not submitted into priority 20 bucket"
+queue priority "$cleanup_id" 21 >/dev/null
+[[ -d "$QUEUEBASH_ROOT/pending/p0999999979" ]] || fail "cleanup job was not rebucketed to priority 21"
+[[ ! -d "$QUEUEBASH_ROOT/pending/p0999999980" ]] || fail "old empty priority bucket was not removed"
 
 echo '[PASS] worker priority bucket smoke checks pass'

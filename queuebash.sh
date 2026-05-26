@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.74"
+QUEUEBASH_VERSION="0.17.75"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -529,17 +529,35 @@ _queue_pending_path_for_priority() {
 
 _queue_pending_job_files() {
     local root="${1:-$(_queue_root)}"
-    local d f
+    local d f id pri dest
+
     shopt -s nullglob
+
+    # Compatibility normalisation: older queuebash versions stored jobs as
+    # pending/<id>.job.  Move those legacy flat files into the same priority
+    # buckets used by new submissions before producing the ordered list.  This
+    # keeps legacy pending jobs in the correct priority order and prevents the
+    # root pending directory from becoming a permanent mixed-format area.
+    for f in "$root/pending"/*.job; do
+        [[ -f "$f" ]] || continue
+        id="$(basename "$f" .job)"
+        pri="$(_queue_job_field_fast "$f" PRIORITY 2>/dev/null || echo 10)"
+        [[ "$pri" =~ ^-?[0-9]+$ ]] || pri=10
+        dest="$(_queue_pending_path_for_priority "$id" "$pri" "$root")"
+        if [[ "$f" != "$dest" ]]; then
+            mkdir -p -- "$(dirname "$dest")"
+            mv -f -- "$f" "$dest" 2>/dev/null || true
+        fi
+    done
+
     for d in "$root/pending"/p*/; do
         [[ -d "$d" ]] || continue
         for f in "$d"*.job; do
             [[ -f "$f" ]] && printf '%s\n' "$f"
         done
+        rmdir -- "$d" 2>/dev/null || true
     done
-    for f in "$root/pending"/*.job; do
-        [[ -f "$f" ]] && printf '%s\n' "$f"
-    done
+
     shopt -u nullglob
 }
 
@@ -586,27 +604,48 @@ _queue_rebucket_pending_job() {
     local f="$1"
     local pri="${2:-10}"
     local root="${3:-$(_queue_root)}"
-    local id dest
+    local id dest olddir
+
     [[ -f "$f" ]] || return 1
     _queue_job_is_pending_path "$f" "$root" || return 0
+
     id="$(basename "$f" .job)"
     dest="$(_queue_pending_path_for_priority "$id" "$pri" "$root")"
     mkdir -p -- "$(dirname "$dest")"
-    [[ "$f" == "$dest" ]] && return 0
+
+    if [[ "$f" == "$dest" ]]; then
+        return 0
+    fi
+
+    olddir="$(dirname "$f")"
     mv -f -- "$f" "$dest"
+
+    case "$olddir" in
+        "$root/pending"/p*) rmdir -- "$olddir" 2>/dev/null || true ;;
+    esac
 }
 
 _queue_move_to_pending_bucket() {
     local src="$1"
     local id="${2:-}"
     local root="${3:-$(_queue_root)}"
-    local pri dest
+    local pri dest olddir
+
     [[ -f "$src" ]] || return 1
     [[ -n "$id" ]] || id="$(basename "$src" .job)"
-    pri="$(_queue_job_pri "$src" 2>/dev/null || echo 10)"
+
+    pri="$(_queue_job_field_fast "$src" PRIORITY 2>/dev/null || echo 10)"
+    [[ "$pri" =~ ^-?[0-9]+$ ]] || pri=10
+
     dest="$(_queue_pending_path_for_priority "$id" "$pri" "$root")"
     mkdir -p -- "$(dirname "$dest")"
+
+    olddir="$(dirname "$src")"
     mv -f -- "$src" "$dest"
+
+    case "$olddir" in
+        "$root/pending"/p*) rmdir -- "$olddir" 2>/dev/null || true ;;
+    esac
 }
 
 _queue_job_field_fast() {
