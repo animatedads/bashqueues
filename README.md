@@ -3084,3 +3084,16 @@ This is only reason text. It does not satisfy policies that require a signed aut
 
 `queue system-daemon` is the root multi-user control loop. It scans user queue roots and delegates per-user `queue daemon --once --min-workers N`, so queued work is cleared by user-owned workers rather than by root. Install it with `sudo ./install-system.sh --with-daemon`.
 
+
+### Developer introspection
+
+`queue dev` provides JSON-friendly Bash introspection and function-scoped patching for dogfooding and AI-assisted maintenance:
+
+```bash
+queue dev locate FUNCTION --json
+queue dev extract FUNCTION --json
+queue dev functions --json [prefix]
+queue dev patch --file FILE --function FUNCTION --source SOURCE --json
+```
+
+See `docs/DEV_INTROSPECTION.md`.

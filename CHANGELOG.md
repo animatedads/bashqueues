@@ -1,3 +1,34 @@
+## 0.17.58 - VM and container asset suite
+
+
+## 0.17.60 - queue dev memory/context/rollback
+
+- Added `queue dev comment` for function-level AI patch comments and optional changelog sync.
+- Added `queue dev diff` for function-scoped comparison against recent semantic patch backups.
+- Added `queue dev strip` / `queue dev rollback` for function-scoped restoration from patch backups.
+- Added `queuemgr_panel.py --dev` locate/extract/functions/patch interface using Python inspect/AST.
+- Added static and smoke tests for the developer metaprogramming lifecycle.
+
+## 0.17.59 - Developer metaprogramming helpers
+
+- Added `queue dev` introspection commands for dogfood/AI-assisted maintenance.
+- Added `queue dev locate FUNCTION --json` using Bash extdebug metadata.
+- Added `queue dev extract FUNCTION --json` using Bash function reconstruction.
+- Added `queue dev functions --json [prefix]` and `queue dev scope --json`.
+- Added `queue dev patch --file FILE --function FUNCTION --source SOURCE --json`, with backup and `bash -n` safety validation before replacement.
+- Added developer introspection static/smoke tests.
+
+
+- Added Docker/Podman asset plugin: `assets.d/docker.sh`.
+- Added Kubernetes asset plugin: `assets.d/k8s.sh`.
+- Added libvirt/KVM asset plugin: `assets.d/vm.sh`.
+- Added LXC/LXD asset plugin: `assets.d/lxc.sh`.
+- Added VMware vSphere/govc asset plugin: `assets.d/vsphere.sh`.
+- Added Vagrant asset plugin: `assets.d/vagrant.sh`.
+- Added static coverage tests for all VM/container asset families.
+- Confirmed asset discovery remains metadata-only for `queue assets list --json`; the new plugins publish facilities/hints without executing probes.
+- Confirmed `assets.d/net_usage.sh` remains absent.
+
 ## 0.17.57 - Microsoft enterprise asset suite
 
 - Added first-class Microsoft-domain asset plugins: msad, entra, msfs, mscloud, exchange, teams, msdns, msca, winrm, azure, and vault.

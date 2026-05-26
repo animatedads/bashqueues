@@ -4659,10 +4659,138 @@ class PanelManager:
                 self.command_prompt(chr(k))
 
 
+
+def _dev_json_error(message: str, code: int = 1) -> None:
+    import json
+    import sys
+    print(json.dumps({"status": "error", "error": message}))
+    raise SystemExit(code)
+
+
+def _dev_locate_and_extract(target_name: str, extract: bool = False) -> None:
+    import inspect
+    import json
+    import sys
+
+    obj = globals().get(target_name)
+    if obj is None:
+        _dev_json_error(f"Target '{target_name}' not found.")
+    try:
+        lines, start_line = inspect.getsourcelines(obj)
+        file_name = inspect.getsourcefile(obj) or __file__
+        result = {
+            "target": target_name,
+            "file": file_name,
+            "line_start": start_line,
+            "line_end": start_line + len(lines) - 1,
+        }
+        if extract:
+            result["body"] = "".join(lines)
+        print(json.dumps(result))
+    except Exception as exc:
+        _dev_json_error(str(exc))
+
+
+def _dev_functions() -> None:
+    import inspect
+    import json
+
+    out = []
+    for name, obj in sorted(globals().items()):
+        if not (inspect.isfunction(obj) or inspect.isclass(obj)):
+            continue
+        try:
+            lines, start_line = inspect.getsourcelines(obj)
+            file_name = inspect.getsourcefile(obj) or __file__
+            out.append({
+                "target": name,
+                "kind": "class" if inspect.isclass(obj) else "function",
+                "file": file_name,
+                "line_start": start_line,
+                "line_end": start_line + len(lines) - 1,
+            })
+        except Exception:
+            continue
+    print(json.dumps({"targets": out}))
+
+
+def _dev_patch(target_name: str, source_file: str) -> None:
+    import ast
+    import json
+    import os
+    import shutil
+    import sys
+    from pathlib import Path
+
+    target_file = Path(__file__).resolve()
+    new_code_path = Path(source_file)
+    if not new_code_path.exists():
+        _dev_json_error("Source file not found.")
+    new_source = new_code_path.read_text()
+    if not new_source.endswith("\n"):
+        new_source += "\n"
+    original_source = target_file.read_text()
+    try:
+        tree = ast.parse(original_source)
+    except SyntaxError as exc:
+        _dev_json_error(f"Current file syntax is broken: {exc}")
+    start_lineno = None
+    end_lineno = None
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == target_name:
+            start_lineno = node.lineno
+            end_lineno = getattr(node, "end_lineno", None)
+            break
+    if start_lineno is None or end_lineno is None:
+        _dev_json_error(f"Target '{target_name}' not found in AST.")
+    lines = original_source.splitlines(keepends=True)
+    patched_source = "".join(lines[: start_lineno - 1]) + new_source + "".join(lines[end_lineno:])
+    try:
+        ast.parse(patched_source)
+    except SyntaxError as exc:
+        _dev_json_error(f"Patch rejected. Syntax error in new code: {exc}")
+    backup_path = target_file.with_name(f"{target_file.name}.bak.{os.getpid()}")
+    shutil.copy2(target_file, backup_path)
+    target_file.write_text(patched_source)
+    print(json.dumps({
+        "status": "patched",
+        "target": target_name,
+        "file": str(target_file),
+        "line_start": start_lineno,
+        "line_end": end_lineno,
+        "backup": str(backup_path),
+        "syntax_checked": True,
+    }))
+
+
+def _dev_main(argv: list[str]) -> int:
+    if not argv:
+        print("Usage: --dev functions|locate|extract|patch", file=sys.stderr)
+        return 2
+    cmd = argv[0]
+    if cmd == "functions":
+        _dev_functions()
+        return 0
+    if cmd == "locate" and len(argv) >= 2:
+        _dev_locate_and_extract(argv[1], extract=False)
+        return 0
+    if cmd == "extract" and len(argv) >= 2:
+        _dev_locate_and_extract(argv[1], extract=True)
+        return 0
+    if cmd == "patch" and len(argv) >= 3:
+        _dev_patch(argv[1], argv[2])
+        return 0
+    print("Usage: --dev functions|locate TARGET|extract TARGET|patch TARGET SOURCE", file=sys.stderr)
+    return 2
+
+
 def main() -> int:
     curses.wrapper(lambda stdscr: PanelManager(stdscr).loop())
     return 0
 
 
 if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--dev":
+        raise SystemExit(_dev_main(sys.argv[2:]))
     raise SystemExit(main())
