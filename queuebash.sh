@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.67"
+QUEUEBASH_VERSION="0.17.69"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -982,6 +982,7 @@ _queue_asset_contract_validate_helper() {
     [[ -f "$helper" ]] || { echo "asset_contract_error: helper not found: $helper"; return 1; }
 
     (
+        _queue_code_signature_check_file_for_execution "$helper" || { echo "asset_contract_error: signature failed helper=$helper"; exit 1; }
         source "$helper" >/dev/null 2>&1 || { echo "asset_contract_error: source failed helper=$helper"; exit 1; }
         _queue_asset_contract_validate_loaded "$helper" "$mode"
     )
@@ -1375,6 +1376,7 @@ _queue_asset_implied_preflight_args() {
     [[ -f "$helper" ]] || return 0
 
     (
+        _queue_code_signature_check_file_for_execution "$helper" || exit 44
         source "$helper" || exit 40
         _queue_asset_contract_validate_loaded "$helper" quiet >/dev/null || exit 43
         _queue_asset_facility_is_published "$family" "$check" || exit 41
@@ -1740,6 +1742,7 @@ _queue_asset_scan_facilities() {
             # sees EOF rather than the operator terminal.
             exec </dev/null
             export QUEUEBASH_ASSET_DISCOVERY=1
+            _queue_code_signature_check_file_for_execution "$plugin" || { echo "INVALID helper=$base signature_failed"; exit 0; }
             source "$plugin" >/dev/null 2>&1 || { echo "INVALID helper=$base source_failed"; exit 0; }
 
             if ! _queue_asset_contract_validate_loaded "$plugin" quiet >/dev/null; then
@@ -4691,6 +4694,439 @@ _queue_json_escape() {
 }
 
 
+
+
+# -------------------------------------------------------------------
+# Code/plugin signature helpers
+# -------------------------------------------------------------------
+
+_queue_code_signing_policy_candidates() {
+    local root script_dir
+    root="$(_queue_root 2>/dev/null || printf '%s' "${QUEUEBASH_ROOT:-$HOME/.queuebash}")"
+    if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+    fi
+    if [[ -n "${script_dir:-}" ]]; then
+        printf '%s\n' "$script_dir/policies.d/code-signing/default.env"
+    fi
+    printf '%s\n' \
+        "/etc/bashqueues/code-signing.env" \
+        "/etc/bashqueues/policies.d/code-signing/default.env" \
+        "$root/policies.d/code-signing/default.env" \
+        "$root/code-signing.env"
+}
+
+_queue_code_signing_source_config() {
+    local f
+    while IFS= read -r f; do
+        [[ -r "$f" ]] || continue
+        # Trusted admin policy.  This controls signature mode and trusted key hashes.
+        # shellcheck disable=SC1090
+        source "$f"
+    done < <(_queue_code_signing_policy_candidates)
+}
+
+_queue_code_signature_mode() {
+    _queue_code_signing_source_config 2>/dev/null || true
+    printf '%s\n' "${QUEUEBASH_PLUGIN_SIGNATURE_MODE:-${QUEUEBASH_CODE_SIGNATURE_MODE:-warn}}"
+}
+
+_queue_code_signature_enabled() {
+    case "$(_queue_code_signature_mode)" in off|disabled|none|0|false|no) return 1 ;; *) return 0 ;; esac
+}
+
+_queue_code_tree_default() {
+    local script_dir
+    if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+        [[ -n "$script_dir" ]] && { printf '%s\n' "$script_dir"; return 0; }
+    fi
+    pwd -P
+}
+
+_queue_code_relpath() {
+    local tree="$1" file="$2"
+    if command -v realpath >/dev/null 2>&1; then
+        realpath --relative-to="$tree" "$file" 2>/dev/null && return 0
+    fi
+    tree="$(cd "$tree" 2>/dev/null && pwd -P)" || return 1
+    file="$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)/$(basename "$file")" || return 1
+    case "$file" in
+        "$tree"/*) printf '%s
+' "${file#"$tree"/}" ;;
+        *) printf '%s
+' "$file" ;;
+    esac
+}
+
+_queue_code_sig_dir() { printf '%s/.queuebash-signatures\n' "$1"; }
+
+_queue_code_sig_file_for_rel() {
+    local tree="$1" rel="$2" digest
+    digest="$(printf '%s' "$rel" | sha256sum | awk '{print $1}')"
+    printf '%s/%s.sig.env\n' "$(_queue_code_sig_dir "$tree")" "$digest"
+}
+
+_queue_code_signature_targets() {
+    local tree="${1:-$(_queue_code_tree_default)}" f rel
+    [[ -d "$tree" ]] || return 1
+    find "$tree" \
+        \( -path "$tree/.queuebash-signatures" -o -path "$tree/.queuebash-signatures/*" -o -path "$tree/.git" -o -path "$tree/.git/*" -o -path "$tree/__pycache__" -o -path "$tree/__pycache__/*" \) -prune -o \
+        -type f \( \
+            -name 'queuebash.sh' -o -name 'install-system.sh' -o -name 'queuemgr_panel.py' -o -name 'queuemgr.sh' -o -name 'publish_to_github.sh' -o \
+            -path "$tree/assets.d/*.sh" -o -path "$tree/caps.d/*.sh" -o -path "$tree/reporters.d/*.sh" -o -path "$tree/bin/*.sh" -o -path "$tree/bin/*.py" -o \
+            -path "$tree/classes/*.env" -o -path "$tree/policies.d/*.env" -o -path "$tree/policies.d/*/*.env" -o -path "$tree/systemd/*" \
+        \) -print 2>/dev/null | while IFS= read -r f; do
+            rel="$(_queue_code_relpath "$tree" "$f")"
+            case "$rel" in *.bak.*|*.dev.lock|*.sig.env|tests/*|docs/*) continue ;; esac
+            printf '%s\n' "$f"
+        done | sort
+}
+
+_queue_code_signing_data_file() {
+    local out="$1" rel="$2" sha="$3" signer="$4"
+    {
+        printf 'QUEUEBASH-CODE-SIGNATURE-V1\n'
+        printf 'path=%s\n' "$rel"
+        printf 'sha256=%s\n' "$sha"
+        printf 'signer=%s\n' "$signer"
+    } > "$out"
+}
+
+_queue_code_key_private() {
+    local key="$1" signer_root="${2:-}"
+    if [[ -n "$signer_root" ]]; then
+        printf '%s/keys/private/%s.ed25519.pem\n' "$signer_root" "$key"
+    else
+        _queue_authorisation_private_key_file "$key"
+    fi
+}
+
+_queue_code_key_public() {
+    local key="$1" signer_root="${2:-}"
+    if [[ -n "$signer_root" ]]; then
+        printf '%s/keys/public/%s.ed25519.pub.pem\n' "$signer_root" "$key"
+    else
+        _queue_authorisation_public_key_file "$key"
+    fi
+}
+
+_queue_code_public_key_sha() {
+    local pub="$1"
+    [[ -s "$pub" ]] || return 1
+    sha256sum "$pub" | awk '{print $1}'
+}
+
+_queue_code_trusted_sha_list() {
+    _queue_code_signing_source_config 2>/dev/null || true
+    printf '%s %s\n' "${QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S:-}" "${QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256:-}"
+}
+
+_queue_code_sha_is_trusted() {
+    local sha="$1" item
+    for item in $(_queue_code_trusted_sha_list); do
+        item="${item//,/ }"
+        for part in $item; do
+            [[ "$part" == "$sha" ]] && return 0
+        done
+    done
+    return 1
+}
+
+_queue_code_sign_one() {
+    local tree="$1" file="$2" key="$3" signer_root="$4" rel sha priv pub pub_sha pub_b64 sigfile sigbin databuf sig_b64 signed_at
+    command -v openssl >/dev/null 2>&1 || { echo "queue code sign: openssl is required" >&2; return 3; }
+    rel="$(_queue_code_relpath "$tree" "$file")"
+    sha="$(sha256sum "$file" | awk '{print $1}')"
+    priv="$(_queue_code_key_private "$key" "$signer_root")"
+    pub="$(_queue_code_key_public "$key" "$signer_root")"
+    [[ -s "$priv" ]] || { echo "queue code sign: private key not found: $priv" >&2; return 1; }
+    [[ -s "$pub" ]] || { echo "queue code sign: public key not found: $pub" >&2; return 1; }
+    pub_sha="$(_queue_code_public_key_sha "$pub")" || return 1
+    pub_b64="$(base64 -w0 "$pub" 2>/dev/null || base64 "$pub" | tr -d '\n')"
+    mkdir -p "$(_queue_code_sig_dir "$tree")" || return 1
+    sigfile="$(_queue_code_sig_file_for_rel "$tree" "$rel")"
+    sigbin="${sigfile}.bin.$$"
+    databuf="${sigfile}.data.$$"
+    _queue_code_signing_data_file "$databuf" "$rel" "$sha" "$key"
+    if ! openssl pkeyutl -sign -rawin -inkey "$priv" -in "$databuf" -out "$sigbin" >/dev/null 2>&1; then
+        rm -f -- "$sigbin" "$databuf"
+        echo "queue code sign: openssl signing failed for $rel" >&2
+        return 1
+    fi
+    sig_b64="$(base64 -w0 "$sigbin" 2>/dev/null || base64 "$sigbin" | tr -d '\n')"
+    signed_at="$(TZ=Europe/London date +'%Y-%m-%dT%H:%M:%S%z')"
+    {
+        printf 'QUEUEBASH_CODE_SIGNATURE_VERSION=%q\n' "1"
+        printf 'SIGNED_PATH=%q\n' "$rel"
+        printf 'SIGNED_SHA256=%q\n' "$sha"
+        printf 'SIGNER=%q\n' "$key"
+        printf 'PUBLIC_KEY_SHA256=%q\n' "$pub_sha"
+        printf 'PUBLIC_KEY_PEM_B64=%q\n' "$pub_b64"
+        printf 'SIGNATURE_B64=%q\n' "$sig_b64"
+        printf 'SIGNED_AT=%q\n' "$signed_at"
+    } > "$sigfile"
+    rm -f -- "$sigbin" "$databuf"
+    printf '%s\n' "$sigfile"
+}
+
+_queue_code_verify_one() {
+    local tree="$1" file="$2" mode="${3:-$(_queue_code_signature_mode)}" rel sigfile current_sha data sigbin pubfile status="ok" reason="" tmpdir
+    rel="$(_queue_code_relpath "$tree" "$file")"
+    sigfile="$(_queue_code_sig_file_for_rel "$tree" "$rel")"
+    if [[ "$mode" == "off" || "$mode" == "disabled" || "$mode" == "none" || "$mode" == "0" ]]; then
+        printf 'ok\toff\t%s\t%s\n' "$rel" "$sigfile"
+        return 0
+    fi
+    if [[ ! -s "$sigfile" ]]; then
+        printf 'fail\tmissing_signature\t%s\t%s\n' "$rel" "$sigfile"
+        [[ "$mode" == "enforce" || "$mode" == "required" ]] && return 1 || return 0
+    fi
+    (
+        SIGNED_PATH="" SIGNED_SHA256="" SIGNER="" PUBLIC_KEY_SHA256="" PUBLIC_KEY_PEM_B64="" SIGNATURE_B64=""
+        source "$sigfile" >/dev/null 2>&1 || exit 10
+        [[ "$SIGNED_PATH" == "$rel" ]] || exit 11
+        current_sha="$(sha256sum "$file" | awk '{print $1}')"
+        [[ "$SIGNED_SHA256" == "$current_sha" ]] || exit 12
+        _queue_code_sha_is_trusted "$PUBLIC_KEY_SHA256" || exit 13
+        command -v openssl >/dev/null 2>&1 || exit 14
+        tmpdir="$(mktemp -d)" || exit 15
+        trap 'rm -rf "$tmpdir"' EXIT
+        printf '%s' "$PUBLIC_KEY_PEM_B64" | base64 -d > "$tmpdir/pub.pem" 2>/dev/null || exit 16
+        printf '%s' "$SIGNATURE_B64" | base64 -d > "$tmpdir/sig.bin" 2>/dev/null || exit 17
+        _queue_code_signing_data_file "$tmpdir/data" "$rel" "$SIGNED_SHA256" "$SIGNER"
+        openssl pkeyutl -verify -rawin -pubin -inkey "$tmpdir/pub.pem" -in "$tmpdir/data" -sigfile "$tmpdir/sig.bin" >/dev/null 2>&1 || exit 18
+    )
+    case "$?" in
+        0) printf 'ok\tvalid\t%s\t%s\n' "$rel" "$sigfile"; return 0 ;;
+        10) reason="signature_source_failed" ;;
+        11) reason="path_mismatch" ;;
+        12) reason="sha_mismatch" ;;
+        13) reason="untrusted_key" ;;
+        14) reason="tool_missing_openssl" ;;
+        15) reason="tmpdir_failed" ;;
+        16) reason="public_key_decode_failed" ;;
+        17) reason="signature_decode_failed" ;;
+        18) reason="crypto_verify_failed" ;;
+        *) reason="verify_error" ;;
+    esac
+    printf 'fail\t%s\t%s\t%s\n' "$reason" "$rel" "$sigfile"
+    [[ "$mode" == "enforce" || "$mode" == "required" ]] && return 1 || return 0
+}
+
+_queue_code_signature_tree_for_file() {
+    local file="$1" root script_dir
+    if [[ -n "${QUEUEBASH_CODE_SIGNATURE_TREE:-}" ]]; then
+        printf '%s
+' "$QUEUEBASH_CODE_SIGNATURE_TREE"; return 0
+    fi
+    root="$(_queue_root 2>/dev/null || printf '%s' "${QUEUEBASH_ROOT:-$HOME/.queuebash}")"
+    if [[ "$file" == "$root"/* ]]; then
+        printf '%s
+' "$root"; return 0
+    fi
+    script_dir="$(_queue_code_tree_default)"
+    if [[ "$file" == "$script_dir"/* || "$file" == "$script_dir" ]]; then
+        printf '%s
+' "$script_dir"; return 0
+    fi
+    dirname "$file"
+}
+
+_queue_code_signature_check_file_for_execution() {
+    local file="$1" mode tree result status reason rel sig
+    mode="$(_queue_code_signature_mode)"
+    case "$mode" in off|disabled|none|0|false|no) return 0 ;; esac
+    if [[ "$mode" == "warn" && "${QUEUEBASH_CODE_SIGNATURE_VERBOSE:-0}" != "1" ]]; then
+        return 0
+    fi
+    tree="$(_queue_code_signature_tree_for_file "$file")"
+    result="$(_queue_code_verify_one "$tree" "$file" "$mode" 2>/dev/null || true)"
+    IFS=$'\t' read -r status reason rel sig <<< "$result"
+    if [[ "$status" == "ok" ]]; then
+        return 0
+    fi
+    if [[ "$mode" == "enforce" || "$mode" == "required" ]]; then
+        echo "code_signature_failed: file=$file reason=${reason:-unknown}" >&2
+        return 1
+    fi
+    [[ "${QUEUEBASH_CODE_SIGNATURE_VERBOSE:-0}" == "1" ]] && echo "code_signature_warning: file=$file reason=${reason:-unknown}" >&2
+    return 0
+}
+
+_queue_code_sign_command() {
+    local tree="$(_queue_code_tree_default)" key="root" signer_root="" json=0 file all=0 count=0 rc=0 sig
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --tree) tree="${2:-}"; shift 2 ;;
+            --key|--signer) key="${2:-}"; shift 2 ;;
+            --signer-root) signer_root="${2:-}"; shift 2 ;;
+            --all) all=1; shift ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) echo "Usage: queue code sign --all [--tree DIR] [--key NAME] [--signer-root DIR] [--json]"; return 0 ;;
+            *) echo "queue code sign: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -d "$tree" ]] || { echo "queue code sign: tree not found: $tree" >&2; return 1; }
+    if [[ "$json" -eq 1 ]]; then printf '{"tree":"%s","signed":[' "$(_queue_json_escape "$tree")"; fi
+    local first=0
+    while IFS= read -r file; do
+        [[ -f "$file" ]] || continue
+        sig="$(_queue_code_sign_one "$tree" "$file" "$key" "$signer_root")" || { rc=1; continue; }
+        count=$((count+1))
+        if [[ "$json" -eq 1 ]]; then _queue_json_comma first; printf '{"file":"%s","signature":"%s"}' "$(_queue_json_escape "$file")" "$(_queue_json_escape "$sig")"; else echo "signed: $file"; fi
+    done < <(_queue_code_signature_targets "$tree")
+    if [[ "$json" -eq 1 ]]; then printf '],"count":%s}\n' "$count"; else echo "signed_count: $count"; fi
+    return "$rc"
+}
+
+_queue_code_verify_command() {
+    local tree="$(_queue_code_tree_default)" mode="" json=0 file result status reason rel sig ok=0 fail=0 rc=0 first=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --tree) tree="${2:-}"; shift 2 ;;
+            --mode|--require) mode="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) echo "Usage: queue code verify [--tree DIR] [--mode off|warn|enforce] [--json]"; return 0 ;;
+            *) echo "queue code verify: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$mode" ]] || mode="$(_queue_code_signature_mode)"
+    [[ -d "$tree" ]] || { echo "queue code verify: tree not found: $tree" >&2; return 1; }
+    if [[ "$json" -eq 1 ]]; then printf '{"tree":"%s","mode":"%s","files":[' "$(_queue_json_escape "$tree")" "$(_queue_json_escape "$mode")"; fi
+    while IFS= read -r file; do
+        result="$(_queue_code_verify_one "$tree" "$file" "$mode")" || rc=1
+        IFS=$'\t' read -r status reason rel sig <<< "$result"
+        [[ "$status" == "ok" ]] && ok=$((ok+1)) || fail=$((fail+1))
+        if [[ "$json" -eq 1 ]]; then
+            _queue_json_comma first
+            printf '{"status":"%s","reason":"%s","path":"%s","signature":"%s"}' "$(_queue_json_escape "$status")" "$(_queue_json_escape "$reason")" "$(_queue_json_escape "$rel")" "$(_queue_json_escape "$sig")"
+        else
+            printf '%-4s %-24s %s\n' "$status" "$reason" "$rel"
+        fi
+    done < <(_queue_code_signature_targets "$tree")
+    if [[ "$json" -eq 1 ]]; then printf '],"ok":%s,"fail":%s}\n' "$ok" "$fail"; else echo "ok=$ok fail=$fail mode=$mode"; fi
+    return "$rc"
+}
+
+
+_queue_code_audit_command() {
+    local tree="$(_queue_code_tree_default)" mode="" json=0 file result status reason rel sig ok=0 fail=0 first=0 rc=0
+    local signed_path signed_sha signer public_key_sha signed_at current_sha category
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --tree) tree="${2:-}"; shift 2 ;;
+            --mode|--require) mode="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) echo "Usage: queue code audit [--tree DIR] [--mode off|warn|enforce] [--json]"; return 0 ;;
+            *) echo "queue code audit: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$mode" ]] || mode="$(_queue_code_signature_mode)"
+    [[ -d "$tree" ]] || { echo "queue code audit: tree not found: $tree" >&2; return 1; }
+
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"tree":"%s","mode":"%s","components":[' "$(_queue_json_escape "$tree")" "$(_queue_json_escape "$mode")"
+    else
+        echo "queue code audit"
+        echo "tree=$tree"
+        echo "mode=$mode"
+        printf '%-5s %-22s %-12s %-56s %s\n' "stat" "reason" "component" "key_sha" "path"
+    fi
+
+    while IFS= read -r file; do
+        result="$(_queue_code_verify_one "$tree" "$file" "$mode")" || rc=1
+        IFS=$'\t' read -r status reason rel sig <<< "$result"
+        [[ "$status" == "ok" ]] && ok=$((ok+1)) || fail=$((fail+1))
+        category="core"
+        case "$rel" in
+            assets.d/*) category="asset" ;;
+            caps.d/*) category="cap" ;;
+            reporters.d/*) category="reporter" ;;
+            classes/*) category="class" ;;
+            policies.d/*) category="policy" ;;
+            bin/*) category="bin" ;;
+            systemd/*) category="systemd" ;;
+            *.py) category="python" ;;
+        esac
+        signed_path=""; signed_sha=""; signer=""; public_key_sha=""; signed_at=""; current_sha=""
+        if [[ -s "$sig" ]]; then
+            local sig_meta
+            sig_meta="$((
+                SIGNED_PATH="" SIGNED_SHA256="" SIGNER="" PUBLIC_KEY_SHA256="" SIGNED_AT=""
+                # shellcheck disable=SC1090
+                source "$sig" >/dev/null 2>&1 || exit 0
+                printf '%s\t%s\t%s\t%s\t%s\n' "$SIGNED_PATH" "$SIGNED_SHA256" "$SIGNER" "$PUBLIC_KEY_SHA256" "$SIGNED_AT"
+            ) 2>/dev/null || true)"
+            IFS=$'\t' read -r signed_path signed_sha signer public_key_sha signed_at <<< "$sig_meta"
+            current_sha="$(sha256sum "$file" 2>/dev/null | awk '{print $1}')"
+            if [[ "$json" -eq 1 ]]; then
+                _queue_json_comma first
+                printf '{"status":"%s","reason":"%s","category":"%s","path":"%s","signature":"%s","signer":"%s","public_key_sha256":"%s","signed_at":"%s","signed_sha256":"%s","current_sha256":"%s"}' \
+                    "$(_queue_json_escape "$status")" "$(_queue_json_escape "$reason")" "$(_queue_json_escape "$category")" "$(_queue_json_escape "$rel")" "$(_queue_json_escape "$sig")" \
+                    "$(_queue_json_escape "$signer")" "$(_queue_json_escape "$public_key_sha")" "$(_queue_json_escape "$signed_at")" "$(_queue_json_escape "$signed_sha")" "$(_queue_json_escape "$current_sha")"
+            else
+                printf '%-5s %-22s %-12s %-56s %s\n' "$status" "$reason" "$category" "${public_key_sha:-}" "$rel"
+            fi
+        else
+            current_sha="$(sha256sum "$file" 2>/dev/null | awk '{print $1}')"
+            if [[ "$json" -eq 1 ]]; then
+                _queue_json_comma first
+                printf '{"status":"%s","reason":"%s","category":"%s","path":"%s","signature":"%s","signer":"","public_key_sha256":"","signed_at":"","signed_sha256":"","current_sha256":"%s"}' \
+                    "$(_queue_json_escape "$status")" "$(_queue_json_escape "$reason")" "$(_queue_json_escape "$category")" "$(_queue_json_escape "$rel")" "$(_queue_json_escape "$sig")" "$(_queue_json_escape "$current_sha")"
+            else
+                printf '%-5s %-22s %-12s %-56s %s\n' "$status" "$reason" "$category" "" "$rel"
+            fi
+        fi
+    done < <(_queue_code_signature_targets "$tree")
+    if [[ "$json" -eq 1 ]]; then
+        printf '],"ok":%s,"fail":%s}\n' "$ok" "$fail"
+    else
+        echo "ok=$ok fail=$fail mode=$mode"
+    fi
+    return "$rc"
+}
+
+_queue_code_trust_command() {
+    local pub="" shared=0 policy root sha cur
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --public-key) pub="${2:-}"; shift 2 ;;
+            --shared|--system) shared=1; shift ;;
+            --personal) shared=0; shift ;;
+            --help|-h) echo "Usage: queue code trust --public-key FILE [--shared|--personal]"; return 0 ;;
+            *) [[ -z "$pub" ]] && { pub="$1"; shift; } || { echo "queue code trust: unexpected argument: $1" >&2; return 2; } ;;
+        esac
+    done
+    [[ -s "$pub" ]] || { echo "queue code trust: public key not found: $pub" >&2; return 1; }
+    sha="$(_queue_code_public_key_sha "$pub")" || return 1
+    if [[ "$shared" -eq 1 ]]; then
+        policy="/etc/bashqueues/policies.d/code-signing/default.env"
+    else
+        root="$(_queue_root)"; policy="$root/policies.d/code-signing/default.env"
+    fi
+    mkdir -p "$(dirname "$policy")"
+    touch "$policy"
+    cur="$(grep '^QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S=' "$policy" 2>/dev/null | tail -1 | sed 's/^QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S=//' | tr -d '"\047')"
+    case " $cur " in *" $sha "*) ;; *) printf '\nQUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S="%s %s"\n' "$cur" "$sha" >> "$policy" ;; esac
+    echo "trusted code signing key: $sha"
+    echo "policy: $policy"
+}
+
+_queue_code_command() {
+    local sub="${1:-verify}"
+    shift || true
+    case "$sub" in
+        sign) _queue_code_sign_command "$@" ;;
+        verify|check) _queue_code_verify_command "$@" ;;
+        audit|components|inventory) _queue_code_audit_command "$@" ;;
+        trust) _queue_code_trust_command "$@" ;;
+        policy) _queue_code_signing_source_config; echo "mode=$(_queue_code_signature_mode)"; echo "trusted_sha=$(_queue_code_trusted_sha_list)" ;;
+        help|--help|-h|"") echo "Usage: queue code sign|verify|audit|trust|policy" ;;
+        *) echo "queue code: unknown subcommand: $sub" >&2; return 2 ;;
+    esac
+}
+
 _queue_reporting_policy_candidates() {
     local root script_dir
     root="$(_queue_root)"
@@ -4738,6 +5174,7 @@ _queue_reporter_scan() {
         (
             exec </dev/null
             export QUEUEBASH_REPORTER_DISCOVERY=1
+            _queue_code_signature_check_file_for_execution "$plugin" || { echo "INVALID helper=$base signature_failed"; exit 0; }
             source "$plugin" >/dev/null 2>&1 || { echo "INVALID helper=$base source_failed"; exit 0; }
             if declare -F queue_reporter_facilities >/dev/null 2>&1; then
                 queue_reporter_facilities | awk -v helper="$base" 'NF {print $0 "\t" helper}'
@@ -4808,6 +5245,7 @@ _queue_report_event() {
                 exec </dev/null
                 export QUEUEBASH_EVENT_TS="$ts" QUEUEBASH_EVENT_NAME="$event" QUEUEBASH_EVENT_JOB_ID="$job_id" \
                     QUEUEBASH_EVENT_JOB_NAME="$job_name" QUEUEBASH_EVENT_STATE="$state" QUEUEBASH_EVENT_DETAIL="$extra"
+                _queue_code_signature_check_file_for_execution "$plugin" || exit 0
                 source "$plugin" >/dev/null 2>&1 || exit 0
                 queue_reporter_handle_event "$event" "$job_id" "$job_name" "$state" "$extra" "$ts"
             ) 2>>"$root/logs/reporters.err" || rc=1
@@ -4816,6 +5254,7 @@ _queue_report_event() {
                 exec </dev/null >/dev/null 2>>"$root/logs/reporters.err"
                 export QUEUEBASH_EVENT_TS="$ts" QUEUEBASH_EVENT_NAME="$event" QUEUEBASH_EVENT_JOB_ID="$job_id" \
                     QUEUEBASH_EVENT_JOB_NAME="$job_name" QUEUEBASH_EVENT_STATE="$state" QUEUEBASH_EVENT_DETAIL="$extra"
+                _queue_code_signature_check_file_for_execution "$plugin" || exit 0
                 source "$plugin" >/dev/null 2>&1 || exit 0
                 queue_reporter_handle_event "$event" "$job_id" "$job_name" "$state" "$extra" "$ts"
             ) &
@@ -5418,6 +5857,7 @@ _queue_cap_plugin_files() {
 _queue_cap_plugins_source_all() {
     local f
     for f in $(_queue_cap_plugin_files); do
+        _queue_code_signature_check_file_for_execution "$f" || { echo "cap_plugin_signature_failed: $f" >&2; continue; }
         source "$f" 2>/dev/null || echo "cap_plugin_source_failed: $f" >&2
     done
 }
@@ -6195,13 +6635,13 @@ _queue_authorisation_public_key_sha256_file() {
 
 _queue_authorisation_keygen() {
     local kind="${1:-authorisation}" name="" force=0 priv pub meta created pub_sha pub_b64 key_id suffix
-    [[ "$kind" == "authorisation" || "$kind" == "auth" ]] || { echo "Usage: queue keygen authorisation NAME [--force]" >&2; return 2; }
+    [[ "$kind" == "authorisation" || "$kind" == "auth" || "$kind" == "code" || "$kind" == "codesign" || "$kind" == "code-signing" ]] || { echo "Usage: queue keygen authorisation|code NAME [--force]" >&2; return 2; }
     shift || true
     name="${1:-}"; [[ -n "$name" ]] && shift || true
     while [[ "$#" -gt 0 ]]; do
         case "$1" in
             --force) force=1; shift ;;
-            *) echo "queue keygen authorisation: unexpected argument: $1" >&2; return 2 ;;
+            *) echo "queue keygen $kind: unexpected argument: $1" >&2; return 2 ;;
         esac
     done
     [[ -n "$name" ]] || name="$(id -un 2>/dev/null || echo root)"
@@ -6211,16 +6651,16 @@ _queue_authorisation_keygen() {
     pub="$(_queue_authorisation_public_key_file "$name")" || return 2
     meta="$(_queue_authorisation_key_meta_file "$name")" || return 2
     if [[ "$force" -ne 1 && ( -e "$priv" || -e "$pub" || -e "$meta" ) ]]; then
-        echo "queue keygen authorisation: key already exists: $name (use --force to replace)" >&2
+        echo "queue keygen $kind: key already exists: $name (use --force to replace)" >&2
         return 1
     fi
     mkdir -p "$(dirname "$priv")" "$(dirname "$pub")" "$(dirname "$meta")"
     chmod 0700 "$(dirname "$priv")" 2>/dev/null || true
     chmod 0755 "$(dirname "$pub")" "$(dirname "$meta")" 2>/dev/null || true
     umask 077
-    openssl genpkey -algorithm ED25519 -out "$priv" >/dev/null 2>&1 || { echo "queue keygen authorisation: openssl failed generating private key" >&2; return 1; }
+    openssl genpkey -algorithm ED25519 -out "$priv" >/dev/null 2>&1 || { echo "queue keygen $kind: openssl failed generating private key" >&2; return 1; }
     chmod 0600 "$priv" 2>/dev/null || true
-    openssl pkey -in "$priv" -pubout -out "$pub" >/dev/null 2>&1 || { rm -f "$priv"; echo "queue keygen authorisation: openssl failed deriving public key" >&2; return 1; }
+    openssl pkey -in "$priv" -pubout -out "$pub" >/dev/null 2>&1 || { rm -f "$priv"; echo "queue keygen $kind: openssl failed deriving public key" >&2; return 1; }
     chmod 0644 "$pub" 2>/dev/null || true
     created="$(date -Is 2>/dev/null || date)"
     pub_sha="$(_queue_authorisation_public_key_sha256_file "$pub")"
@@ -12845,6 +13285,16 @@ queue() {
 
         keygen)
             _queue_authorisation_keygen "$@"
+            ;;
+        code|codesign|code-signing)
+            _queue_code_command "$@"
+            ;;
+        plugins)
+            case "${1:-verify}" in
+                verify|check) shift || true; _queue_code_verify_command "$@" ;;
+                audit|components|inventory) shift || true; _queue_code_audit_command "$@" ;;
+                *) echo "Usage: queue plugins verify|audit [--tree DIR] [--mode off|warn|enforce] [--json]" >&2; return 2 ;;
+            esac
             ;;
         keys)
             case "${1:-list}" in

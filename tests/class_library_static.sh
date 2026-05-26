@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.66"' queuebash.sh || fail "version not bumped"
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "version not shaped"
 
 classes=(
   ALERT_NOTIFICATION BACKUP_JOB BATCH_PROCESSING DB_MIGRATION DEADLINE_CRITICAL

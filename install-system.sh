@@ -41,7 +41,8 @@ The installer creates/updates:
   PREFIX/bin/queue wrapper for non-interactive commands
   /etc/profile.d/bashqueues.sh for interactive shell use
   /etc/bashqueues/policies.d for shared policy files
-  /root/.queuebash/keys for the root authorisation signing key, unless disabled
+  /root/.queuebash/keys for the root authorisation/code signing key, unless disabled
+  code/plugin signature policy under /etc/bashqueues/policies.d/code-signing
 
 Cron support is optional and does not replace /usr/bin/crontab.
 The system daemon is optional and starts user-owned workers for ready queues.
@@ -130,10 +131,13 @@ policy_dir="/etc/bashqueues/policies.d"
 install -d -m 0755 "$share_dir" "$libexec_dir" "$bin_dir" /etc/bashqueues "$policy_dir"
 install -m 0755 "$src_dir/queuebash.sh" "$share_dir/queuebash.sh"
 
-for item in queuemgr_panel.py queuemgr.sh publish_to_github.sh COPYING_NOTE.md; do
+for item in queuemgr_panel.py queuemgr.sh COPYING_NOTE.md; do
   [[ -e "$src_dir/$item" ]] || continue
   install -m 0755 "$src_dir/$item" "$share_dir/$item"
 done
+# publish_to_github.sh is a local/operator helper, not a system-installed runtime component.
+# It can perform SSH/Git operations and must not be copied into /usr/local/share/bashqueues.
+rm -f -- "$share_dir/publish_to_github.sh"
 
 for dir in assets.d caps.d reporters.d classes policies.d docs bin systemd tests; do
   [[ -d "$src_dir/$dir" ]] || continue
@@ -270,8 +274,40 @@ if ! grep -q '^CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED=' "$policy_file"; t
 fi
 
 chmod 0644 "$policy_file" 2>/dev/null || true
+
+# Code/plugin signing: trust the root public key, sign the installed tree, and
+# verify it in warn mode.  Enforcement remains a site policy decision.
+code_policy="/etc/bashqueues/policies.d/code-signing/default.env"
+install -d -m 0755 "$(dirname "$code_policy")"
+if [[ ! -e "$code_policy" && -f "$share_dir/policies.d/code-signing/default.env" ]]; then
+  install -m 0644 "$share_dir/policies.d/code-signing/default.env" "$code_policy"
+elif [[ ! -e "$code_policy" ]]; then
+  cat > "$code_policy" <<'EOFCODEPOL'
+QUEUEBASH_CODE_SIGNATURE_MODE="warn"
+QUEUEBASH_PLUGIN_SIGNATURE_MODE="${QUEUEBASH_CODE_SIGNATURE_MODE}"
+QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S=""
+EOFCODEPOL
+fi
+chmod u+w "$code_policy" 2>/dev/null || true
+if ! grep -q "$sha" "$code_policy" 2>/dev/null; then
+  {
+    echo
+    echo "# Installed by bashqueues system installer: trusted root code/plugin signer."
+    existing="$(grep '^QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S=' "$code_policy" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' || true)"
+    echo "QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S=\"${existing} ${sha}\""
+  } >> "$code_policy"
+  echo "Installed ROOT public key into $code_policy for code/plugin signing"
+fi
+
+QUEUEBASH_ROOT="$queue_root" QUEUEBASH_CODE_SIGNATURE_MODE=warn queue code sign --tree "$share_dir" --key root --signer-root "$queue_root" >/dev/null || {
+  echo "warning: code signing of installed tree failed" >&2
+}
+QUEUEBASH_ROOT="$queue_root" QUEUEBASH_CODE_SIGNATURE_MODE=warn queue code verify --tree "$share_dir" --mode warn >/dev/null || {
+  echo "warning: code signature verification reported issues" >&2
+}
+
 if [[ "$lock_policy" == 1 ]]; then
-  chmod 0444 "$policy_file" 2>/dev/null || true
+  chmod 0444 "$policy_file" "$code_policy" 2>/dev/null || true
 fi
 STEP
 chmod 0755 "$work_dir/install-root-key.sh"

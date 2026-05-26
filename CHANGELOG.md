@@ -1,4 +1,22 @@
 
+## 0.17.69 - Code signing audit and installer hardening
+
+- Added `queue code audit` / `queue code components` / `queue code inventory` to display every signed component, category, signer fingerprint, signature path, and verification status for audit.
+- Added JSON audit output for programmatic compliance checks.
+- Fixed installer code-signing policy generation so trusted public key SHA256 values are always written inside `QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S="..."`.
+- Changed the system installer so `publish_to_github.sh` is not copied into `/usr/local/share/bashqueues`, and stale installed copies are removed.
+- Confirmed `assets.d/net_usage.sh` remains absent; `net:allowance` remains canonical in `assets.d/net.sh`.
+
+## 0.17.68 - Code and plugin signing
+
+- Added code/plugin signature manifest support under `.queuebash-signatures/`.
+- Added `queue code sign`, `queue code verify`, `queue code trust`, and `queue plugins verify`.
+- Added overrideable policy controls: `QUEUEBASH_CODE_SIGNATURE_MODE`, `QUEUEBASH_PLUGIN_SIGNATURE_MODE`, and trusted public key SHA256 lists.
+- Asset, cap, and reporter plugin sourcing now consults code/plugin signature policy before executing plugin code.
+- Added installer integration to verify installed code and, when a root key is available, sign the installed tree and trust the root public key.
+- Added code-signing documentation and regression tests.
+- Confirmed `assets.d/net_usage.sh` remains absent; `net:allowance` remains canonical in `assets.d/net.sh`.
+
 ## 0.17.67 - Mandatory policy assets
 
 - Added `CLASS_POLICY_MANDATORY_ASSETS` for non-bypassable asset checks required by class-statement policy.

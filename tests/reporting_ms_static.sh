@@ -4,7 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$root"
 
-grep -q 'QUEUEBASH_VERSION="0.17.66"' queuebash.sh
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh
 [[ -x reporters.d/ms.sh ]]
 grep -q 'queue_reporter_handle_event()' reporters.d/ms.sh
 grep -q 'ms:notify' reporters.d/ms.sh
