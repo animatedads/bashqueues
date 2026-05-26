@@ -133,3 +133,55 @@ python3 queuemgr_panel.py --dev symbols [TARGET]
 
 The Python patcher parses the whole file with `ast.parse()` before writing, so a
 syntax-invalid replacement is rejected without modifying the panel. The Python `symbols` command uses the built-in AST to report functions, classes, variables, constants, and string literals.
+
+## Concurrency and backup lifecycle
+
+Mutating developer commands are serialized with an OS file lock next to the target file:
+
+```bash
+<target>.dev.lock
+```
+
+The following commands take the lock before reading, patching, or writing the target:
+
+- `queue dev patch`
+- `queue dev comment`
+- `queue dev strip`
+- `queue dev rollback`
+
+`queue dev patch` and the Python panel `--dev patch` flow now build the replacement in a temporary file, validate syntax before committing it, verify the backup is readable/non-empty, and then atomically replace the target with `mv`/`os.replace`. Concurrent readers should therefore see either the old complete file or the new complete file, not a partially written file.
+
+Backup growth is bounded by:
+
+```bash
+QUEUEBASH_DEV_MAX_BACKUPS=20
+```
+
+The newest backups for each target file are retained and older `*.bak.*` files are pruned after successful mutating operations.
+
+
+## `queue dev flow` — static execution-path graph
+
+`queue dev flow` provides a lightweight static execution-path graph for Bash
+files and loaded functions. It is intended for AI-assisted impact analysis before
+patching a function.
+
+Usage:
+
+```bash
+queue dev flow --file queuebash.sh --function _queue_dev_patch --json
+queue dev flow --function _queue_dev_patch --json
+```
+
+The JSON output contains:
+
+- `nodes`: function nodes, branch nodes, and terminal `return`/`exit` nodes.
+- `edges`: `call`, `recursive-call`, `branch`, `case-pattern`, and `terminal`
+  edges.
+- `branches`: concise branch records with line numbers and source snippets.
+- `summary`: counts for functions, branches, calls, edges, and terminals.
+
+When `--file FILE --function FUNCTION` is used, the whole file is analysed so
+other functions remain visible as possible callees, while the output is scoped to
+the requested function. Heredoc bodies are masked during analysis; this avoids
+false Bash branches from embedded Python, JSON, SQL, or other inline payloads.

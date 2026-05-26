@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.61"
+QUEUEBASH_VERSION="0.17.63"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -11293,13 +11293,16 @@ Usage:
   queue dev strip --file FILE --function FUNCTION [--json]
   queue dev symbols --file FILE [--function FUNCTION] [--json]
   queue dev symbols --function FUNCTION [--json]
+  queue dev flow --file FILE [--function FUNCTION] [--json]
+  queue dev flow --function FUNCTION [--json]
 
 Developer/metaprogramming helpers for deterministic Bash introspection and safe
 function replacement. Intended for dogfood/AI-assisted maintenance; normal queue
 operations do not depend on these commands. comment/diff/strip use the .bak files
 created by queue dev patch for function-level memory, context, and rollback.
 symbols provides a lightweight static symbol table for variables, constants,
-string literals, and function membership.
+string literals, and function membership. flow provides a static execution-path
+graph of function calls and shell control nodes for AI-assisted impact analysis.
 EOF
 }
 
@@ -11449,6 +11452,23 @@ if start is None:
     print(f'function not found: {fn}', file=sys.stderr)
     sys.exit(3)
 
+
+def remove_quoted(line):
+    out=[]; sq=dq=esc=False; i=0
+    while i < len(line):
+        ch=line[i]
+        if esc:
+            esc=False; out.append(' '); i+=1; continue
+        if ch=='\\' and not sq:
+            esc=True; out.append(' '); i+=1; continue
+        if ch=="'" and not dq:
+            sq=not sq; out.append(' '); i+=1; continue
+        if ch=='"' and not sq:
+            dq=not dq; out.append(' '); i+=1; continue
+        out.append(' ' if (sq or dq) else ch)
+        i+=1
+    return ''.join(out)
+
 def brace_delta(line):
     delta = 0
     sq = dq = esc = False
@@ -11555,7 +11575,7 @@ _queue_dev_latest_backup() {
     shopt -s nullglob
     for cand in "$dir/$base".bak.*; do
         [[ -f "$cand" ]] || continue
-        case "$(basename -- "$cand")" in *.bak.comment.*) continue ;; esac
+        case "$(basename -- "$cand")" in *.bak.comment.*|*.dev.lock) continue ;; esac
         if [[ -z "$latest" || "$cand" -nt "$latest" ]]; then
             latest="$cand"
         fi
@@ -11565,8 +11585,63 @@ _queue_dev_latest_backup() {
     printf '%s\n' "$latest"
 }
 
+_queue_dev_lock() {
+    local target_file="$1" lock_file timeout_s
+    [[ -n "$target_file" ]] || { echo "queue dev: lock target required" >&2; return 2; }
+    if [[ "${QUEUEBASH_DEV_LOCK_HELD:-0}" == "1" ]]; then
+        return 0
+    fi
+    if ! command -v flock >/dev/null 2>&1; then
+        echo "queue dev: flock is required for mutating dev operations" >&2
+        return 1
+    fi
+    lock_file="${target_file}.dev.lock"
+    timeout_s="${QUEUEBASH_DEV_LOCK_TIMEOUT:-10}"
+    eval "exec 9>\"$lock_file\""
+    if ! flock -w "$timeout_s" 9; then
+        echo "queue dev: timeout acquiring lock on $target_file" >&2
+        exec 9>&- || true
+        return 1
+    fi
+}
+
+_queue_dev_unlock() {
+    if [[ "${QUEUEBASH_DEV_LOCK_HELD:-0}" == "1" ]]; then
+        return 0
+    fi
+    flock -u 9 2>/dev/null || true
+    exec 9>&- 2>/dev/null || true
+}
+
+_queue_dev_prune_backups() {
+    local target_file="$1" keep_count n=0 cand
+    keep_count="${QUEUEBASH_DEV_MAX_BACKUPS:-20}"
+    [[ "$keep_count" =~ ^[0-9]+$ ]] || keep_count=20
+    (( keep_count > 0 )) || keep_count=20
+    shopt -s nullglob
+    while IFS= read -r cand; do
+        [[ -n "$cand" && -f "$cand" ]] || continue
+        n=$((n + 1))
+        if (( n > keep_count )); then
+            rm -f -- "$cand" 2>/dev/null || true
+        fi
+    done < <(ls -1t "${target_file}.bak."* 2>/dev/null || true)
+    shopt -u nullglob
+}
+
+_queue_dev_backup_verify() {
+    local source_file="$1" backup_file="$2"
+    cp -p -- "$source_file" "$backup_file" || return 1
+    [[ -s "$backup_file" ]] || { rm -f -- "$backup_file" 2>/dev/null || true; return 1; }
+    case "$source_file" in
+        *.sh|*/queuebash.sh|*/install-system.sh|*/install.sh|*/uninstall.sh|*/publish_to_github.sh|*/queuemgr.sh)
+            bash -n "$backup_file" >/dev/null 2>/dev/null || { rm -f -- "$backup_file" 2>/dev/null || true; return 1; }
+            ;;
+    esac
+}
+
 _queue_dev_comment() {
-    local file="" fn="" message="" changelog=0 json=0 ts tmp line_start line_end backup
+    local file="" fn="" message="" changelog=0 json=0 ts tmp line_start line_end backup range locked=0
     while [[ "$#" -gt 0 ]]; do
         case "${1:-}" in
             --file) file="${2:-}"; shift 2 ;;
@@ -11581,21 +11656,30 @@ _queue_dev_comment() {
     [[ -n "$file" && -n "$fn" && -n "$message" ]] || { echo "Usage: queue dev comment --file FILE --function FUNCTION --message TEXT [--changelog] [--json]" >&2; return 2; }
     _queue_dev_valid_function_name "$fn" || { echo "queue dev comment: invalid function name: $fn" >&2; return 2; }
     [[ -f "$file" ]] || { echo "queue dev comment: target file not found: $file" >&2; return 1; }
+
+    _queue_dev_lock "$file" || return 1
+    locked=1
+
     if ! range="$(_queue_dev_file_range "$file" "$fn")"; then
-        echo "queue dev comment: function not found: $fn" >&2; return 1
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        echo "queue dev comment: function not found: $fn" >&2
+        return 1
     fi
     IFS=$'\t' read -r line_start line_end <<< "$range"
     ts="$(TZ=Europe/London date +'%Y-%m-%d %H:%M:%S %Z')"
     tmp="${file}.devcomment.$$"
     backup="${file}.bak.comment.$(date +%Y%m%d%H%M%S).$$"
-    cp -p -- "$file" "$backup" || return 1
+    if ! _queue_dev_backup_verify "$file" "$backup"; then
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        echo "queue dev comment: backup verification failed: $backup" >&2
+        return 1
+    fi
     python3 - "$file" "$tmp" "$line_start" "$ts" "$message" <<'PYDEV_COMMENT'
 import sys, pathlib
 file, out, start, ts, msg = sys.argv[1:6]
 start = int(start)
 lines = pathlib.Path(file).read_text().splitlines(True)
 comment = f"# [AI-PATCH | {ts}]: {msg}\n"
-# avoid duplicate immediately preceding identical comment
 idx = max(0, start - 1)
 if idx > 0 and lines[idx-1] == comment:
     pathlib.Path(out).write_text(''.join(lines))
@@ -11605,10 +11689,19 @@ PYDEV_COMMENT
     if ! bash -n "$tmp" >/dev/null 2>"${tmp}.syntax.err"; then
         [[ "$json" -eq 1 ]] && printf '{"status":"error","function":"%s","file":"%s","message":"syntax check failed","stderr":"%s"}\n' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "$(_queue_json_escape "$(cat "${tmp}.syntax.err" 2>/dev/null)")" || { echo "queue dev comment: syntax check failed; target not changed" >&2; cat "${tmp}.syntax.err" >&2 2>/dev/null || true; }
         rm -f -- "$tmp" "${tmp}.syntax.err" 2>/dev/null || true
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
         return 1
     fi
-    mv -- "$tmp" "$file" || { cp -p -- "$backup" "$file" 2>/dev/null || true; return 1; }
+    if ! mv -- "$tmp" "$file"; then
+        cp -p -- "$backup" "$file" 2>/dev/null || true
+        rm -f -- "$tmp" "${tmp}.syntax.err" 2>/dev/null || true
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        return 1
+    fi
     rm -f -- "${tmp}.syntax.err" 2>/dev/null || true
+    _queue_dev_prune_backups "$file"
+    [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+
     if [[ "$changelog" -eq 1 ]]; then
         printf '\n- %s — AI-PATCH %s in `%s`: %s\n' "$ts" "$fn" "$file" "$message" >> CHANGELOG.md
     fi
@@ -11659,7 +11752,7 @@ _queue_dev_diff() {
 }
 
 _queue_dev_strip() {
-    local file="" fn="" json=0 backup="" src tmp status=0 patch_json="" range line_start
+    local file="" fn="" json=0 backup="" src tmp status=0 patch_json="" range line_start locked=0
     while [[ "$#" -gt 0 ]]; do
         case "${1:-}" in
             --file) file="${2:-}"; shift 2 ;;
@@ -11672,17 +11765,34 @@ _queue_dev_strip() {
     [[ -n "$file" && -n "$fn" ]] || { echo "Usage: queue dev strip --file FILE --function FUNCTION [--json]" >&2; return 2; }
     _queue_dev_valid_function_name "$fn" || { echo "queue dev strip: invalid function name: $fn" >&2; return 2; }
     [[ -f "$file" ]] || { echo "queue dev strip: target file not found: $file" >&2; return 1; }
+
+    _queue_dev_lock "$file" || return 1
+    locked=1
+
     backup="$(_queue_dev_latest_backup "$file" 2>/dev/null || true)"
-    [[ -n "$backup" ]] || { echo "queue dev strip: no backup found for $file" >&2; return 1; }
+    if [[ -z "$backup" ]]; then
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        echo "queue dev strip: no backup found for $file" >&2
+        return 1
+    fi
     src="${file}.devstrip.source.$$"
-    _queue_dev_file_extract_to "$backup" "$fn" "$src" >/dev/null || { echo "queue dev strip: function not found in backup: $fn" >&2; rm -f -- "$src"; return 1; }
+    if ! _queue_dev_file_extract_to "$backup" "$fn" "$src" >/dev/null; then
+        rm -f -- "$src"
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        echo "queue dev strip: function not found in backup: $fn" >&2
+        return 1
+    fi
     if [[ "$json" -eq 1 ]]; then
-        patch_json="$(_queue_dev_patch --file "$file" --function "$fn" --source "$src" --json)" || status=$?
+        patch_json="$(QUEUEBASH_DEV_LOCK_HELD=1 _queue_dev_patch --file "$file" --function "$fn" --source "$src" --json)" || status=$?
     else
-        _queue_dev_patch --file "$file" --function "$fn" --source "$src" || status=$?
+        QUEUEBASH_DEV_LOCK_HELD=1 _queue_dev_patch --file "$file" --function "$fn" --source "$src" || status=$?
     fi
     rm -f -- "$src" 2>/dev/null || true
-    [[ "$status" -eq 0 ]] || { [[ "$json" -eq 1 ]] && printf '%s\n' "$patch_json"; return "$status"; }
+    if [[ "$status" -ne 0 ]]; then
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        [[ "$json" -eq 1 ]] && printf '%s\n' "$patch_json"
+        return "$status"
+    fi
     # Prune immediately adjacent AI-PATCH comments left above the restored function.
     if range="$(_queue_dev_file_range "$file" "$fn")"; then
         IFS=$'\t' read -r line_start _ <<< "$range"
@@ -11700,8 +11810,10 @@ pathlib.Path(out).write_text(''.join(lines))
 PYDEV_STRIP_COMMENT
         if bash -n "$tmp" >/dev/null 2>/dev/null; then mv -- "$tmp" "$file"; else rm -f -- "$tmp"; fi
     fi
+    _queue_dev_prune_backups "$file"
+    [[ "$locked" -eq 1 ]] && _queue_dev_unlock
     if [[ "$json" -eq 1 ]]; then
-        printf '{"status":"stripped","function":"%s","file":"%s","restored_from":"%s"}\n' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "$(_queue_json_escape "$backup")"
+        printf '{"status":"stripped","function":"%s","file":"%s","restored_from":"%s","locked":true,"atomic":true}\n' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "$(_queue_json_escape "$backup")"
     else
         echo "stripped: $fn in $file"
         echo "restored_from: $backup"
@@ -11709,7 +11821,7 @@ PYDEV_STRIP_COMMENT
 }
 
 _queue_dev_patch() {
-    local file="" fn="" source="" json=0 syntax_check=1 backup="" tmp status=0 message="patched"
+    local file="" fn="" source="" json=0 syntax_check=1 backup="" tmp status=0 message="patched" locked=0 lock_was_held=0
     while [[ "$#" -gt 0 ]]; do
         case "${1:-}" in
             --file) file="${2:-}"; shift 2 ;;
@@ -11725,6 +11837,11 @@ _queue_dev_patch() {
     _queue_dev_valid_function_name "$fn" || { echo "queue dev patch: invalid function name: $fn" >&2; return 2; }
     [[ -f "$file" ]] || { echo "queue dev patch: target file not found: $file" >&2; return 1; }
     [[ -f "$source" ]] || { echo "queue dev patch: source file not found: $source" >&2; return 1; }
+
+    lock_was_held="${QUEUEBASH_DEV_LOCK_HELD:-0}"
+    _queue_dev_lock "$file" || return 1
+    [[ "$lock_was_held" == "1" ]] || locked=1
+
     tmp="${file}.devpatch.$$"
     backup="${file}.bak.$(date +%Y%m%d%H%M%S).$$"
 
@@ -11790,7 +11907,8 @@ PYDEV_PATCH
     then
         status=$?; message="patch construction failed"
         [[ "$json" -eq 1 ]] && printf '{"status":"error","function":"%s","file":"%s","message":"%s"}\n' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "$(_queue_json_escape "$message")"
-        rm -f -- "$tmp" 2>/dev/null || true
+        rm -f -- "$tmp" "${tmp}.range" 2>/dev/null || true
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
         return "$status"
     fi > "${tmp}.range"
 
@@ -11805,17 +11923,30 @@ PYDEV_PATCH
                 cat "${tmp}.syntax.err" >&2 2>/dev/null || true
             fi
             rm -f -- "$tmp" "${tmp}.range" "${tmp}.syntax.err" 2>/dev/null || true
+            [[ "$locked" -eq 1 ]] && _queue_dev_unlock
             return 1
         fi
     fi
 
-    cp -p -- "$file" "$backup" || { rm -f -- "$tmp" "${tmp}.range" 2>/dev/null || true; return 1; }
-    mv -- "$tmp" "$file" || { cp -p -- "$backup" "$file" 2>/dev/null || true; rm -f -- "$tmp" "${tmp}.range" 2>/dev/null || true; return 1; }
+    if ! _queue_dev_backup_verify "$file" "$backup"; then
+        rm -f -- "$tmp" "${tmp}.range" "${tmp}.syntax.err" 2>/dev/null || true
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        [[ "$json" -eq 1 ]] && printf '{"status":"error","function":"%s","file":"%s","message":"backup verification failed"}\n' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" || echo "queue dev patch: backup verification failed: $backup" >&2
+        return 1
+    fi
+    if ! mv -- "$tmp" "$file"; then
+        cp -p -- "$backup" "$file" 2>/dev/null || true
+        rm -f -- "$tmp" "${tmp}.range" 2>/dev/null || true
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        return 1
+    fi
     local line_start line_end
     IFS=$'\t' read -r line_start line_end < "${tmp}.range" || true
     rm -f -- "${tmp}.range" "${tmp}.syntax.err" 2>/dev/null || true
+    _queue_dev_prune_backups "$file"
+    [[ "$locked" -eq 1 ]] && _queue_dev_unlock
     if [[ "$json" -eq 1 ]]; then
-        printf '{"status":"patched","function":"%s","file":"%s","line_start":%s,"line_end":%s,"backup":"%s","syntax_checked":%s}\n' \
+        printf '{"status":"patched","function":"%s","file":"%s","line_start":%s,"line_end":%s,"backup":"%s","syntax_checked":%s,"atomic":true,"locked":true}\n' \
             "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "${line_start:-0}" "${line_end:-0}" "$(_queue_json_escape "$backup")" "$(_queue_dev_json_bool "$syntax_check")"
     else
         echo "patched: $fn in $file"
@@ -11873,6 +12004,25 @@ except Exception as exc:
     sys.exit(1)
 lines = text.splitlines(True)
 
+def mask_heredocs(src_lines):
+    masked=[]; tag=None
+    hd_re = re.compile(r'<<-?\s*([\"\']?)([A-Za-z_][A-Za-z0-9_]*)\1')
+    for line in src_lines:
+        if tag is not None:
+            if line.strip() == tag:
+                tag = None
+                masked.append(line)
+            else:
+                masked.append('\n')
+            continue
+        masked.append(line)
+        m = hd_re.search(line)
+        if m:
+            tag = m.group(2)
+    return masked
+
+analysis_lines = mask_heredocs(lines)
+
 def strip_comment(line):
     out=[]; sq=dq=esc=False; i=0
     while i < len(line):
@@ -11909,17 +12059,17 @@ def brace_delta(line):
         i+=1
     return delta
 
-fn_start_re = re.compile(r'^\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(\s*\))?\s*\{?\s*$')
+fn_start_re = re.compile(r'^\s*(?:function\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\{.*)?|([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*(?:\{.*)?)$')
 functions=[]
 i=0
-while i < len(lines):
-    raw=strip_comment(lines[i]).rstrip('\n')
+while i < len(analysis_lines):
+    raw=strip_comment(analysis_lines[i]).rstrip('\n')
     m=fn_start_re.match(raw)
     if m and not raw.lstrip().startswith(('if ', 'for ', 'while ', 'until ', 'case ', 'select ')):
-        name=m.group(1); start=i; depth=0; seen=False; end=None
+        name=(m.group(1) or m.group(2)); start=i; depth=0; seen=('{' in raw); end=None
         j=i
-        while j < len(lines):
-            d=brace_delta(lines[j])
+        while j < len(analysis_lines):
+            d=brace_delta(analysis_lines[j])
             if d>0: seen=True
             depth += d
             if seen and depth <= 0:
@@ -11951,7 +12101,7 @@ def add_unique(lst, val):
     if val not in lst:
         lst.append(val)
 
-for idx, original in enumerate(lines, start=1):
+for idx, original in enumerate(analysis_lines, start=1):
     code=strip_comment(original).rstrip('\n')
     func=current_function(idx)
     for lm in local_re.finditer(code):
@@ -12015,6 +12165,263 @@ PYDEV_SYMBOLS
     fi
 }
 
+
+_queue_dev_flow() {
+    local file="" fn="" json=0 tmp="" source_kind="file"
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --file) file="${2:-}"; shift 2 ;;
+            --function) fn="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) _queue_dev_usage; return 0 ;;
+            *) echo "queue dev flow: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    if [[ -n "$fn" ]]; then
+        _queue_dev_valid_function_name "$fn" || { echo "queue dev flow: invalid function name: $fn" >&2; return 2; }
+    fi
+    if [[ -n "$file" ]]; then
+        [[ -f "$file" ]] || { echo "queue dev flow: target file not found: $file" >&2; return 1; }
+        if [[ -n "$fn" ]]; then
+            _queue_dev_file_extract_to "$file" "$fn" /dev/null >/dev/null || { echo "queue dev flow: function not found in file: $fn" >&2; return 1; }
+            source_kind="file_function"
+        fi
+    elif [[ -n "$fn" ]]; then
+        tmp="${TMPDIR:-/tmp}/queue-dev-flow-${fn}-$$.sh"
+        declare -f "$fn" > "$tmp" || { rm -f -- "$tmp"; echo "queue dev flow: function not loaded: $fn" >&2; return 1; }
+        file="$tmp"
+        source_kind="loaded_function"
+    else
+        echo "Usage: queue dev flow --file FILE [--function FUNCTION] [--json]" >&2
+        return 2
+    fi
+
+    local out status=0
+    out="$(python3 - "$file" "$fn" "$source_kind" <<'PYDEV_FLOW'
+import json, re, sys, pathlib
+path, requested_function, source_kind = sys.argv[1:4]
+try:
+    text = pathlib.Path(path).read_text()
+except Exception as exc:
+    print(json.dumps({"status":"error","message":f"read failed: {exc}"}))
+    sys.exit(1)
+lines = text.splitlines(True)
+
+def mask_heredocs(src_lines):
+    masked=[]; tag=None
+    hd_re = re.compile(r'<<-?\s*([\"\']?)([A-Za-z_][A-Za-z0-9_]*)\1')
+    for line in src_lines:
+        if tag is not None:
+            if line.strip() == tag:
+                tag = None
+                masked.append(line)
+            else:
+                masked.append('\n')
+            continue
+        masked.append(line)
+        m = hd_re.search(line)
+        if m:
+            tag = m.group(2)
+    return masked
+
+analysis_lines = mask_heredocs(lines)
+
+def strip_comment(line):
+    out=[]; sq=dq=esc=False; cmd_depth=0; i=0
+    while i < len(line):
+        ch=line[i]
+        nxt=line[i+1] if i+1 < len(line) else ''
+        if esc:
+            out.append(ch); esc=False; i+=1; continue
+        if ch=='\\' and not sq:
+            out.append(ch); esc=True; i+=1; continue
+        if not sq and ch=='$' and nxt=='(':
+            cmd_depth += 1; out.append(ch); out.append(nxt); i+=2; continue
+        if not sq and cmd_depth > 0 and ch==')':
+            cmd_depth -= 1; out.append(ch); i+=1; continue
+        if ch=="'" and not dq:
+            sq=not sq; out.append(ch); i+=1; continue
+        if ch=='"' and not sq:
+            # Quotes inside command substitution do not terminate the outer parse.
+            dq=not dq; out.append(ch); i+=1; continue
+        if ch=='#' and not sq and not dq:
+            break
+        out.append(ch); i+=1
+    return ''.join(out)
+
+
+def remove_quoted(line):
+    out=[]; sq=dq=esc=False; i=0
+    while i < len(line):
+        ch=line[i]
+        if esc:
+            esc=False; out.append(' '); i+=1; continue
+        if ch=='\\' and not sq:
+            esc=True; out.append(' '); i+=1; continue
+        if ch=="'" and not dq:
+            sq=not sq; out.append(' '); i+=1; continue
+        if ch=='"' and not sq:
+            dq=not dq; out.append(' '); i+=1; continue
+        out.append(' ' if (sq or dq) else ch)
+        i+=1
+    return ''.join(out)
+
+def brace_delta(line):
+    line=strip_comment(line)
+    delta=0; sq=dq=esc=False; i=0
+    while i < len(line):
+        ch=line[i]
+        if esc:
+            esc=False; i+=1; continue
+        if ch=='\\' and not sq:
+            esc=True; i+=1; continue
+        if ch=="'" and not dq:
+            sq=not sq; i+=1; continue
+        if ch=='"' and not sq:
+            dq=not dq; i+=1; continue
+        if not sq and not dq:
+            if ch=='{': delta += 1
+            elif ch=='}': delta -= 1
+        i+=1
+    return delta
+
+fn_start_re = re.compile(r'^\s*(?:function\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\{.*)?|([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*(?:\{.*)?)$')
+functions=[]
+i=0
+while i < len(analysis_lines):
+    raw=strip_comment(analysis_lines[i]).rstrip('\n')
+    m=fn_start_re.match(raw)
+    if m and not raw.lstrip().startswith(('if ', 'for ', 'while ', 'until ', 'case ', 'select ')):
+        name=(m.group(1) or m.group(2)); start=i; depth=0; seen=('{' in raw); end=None
+        j=i
+        while j < len(analysis_lines):
+            d=brace_delta(analysis_lines[j])
+            if d>0: seen=True
+            depth += d
+            if seen and depth <= 0:
+                end=j; break
+            j += 1
+        if end is not None:
+            functions.append({"id":name,"label":name,"kind":"function","line_start":start+1,"line_end":end+1})
+            i=end+1
+            continue
+    i += 1
+
+known={f['id'] for f in functions}
+if requested_function:
+    requested_ranges=[(f['line_start'], f['line_end']) for f in functions if f['id']==requested_function]
+else:
+    requested_ranges=[]
+
+def current_function(lineno):
+    for f in functions:
+        if f['line_start'] <= lineno <= f['line_end']:
+            return f['id']
+    return None
+
+def in_scope(lineno):
+    if not requested_ranges:
+        return True
+    return any(a <= lineno <= b for a,b in requested_ranges)
+
+call_token_re = re.compile(r'(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)(?=\s*(?:\(|\s|;|&&|\|\||\||&|$))')
+branch_re = re.compile(r'^\s*(if|elif|else|case|for|while|until|select)\b')
+case_pat_re = re.compile(r'^\s*([^#;][^)]{0,120})\)')
+return_re = re.compile(r'(^|[;\s])(return|exit)\b\s*([0-9]+)?')
+nodes={f['id']:f for f in functions if (not requested_function or f['id']==requested_function)}
+edges=[]; seen_edges=set(); branches=[]
+
+def add_node(nid, label, kind, line):
+    nodes.setdefault(nid, {"id":nid,"label":label,"kind":kind,"line_start":line,"line_end":line})
+
+def add_edge(src,dst,kind,line,label=None):
+    key=(src,dst,kind,line,label or '')
+    if key in seen_edges:
+        return
+    seen_edges.add(key)
+    item={"from":src,"to":dst,"kind":kind,"line":line}
+    if label:
+        item['label']=label
+    edges.append(item)
+
+for idx, original in enumerate(analysis_lines, start=1):
+    if not in_scope(idx):
+        continue
+    code=strip_comment(original).strip()
+    if not code:
+        continue
+    func=current_function(idx)
+    if not func:
+        continue
+    bm=branch_re.match(code)
+    if bm:
+        bkind=bm.group(1)
+        bid=f"{func}:L{idx}:{bkind}"
+        add_node(bid, f"{bkind} @ L{idx}", "branch", idx)
+        add_edge(func,bid,"branch",idx,bkind)
+        branches.append({"id":bid,"function":func,"kind":bkind,"line":idx,"text":code[:240]})
+    cm=case_pat_re.match(code)
+    if cm and not fn_start_re.match(code):
+        bid=f"{func}:L{idx}:case-pattern"
+        add_node(bid, f"case {cm.group(1).strip()} @ L{idx}", "branch", idx)
+        add_edge(func,bid,"case-pattern",idx,cm.group(1).strip())
+        branches.append({"id":bid,"function":func,"kind":"case-pattern","line":idx,"text":code[:240]})
+    for rm in return_re.finditer(code):
+        kind=rm.group(2); codeval=rm.group(3) or ''
+        rid=f"{func}:L{idx}:{kind}{codeval}"
+        add_node(rid, f"{kind} {codeval}".strip()+f" @ L{idx}", "terminal", idx)
+        add_edge(func,rid,"terminal",idx,(kind+' '+codeval).strip())
+    code_tokens=remove_quoted(code)
+    for m in call_token_re.finditer(code_tokens):
+        callee=m.group(1)
+        # Avoid treating a function declaration line as a call.
+        if fn_start_re.match(code):
+            continue
+        if callee == func:
+            add_edge(func,callee,"recursive-call",idx)
+        elif callee in known and callee != func:
+            add_edge(func,callee,"call",idx)
+
+callee_map={}
+for e in edges:
+    if e['kind'] in ('call','recursive-call'):
+        callee_map.setdefault(e['from'], [])
+        if e['to'] not in callee_map[e['from']]:
+            callee_map[e['from']].append(e['to'])
+for f in nodes.values():
+    if f.get('kind') == 'function':
+        f['callees']=sorted(callee_map.get(f['id'], []))
+
+result={
+    "status":"ok",
+    "file": str(pathlib.Path(path)),
+    "source_kind": source_kind,
+    "function": requested_function or None,
+    "nodes": sorted(nodes.values(), key=lambda n:(n.get('line_start',0), n.get('id',''))),
+    "edges": sorted(edges, key=lambda e:(e.get('line',0), e.get('from',''), e.get('to',''), e.get('kind',''))),
+    "branches": branches,
+    "summary": {
+        "functions": sum(1 for n in nodes.values() if n.get('kind')=='function'),
+        "branches": len(branches),
+        "edges": len(edges),
+        "calls": sum(1 for e in edges if e.get('kind') in ('call','recursive-call')),
+        "terminals": sum(1 for n in nodes.values() if n.get('kind')=='terminal'),
+    }
+}
+print(json.dumps(result, separators=(",",":")))
+PYDEV_FLOW
+)" || status=$?
+    rm -f -- "$tmp" 2>/dev/null || true
+    [[ "$status" -eq 0 ]] || { printf '%s\n' "$out"; return "$status"; }
+    if [[ "$json" -eq 1 ]]; then
+        printf '%s\n' "$out"
+    elif command -v jq >/dev/null 2>&1; then
+        printf '%s\n' "$out" | jq .
+    else
+        printf '%s\n' "$out"
+    fi
+}
+
 _queue_dev_command() {
     local sub="${1:-}"
     shift || true
@@ -12028,6 +12435,7 @@ _queue_dev_command() {
         diff) _queue_dev_diff "$@" ;;
         strip|rollback) _queue_dev_strip "$@" ;;
         symbols) _queue_dev_symbols "$@" ;;
+        flow|graph|paths) _queue_dev_flow "$@" ;;
         help|--help|-h|"") _queue_dev_usage ;;
         *) echo "queue dev: unknown subcommand: $sub" >&2; _queue_dev_usage >&2; return 2 ;;
     esac

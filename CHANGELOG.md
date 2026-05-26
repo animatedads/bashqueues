@@ -1,3 +1,18 @@
+## 0.17.63 - queue dev execution flow graph
+
+- Added `queue dev flow` / `queue dev graph` / `queue dev paths` for static function-call and branch-path analysis.
+- Flow output is JSON-first and reports function nodes, call edges, branch nodes, terminal return/exit nodes, and per-function callees.
+- Heredoc bodies are masked during flow analysis so embedded Python or other languages do not create false Bash branch noise.
+- Added regression tests for execution-flow JSON and heredoc masking.
+
+## 0.17.62 - queue dev hardening
+
+- Added `flock`-based serialization for mutating `queue dev` operations: `patch`, `comment`, `strip`, and `rollback`.
+- Made Bash `queue dev patch` use verified backups, syntax-checked temp files, and atomic `mv` replacement.
+- Added bounded backup pruning via `QUEUEBASH_DEV_MAX_BACKUPS` with a default of 20 backups per target file.
+- Hardened Python `queuemgr_panel.py --dev patch` with `fcntl.flock`, verified backups, AST validation, atomic `os.replace`, and backup pruning.
+- Added static and smoke tests for dev locking, atomic replacement, and backup lifecycle behaviour.
+
 ## 0.17.61 - queue dev symbol analysis
 
 - Added `queue dev symbols` for Bash symbol analysis over files or loaded functions.

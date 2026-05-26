@@ -4716,54 +4716,104 @@ def _dev_functions() -> None:
 
 def _dev_patch(target_name: str, source_file: str) -> None:
     import ast
+    import fcntl
     import json
     import os
     import shutil
-    import sys
+    import tempfile
+    import time
     from pathlib import Path
 
     target_file = Path(__file__).resolve()
     new_code_path = Path(source_file)
     if not new_code_path.exists():
         _dev_json_error("Source file not found.")
-    new_source = new_code_path.read_text()
-    if not new_source.endswith("\n"):
-        new_source += "\n"
-    original_source = target_file.read_text()
-    try:
-        tree = ast.parse(original_source)
-    except SyntaxError as exc:
-        _dev_json_error(f"Current file syntax is broken: {exc}")
-    start_lineno = None
-    end_lineno = None
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == target_name:
-            start_lineno = node.lineno
-            end_lineno = getattr(node, "end_lineno", None)
-            break
-    if start_lineno is None or end_lineno is None:
-        _dev_json_error(f"Target '{target_name}' not found in AST.")
-    lines = original_source.splitlines(keepends=True)
-    patched_source = "".join(lines[: start_lineno - 1]) + new_source + "".join(lines[end_lineno:])
-    try:
-        ast.parse(patched_source)
-    except SyntaxError as exc:
-        _dev_json_error(f"Patch rejected. Syntax error in new code: {exc}")
-    backup_path = target_file.with_name(f"{target_file.name}.bak.{os.getpid()}")
-    shutil.copy2(target_file, backup_path)
-    target_file.write_text(patched_source)
-    print(json.dumps({
-        "status": "patched",
-        "target": target_name,
-        "file": str(target_file),
-        "line_start": start_lineno,
-        "line_end": end_lineno,
-        "backup": str(backup_path),
-        "syntax_checked": True,
-    }))
 
+    lock_file = target_file.with_name(f"{target_file.name}.dev.lock")
+    deadline = time.monotonic() + float(os.environ.get("QUEUEBASH_DEV_LOCK_TIMEOUT", "10"))
 
+    with open(lock_file, "w", encoding="utf-8") as lock_handle:
+        while True:
+            try:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    _dev_json_error("Timeout acquiring lock. Another process is modifying the file.")
+                time.sleep(0.05)
 
+        new_source = new_code_path.read_text()
+        if not new_source.endswith("\n"):
+            new_source += "\n"
+        original_source = target_file.read_text()
+        try:
+            tree = ast.parse(original_source)
+        except SyntaxError as exc:
+            _dev_json_error(f"Current file syntax is broken: {exc}")
+        start_lineno = None
+        end_lineno = None
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == target_name:
+                start_lineno = node.lineno
+                end_lineno = getattr(node, "end_lineno", None)
+                break
+        if start_lineno is None or end_lineno is None:
+            _dev_json_error(f"Target '{target_name}' not found in AST.")
+        lines = original_source.splitlines(keepends=True)
+        patched_source = "".join(lines[: start_lineno - 1]) + new_source + "".join(lines[end_lineno:])
+        try:
+            ast.parse(patched_source)
+        except SyntaxError as exc:
+            _dev_json_error(f"Patch rejected. Syntax error in new code: {exc}")
+
+        backup_path = target_file.with_name(f"{target_file.name}.bak.{os.getpid()}.{int(time.time())}")
+        shutil.copy2(target_file, backup_path)
+        if not backup_path.exists() or backup_path.stat().st_size <= 0:
+            try:
+                backup_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            _dev_json_error("Backup verification failed.")
+        try:
+            ast.parse(backup_path.read_text())
+        except SyntaxError as exc:
+            try:
+                backup_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            _dev_json_error(f"Backup verification failed: {exc}")
+
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{target_file.name}.devpatch.", dir=str(target_file.parent), text=True)
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(patched_source)
+            os.replace(tmp_path, target_file)
+        finally:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        keep = int(os.environ.get("QUEUEBASH_DEV_MAX_BACKUPS", "20") or "20")
+        backups = sorted(target_file.parent.glob(f"{target_file.name}.bak.*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for old in backups[keep:]:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+
+        print(json.dumps({
+            "status": "patched",
+            "target": target_name,
+            "file": str(target_file),
+            "line_start": start_lineno,
+            "line_end": end_lineno,
+            "backup": str(backup_path),
+            "syntax_checked": True,
+            "locked": True,
+            "atomic": True,
+        }))
 def _dev_symbols(target_name: str | None = None) -> None:
     import ast
     import json
