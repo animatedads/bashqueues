@@ -5,6 +5,7 @@ _AZURE_TIMEOUT="${AZURE_TIMEOUT:-10}"
 
 queue_asset_facilities() {
     cat <<'FACILITIES'
+azure:auth_active	Validates that az CLI can produce an Azure Resource Manager access token
 azure:resource_exists	Validates that an Azure resource exists through ARM
 azure:vm_powerstate	Validates Azure VM power state through ARM instanceView
 azure:storage_account_access	Validates access to an Azure Blob storage account using a SAS token
@@ -13,6 +14,7 @@ FACILITIES
 
 queue_asset_hints() {
     cat <<'EOF_HINTS'
+azure:auth_active	target=subscription id or _	params=timeout=10	example=queue_class_shared_asset azure auth_active _	notes=Runs az account get-access-token for Azure Resource Manager. Does not print the token.
 azure:resource_exists	target=/subscriptions/.../resourceGroups/.../providers/...	params=access_token=...|env_file=/path/env env_key=AZURE_TOKEN timeout=10 api_version=2021-04-01	example=queue_class_shared_asset azure resource_exists /subscriptions/... env_file=/run/queuebash/azure.env env_key=AZURE_TOKEN	notes=Calls management.azure.com for the supplied resource ID.
 azure:vm_powerstate	target=/subscriptions/.../providers/Microsoft.Compute/virtualMachines/name	params=expected=running access_token=...|env_file=/path/env env_key=AZURE_TOKEN timeout=10	example=queue_class_shared_asset azure vm_powerstate /subscriptions/.../virtualMachines/vm01 expected=running env_file=/run/queuebash/azure.env env_key=AZURE_TOKEN	notes=Requires curl and jq.
 azure:storage_account_access	target=accountname	params=sas=... timeout=10	example=queue_class_shared_asset azure storage_account_access mystorage sas=$AZURE_STORAGE_SAS	notes=Lists blob service root using the supplied SAS.
@@ -29,6 +31,30 @@ _queue_asset_azure_get_token() {
         access_token="$(grep -E "^${env_key}=" "$env_file" | head -n1 | cut -d= -f2- | sed 's/^"//; s/"$//')"
     fi
     [[ -n "$access_token" ]] && printf '%s\n' "$access_token"
+}
+
+
+queue_asset_check_azure_auth_active() {
+    local token="$1" expect_subscription="$2"; shift 2 || true
+    local timeout sub_id
+    timeout="$(_queue_asset_azure_param timeout "$@" || echo "$_AZURE_TIMEOUT")"
+    if ! command -v az >/dev/null 2>&1; then
+        echo "asset_check_blocked: azure:auth_active tool_missing=az"
+        return 1
+    fi
+    timeout "$timeout" az account get-access-token --resource https://management.azure.com/ >/dev/null 2>&1 || {
+        echo "asset_check_blocked: azure:auth_active requires_az_login"
+        return 1
+    }
+    if [[ -n "$expect_subscription" && "$expect_subscription" != "_" ]]; then
+        sub_id="$(timeout "$timeout" az account show --query id -o tsv 2>/dev/null || true)"
+        [[ "$sub_id" == "$expect_subscription" ]] || {
+            echo "asset_check_blocked: azure:auth_active subscription_mismatch expected=$expect_subscription got=${sub_id:-unknown}"
+            return 1
+        }
+    fi
+    echo "asset_check_ok: $token"
+    return 0
 }
 
 queue_asset_check_azure_resource_exists() {

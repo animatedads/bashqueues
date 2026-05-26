@@ -1,3 +1,11 @@
+## 0.17.70 - Cloud sovereignty and FinOps assets
+
+- Added multi-cloud sovereignty and FinOps asset helpers: `sovereign`, `finops`, and `gcp`.
+- Added `azure:auth_active` to the existing Azure asset helper.
+- Added legal-framework policy templates mapping GDPR/HIPAA/ITAR/UK_DPA to AWS/GCP/Azure region names.
+- Added cloud workload class templates: `CLOUD_COMPUTE_GDPR`, `CLOUD_COMPUTE_ITAR`, `CLOUD_GCP_GDPR`, `CLOUD_AZURE_GDPR`, and `CLOUD_AZURE_UK_DPA`.
+- Added Prometheus textfile reporter plugin `prom:textfile` as a reporting observer, not as an asset side effect.
+- Confirmed `assets.d/net_usage.sh` remains absent; `net:allowance` remains canonical.
 
 ## 0.17.69 - Code signing audit and installer hardening
 
