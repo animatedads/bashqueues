@@ -12,6 +12,11 @@ queue dev locate FUNCTION [--json]
 queue dev extract FUNCTION [--json]
 queue dev scope [--json] [--prefix PREFIX]
 queue dev patch --file FILE --function FUNCTION --source SOURCE [--json]
+queue dev comment --file FILE --function FUNCTION --message TEXT [--changelog] [--json]
+queue dev diff --file FILE [--function FUNCTION] [--json]
+queue dev strip --file FILE --function FUNCTION [--json]
+queue dev symbols --file FILE [--function FUNCTION] [--json]
+queue dev symbols --function FUNCTION [--json]
 ```
 
 ## Locate
@@ -89,6 +94,31 @@ queue dev strip --file queuebash.sh --function _queue_worker --json
 This is intentionally function-scoped: it rolls back one semantic unit without
 throwing away unrelated edits elsewhere in the file.
 
+## Symbols
+
+`queue dev symbols` builds a lightweight static symbol table for Bash code. It is
+intended to help automated maintainers find constants, variable definitions,
+references, string literals, and the function scopes that contain them without
+falling back to fragile grep/sed scans.
+
+Examples:
+
+```bash
+queue dev symbols --file queuebash.sh --function _queue_dev_patch --json
+queue dev symbols --function _queue_worker --json
+```
+
+The JSON output includes:
+
+- `functions`: discovered Bash function ranges
+- `variables`: definitions, references, scope classification, and function membership
+- `constants`: uppercase or readonly-style variables
+- `strings`: string literals with line and function context
+
+The analyser is intentionally conservative. Bash variables assigned inside a
+function without `local` are reported as `global-write`, because Bash makes those
+visible outside the function unless explicitly declared local.
+
 ## Python panel developer mode
 
 `queuemgr_panel.py` also supports a non-curses AST/inspect developer interface:
@@ -98,7 +128,8 @@ python3 queuemgr_panel.py --dev functions
 python3 queuemgr_panel.py --dev locate main
 python3 queuemgr_panel.py --dev extract main
 python3 queuemgr_panel.py --dev patch TARGET /tmp/replacement.py
+python3 queuemgr_panel.py --dev symbols [TARGET]
 ```
 
 The Python patcher parses the whole file with `ast.parse()` before writing, so a
-syntax-invalid replacement is rejected without modifying the panel.
+syntax-invalid replacement is rejected without modifying the panel. The Python `symbols` command uses the built-in AST to report functions, classes, variables, constants, and string literals.

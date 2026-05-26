@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.60"
+QUEUEBASH_VERSION="0.17.61"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -11291,11 +11291,15 @@ Usage:
   queue dev comment --file FILE --function FUNCTION --message TEXT [--changelog] [--json]
   queue dev diff --file FILE [--function FUNCTION] [--json]
   queue dev strip --file FILE --function FUNCTION [--json]
+  queue dev symbols --file FILE [--function FUNCTION] [--json]
+  queue dev symbols --function FUNCTION [--json]
 
 Developer/metaprogramming helpers for deterministic Bash introspection and safe
 function replacement. Intended for dogfood/AI-assisted maintenance; normal queue
 operations do not depend on these commands. comment/diff/strip use the .bak files
 created by queue dev patch for function-level memory, context, and rollback.
+symbols provides a lightweight static symbol table for variables, constants,
+string literals, and function membership.
 EOF
 }
 
@@ -11820,6 +11824,197 @@ PYDEV_PATCH
     fi
 }
 
+
+_queue_dev_symbols() {
+    local file="" fn="" json=0 scope="" tmp="" source_kind="file"
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --file) file="${2:-}"; shift 2 ;;
+            --function) fn="${2:-}"; shift 2 ;;
+            --scope) scope="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) _queue_dev_usage; return 0 ;;
+            *) echo "queue dev symbols: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    if [[ -n "$scope" ]]; then
+        file="$scope"
+        source_kind="scope"
+    fi
+    if [[ -n "$fn" ]]; then
+        _queue_dev_valid_function_name "$fn" || { echo "queue dev symbols: invalid function name: $fn" >&2; return 2; }
+    fi
+    if [[ -n "$file" ]]; then
+        [[ -f "$file" ]] || { echo "queue dev symbols: target file not found: $file" >&2; return 1; }
+        if [[ -n "$fn" ]]; then
+            tmp="${TMPDIR:-/tmp}/queue-dev-symbols-${fn}-$$.sh"
+            _queue_dev_file_extract_to "$file" "$fn" "$tmp" >/dev/null || { rm -f -- "$tmp"; echo "queue dev symbols: function not found in file: $fn" >&2; return 1; }
+            file="$tmp"
+            source_kind="file_function"
+        fi
+    elif [[ -n "$fn" ]]; then
+        tmp="${TMPDIR:-/tmp}/queue-dev-symbols-${fn}-$$.sh"
+        declare -f "$fn" > "$tmp" || { rm -f -- "$tmp"; echo "queue dev symbols: function not loaded: $fn" >&2; return 1; }
+        file="$tmp"
+        source_kind="loaded_function"
+    else
+        echo "Usage: queue dev symbols --file FILE [--function FUNCTION] [--json]" >&2
+        return 2
+    fi
+
+    local out status=0
+    out="$(python3 - "$file" "$fn" "$source_kind" <<'PYDEV_SYMBOLS'
+import json, re, sys, pathlib
+path, requested_function, source_kind = sys.argv[1:4]
+try:
+    text = pathlib.Path(path).read_text()
+except Exception as exc:
+    print(json.dumps({"status":"error","message":f"read failed: {exc}"}))
+    sys.exit(1)
+lines = text.splitlines(True)
+
+def strip_comment(line):
+    out=[]; sq=dq=esc=False; i=0
+    while i < len(line):
+        ch=line[i]
+        if esc:
+            out.append(ch); esc=False; i+=1; continue
+        if ch=='\\' and not sq:
+            out.append(ch); esc=True; i+=1; continue
+        if ch=="'" and not dq:
+            sq=not sq; out.append(ch); i+=1; continue
+        if ch=='"' and not sq:
+            dq=not dq; out.append(ch); i+=1; continue
+        if ch=='#' and not sq and not dq:
+            break
+        out.append(ch); i+=1
+    return ''.join(out)
+
+def brace_delta(line):
+    line=strip_comment(line)
+    delta=0; sq=dq=esc=False; i=0
+    while i < len(line):
+        ch=line[i]
+        if esc:
+            esc=False; i+=1; continue
+        if ch=='\\' and not sq:
+            esc=True; i+=1; continue
+        if ch=="'" and not dq:
+            sq=not sq; i+=1; continue
+        if ch=='"' and not sq:
+            dq=not dq; i+=1; continue
+        if not sq and not dq:
+            if ch=='{': delta += 1
+            elif ch=='}': delta -= 1
+        i+=1
+    return delta
+
+fn_start_re = re.compile(r'^\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(\s*\))?\s*\{?\s*$')
+functions=[]
+i=0
+while i < len(lines):
+    raw=strip_comment(lines[i]).rstrip('\n')
+    m=fn_start_re.match(raw)
+    if m and not raw.lstrip().startswith(('if ', 'for ', 'while ', 'until ', 'case ', 'select ')):
+        name=m.group(1); start=i; depth=0; seen=False; end=None
+        j=i
+        while j < len(lines):
+            d=brace_delta(lines[j])
+            if d>0: seen=True
+            depth += d
+            if seen and depth <= 0:
+                end=j; break
+            j += 1
+        if end is not None:
+            functions.append({"name":name,"line_start":start+1,"line_end":end+1})
+            i=end+1
+            continue
+    i += 1
+
+def current_function(lineno):
+    for f in functions:
+        if f["line_start"] <= lineno <= f["line_end"]:
+            return f["name"]
+    return None
+
+assign_re = re.compile(r'(^|[;\s])([A-Za-z_][A-Za-z0-9_]*)\s*(\+?=)')
+local_re = re.compile(r'\b(local|declare|typeset|readonly|export)\b\s+([^#;]+)')
+ref_re = re.compile(r'\$\{?([A-Za-z_][A-Za-z0-9_]*)')
+str_re = re.compile("""(?P<q>[\"'])(?P<v>(?:\\\\.|(?!\\1).)*)(?P=q)""")
+name_re = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)(?:\+?=|$)')
+variables={}; strings=[]
+
+def var(name):
+    return variables.setdefault(name, {"definitions":[],"references":[],"defined_in":[],"referenced_in":[],"scope":"unknown","constant":False})
+
+def add_unique(lst, val):
+    if val not in lst:
+        lst.append(val)
+
+for idx, original in enumerate(lines, start=1):
+    code=strip_comment(original).rstrip('\n')
+    func=current_function(idx)
+    for lm in local_re.finditer(code):
+        kind=lm.group(1); rest=lm.group(2)
+        parts=[p for p in re.split(r'\s+', rest.strip()) if p and not p.startswith('-')]
+        for part in parts:
+            nm=name_re.match(part)
+            if not nm: continue
+            name=nm.group(1); rec=var(name)
+            rec["definitions"].append({"line":idx,"function":func,"kind":kind})
+            add_unique(rec["defined_in"], func or "global")
+            if kind == 'local':
+                rec["scope"] = "local" if rec["scope"] in ("unknown","local") else "mixed"
+            elif func is None:
+                rec["scope"] = "global" if rec["scope"] in ("unknown","global") else "mixed"
+            if kind == 'readonly' or name.isupper():
+                rec["constant"] = True
+    for am in assign_re.finditer(code):
+        name=am.group(2)
+        rec=var(name)
+        rec["definitions"].append({"line":idx,"function":func,"kind":"assignment"})
+        add_unique(rec["defined_in"], func or "global")
+        if func is None:
+            rec["scope"] = "global" if rec["scope"] in ("unknown","global") else "mixed"
+        else:
+            rec["scope"] = "global-write" if rec["scope"] in ("unknown","global-write") else rec["scope"]
+        if name.isupper(): rec["constant"] = True
+    for rm in ref_re.finditer(code):
+        name=rm.group(1); rec=var(name)
+        rec["references"].append({"line":idx,"function":func})
+        add_unique(rec["referenced_in"], func or "global")
+    for sm in str_re.finditer(code):
+        val=sm.group('v')
+        if val:
+            strings.append({"line":idx,"function":func,"quote":sm.group('q'),"value":val})
+for rec in variables.values():
+    if rec["scope"] == "unknown":
+        rec["scope"] = "referenced-only"
+constants={k:v for k,v in variables.items() if v.get("constant")}
+result={
+    "status":"ok",
+    "file": str(pathlib.Path(path)),
+    "source_kind": source_kind,
+    "function": requested_function or None,
+    "functions": functions,
+    "variables": dict(sorted(variables.items())),
+    "constants": dict(sorted(constants.items())),
+    "strings": strings,
+}
+print(json.dumps(result, separators=(",",":")))
+PYDEV_SYMBOLS
+)" || status=$?
+    rm -f -- "$tmp" 2>/dev/null || true
+    [[ "$status" -eq 0 ]] || { printf '%s\n' "$out"; return "$status"; }
+    if [[ "$json" -eq 1 ]]; then
+        printf '%s\n' "$out"
+    elif command -v jq >/dev/null 2>&1; then
+        printf '%s\n' "$out" | jq .
+    else
+        printf '%s\n' "$out"
+    fi
+}
+
 _queue_dev_command() {
     local sub="${1:-}"
     shift || true
@@ -11832,6 +12027,7 @@ _queue_dev_command() {
         comment) _queue_dev_comment "$@" ;;
         diff) _queue_dev_diff "$@" ;;
         strip|rollback) _queue_dev_strip "$@" ;;
+        symbols) _queue_dev_symbols "$@" ;;
         help|--help|-h|"") _queue_dev_usage ;;
         *) echo "queue dev: unknown subcommand: $sub" >&2; _queue_dev_usage >&2; return 2 ;;
     esac

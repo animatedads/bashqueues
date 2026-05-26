@@ -4763,9 +4763,119 @@ def _dev_patch(target_name: str, source_file: str) -> None:
     }))
 
 
+
+def _dev_symbols(target_name: str | None = None) -> None:
+    import ast
+    import json
+    from pathlib import Path
+
+    source_path = Path(__file__).resolve()
+    source = source_path.read_text()
+    tree = ast.parse(source)
+    functions = []
+    classes = []
+    variables: dict[str, dict] = {}
+    constants: dict[str, dict] = {}
+    strings = []
+    scope_stack: list[str] = []
+
+    def rec(name: str) -> dict:
+        return variables.setdefault(name, {
+            "definitions": [],
+            "references": [],
+            "defined_in": [],
+            "referenced_in": [],
+            "scope": "unknown",
+            "constant": False,
+        })
+
+    def add_unique(items: list, value):
+        if value not in items:
+            items.append(value)
+
+    def current_scope() -> str:
+        return ".".join(scope_stack) if scope_stack else "module"
+
+    class Visitor(ast.NodeVisitor):
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            scope = current_scope()
+            functions.append({"name": node.name, "qualified_name": f"{scope}.{node.name}" if scope != "module" else node.name, "line_start": node.lineno, "line_end": getattr(node, "end_lineno", node.lineno)})
+            scope_stack.append(node.name)
+            self.generic_visit(node)
+            scope_stack.pop()
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            self.visit_FunctionDef(node)  # type: ignore[arg-type]
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            scope = current_scope()
+            classes.append({"name": node.name, "qualified_name": f"{scope}.{node.name}" if scope != "module" else node.name, "line_start": node.lineno, "line_end": getattr(node, "end_lineno", node.lineno)})
+            scope_stack.append(node.name)
+            self.generic_visit(node)
+            scope_stack.pop()
+
+        def visit_Assign(self, node: ast.Assign) -> None:
+            for target in node.targets:
+                self._record_target(target, node.lineno, "assignment")
+            self.generic_visit(node)
+
+        def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+            self._record_target(node.target, node.lineno, "annotation")
+            self.generic_visit(node)
+
+        def visit_AugAssign(self, node: ast.AugAssign) -> None:
+            self._record_target(node.target, node.lineno, "augassign")
+            self.generic_visit(node)
+
+        def visit_Name(self, node: ast.Name) -> None:
+            if isinstance(node.ctx, ast.Load):
+                r = rec(node.id)
+                r["references"].append({"line": node.lineno, "scope": current_scope()})
+                add_unique(r["referenced_in"], current_scope())
+            self.generic_visit(node)
+
+        def visit_Constant(self, node: ast.Constant) -> None:
+            if isinstance(node.value, str) and node.value:
+                strings.append({"line": node.lineno, "scope": current_scope(), "value": node.value})
+            self.generic_visit(node)
+
+        def _record_target(self, target, line: int, kind: str) -> None:
+            names = []
+            if isinstance(target, ast.Name):
+                names.append(target.id)
+            elif isinstance(target, (ast.Tuple, ast.List)):
+                for elt in target.elts:
+                    if isinstance(elt, ast.Name):
+                        names.append(elt.id)
+            for name in names:
+                r = rec(name)
+                scope = current_scope()
+                r["definitions"].append({"line": line, "scope": scope, "kind": kind})
+                add_unique(r["defined_in"], scope)
+                r["scope"] = "global" if scope == "module" else "local"
+                if name.isupper():
+                    r["constant"] = True
+
+    Visitor().visit(tree)
+    constants = {name: value for name, value in variables.items() if value.get("constant")}
+    result = {
+        "status": "ok",
+        "file": str(source_path),
+        "target": target_name,
+        "functions": functions,
+        "classes": classes,
+        "variables": dict(sorted(variables.items())),
+        "constants": dict(sorted(constants.items())),
+        "strings": strings,
+    }
+    if target_name:
+        result["functions"] = [f for f in functions if f["name"] == target_name or f["qualified_name"].endswith(f".{target_name}")]
+        result["classes"] = [c for c in classes if c["name"] == target_name or c["qualified_name"].endswith(f".{target_name}")]
+    print(json.dumps(result))
+
 def _dev_main(argv: list[str]) -> int:
     if not argv:
-        print("Usage: --dev functions|locate|extract|patch", file=sys.stderr)
+        print("Usage: --dev functions|locate|extract|patch|symbols", file=sys.stderr)
         return 2
     cmd = argv[0]
     if cmd == "functions":
@@ -4780,7 +4890,10 @@ def _dev_main(argv: list[str]) -> int:
     if cmd == "patch" and len(argv) >= 3:
         _dev_patch(argv[1], argv[2])
         return 0
-    print("Usage: --dev functions|locate TARGET|extract TARGET|patch TARGET SOURCE", file=sys.stderr)
+    if cmd == "symbols":
+        _dev_symbols(argv[1] if len(argv) >= 2 else None)
+        return 0
+    print("Usage: --dev functions|locate TARGET|extract TARGET|patch TARGET SOURCE|symbols [TARGET]", file=sys.stderr)
     return 2
 
 

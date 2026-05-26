@@ -1,3 +1,10 @@
+## 0.17.61 - queue dev symbol analysis
+
+- Added `queue dev symbols` for Bash symbol analysis over files or loaded functions.
+- Reports function ranges, variable definitions/references, constants, string literals, and scope classification in JSON.
+- Added `python3 queuemgr_panel.py --dev symbols [TARGET]` using Python AST analysis.
+- Added static and smoke tests for Bash/Python symbol introspection.
+
 ## 0.17.58 - VM and container asset suite
 
 
