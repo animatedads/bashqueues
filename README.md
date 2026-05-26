@@ -3097,3 +3097,8 @@ queue dev patch --file FILE --function FUNCTION --source SOURCE --json
 ```
 
 See `docs/DEV_INTROSPECTION.md`.
+
+
+## Class library and cron selector
+
+bashqueues includes common class templates for backups, batch processing, migrations, deployments, transfers, reports, alerts, sensitive exports, deadline-critical work, log housekeeping, and interactive priority jobs. The optional `bin/bashqueues-cron-class-selector.py` helper can classify cron commands when no explicit `#class`/`BASHQUEUES_CLASS` directive is present; the cron bridge still falls back to a generated strict safe class if no safe match is accepted.

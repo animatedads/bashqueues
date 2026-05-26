@@ -261,15 +261,91 @@ def _cron_class_below_minimum(user: str, qsrc: str, class_name: str) -> bool:
     return _security_sandbox_rank(sb) < _security_sandbox_rank(min_sb) or _security_seccomp_rank(sc) < _security_seccomp_rank(min_sc)
 
 
+def _cron_selector_path() -> Optional[Path]:
+    """Return the optional cron class selector path, if present and enabled."""
+    if os.environ.get("QUEUEBASH_CRON_CLASS_SELECTOR", "1").lower() in {"0", "no", "false", "off"}:
+        return None
+    configured = os.environ.get("QUEUEBASH_CRON_CLASS_SELECTOR_PATH", "")
+    candidates: List[Path] = []
+    if configured:
+        candidates.append(Path(configured))
+    here = Path(__file__).resolve()
+    candidates.extend([
+        here.parent / "bashqueues-cron-class-selector.py",
+        here.parent.parent / "bin" / "bashqueues-cron-class-selector.py",
+        Path("/usr/local/share/bashqueues/bin/bashqueues-cron-class-selector.py"),
+    ])
+    for candidate in candidates:
+        try:
+            if candidate.exists() and os.access(candidate, os.X_OK):
+                return candidate
+            if candidate.exists():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
+def _cron_select_class(user: str, command: str, qsrc: str) -> Tuple[Optional[str], int, str]:
+    """Ask the optional selector for a class. Failure is non-fatal."""
+    selector = _cron_selector_path()
+    if selector is None:
+        return None, 0, "selector disabled or not installed"
+    try:
+        min_conf = int(os.environ.get("QUEUEBASH_CRON_CLASS_SELECTOR_MIN_CONFIDENCE", "70"))
+    except ValueError:
+        min_conf = 70
+    env = os.environ.copy()
+    if qsrc:
+        env.setdefault("QUEUEBASH_SOURCE", qsrc)
+    try:
+        out = subprocess.check_output(
+            [
+                sys.executable,
+                str(selector),
+                "--command",
+                command,
+                "--user",
+                user,
+                "--json",
+                "--min-confidence",
+                str(min_conf),
+            ],
+            text=True,
+            timeout=float(os.environ.get("QUEUEBASH_CRON_CLASS_SELECTOR_TIMEOUT", "5")),
+            env=env,
+            stderr=subprocess.DEVNULL,
+        )
+        data = json.loads(out)
+        cls = str(data.get("class") or "").strip()
+        conf = int(data.get("confidence") or 0)
+        reason = str(data.get("reason") or "")
+        if cls and conf >= min_conf:
+            return cls, conf, reason
+        return None, conf, reason or "selector found no confident class"
+    except Exception as e:
+        return None, 0, f"selector_error={type(e).__name__}"
+
+
 def _resolve_cron_class(user: str, command: str, cron_source: str, line_no: int, qsrc: str, explicit_class: Optional[str], auth_code: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-    if not explicit_class:
+    if explicit_class:
+        if not _cron_class_below_minimum(user, qsrc, explicit_class):
+            return explicit_class, None
+        if _authorisation_valid_for_command(user, command, auth_code):
+            return explicit_class, auth_code
+        print(
+            f"WARN {cron_source}:{line_no}: requested class {explicit_class!r} is below crontab minimum and no command-bound authorisation matched; using generated safe cron class",
+            file=sys.stderr,
+        )
         return None, None
-    if not _cron_class_below_minimum(user, qsrc, explicit_class):
-        return explicit_class, None
-    if _authorisation_valid_for_command(user, command, auth_code):
-        return explicit_class, auth_code
+
+    selected_class, confidence, reason = _cron_select_class(user, command, qsrc)
+    if not selected_class:
+        return None, None
+    if not _cron_class_below_minimum(user, qsrc, selected_class):
+        return selected_class, None
     print(
-        f"WARN {cron_source}:{line_no}: requested class {explicit_class!r} is below crontab minimum and no command-bound authorisation matched; using generated safe cron class",
+        f"WARN {cron_source}:{line_no}: selector chose class {selected_class!r} confidence={confidence} but it is below crontab minimum; using generated safe cron class",
         file=sys.stderr,
     )
     return None, None

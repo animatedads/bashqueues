@@ -4,7 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$root"
 
-grep -q 'QUEUEBASH_VERSION="0.17.65"' queuebash.sh
+grep -q 'QUEUEBASH_VERSION="0.17.66"' queuebash.sh
 for fn in _queue_install_bundled_reporter_plugins _queue_report_event _queue_reporter_scan _queue_reporters_list_json _queue_reporting_source_config; do
     grep -q "^[[:space:]]*$fn()" queuebash.sh
  done

@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.65"
+QUEUEBASH_VERSION="0.17.67"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -2403,6 +2403,41 @@ _queue_asset_implied_preflight_for_class() {
                 ;;
         esac
     done
+
+    local policy_line policy_spec policy_asset
+    if _queue_security_policy_statement_source >/dev/null 2>&1 && [[ -n "${CLASS_POLICY_MANDATORY_ASSETS:-${CLASS_POLICY_MANDATORY_ASSET_SPECS:-}}" ]]; then
+        while IFS= read -r policy_line; do
+            [[ -n "$policy_line" ]] || continue
+            case "$policy_line" in \#*) continue ;; esac
+            policy_spec="$(_queue_policy_mandatory_asset_line_to_spec "$policy_line" || true)"
+            [[ -n "$policy_spec" ]] || continue
+            policy_asset="$(_queue_class_asset_claim_token_from_spec "$policy_spec")"
+
+            # Mandatory policy assets are deliberately evaluated outside the normal
+            # class asset loop and are never subject to queue exception overlays.
+            _queue_asset_implied_preflight_spec "$policy_spec"
+            rc="$?"
+            case "$rc" in
+                0) ;;
+                41)
+                    echo "mandatory_policy_asset_blocked: unpublished_facility asset=$policy_asset"
+                    return "$rc"
+                    ;;
+                42)
+                    echo "mandatory_policy_asset_blocked: missing_check_function asset=$policy_asset"
+                    return "$rc"
+                    ;;
+                43)
+                    echo "mandatory_policy_asset_blocked: helper_contract_failed asset=$policy_asset"
+                    return "$rc"
+                    ;;
+                *)
+                    echo "mandatory_policy_asset_blocked: asset=$policy_asset rc=$rc"
+                    return "$rc"
+                    ;;
+            esac
+        done <<< "${CLASS_POLICY_MANDATORY_ASSETS:-${CLASS_POLICY_MANDATORY_ASSET_SPECS:-}}"
+    fi
 
     return 0
 }
@@ -5752,6 +5787,47 @@ _queue_policy_words_merge_unique() {
     printf '%s\n' "$out"
 }
 
+_queue_policy_lines_merge_unique() {
+    local current="${1:-}" incoming="${2:-}" line out=""
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        case "$line" in \#*) continue ;; esac
+        if ! grep -Fxq -- "$line" <<< "$out" 2>/dev/null; then
+            out+="$line"$'\n'
+        fi
+    done <<< "$current"
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        case "$line" in \#*) continue ;; esac
+        if ! grep -Fxq -- "$line" <<< "$out" 2>/dev/null; then
+            out+="$line"$'\n'
+        fi
+    done <<< "$incoming"
+    printf '%s' "$out"
+}
+
+_queue_policy_mandatory_asset_line_to_spec() {
+    local line="${1:-}" family="" check="" target="" rest=""
+    local params=()
+    [[ -n "$line" ]] || return 1
+    case "$line" in \#*) return 1 ;; esac
+    if [[ "$line" == *$'\t'* ]]; then
+        IFS=$'\t' read -r family check target rest <<< "$line"
+        [[ -n "$family" && -n "$check" && -n "$target" ]] || return 1
+        if [[ -n "$rest" ]]; then
+            # Params are intentionally simple key=value tokens separated by spaces.
+            # Use quoted values inside policy only when the asset helper itself can
+            # handle the resulting shell word via the packed spec.
+            # shellcheck disable=SC2206
+            params=( $rest )
+        fi
+        _queue_class_asset_pack "$family" "$check" "$target" "${params[@]}"
+        return 0
+    fi
+    # Compatibility: already-packed specs may also be supplied.
+    printf '%s\n' "$line"
+}
+
 _queue_policy_requirement_rank() {
     case "${1,,}" in
         authorisation|authorization) echo 3 ;;
@@ -5812,7 +5888,7 @@ _queue_security_policy_statement_source() {
     local agg_user_sandbox="" agg_user_seccomp="" agg_exception_req="" agg_weak_req=""
     local agg_weak_sandbox="" agg_weak_seccomp="" agg_block_classes="" agg_block_hashes=""
     local agg_block_words="" agg_block_patterns="" agg_block_class_req="" agg_block_command_req=""
-    local agg_sig_req="" val
+    local agg_sig_req="" agg_mandatory_assets="" val
 
     if [[ -n "$requested" ]]; then
         file="$(_queue_policy_file class-statement "$requested" 2>/dev/null || true)"
@@ -5866,6 +5942,11 @@ _queue_security_policy_statement_source() {
         val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED)"
         agg_sig_req="$(_queue_policy_signature_requirement_max "$agg_sig_req" "$val")"
 
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_MANDATORY_ASSETS)"
+        agg_mandatory_assets="$(_queue_policy_lines_merge_unique "$agg_mandatory_assets" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_MANDATORY_ASSET_SPECS)"
+        agg_mandatory_assets="$(_queue_policy_lines_merge_unique "$agg_mandatory_assets" "$val")"
+
         # Source every discovered statement so trusted signer variables and any
         # future scalar policy knobs are visible.  Known cumulative knobs are
         # normalised back to aggregate values below so one statement cannot
@@ -5890,6 +5971,8 @@ _queue_security_policy_statement_source() {
     CLASS_POLICY_BLOCK_CLASS_REQUIRE="${agg_block_class_req:-${CLASS_POLICY_BLOCK_CLASS_REQUIRE:-authorisation}}"
     CLASS_POLICY_BLOCK_COMMAND_REQUIRE="${agg_block_command_req:-${CLASS_POLICY_BLOCK_COMMAND_REQUIRE:-authorisation}}"
     CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="${agg_sig_req:-${CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED:-if-trusted-key}}"
+    CLASS_POLICY_MANDATORY_ASSETS="$agg_mandatory_assets"
+    CLASS_POLICY_MANDATORY_ASSET_SPECS="$agg_mandatory_assets"
 }
 
 _queue_security_policy_value_in_list() {
@@ -7331,6 +7414,7 @@ _queue_policy_explain_effective_class_statement() {
     printf '  CLASS_POLICY_BLOCK_COMMAND_PATTERNS=%q\n' "${CLASS_POLICY_BLOCK_COMMAND_PATTERNS:-}"
     printf '  CLASS_POLICY_BLOCK_COMMAND_REQUIRE=%q\n' "${CLASS_POLICY_BLOCK_COMMAND_REQUIRE:-}"
     printf '  CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED=%q\n' "${CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED:-}"
+    printf '  CLASS_POLICY_MANDATORY_ASSETS=%q\n' "${CLASS_POLICY_MANDATORY_ASSETS:-${CLASS_POLICY_MANDATORY_ASSET_SPECS:-}}"
 }
 
 _queue_policy_quote_array_assignment() {

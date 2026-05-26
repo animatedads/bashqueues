@@ -1,3 +1,18 @@
+
+## 0.17.67 - Mandatory policy assets
+
+- Added `CLASS_POLICY_MANDATORY_ASSETS` for non-bypassable asset checks required by class-statement policy.
+- Mandatory policy assets are merged across active class-statement policies and evaluated after class assets without consulting queue exception overlays.
+- Added tests for mandatory policy asset pass/block behaviour.
+
+## 0.17.67 - Class library and cron selector
+
+- Added common job class library: ALERT_NOTIFICATION, BACKUP_JOB, BATCH_PROCESSING, DB_MIGRATION, DEADLINE_CRITICAL, DEPLOY_RELEASE, FILE_TRANSFER, INTERACTIVE_PRIORITY, LOG_HOUSEKEEPING, REPORT_GENERATION, and SENSITIVE_DATA_EXPORT.
+- Added optional cron class selector plugin: bin/bashqueues-cron-class-selector.py.
+- The cron ticker now asks the selector for a class when no #class/BASHQUEUES_CLASS directive is present, but still falls back to the generated strict safe cron class if the selector is absent, uncertain, or below the configured cron policy minimum.
+- Added static and smoke coverage for the class library and selector.
+- Confirmed assets.d/net_usage.sh remains absent; net:allowance remains canonical in assets.d/net.sh.
+
 ## 0.17.63 - queue dev execution flow graph
 
 ## 0.17.65 - Microsoft reporting plugin
