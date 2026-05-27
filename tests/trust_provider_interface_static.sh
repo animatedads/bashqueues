@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
-grep -q 'QUEUEBASH_VERSION="0.18.9"' queuebash.sh || fail 'version not bumped to 0.18.9'
+grep -q 'QUEUEBASH_VERSION="0.18.11"' queuebash.sh || fail 'version not bumped to 0.18.11'
 grep -q 'queue dev functions \[--file FILE\]' queuebash.sh || fail 'queue dev functions --file usage missing'
 grep -q 'queue dev extract FUNCTION \[--file FILE\]' queuebash.sh || fail 'queue dev extract --file usage missing'
 for asset in secprofile netprofile fileprofile; do

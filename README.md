@@ -3179,3 +3179,62 @@ Provider output is data, never shell.
 `queue ask` now treats destructive or retention-affecting operations as high-risk advisory work. Legitimate prompts such as approved decommissioning or customer-record retention changes are not refused by default, but the response is governed: verify authority/change ticket, legal hold/retention status, trusted authorisation/signature, class isolation/exclusive claims, approved change window, `queue explain` review, and preserved audit evidence.
 
 Destructive misuse such as `rm -rf /` through a queue is refused. Policy-bypass destructive prompts, such as bypassing `pol_blocked` to drop a database, remain policy-bypass refusals. High-risk events are recorded as `advisory_high_risk_operation` with `ticket_requested=false` and `ticket_created=false` unless a future configured reporter proves otherwise.
+
+### Policy setup wizard contract (0.18.10)
+
+0.18.10 adds `bin/queue-policy-wizard`, a conservative setup assistant for
+creating initial bashqueues policy files. This is a contract/hardening release,
+not a live provider installer.
+
+Key properties:
+
+- `--dryrun` prints the plan and generated file contents without writing files.
+- `--non-interactive` accepts deterministic defaults for CI and repeatable setup.
+- user scope writes under `~/.queuebash`; system scope writes under `/etc/queuebash`.
+- secrets are never prompted into policy files; only secret-file paths are stored.
+- AI live configuration uses `QUEUEBASH_AI_LIVE_ENABLED`, not legacy names.
+- optional ITSM settings are contract-only and do not claim ticket creation.
+- optional dogfood verification jobs are non-blocking and clearly reported.
+
+Examples:
+
+```bash
+bin/queue-policy-wizard --dryrun --non-interactive
+bin/queue-policy-wizard --dryrun --non-interactive --json
+bin/queue-policy-wizard --non-interactive --apply
+sudo bin/queue-policy-wizard --scope system --non-interactive --apply
+```
+
+See `docs/POLICY_SETUP_WIZARD.md` for the contract and generated policy paths.
+
+### IBM Cloud identity and sovereignty (0.18.11)
+
+0.18.11 adds a narrow IBM Cloud governance rail without turning IBM support into a live-everything integration.
+
+Delivered components:
+
+- `assets.d/ibm_identity.sh`
+- `classes/CLOUD_IBM_GDPR.env`
+- `classes/CLOUD_IBM_FINREG.env`
+- `classes/CLOUD_IBM_LEGAL_READONLY.env`
+- `classes/CLOUD_IBM_LEGAL_COMPLIANCE.env`
+- `docs/IBM_CLOUD_GOVERNANCE.md`
+- `policies.d/sovereign/ibm.env.example`
+
+The IBM asset family is `ibm_identity` and exposes:
+
+```text
+ibm_identity:auth_active
+ibm_identity:target_region_allowed
+```
+
+Environment knobs:
+
+```bash
+QUEUEBASH_IBM_REGION=eu-gb
+QUEUEBASH_IBM_ACCOUNT_ID=
+QUEUEBASH_IBM_RESOURCE_GROUP=
+QUEUEBASH_IBM_AUTH_REQUIRED=1
+```
+
+The release intentionally excludes IBM FinOps scraping, IBM Cloud Logs/Activity Tracker reporters, HPCS key-provider behaviour, Watson advisory, and Satellite worker identity. Those remain future provider/reporter packages.

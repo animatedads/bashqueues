@@ -1,3 +1,21 @@
+## 0.18.11 - IBM Cloud identity and sovereignty
+
+- Added `assets.d/ibm_identity.sh` as a narrow IBM Cloud identity/region asset.
+- Added IBM Cloud class templates: `CLOUD_IBM_GDPR`, `CLOUD_IBM_FINREG`, `CLOUD_IBM_LEGAL_READONLY`, and `CLOUD_IBM_LEGAL_COMPLIANCE`.
+- Added IBM Cloud region/jurisdiction mapping examples and governance documentation.
+- Added IBM static/smoke tests using a fake `ibmcloud` binary; no live IBM credentials are required.
+- Kept IBM FinOps, Cloud Logs/Activity Tracker reporters, HPCS key providers, Watson, and Satellite identity out of scope for later provider releases.
+
+## 0.18.10 - policy setup wizard contract
+
+- Added `bin/queue-policy-wizard` as a safe, deterministic setup assistant.
+- Added dry-run and non-interactive wizard modes for CI/repeatable setup.
+- Generated policy paths now use canonical `~/.queuebash` or `/etc/queuebash` roots.
+- The wizard stores secret-file paths only; it never asks for or writes secret values.
+- Added JSONL wizard audit summary schema `queuebash.policy_wizard_run.v1`.
+- Added optional, non-blocking dogfood verification job submission.
+- Added documentation and static/smoke tests for the wizard contract.
+
 ## 0.18.9 - AI high-risk operation governance
 
 - Added deterministic advisory classification for high-risk destructive or retention-affecting operations.

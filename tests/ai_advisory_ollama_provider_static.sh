@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.9"' queuebash.sh || fail 'version not bumped to 0.18.9'
+grep -q 'QUEUEBASH_VERSION="0.18.11"' queuebash.sh || fail 'version not bumped to 0.18.11'
 grep -q '0.18.2 - Ollama advisory provider failure handling' CHANGELOG.md || fail 'changelog entry missing'
 test -x bin/queue-ai-ask-ollama || fail 'ollama helper missing'
 test -f examples/providers/ai/ollama.env.example || fail 'ollama example missing'
