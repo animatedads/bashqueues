@@ -95,12 +95,14 @@ AI advisory audit records include dynamic-context metadata so operators can see 
   "context_denied": "queue_status",
   "job_ids_detected": "20260525_003929_318087748_027297_1832294",
   "job_context_collected": 1,
+  "queue_status_collected": 0,
   "redactions_applied": true,
   "tail_included": false,
   "context_bundle_sha256": "abc123",
   "response_length": 0,
+  "response_sha256": "...",
   "result": "handoff"
 }
 ```
 
-The default posture remains private: command payloads and stdout/stderr are not included in AI context. Tail/log excerpts require the separate `job_tail` context and `QUEUEBASH_AI_ALLOW_JOB_TAIL=1`; when included, audit records set `tail_included=true`.
+The default posture remains private: command payloads and stdout/stderr are not included in AI context. Queue-wide collectors set `queue_status_collected` separately from per-job `job_context_collected`. Tail/log excerpts require the separate `job_tail` context and `QUEUEBASH_AI_ALLOW_JOB_TAIL=1`; when included, audit records set `tail_included=true`. Live provider answers may also be recorded with `response_sha256` so response identity can be audited without storing the full response in the audit JSONL.

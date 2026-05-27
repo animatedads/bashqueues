@@ -20,6 +20,8 @@ grep -q 'QUEUEBASH_AI_ALLOW_JOB_TAIL' queuebash.sh || fail 'job tail gate missin
 grep -q 'dynamic_context_text' queuebash.sh || fail 'request dynamic context missing'
 grep -q 'job_ids_detected' queuebash.sh || fail 'job id request/audit field missing'
 grep -q 'job_context_collected' queuebash.sh || fail 'job context audit field missing'
+grep -q 'queue_status_collected' queuebash.sh || fail 'queue status audit/request field missing'
+grep -q 'response_sha256' queuebash.sh || fail 'response sha audit field missing'
 grep -q 'tail_included' queuebash.sh || fail 'tail audit field missing'
 grep -q 'command_payload_redacted: true' queuebash.sh || fail 'payload redaction marker missing'
 grep -q 'stdout_stderr_redacted: true' queuebash.sh || fail 'stdout/stderr redaction marker missing'

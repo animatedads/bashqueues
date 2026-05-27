@@ -12207,6 +12207,7 @@ _queue_ai_redact_question() {
 _queue_ai_audit_write() {
     local provider="$1" question="$2" decision="$3" result="$4" reason="$5" requested="$6" allowed="$7" denied="$8" response_len="${9:-0}"
     local job_ids_detected="${10:-}" job_context_collected="${11:-0}" redactions_applied="${12:-true}" tail_included="${13:-false}" context_bundle_hash="${14:-}"
+    local queue_status_collected="${15:-0}" response_sha256="${16:-}"
     local log_path log_dir ts subject qhash qred bundle_hash
     log_path="$(_queue_ai_audit_log_path)"
     log_dir="$(dirname "$log_path")"
@@ -12221,6 +12222,7 @@ _queue_ai_audit_write() {
         bundle_hash="$(printf '%s|%s|%s|%s' "$provider" "$requested" "$allowed" "$denied" | sha256sum | awk '{print $1}')"
     fi
     [[ "$job_context_collected" =~ ^[0-9]+$ ]] || job_context_collected=0
+    [[ "$queue_status_collected" =~ ^[0-9]+$ ]] || queue_status_collected=0
     [[ "$response_len" =~ ^[0-9]+$ ]] || response_len=0
     case "$redactions_applied" in true|false) ;; *) redactions_applied=true ;; esac
     case "$tail_included" in true|false) ;; *) tail_included=false ;; esac
@@ -12238,11 +12240,13 @@ _queue_ai_audit_write() {
         printf ',"context_denied":"%s"' "$(_queue_json_escape "$denied")"
         printf ',"job_ids_detected":"%s"' "$(_queue_json_escape "$job_ids_detected")"
         printf ',"job_context_collected":%s' "$job_context_collected"
+        printf ',"queue_status_collected":%s' "$queue_status_collected"
         printf ',"redactions_applied":%s' "$redactions_applied"
         printf ',"tail_included":%s' "$tail_included"
         printf ',"policy_decision":"%s"' "$(_queue_json_escape "$decision")"
         printf ',"context_bundle_sha256":"%s"' "$(_queue_json_escape "$bundle_hash")"
         printf ',"response_length":%s' "$response_len"
+        [[ -n "$response_sha256" ]] && printf ',"response_sha256":"%s"' "$(_queue_json_escape "$response_sha256")"
         [[ -n "$reason" ]] && printf ',"reason":"%s"' "$(_queue_json_escape "$reason")"
         printf ',"result":"%s"' "$(_queue_json_escape "$result")"
         printf '}\n'
@@ -12410,7 +12414,7 @@ _queue_ai_job_status_text() {
 _queue_ai_build_dynamic_context() {
     local question="$1" allowed_s="$2" denied_s="$3"
     local -a allowed_words=() job_ids=()
-    local word id include_queue=0 include_job=0 include_metadata=0 include_tail=0 job_context_count=0 tail_included=false
+    local word id include_queue=0 include_job=0 include_metadata=0 include_tail=0 job_context_count=0 queue_status_collected=0 tail_included=false
     for word in $allowed_s; do allowed_words+=("$word"); done
     _queue_ai_list_contains commands "${allowed_words[@]}" && include_queue=0
     _queue_ai_list_contains queue_status "${allowed_words[@]}" && include_queue=1
@@ -12440,7 +12444,9 @@ _queue_ai_build_dynamic_context() {
         fi
         echo
         if [[ "$include_queue" -eq 1 ]]; then
-            _queue_ai_queue_status_text
+            if _queue_ai_queue_status_text; then
+                queue_status_collected=1
+            fi
         elif [[ " $denied_s " == *" queue_status "* ]]; then
             echo "Queue status context was requested but denied by policy."
         else
@@ -12469,6 +12475,7 @@ _queue_ai_build_dynamic_context() {
         echo "Dynamic context collection summary:"
         echo "  context_denied: ${denied_s:-none}"
         echo "  job_context_collected: $job_context_count"
+        echo "  queue_status_collected: $queue_status_collected"
         echo "  tail_included: $tail_included"
         echo "  redactions_applied: true"
     }
@@ -12590,7 +12597,7 @@ EOH
     done
 
     local requested_s allowed_s denied_s qhash bundle_hash subject ts response_len provider_execution
-    local dynamic_context_text dynamic_context_hash job_ids_s job_context_collected tail_included
+    local dynamic_context_text dynamic_context_hash job_ids_s job_context_collected queue_status_collected tail_included response_sha256
     requested_s="${requested_clean[*]}"
     allowed_s="${allowed[*]}"
     denied_s="${denied[*]}"
@@ -12604,18 +12611,20 @@ EOH
     dynamic_context_hash="$(printf '%s' "$dynamic_context_text" | sha256sum | awk '{print $1}')"
     bundle_hash="$(printf '%s|%s|%s|%s|%s' "$provider" "$requested_s" "$allowed_s" "$denied_s" "$dynamic_context_hash" | sha256sum | awk '{print $1}')"
     job_context_collected="$(printf '%s\n' "$dynamic_context_text" | awk -F': ' '/job_context_collected:/ {v=$2} END {print v+0}')"
+    queue_status_collected="$(printf '%s\n' "$dynamic_context_text" | awk -F': ' '/queue_status_collected:/ {v=$2} END {print v+0}')"
     tail_included="$(printf '%s\n' "$dynamic_context_text" | awk -F': ' '/tail_included:/ {v=$2} END {if (v=="true") print "true"; else print "false"}')"
+    response_sha256=""
 
     if [[ "$live" -eq 1 ]]; then
         provider_execution="live_provider_requested"
         if [[ "${QUEUEBASH_AI_LIVE_ENABLED:-0}" != "1" ]]; then
-            _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_ai_provider_not_enabled" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+            _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_ai_provider_not_enabled" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash" "$queue_status_collected" "$response_sha256"
             echo "queue ask: blocked by policy: live_ai_provider_not_enabled" >&2
             echo "hint: export QUEUEBASH_AI_LIVE_ENABLED=1 or prefix the command with QUEUEBASH_AI_LIVE_ENABLED=1" >&2
             return 1
         fi
         if [[ "$provider" != "ollama" && "$provider" != "gemini" ]]; then
-            _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_provider_not_supported" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+            _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_provider_not_supported" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash" "$queue_status_collected" "$response_sha256"
             echo "queue ask: blocked by policy: live_provider_not_supported: $provider" >&2
             return 1
         fi
@@ -12641,7 +12650,7 @@ EOH
             fi
         fi
         if [[ -z "$helper" || ! -x "$helper" ]]; then
-            _queue_ai_audit_write "$provider" "$question" "error" "failed" "${provider}_helper_missing" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "${provider}_helper_missing" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash" "$queue_status_collected" "$response_sha256"
             echo "queue ask: $provider helper missing" >&2
             return 1
         fi
@@ -12667,6 +12676,7 @@ EOH
             printf ',"dynamic_context_text":"%s"' "$(_queue_json_escape "$dynamic_context_text")"
             printf ',"job_ids_detected":"%s"' "$(_queue_json_escape "$job_ids_s")"
             printf ',"job_context_collected":%s' "${job_context_collected:-0}"
+            printf ',"queue_status_collected":%s' "${queue_status_collected:-0}"
             printf ',"tail_included":%s' "$tail_included"
             printf ',"redactions_applied":true'
             printf ',"advisory_only":true'
@@ -12691,7 +12701,7 @@ PY
 )"
             fi
             rm -rf "$tmpdir"
-            _queue_ai_audit_write "$provider" "$question" "error" "failed" "$provider_reason" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "$provider_reason" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash" "$queue_status_collected" "$response_sha256"
             echo "queue ask: $provider provider failed: $provider_reason" >&2
             return 1
         fi
@@ -12701,7 +12711,14 @@ j=json.load(open(sys.argv[1]))
 print(len(j.get('answer_markdown','')))
 PY
 )"
-        _queue_ai_audit_write "$provider" "$question" "allow" "answered" "$success_reason" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+        response_sha256="$(python3 - "$resp_file" <<'PY' 2>/dev/null || true
+import hashlib,json,sys
+j=json.load(open(sys.argv[1]))
+answer=str(j.get('answer_markdown',''))
+print(hashlib.sha256(answer.encode('utf-8')).hexdigest())
+PY
+)"
+        _queue_ai_audit_write "$provider" "$question" "allow" "answered" "$success_reason" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash" "$queue_status_collected" "$response_sha256"
         if [[ "$json" -eq 1 ]]; then
             cat "$resp_file"
             printf '\n'
@@ -12716,7 +12733,7 @@ PY
         return 0
     fi
 
-    _queue_ai_audit_write "$provider" "$question" "allow" "handoff" "contract_only_no_live_provider_call" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+    _queue_ai_audit_write "$provider" "$question" "allow" "handoff" "contract_only_no_live_provider_call" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash" "$queue_status_collected" "$response_sha256"
     if [[ "$json" -eq 1 ]]; then
         printf '{'
         printf '"schema":"queuebash.ai_advisory.request.v1"'
@@ -12735,6 +12752,7 @@ PY
         printf ',"dynamic_context_text":"%s"' "$(_queue_json_escape "$dynamic_context_text")"
         printf ',"job_ids_detected":"%s"' "$(_queue_json_escape "$job_ids_s")"
         printf ',"job_context_collected":%s' "${job_context_collected:-0}"
+        printf ',"queue_status_collected":%s' "${queue_status_collected:-0}"
         printf ',"tail_included":%s' "$tail_included"
         printf ',"redactions_applied":true'
         printf ',"advisory_only":true'
@@ -12751,6 +12769,7 @@ PY
         echo "  context denied:   ${denied_s:-none}"
         echo "  job ids detected: ${job_ids_s:-none}"
         echo "  job context:      ${job_context_collected:-0} collected"
+        echo "  queue status:     ${queue_status_collected:-0} collected"
         echo "  tail included:    $tail_included"
         echo "  context bundle:   $bundle_hash"
         echo "  provider call:    not implemented in this contract release"

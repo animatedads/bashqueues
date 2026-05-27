@@ -247,6 +247,7 @@ The normalized request JSON may include these additional fields:
   "dynamic_context_text": "redacted shell-generated context",
   "job_ids_detected": "20260525_003929_318087748_027297_1832294",
   "job_context_collected": 1,
+  "queue_status_collected": 0,
   "tail_included": false,
   "redactions_applied": true
 }
