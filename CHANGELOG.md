@@ -1,3 +1,18 @@
+## 0.18.0 - AI advisory provider contract
+
+- Added `queue ask` as a policy-gated AI advisory contract command. It builds a deterministic provider handoff and audit record, but does not call a live AI provider in this release.
+- Added `docs/AI_ADVISORY_PROVIDER.md` and `docs/AI_AUDIT_LOGGING.md` defining provider-neutral responder contracts, context disclosure rules, and JSONL audit requirements.
+- Added an IBM Watson/watsonx example provider configuration under `examples/providers/ai/watson.env.example` without adding live provider calls or secrets.
+- Added static and smoke tests for advisory-only behaviour, context redaction/denial, audit JSONL output, and the rule that provider output is data, never shell.
+
+## 0.17.98 - directory governance provider contracts
+
+- Added `docs/DIRECTORY_GOVERNANCE_PROVIDERS.md`, defining LDAP and PAM.d/NSS as enterprise provider contracts for operation ACLs, identity, policy, key references, and delegation decisions.
+- Added normalized JSON contracts for `queue-ldap-acl-check`, `queue-ldap-policy-resolve`, `queue-ldap-key-resolve`, `queue-ldap-identity-check`, `queue-pam-account-check`, `queue-pam-session-check`, `queue-nss-identity-resolve`, and `queue-pam-acl-check`.
+- Added provider examples under `examples/providers/ldap.env.example` and `examples/providers/pam.env.example` using canonical `/etc/queuebash/policy/providers.d/`, `/var/cache/queuebash/`, and `/usr/libexec/queuebash/` paths.
+- Extended trust-provider documentation so Microsoft, LDAP, PAM.d/NSS, and file-backed providers share the same response envelope, operation ACL vocabulary, TTL/cache semantics, and fail-closed behaviour.
+- Added static regression tests for directory-provider contracts and JSON examples, including checks against `/etc/bashqueues` namespace drift and provider-sourced shell execution.
+
 ## 0.17.97 - Microsoft governance provider contract
 
 - Added `docs/MS_GOVERNANCE_PROVIDER.md`, defining Microsoft/Entra/Graph/SharePoint/Purview/Key Vault as provider backends for bashqueues policy, ACL, key, and delegation decisions.
@@ -1887,3 +1902,5 @@ Initial public queuebash release:
 - Added regression tests for unlink/write path extraction and explain output.
 
 - 2026-05-27 00:21:43 BST — AI-PATCH _queue_profile_command in `queuebash.sh`: 0.17.94: add class-template dispatch for secure profiled class gates
+
+- 2026-05-27 15:37:17 BST — AI-PATCH _queue_ai_ask_command in `queuebash.sh`: 0.18.0: add policy-gated queue ask advisory contract and audit handoff

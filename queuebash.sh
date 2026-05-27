@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.97"
+QUEUEBASH_VERSION="0.18.0"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -12149,6 +12149,198 @@ _queue_cron_command() {
     esac
 }
 
+
+_queue_ai_context_allowed() {
+    local ctx="$1"
+    case "$ctx" in
+        docs|manuals|commands|classes|assets|providers)
+            return 0
+            ;;
+        queue_status|job_status|job_metadata)
+            [[ "${QUEUEBASH_AI_ALLOW_QUEUE_STATUS:-0}" == "1" ]]
+            return $?
+            ;;
+        policy_details|profile_details)
+            [[ "${QUEUEBASH_AI_ALLOW_POLICY_DETAILS:-0}" == "1" ]]
+            return $?
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+_queue_ai_audit_log_path() {
+    if [[ -n "${QUEUEBASH_AI_AUDIT_LOG:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_AI_AUDIT_LOG"
+        return 0
+    fi
+    local root
+    root="$(_queue_root 2>/dev/null || true)"
+    [[ -n "$root" ]] || root="${HOME:-/tmp}/.queuebash"
+    printf '%s/logs/ai-advisory.audit.jsonl\n' "$root"
+}
+
+_queue_ai_redact_question() {
+    local q="$1"
+    q="${q//$'\n'/ }"
+    q="${q//$'\r'/ }"
+    q="${q//$'\t'/ }"
+    if [[ "${#q}" -gt 180 ]]; then
+        q="${q:0:180}..."
+    fi
+    printf '%s' "$q"
+}
+
+_queue_ai_audit_write() {
+    local provider="$1" question="$2" decision="$3" result="$4" reason="$5" requested="$6" allowed="$7" denied="$8" response_len="${9:-0}"
+    local log_path log_dir ts subject qhash qred bundle_hash
+    log_path="$(_queue_ai_audit_log_path)"
+    log_dir="$(dirname "$log_path")"
+    mkdir -p "$log_dir" 2>/dev/null || true
+    ts="$(_queue_now_iso 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+    subject="${QUEUEBASH_SUBMITTER:-$(id -un 2>/dev/null || echo unknown)}"
+    qhash="$(printf '%s' "$question" | sha256sum | awk '{print $1}')"
+    qred="$(_queue_ai_redact_question "$question")"
+    bundle_hash="$(printf '%s|%s|%s|%s' "$provider" "$requested" "$allowed" "$denied" | sha256sum | awk '{print $1}')"
+    {
+        printf '{'
+        printf '"schema":"queuebash.ai_advisory.audit.v1"'
+        printf ',"timestamp":"%s"' "$(_queue_json_escape "$ts")"
+        printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+        printf ',"operation":"ai.ask"'
+        printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+        printf ',"question_sha256":"%s"' "$(_queue_json_escape "$qhash")"
+        printf ',"question_redacted":"%s"' "$(_queue_json_escape "$qred")"
+        printf ',"context_requested":"%s"' "$(_queue_json_escape "$requested")"
+        printf ',"context_allowed":"%s"' "$(_queue_json_escape "$allowed")"
+        printf ',"context_denied":"%s"' "$(_queue_json_escape "$denied")"
+        printf ',"policy_decision":"%s"' "$(_queue_json_escape "$decision")"
+        printf ',"redactions_applied":true'
+        printf ',"context_bundle_sha256":"%s"' "$(_queue_json_escape "$bundle_hash")"
+        printf ',"response_length":%s' "${response_len:-0}"
+        [[ -n "$reason" ]] && printf ',"reason":"%s"' "$(_queue_json_escape "$reason")"
+        printf ',"result":"%s"' "$(_queue_json_escape "$result")"
+        printf '}\n'
+    } >> "$log_path"
+}
+
+# [AI-PATCH | 2026-05-27 15:37:17 BST]: 0.18.0: add policy-gated queue ask advisory contract and audit handoff
+_queue_ai_ask_command() {
+    local provider="${QUEUEBASH_AI_PROVIDER:-contract}"
+    local contexts="${QUEUEBASH_AI_DEFAULT_CONTEXT:-docs,commands,classes,providers}"
+    local json=0
+    local question_parts=()
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --provider)
+                provider="${2:-}"
+                shift 2
+                ;;
+            --context)
+                contexts="${2:-}"
+                shift 2
+                ;;
+            --json|-j)
+                json=1
+                shift
+                ;;
+            --help|-h)
+                cat <<'EOF'
+Usage:
+  queue ask [--provider NAME] [--context csv] [--json] "question"
+
+Purpose:
+  Build a policy-gated advisory request for an AI responder provider.
+  This command audits the request and returns a deterministic provider handoff.
+
+Important:
+  queue ask is advisory only. It cannot approve, submit, cancel, sign, override,
+  patch, or execute jobs. Provider output is data and is never evaluated as shell.
+
+Default contexts:
+  docs,commands,classes,providers
+
+Optional contexts requiring explicit policy/env allowance:
+  queue_status,job_status,job_metadata       require QUEUEBASH_AI_ALLOW_QUEUE_STATUS=1
+  policy_details,profile_details             require QUEUEBASH_AI_ALLOW_POLICY_DETAILS=1
+EOF
+                return 0
+                ;;
+            --)
+                shift
+                question_parts+=("$@")
+                break
+                ;;
+            *)
+                question_parts+=("$1")
+                shift
+                ;;
+        esac
+    done
+    local question="${question_parts[*]}"
+    if [[ -z "$question" ]]; then
+        echo "Usage: queue ask [--provider NAME] [--context csv] \"question\"" >&2
+        return 2
+    fi
+    if [[ "${QUEUEBASH_AI_ASK_ENABLED:-1}" == "0" ]]; then
+        _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "ai_ask_disabled" "$contexts" "" "$contexts" 0
+        echo "queue ask: blocked by policy: ai_ask_disabled" >&2
+        return 1
+    fi
+    local IFS=','
+    local requested_list=($contexts)
+    unset IFS
+    local allowed=() denied=() ctx
+    for ctx in "${requested_list[@]}"; do
+        ctx="${ctx// /}"
+        [[ -z "$ctx" ]] && continue
+        if _queue_ai_context_allowed "$ctx"; then
+            allowed+=("$ctx")
+        else
+            denied+=("$ctx")
+        fi
+    done
+    local requested_s allowed_s denied_s qhash bundle_hash subject ts response_len
+    requested_s="${requested_list[*]}"
+    allowed_s="${allowed[*]}"
+    denied_s="${denied[*]}"
+    qhash="$(printf '%s' "$question" | sha256sum | awk '{print $1}')"
+    bundle_hash="$(printf '%s|%s|%s|%s' "$provider" "$requested_s" "$allowed_s" "$denied_s" | sha256sum | awk '{print $1}')"
+    subject="${QUEUEBASH_SUBMITTER:-$(id -un 2>/dev/null || echo unknown)}"
+    ts="$(_queue_now_iso 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+    response_len=0
+    _queue_ai_audit_write "$provider" "$question" "allow" "handoff" "contract_only_no_live_provider_call" "$requested_s" "$allowed_s" "$denied_s" "$response_len"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{'
+        printf '"schema":"queuebash.ai_advisory.request.v1"'
+        printf ',"timestamp":"%s"' "$(_queue_json_escape "$ts")"
+        printf ',"operation":"ai.ask"'
+        printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+        printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+        printf ',"question_sha256":"%s"' "$(_queue_json_escape "$qhash")"
+        printf ',"question_redacted":"%s"' "$(_queue_json_escape "$(_queue_ai_redact_question "$question")")"
+        printf ',"context_requested":"%s"' "$(_queue_json_escape "$requested_s")"
+        printf ',"context_allowed":"%s"' "$(_queue_json_escape "$allowed_s")"
+        printf ',"context_denied":"%s"' "$(_queue_json_escape "$denied_s")"
+        printf ',"context_bundle_sha256":"%s"' "$(_queue_json_escape "$bundle_hash")"
+        printf ',"advisory_only":true'
+        printf ',"provider_execution":"not_implemented_contract_only"'
+        printf '}\n'
+    else
+        echo "queue ask advisory request"
+        echo "  provider:         $provider"
+        echo "  operation:        ai.ask"
+        echo "  advisory only:    yes"
+        echo "  question_sha256:  $qhash"
+        echo "  context allowed:  ${allowed_s:-none}"
+        echo "  context denied:   ${denied_s:-none}"
+        echo "  context bundle:   $bundle_hash"
+        echo "  provider call:    not implemented in this contract release"
+        echo "  audit log:        $(_queue_ai_audit_log_path)"
+    fi
+}
+
 _queue_help() {
     cat <<'EOF'
 Usage:
@@ -12218,6 +12410,8 @@ Usage:
   queue env show NAME [--json]
   queue env validate NAME [--json]
 
+  queue ask [--provider NAME] [--context csv] [--json] "question"
+
   queue limits
   queue version
   queue help
@@ -12243,6 +12437,7 @@ Health/recovery:
 Structured audit:
   State transitions and operator actions append JSONL records to ~/.queuebash/events.jsonl.
   queue stats summarizes queue states; queue events shows recent audit records.
+  queue ask appends AI advisory audit records to ~/.queuebash/logs/ai-advisory.audit.jsonl by default.
 
 States:
   pending   waiting to run
@@ -12316,6 +12511,7 @@ Examples:
   queue pids unzip001
   queue stats
   queue events --tail 20
+  queue ask --provider watson --context docs,commands,classes "How do I run a GDPR-safe overnight job?"
   queue priority unzip001 100
 
   queue pause unzip001
@@ -14255,6 +14451,10 @@ queue() {
             fi
             ;;
 
+
+        ask|ai-ask|advisory|advise)
+            _queue_ai_ask_command "$@"
+            ;;
 
         version|--version|-V)
             echo "queuebash $QUEUEBASH_VERSION"

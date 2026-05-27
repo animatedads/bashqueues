@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT"
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.97"' queuebash.sh || fail "version not bumped to 0.17.95"
+grep -q 'QUEUEBASH_VERSION="0.18.0"' queuebash.sh || fail "version not bumped to 0.17.95"
 grep -q 'QUEUE_CLEARED_ARCHIVED' queuebash.sh || fail "archive metadata not referenced"
 grep -q 'JOB_CLEARED.*QUEUE_CLEARED_ARCHIVED' queuebash.sh || fail "cleared audit does not accept archived records"
 grep -q -- '--no-changelog' queuebash.sh || fail "queue dev comment lacks --no-changelog override"

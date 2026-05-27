@@ -135,6 +135,9 @@ Enterprise provider contracts:
 
 - [Trust providers](docs/TRUST_PROVIDERS.md)
 - [Microsoft governance provider contract](docs/MS_GOVERNANCE_PROVIDER.md)
+- [Directory governance provider contracts](docs/DIRECTORY_GOVERNANCE_PROVIDERS.md)
+- [AI advisory provider contract](docs/AI_ADVISORY_PROVIDER.md)
+- [AI advisory audit logging](docs/AI_AUDIT_LOGGING.md)
 
 
 

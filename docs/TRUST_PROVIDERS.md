@@ -123,6 +123,29 @@ See `docs/MS_GOVERNANCE_PROVIDER.md` for the helper contracts:
 LDAP and PAM.d/NSS providers should use the same response envelope, operation
 ACL vocabulary, TTL/cache semantics, and fail-closed behaviour.
 
+
+## Directory governance provider contracts
+
+LDAP and PAM.d/NSS providers are peers of the Microsoft provider. They let an
+enterprise delegate command operation ACLs, class/job permissions, identity
+resolution, signer delegation, and account validity checks to existing directory
+and host policy systems.
+
+See `docs/DIRECTORY_GOVERNANCE_PROVIDERS.md` for the helper contracts:
+
+- `queue-ldap-acl-check`
+- `queue-ldap-policy-resolve`
+- `queue-ldap-key-resolve`
+- `queue-ldap-identity-check`
+- `queue-pam-account-check`
+- `queue-pam-session-check`
+- `queue-nss-identity-resolve`
+- `queue-pam-acl-check`
+
+Microsoft, LDAP, PAM.d/NSS, and file-backed providers should use the same
+response envelope, operation ACL vocabulary, TTL/cache semantics, and fail-closed
+behaviour. Provider output is normalized data, not executable shell.
+
 ## Scope boundary
 
 The runtime seccomp path does not resolve LDAP, AD, PKI, ACLs, or key delegation
