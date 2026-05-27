@@ -1,0 +1,316 @@
+#!/usr/bin/env bash
+# queue-policy-wizard
+# Safe, deterministic policy setup assistant for bashqueues.
+# Contract release: creates a reviewed plan, supports dry-run/non-interactive
+# operation, writes only policy files under ~/.queuebash or /etc/queuebash, and
+# never stores secret values in policy files.
+
+set -euo pipefail
+
+WIZARD_VERSION="0.18.11"
+DRYRUN=0
+NON_INTERACTIVE=0
+JSON_OUT=0
+DOGFOOD_VERIFY=0
+SCOPE="user"
+QUEUE_ROOT="${QUEUEBASH_ROOT:-$HOME/.queuebash}"
+SYSTEM_POLICY_ROOT="/etc/queuebash"
+AUDIT_LOG=""
+COUNTRY="GB"
+FRAMEWORK="auto"
+AI_PROVIDER="none"
+AI_LIVE="0"
+AI_CONTEXT="docs,commands,classes,assets,providers"
+ITSM_ENABLED="0"
+ITSM_BACKENDS=""
+SANDBOX="auto"
+SECCOMP="auto"
+RUNTIME_CAPS="auto"
+EXCEPTION_REQUIRE="reason-or-authorisation"
+CLOUD_PROVIDER="none"
+CLOUD_REGION=""
+APPLY=0
+
+usage() {
+    cat <<'HELP'
+Usage: queue-policy-wizard [options]
+
+Safe bashqueues policy setup assistant.
+
+Options:
+  --dryrun, -n             Print the plan and generated files; write nothing
+  --non-interactive        Use defaults and never prompt
+  --apply                  Apply the generated plan (ignored in --dryrun)
+  --scope user|system      user writes under ~/.queuebash; system under /etc/queuebash
+  --root DIR               User queue root (default: $QUEUEBASH_ROOT or ~/.queuebash)
+  --country CODE           Jurisdiction country code (default: GB)
+  --framework NAME         auto|GDPR|UK_DPA|HIPAA|ITAR|CPTPP|NONE (default: auto)
+  --cloud-provider NAME    none|aws|azure|gcp|ibm|private|multi
+  --cloud-region REGION    Cloud region identifier
+  --ai-provider NAME       none|ollama|gemini|manual (contract stubs only)
+  --ai-live 0|1            Set QUEUEBASH_AI_LIVE_ENABLED in generated policy
+  --allow-queue-status     Add queue_status to default AI context
+  --allow-job-metadata     Add job_metadata to default AI context
+  --enable-itsm            Enable contract-only ITSM outbox policy
+  --itsm-backends CSV      Contract backend names to record, not live credentials
+  --audit-log FILE         Append JSON audit summary when applying
+  --dogfood-verify         After apply, optionally submit queue verification jobs
+  --json                   Emit JSON summary to stdout
+  --help, -h               Show this help
+
+This wizard never prompts for secret values. Store only secret-file paths in
+policy files, for example /etc/queuebash/secrets/gemini-api-key.
+HELP
+}
+
+err() { printf 'queue-policy-wizard: %s\n' "$*" >&2; }
+info() { [[ "$JSON_OUT" == 1 ]] || printf '%s\n' "$*"; }
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dryrun|-n) DRYRUN=1; shift ;;
+        --non-interactive) NON_INTERACTIVE=1; shift ;;
+        --apply) APPLY=1; shift ;;
+        --scope) SCOPE="${2:-}"; shift 2 ;;
+        --root) QUEUE_ROOT="${2:-}"; shift 2 ;;
+        --country) COUNTRY="${2:-}"; shift 2 ;;
+        --framework) FRAMEWORK="${2:-}"; shift 2 ;;
+        --cloud-provider) CLOUD_PROVIDER="${2:-}"; shift 2 ;;
+        --cloud-region) CLOUD_REGION="${2:-}"; shift 2 ;;
+        --ai-provider) AI_PROVIDER="${2:-}"; shift 2 ;;
+        --ai-live) AI_LIVE="${2:-0}"; shift 2 ;;
+        --allow-queue-status) AI_CONTEXT="${AI_CONTEXT},queue_status"; shift ;;
+        --allow-job-metadata) AI_CONTEXT="${AI_CONTEXT},job_metadata"; shift ;;
+        --enable-itsm) ITSM_ENABLED=1; shift ;;
+        --itsm-backends) ITSM_BACKENDS="${2:-}"; shift 2 ;;
+        --audit-log) AUDIT_LOG="${2:-}"; shift 2 ;;
+        --dogfood-verify) DOGFOOD_VERIFY=1; shift ;;
+        --json) JSON_OUT=1; shift ;;
+        --help|-h) usage; exit 0 ;;
+        *) err "unknown option: $1"; usage >&2; exit 2 ;;
+    esac
+done
+
+case "$SCOPE" in user|system) ;; *) err "--scope must be user or system"; exit 2 ;; esac
+case "$AI_LIVE" in 0|1) ;; *) err "--ai-live must be 0 or 1"; exit 2 ;; esac
+case "$AI_PROVIDER" in none|ollama|gemini|manual) ;; *) err "unsupported --ai-provider for this contract release: $AI_PROVIDER"; exit 2 ;; esac
+case "$CLOUD_PROVIDER" in none|aws|azure|gcp|ibm|private|multi) ;; *) err "unsupported --cloud-provider: $CLOUD_PROVIDER"; exit 2 ;; esac
+
+if [[ "$SCOPE" == "system" ]]; then
+    POLICY_ROOT="$SYSTEM_POLICY_ROOT"
+    DEFAULT_AUDIT_LOG="/var/lib/queuebash/logs/policy-wizard.audit.jsonl"
+else
+    POLICY_ROOT="$QUEUE_ROOT"
+    DEFAULT_AUDIT_LOG="$QUEUE_ROOT/logs/policy-wizard.audit.jsonl"
+fi
+[[ -n "$AUDIT_LOG" ]] || AUDIT_LOG="$DEFAULT_AUDIT_LOG"
+
+if [[ "$FRAMEWORK" == "auto" ]]; then
+    case "${COUNTRY^^}" in
+        GB|UK) FRAMEWORK="UK_DPA" ;;
+        DE|FR|NL|AT|BE|ES|IT|PL|SE|DK|FI|NO|IE|PT|CZ|HU|RO|SK|HR|BG|LT|LV|EE|SI|MT|LU|CY|GR) FRAMEWORK="GDPR" ;;
+        US) FRAMEWORK="NONE" ;;
+        AU|CA|JP|SG) FRAMEWORK="CPTPP" ;;
+        *) FRAMEWORK="NONE" ;;
+    esac
+fi
+
+if [[ "$SANDBOX" == "auto" ]]; then
+    case "$FRAMEWORK" in GDPR|UK_DPA|HIPAA|ITAR) SANDBOX="strict" ;; *) SANDBOX="network-none" ;; esac
+fi
+if [[ "$SECCOMP" == "auto" ]]; then
+    case "$FRAMEWORK" in GDPR|UK_DPA|HIPAA|ITAR) SECCOMP="docker-default" ;; *) SECCOMP="docker-default" ;; esac
+fi
+if [[ "$RUNTIME_CAPS" == "auto" ]]; then
+    case "$FRAMEWORK" in GDPR|UK_DPA|HIPAA|ITAR) RUNTIME_CAPS="no-spawn-shell,no-network-tools" ;; *) RUNTIME_CAPS="no-spawn-shell" ;; esac
+fi
+
+if [[ "$NON_INTERACTIVE" == 0 && "$DRYRUN" == 0 && "$APPLY" == 0 ]]; then
+    cat <<'PROMPT'
+queue-policy-wizard will build a policy plan first. It will not write anything
+unless --apply is supplied. Re-run with --dryrun to inspect generated files.
+PROMPT
+fi
+
+# File paths are canonical by scope. Never use the legacy plural /etc namespace.
+LEGAL_FILE="$POLICY_ROOT/policies.d/legal_framework.env"
+CLASS_FILE="$POLICY_ROOT/policies.d/class-statement/default.env"
+AI_FILE="$POLICY_ROOT/policies.d/ai_advisory.env"
+ITSM_FILE="$POLICY_ROOT/policies.d/itsm.env"
+CLOUD_FILE="$POLICY_ROOT/policies.d/sovereign.env"
+
+plan_files=()
+plan_labels=()
+plan_contents=()
+add_file() {
+    plan_files+=("$1")
+    plan_labels+=("$2")
+    plan_contents+=("$3")
+}
+
+legal_content="# bashqueues legal framework policy generated by queue-policy-wizard $WIZARD_VERSION
+# Generated: $(date -Is 2>/dev/null || date)
+# Scope: $SCOPE
+QUEUEBASH_LEGAL_FRAMEWORK=\"$FRAMEWORK\"
+QUEUEBASH_OPERATOR_JURISDICTION=\"${COUNTRY^^}\"
+"
+add_file "$LEGAL_FILE" "legal framework" "$legal_content"
+
+class_content="# bashqueues class-statement defaults generated by queue-policy-wizard $WIZARD_VERSION
+QUEUEBASH_POLICY_KIND=class-statement
+QUEUEBASH_POLICY_NAME=default
+QUEUEBASH_DEFAULT_SANDBOX_LEVEL=\"$SANDBOX\"
+QUEUEBASH_DEFAULT_SECCOMP_PROFILE=\"$SECCOMP\"
+QUEUEBASH_DEFAULT_RUNTIME_CAPS=\"$RUNTIME_CAPS\"
+CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE=\"$EXCEPTION_REQUIRE\"
+CLASS_POLICY_WEAK_POLICY_REQUIRE=\"$EXCEPTION_REQUIRE\"
+CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED=\"if-trusted-key\"
+CLASS_POLICY_BLOCK_COMMAND_HASHES=\"\"
+CLASS_POLICY_BLOCK_COMMAND_WORDS=\"\"
+CLASS_POLICY_BLOCK_COMMAND_PATTERNS=\"\"
+"
+add_file "$CLASS_FILE" "class statement defaults" "$class_content"
+
+if [[ "$CLOUD_PROVIDER" != "none" ]]; then
+    cloud_content="# bashqueues cloud sovereignty policy generated by queue-policy-wizard $WIZARD_VERSION
+QUEUEBASH_CLOUD_PROVIDER=\"$CLOUD_PROVIDER\"
+QUEUEBASH_CLOUD_REGION=\"$CLOUD_REGION\"
+QUEUEBASH_SOVEREIGN_CLASS=\"LEGAL_COMPLIANCE\"
+# Contract only: this file records policy intent. Live cloud discovery is provider work.
+"
+    add_file "$CLOUD_FILE" "cloud sovereignty" "$cloud_content"
+fi
+
+case "$AI_PROVIDER" in
+    ollama)
+        ai_secret_note="# Local Ollama normally needs no API key."
+        ;;
+    gemini)
+        ai_secret_note="# Store the API key in a secret file; do not put secret values here.\nQUEUEBASH_AI_GEMINI_API_KEY_FILE=\"/etc/queuebash/secrets/gemini-api-key\""
+        ;;
+    manual|none)
+        ai_secret_note="# No live provider configured."
+        AI_LIVE=0
+        ;;
+esac
+ai_content="# bashqueues AI advisory policy generated by queue-policy-wizard $WIZARD_VERSION
+QUEUEBASH_AI_PROVIDER=\"$AI_PROVIDER\"
+QUEUEBASH_AI_LIVE_ENABLED=$AI_LIVE
+QUEUEBASH_AI_DEFAULT_CONTEXT=\"$AI_CONTEXT\"
+QUEUEBASH_AI_ALLOW_QUEUE_STATUS=0
+QUEUEBASH_AI_ALLOW_JOB_STATUS=0
+QUEUEBASH_AI_ALLOW_JOB_METADATA=0
+QUEUEBASH_AI_ALLOW_JOB_TAIL=0
+$ai_secret_note
+"
+add_file "$AI_FILE" "AI advisory policy" "$ai_content"
+
+if [[ "$ITSM_ENABLED" == 1 ]]; then
+    itsm_content="# bashqueues ITSM reporter contract policy generated by queue-policy-wizard $WIZARD_VERSION
+QUEUEBASH_ITSM_ENABLED=1
+QUEUEBASH_ITSM_BACKENDS=\"$ITSM_BACKENDS\"
+QUEUEBASH_ITSM_EVENTS=\"failed,policy_blocked,integrity_violation,ai_safety_alert,ai_policy_bypass_attempt,advisory_high_risk_operation\"
+QUEUEBASH_ITSM_DEFAULT_PRIORITY=\"medium\"
+QUEUEBASH_ITSM_EVENT_LOG=\"$POLICY_ROOT/logs/itsm-events.jsonl\"
+# Contract only: no live ticket connector is configured by this wizard release.
+"
+    add_file "$ITSM_FILE" "ITSM reporter contract" "$itsm_content"
+fi
+
+print_plan() {
+    info "queue-policy-wizard $WIZARD_VERSION plan"
+    info "scope: $SCOPE"
+    info "policy_root: $POLICY_ROOT"
+    info "framework: $FRAMEWORK"
+    info "ai_provider: $AI_PROVIDER"
+    info "itsm_enabled: $ITSM_ENABLED"
+    info "files: ${#plan_files[@]}"
+    local i
+    for i in "${!plan_files[@]}"; do
+        info "- ${plan_labels[$i]}: ${plan_files[$i]}"
+    done
+}
+
+write_json_summary() {
+    python3 - "$@" <<'PY'
+import json, os, sys, hashlib, datetime
+files = []
+args = sys.argv[1:]
+for i in range(0, len(args), 3):
+    path, label, content = args[i:i+3]
+    files.append({
+        "path": path,
+        "label": label,
+        "sha256": hashlib.sha256(content.encode()).hexdigest(),
+        "bytes": len(content.encode()),
+    })
+summary = {
+    "schema": "queuebash.policy_wizard_run.v1",
+    "wizard_version": os.environ.get("WIZARD_VERSION", ""),
+    "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "scope": os.environ.get("SCOPE", ""),
+    "policy_root": os.environ.get("POLICY_ROOT", ""),
+    "dryrun": os.environ.get("DRYRUN", "0") == "1",
+    "applied": os.environ.get("APPLIED", "0") == "1",
+    "dogfood_verify": os.environ.get("DOGFOOD_VERIFY", "0") == "1",
+    "framework": os.environ.get("FRAMEWORK", ""),
+    "ai_provider": os.environ.get("AI_PROVIDER", ""),
+    "itsm_enabled": os.environ.get("ITSM_ENABLED", "0") == "1",
+    "files": files,
+    "secrets_written": False,
+    "ticket_created": False,
+    "unsupported_live_integrations_configured": False,
+}
+print(json.dumps(summary, sort_keys=True))
+PY
+}
+
+summary_args=()
+for i in "${!plan_files[@]}"; do
+    summary_args+=("${plan_files[$i]}" "${plan_labels[$i]}" "${plan_contents[$i]}")
+done
+
+if [[ "$JSON_OUT" == 1 ]]; then
+    WIZARD_VERSION="$WIZARD_VERSION" SCOPE="$SCOPE" POLICY_ROOT="$POLICY_ROOT" DRYRUN="$DRYRUN" APPLIED=0 DOGFOOD_VERIFY="$DOGFOOD_VERIFY" FRAMEWORK="$FRAMEWORK" AI_PROVIDER="$AI_PROVIDER" ITSM_ENABLED="$ITSM_ENABLED" write_json_summary "${summary_args[@]}"
+else
+    print_plan
+fi
+
+if [[ "$DRYRUN" == 1 ]]; then
+    if [[ "$JSON_OUT" == 0 ]]; then
+        printf '\nGenerated file preview follows. No files were written.\n'
+        for i in "${!plan_files[@]}"; do
+            printf '\n--- %s ---\n%s\n' "${plan_files[$i]}" "${plan_contents[$i]}"
+        done
+    fi
+    exit 0
+fi
+
+if [[ "$APPLY" == 0 ]]; then
+    info "No files written. Re-run with --apply to apply this plan, or --dryrun to preview content."
+    exit 0
+fi
+
+for i in "${!plan_files[@]}"; do
+    mkdir -p "$(dirname "${plan_files[$i]}")"
+    umask 077
+    printf '%s\n' "${plan_contents[$i]}" > "${plan_files[$i]}"
+    chmod 0644 "${plan_files[$i]}" 2>/dev/null || true
+    info "wrote: ${plan_files[$i]}"
+done
+
+if [[ "$DOGFOOD_VERIFY" == 1 ]]; then
+    if command -v queue >/dev/null 2>&1 || declare -F queue >/dev/null 2>&1; then
+        for path in "${plan_files[@]}"; do
+            QUEUEBASH_ROOT="$QUEUE_ROOT" queue submit "policy-wizard-verify-$(basename "$path")" -- bash -n "$path" >/dev/null 2>&1 || \
+                info "verification job submit failed for $path (non-blocking)"
+        done
+    else
+        info "dogfood verification requested but queue command is not available (reported, non-blocking)"
+    fi
+fi
+
+mkdir -p "$(dirname "$AUDIT_LOG")"
+WIZARD_VERSION="$WIZARD_VERSION" SCOPE="$SCOPE" POLICY_ROOT="$POLICY_ROOT" DRYRUN="$DRYRUN" APPLIED=1 DOGFOOD_VERIFY="$DOGFOOD_VERIFY" FRAMEWORK="$FRAMEWORK" AI_PROVIDER="$AI_PROVIDER" ITSM_ENABLED="$ITSM_ENABLED" \
+    write_json_summary "${summary_args[@]}" >> "$AUDIT_LOG"
+info "audit summary: $AUDIT_LOG"

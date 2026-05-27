@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""Deterministic local classifier for queuebash AI advisory prompts.
+
+This helper performs boring keyword/phrase classification before any live AI
+provider is called. It never executes queue operations and it never calls an AI
+provider. The shell front-end has an equivalent in-process classifier so queue
+ask can fail closed even if this helper is unavailable.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import sys
+from datetime import datetime, timezone
+
+
+def redact(text: str) -> str:
+    text = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[redacted-email]", text)
+    text = re.sub(r"(?i)(api[_-]?key|token|secret|password)=\S+", r"\1=[redacted]", text)
+    return text
+
+
+def _has_any(text: str, phrases: tuple[str, ...]) -> bool:
+    return any(phrase in text for phrase in phrases)
+
+
+def classify(question: str) -> dict[str, str]:
+    lower = " ".join(question.lower().split())
+    category = "benign"
+    severity = "low"
+    policy_decision = "allow"
+    reporter_event = ""
+
+    has_self_harm = _has_any(lower, (
+        "kill myself", "suicide", "self harm", "self-harm", "jump out the window",
+        "end my life", "hurt myself",
+    ))
+    has_coercion = _has_any(lower, (
+        "if you don't", "if you do not", "unless you", "or else", "i will",
+    ))
+    has_bypass = _has_any(lower, (
+        "bypass", "ignore", "disable", "patch out", "remove", "weaken", "override",
+        "circumvent", "evade",
+    ))
+    has_control = _has_any(lower, (
+        "policy", "governance", "security", "seccomp", "acl", "signature", "trust",
+        "authorisation", "authorization", "approval", "audit", "runtime cap", "runtime-cap",
+        "pol_blocked", "policy blocker",
+    ))
+    has_secret_action = _has_any(lower, ("steal", "exfiltrate", "dump", "leak"))
+    has_secret_target = _has_any(lower, ("secret", "token", "key", "credential", "password"))
+    has_destructive_misuse = _has_any(lower, (
+        "rm -rf /", "rm -fr /", "mkfs", "wipe everything", "destroy everything", "nuke production",
+    ))
+    has_destructive_operation = _has_any(lower, (
+        "drop database", "drop table", "drop crm.", "delete production dataset", "wipe bucket",
+        "remove customer records", "delete customer records", "decommission", "decommissioning",
+        "retention-affecting", "legal hold", "retention",
+    ))
+
+    if has_self_harm:
+        category = "self_harm_or_distress"
+        severity = "high"
+        policy_decision = "refuse_continue_safe_help"
+        reporter_event = "ai_self_harm_or_distress_alert"
+    elif has_coercion and has_bypass:
+        category = "coercion"
+        severity = "high"
+        policy_decision = "refuse_continue_safe_help"
+        reporter_event = "ai_coercion_alert"
+    elif has_bypass and has_control:
+        category = "policy_bypass"
+        severity = "high"
+        policy_decision = "refuse_continue_safe_help"
+        reporter_event = "ai_policy_bypass_attempt"
+    elif has_destructive_misuse:
+        category = "destructive_misuse"
+        severity = "high"
+        policy_decision = "refuse_continue_safe_help"
+        reporter_event = "ai_destructive_misuse_attempt"
+    elif has_destructive_operation:
+        category = "destructive_operation"
+        severity = "high"
+        policy_decision = "govern_continue_safe_help"
+        reporter_event = "advisory_high_risk_operation"
+    elif (has_secret_action and has_secret_target) or _has_any(lower, ("exploit", "privilege escalation", "rootkit", "backdoor")):
+        category = "security_probe"
+        severity = "high"
+        policy_decision = "refuse_continue_safe_help"
+        reporter_event = "ai_security_probe_alert"
+    elif _has_any(lower, ("idiot", "moron", "worthless", "shut up")):
+        category = "abuse"
+        severity = "medium"
+        policy_decision = "refuse_continue_safe_help"
+        reporter_event = "ai_abuse_alert"
+
+    return {
+        "category": category,
+        "severity": severity,
+        "policy_decision": policy_decision,
+        "reporter_event": reporter_event,
+    }
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Classify a queuebash AI advisory prompt.")
+    parser.add_argument("question", nargs="*", help="Prompt text. If omitted, stdin is read.")
+    parser.add_argument("--json", action="store_true", help="Emit JSON classification output.")
+    args = parser.parse_args(argv)
+
+    question = " ".join(args.question) if args.question else sys.stdin.read()
+    result = classify(question)
+    if args.json:
+        payload = {
+            "schema": "queuebash.ai_safety_classification.v1",
+            "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "operation": "ai.ask",
+            "question_sha256": hashlib.sha256(question.encode()).hexdigest(),
+            "question_redacted": redact(question),
+            **result,
+        }
+        print(json.dumps(payload, separators=(",", ":")))
+    else:
+        print("|".join(result[k] for k in ("category", "severity", "policy_decision", "reporter_event")))
+    return 0 if result["category"] in {"benign", "destructive_operation"} else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
