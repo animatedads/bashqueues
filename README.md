@@ -3165,3 +3165,17 @@ Provider output is data, never shell.
 ### AI advisory grounded status context
 
 `queue ask` includes installed command and asset/facility grounding so live AI providers are less likely to invent non-installed commands. Redacted queue/job status is available only when explicitly enabled with `QUEUEBASH_AI_ALLOW_QUEUE_STATUS=1`, `QUEUEBASH_AI_ALLOW_JOB_STATUS=1`, and/or `QUEUEBASH_AI_ALLOW_JOB_METADATA=1`. Job log/tail excerpts remain separately gated by `QUEUEBASH_AI_ALLOW_JOB_TAIL=1`.
+
+### AI safety event reporting
+
+`queue ask` runs a deterministic local safety classifier before live Gemini/Ollama provider invocation. Obvious policy-bypass, security-probe, coercion, abuse, or self-harm/distress prompts are refused locally, logged to `~/.queuebash/logs/ai-safety.audit.jsonl`, and given safe operational alternatives such as `queue explain <job_id>`. The response must not claim HR, emergency services, or ticket creation unless a configured reporter later returns a real ticket ID. See `docs/ADVISORY_SAFETY_GOVERNANCE.md`.
+### ITSM reporter contract
+
+`queue itsm` exposes a contract-only event outbox for support, security, operations, legal, integrity, FinOps, and AI safety events. Enable it with `QUEUEBASH_ITSM_ENABLED=1`; events are written as JSONL to `~/.queuebash/logs/itsm-events.jsonl` by default. 0.18.8 does not create live ServiceNow/Jira/Freshservice/Zendesk/BMC/ManageEngine tickets by itself and does not claim ticket creation unless a future configured reporter returns a real ticket ID. See `docs/ITSM_REPORTER_CONTRACT.md`.
+
+
+### AI high-risk operation governance (0.18.9)
+
+`queue ask` now treats destructive or retention-affecting operations as high-risk advisory work. Legitimate prompts such as approved decommissioning or customer-record retention changes are not refused by default, but the response is governed: verify authority/change ticket, legal hold/retention status, trusted authorisation/signature, class isolation/exclusive claims, approved change window, `queue explain` review, and preserved audit evidence.
+
+Destructive misuse such as `rm -rf /` through a queue is refused. Policy-bypass destructive prompts, such as bypassing `pol_blocked` to drop a database, remain policy-bypass refusals. High-risk events are recorded as `advisory_high_risk_operation` with `ticket_requested=false` and `ticket_created=false` unless a future configured reporter proves otherwise.

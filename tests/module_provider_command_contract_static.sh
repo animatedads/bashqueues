@@ -3,7 +3,7 @@ set -euo pipefail
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 cd "$(dirname "$0")/.."
 
-grep -q 'QUEUEBASH_VERSION="0.18.6"' queuebash.sh || fail 'version not bumped to 0.18.6'
+grep -q 'QUEUEBASH_VERSION="0.18.9"' queuebash.sh || fail 'version not bumped to 0.18.9'
 grep -q '0.18.5 - module provider command contract' CHANGELOG.md || fail 'changelog entry missing'
 grep -q 'provider|providers' queuebash.sh || fail 'provider module kind missing'
 grep -q '_queue_module_help' queuebash.sh || fail 'module help function missing'

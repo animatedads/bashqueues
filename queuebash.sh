@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.6"
+QUEUEBASH_VERSION="0.18.9"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -5586,6 +5586,143 @@ _queue_report_event() {
     shopt -u nullglob
     return "$rc"
 }
+
+_queue_itsm_log_path() {
+    printf '%s\n' "${QUEUEBASH_ITSM_EVENT_LOG:-$(_queue_root)/logs/itsm-events.jsonl}"
+}
+
+_queue_itsm_enabled() {
+    [[ "${QUEUEBASH_ITSM_ENABLED:-0}" == "1" ]] || return 1
+    return 0
+}
+
+_queue_itsm_csv_has() {
+    local list="${1:-}" needle="${2:-}" item
+    list="${list// /}"
+    [[ -n "$needle" ]] || return 1
+    IFS=',' read -r -a _qb_itsm_csv_items <<< "$list"
+    for item in "${_qb_itsm_csv_items[@]}"; do
+        [[ "$item" == "$needle" || "$item" == "*" ]] && return 0
+    done
+    return 1
+}
+
+_queue_itsm_event_allowed() {
+    local event="${1:-}"
+    local events="${QUEUEBASH_ITSM_EVENTS:-failed,policy_blocked,integrity_violation,ai_safety_alert,ai_policy_bypass_attempt,ai_self_harm_or_distress_alert,ai_coercion_alert,ai_abuse_alert,finops_anomaly,legal_event}"
+    _queue_itsm_csv_has "$events" "$event"
+}
+
+_queue_itsm_correlation_key() {
+    local material="${1:-}"
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf 'sha256:%s\n' "$(printf '%s' "$material" | sha256sum | awk '{print $1}')"
+    else
+        printf 'sha256:unavailable\n'
+    fi
+}
+
+_queue_itsm_emit_contract_event() {
+    local event="$1" severity="${2:-medium}" source="${3:-queue}" subject="${4:-}" job_id="${5:-}" class_name="${6:-}" correlation_key="${7:-}" summary="${8:-}" detail_redacted="${9:-true}"
+    local log_path log_dir ts backends priority detail_bool
+
+    _queue_itsm_enabled || return 0
+    _queue_itsm_event_allowed "$event" || return 0
+
+    log_path="$(_queue_itsm_log_path)"
+    log_dir="$(dirname "$log_path")"
+    mkdir -p "$log_dir" 2>/dev/null || true
+    ts="$(_queue_now_iso 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+    subject="${subject:-${QUEUEBASH_SUBMITTER:-$(id -un 2>/dev/null || echo unknown)}}"
+    backends="${QUEUEBASH_ITSM_BACKENDS:-}"
+    priority="${QUEUEBASH_ITSM_DEFAULT_PRIORITY:-medium}"
+    [[ -n "$correlation_key" ]] || correlation_key="$(_queue_itsm_correlation_key "source=${source};event=${event};subject=${subject};job=${job_id};class=${class_name};summary=${summary}")"
+    case "$detail_redacted" in true|1|yes) detail_bool=true ;; false|0|no) detail_bool=false ;; *) detail_bool=true ;; esac
+
+    {
+        printf '{'
+        printf '"schema":"queuebash.reporter.itsm_event.v1"'
+        printf ',"timestamp":"%s"' "$(_queue_json_escape "$ts")"
+        printf ',"event":"%s"' "$(_queue_json_escape "$event")"
+        printf ',"severity":"%s"' "$(_queue_json_escape "$severity")"
+        printf ',"source":"%s"' "$(_queue_json_escape "$source")"
+        printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+        printf ',"job_id":"%s"' "$(_queue_json_escape "$job_id")"
+        printf ',"class":"%s"' "$(_queue_json_escape "$class_name")"
+        printf ',"correlation_key":"%s"' "$(_queue_json_escape "$correlation_key")"
+        printf ',"summary":"%s"' "$(_queue_json_escape "$summary")"
+        printf ',"detail_redacted":%s' "$detail_bool"
+        printf ',"backends":"%s"' "$(_queue_json_escape "$backends")"
+        printf ',"priority":"%s"' "$(_queue_json_escape "$priority")"
+        printf ',"ticket_requested":false'
+        printf ',"ticket_created":false'
+        printf ',"contract_only":true'
+        printf '}\n'
+    } >> "$log_path"
+
+    if [[ "${QUEUEBASH_ITSM_BRIDGE_REPORTERS:-0}" == "1" ]]; then
+        _queue_report_event "$event" "$job_id" "$summary" "$event" "itsm_contract_event=1 correlation_key=$correlation_key" "$ts" || true
+    fi
+    return 0
+}
+
+_queue_itsm_command() {
+    local action="${1:-status}"
+    shift || true
+    case "$action" in
+        status|show|"")
+            if [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]]; then
+                printf '{'
+                printf '"schema":"queuebash.itsm_status.v1"'
+                printf ',"enabled":%s' "$([[ "${QUEUEBASH_ITSM_ENABLED:-0}" == "1" ]] && echo true || echo false)"
+                printf ',"event_log":"%s"' "$(_queue_json_escape "$(_queue_itsm_log_path)")"
+                printf ',"backends":"%s"' "$(_queue_json_escape "${QUEUEBASH_ITSM_BACKENDS:-}")"
+                printf ',"events":"%s"' "$(_queue_json_escape "${QUEUEBASH_ITSM_EVENTS:-failed,policy_blocked,integrity_violation,ai_safety_alert,ai_policy_bypass_attempt,ai_self_harm_or_distress_alert,ai_coercion_alert,ai_abuse_alert,finops_anomaly,legal_event}")"
+                printf ',"contract_only":true'
+                printf '}\n'
+            else
+                echo "ITSM reporter contract"
+                echo "  enabled:       ${QUEUEBASH_ITSM_ENABLED:-0}"
+                echo "  event log:     $(_queue_itsm_log_path)"
+                echo "  backends:      ${QUEUEBASH_ITSM_BACKENDS:-}"
+                echo "  events:        ${QUEUEBASH_ITSM_EVENTS:-failed,policy_blocked,integrity_violation,ai_safety_alert,ai_policy_bypass_attempt,ai_self_harm_or_distress_alert,ai_coercion_alert,ai_abuse_alert,finops_anomaly,legal_event}"
+                echo "  contract only: true"
+            fi
+            ;;
+        emit)
+            local event="" severity="medium" source="queue.manual" subject="" job_id="" class_name="" summary="" correlation_key="" detail_redacted="true"
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --event) event="${2:-}"; shift 2 ;;
+                    --severity) severity="${2:-medium}"; shift 2 ;;
+                    --source) source="${2:-queue.manual}"; shift 2 ;;
+                    --subject) subject="${2:-}"; shift 2 ;;
+                    --job-id) job_id="${2:-}"; shift 2 ;;
+                    --class) class_name="${2:-}"; shift 2 ;;
+                    --summary) summary="${2:-}"; shift 2 ;;
+                    --correlation-key) correlation_key="${2:-}"; shift 2 ;;
+                    --detail-redacted) detail_redacted="${2:-true}"; shift 2 ;;
+                    *) echo "queue itsm emit: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+            [[ -n "$event" ]] || { echo "Usage: queue itsm emit --event EVENT --summary TEXT [--severity LEVEL] [--source SOURCE]" >&2; return 2; }
+            [[ -n "$summary" ]] || summary="$event"
+            _queue_itsm_emit_contract_event "$event" "$severity" "$source" "$subject" "$job_id" "$class_name" "$correlation_key" "$summary" "$detail_redacted"
+            echo "ITSM contract event emitted: $event"
+            ;;
+        events|tail)
+            local log_path n="${1:-20}"
+            log_path="$(_queue_itsm_log_path)"
+            [[ -f "$log_path" ]] || { echo "No ITSM contract events recorded: $log_path"; return 0; }
+            tail -n "$n" "$log_path"
+            ;;
+        *)
+            echo "Usage: queue itsm status [--json] | emit --event EVENT --summary TEXT | events [N]" >&2
+            return 2
+            ;;
+    esac
+}
+
 
 _queue_log_event() {
     local event="$1"
@@ -12207,7 +12344,6 @@ _queue_ai_redact_question() {
 _queue_ai_audit_write() {
     local provider="$1" question="$2" decision="$3" result="$4" reason="$5" requested="$6" allowed="$7" denied="$8" response_len="${9:-0}"
     local job_ids_detected="${10:-}" job_context_collected="${11:-0}" redactions_applied="${12:-true}" tail_included="${13:-false}" context_bundle_hash="${14:-}"
-    local queue_status_collected="${15:-0}" response_sha256="${16:-}"
     local log_path log_dir ts subject qhash qred bundle_hash
     log_path="$(_queue_ai_audit_log_path)"
     log_dir="$(dirname "$log_path")"
@@ -12222,7 +12358,6 @@ _queue_ai_audit_write() {
         bundle_hash="$(printf '%s|%s|%s|%s' "$provider" "$requested" "$allowed" "$denied" | sha256sum | awk '{print $1}')"
     fi
     [[ "$job_context_collected" =~ ^[0-9]+$ ]] || job_context_collected=0
-    [[ "$queue_status_collected" =~ ^[0-9]+$ ]] || queue_status_collected=0
     [[ "$response_len" =~ ^[0-9]+$ ]] || response_len=0
     case "$redactions_applied" in true|false) ;; *) redactions_applied=true ;; esac
     case "$tail_included" in true|false) ;; *) tail_included=false ;; esac
@@ -12240,13 +12375,11 @@ _queue_ai_audit_write() {
         printf ',"context_denied":"%s"' "$(_queue_json_escape "$denied")"
         printf ',"job_ids_detected":"%s"' "$(_queue_json_escape "$job_ids_detected")"
         printf ',"job_context_collected":%s' "$job_context_collected"
-        printf ',"queue_status_collected":%s' "$queue_status_collected"
         printf ',"redactions_applied":%s' "$redactions_applied"
         printf ',"tail_included":%s' "$tail_included"
         printf ',"policy_decision":"%s"' "$(_queue_json_escape "$decision")"
         printf ',"context_bundle_sha256":"%s"' "$(_queue_json_escape "$bundle_hash")"
         printf ',"response_length":%s' "$response_len"
-        [[ -n "$response_sha256" ]] && printf ',"response_sha256":"%s"' "$(_queue_json_escape "$response_sha256")"
         [[ -n "$reason" ]] && printf ',"reason":"%s"' "$(_queue_json_escape "$reason")"
         printf ',"result":"%s"' "$(_queue_json_escape "$result")"
         printf '}\n'
@@ -12414,7 +12547,7 @@ _queue_ai_job_status_text() {
 _queue_ai_build_dynamic_context() {
     local question="$1" allowed_s="$2" denied_s="$3"
     local -a allowed_words=() job_ids=()
-    local word id include_queue=0 include_job=0 include_metadata=0 include_tail=0 job_context_count=0 queue_status_collected=0 tail_included=false
+    local word id include_queue=0 include_job=0 include_metadata=0 include_tail=0 job_context_count=0 tail_included=false
     for word in $allowed_s; do allowed_words+=("$word"); done
     _queue_ai_list_contains commands "${allowed_words[@]}" && include_queue=0
     _queue_ai_list_contains queue_status "${allowed_words[@]}" && include_queue=1
@@ -12444,9 +12577,7 @@ _queue_ai_build_dynamic_context() {
         fi
         echo
         if [[ "$include_queue" -eq 1 ]]; then
-            if _queue_ai_queue_status_text; then
-                queue_status_collected=1
-            fi
+            _queue_ai_queue_status_text
         elif [[ " $denied_s " == *" queue_status "* ]]; then
             echo "Queue status context was requested but denied by policy."
         else
@@ -12475,7 +12606,6 @@ _queue_ai_build_dynamic_context() {
         echo "Dynamic context collection summary:"
         echo "  context_denied: ${denied_s:-none}"
         echo "  job_context_collected: $job_context_count"
-        echo "  queue_status_collected: $queue_status_collected"
         echo "  tail_included: $tail_included"
         echo "  redactions_applied: true"
     }
@@ -12483,6 +12613,167 @@ _queue_ai_build_dynamic_context() {
 
 # [AI-PATCH | 2026-05-27 15:37:17 BST]: 0.18.0: add policy-gated queue ask advisory contract and audit handoff
 # [AI-PATCH | 2026-05-27 16:07:28 BST]: 0.18.1: add opt-in local Ollama advisory provider path with live policy gate and audit-preserving handoff
+_queue_ai_safety_log_path() {
+    printf '%s\n' "${QUEUEBASH_AI_SAFETY_LOG:-$(_queue_root)/logs/ai-safety.audit.jsonl}"
+}
+
+_queue_ai_safety_classify_text() {
+    local question="$*"
+    local q lower category="benign" severity="low" reporter_event="" policy_decision="allow"
+    q="$(printf '%s' "$question" | tr '\n' ' ')"
+    lower="$(printf '%s' "$q" | tr '[:upper:]' '[:lower:]')"
+
+    local has_self_harm=0 has_coercion=0 has_bypass=0 has_control=0
+    local has_secret_action=0 has_secret_target=0 has_destructive=0 has_destructive_misuse=0
+    local has_authorised_change=0
+
+    [[ "$lower" == *"kill myself"* || "$lower" == *"suicide"* || "$lower" == *"self harm"* || "$lower" == *"self-harm"* || "$lower" == *"jump out the window"* || "$lower" == *"end my life"* || "$lower" == *"hurt myself"* ]] && has_self_harm=1
+    { [[ "$lower" == *"if you don't"* || "$lower" == *"if you do not"* || "$lower" == *"unless you"* || "$lower" == *"or else"* || "$lower" == *"i will"* ]]; } && has_coercion=1
+    { [[ "$lower" == *"bypass"* || "$lower" == *"ignore"* || "$lower" == *"disable"* || "$lower" == *"patch out"* || "$lower" == *"remove"* || "$lower" == *"weaken"* || "$lower" == *"override"* || "$lower" == *"circumvent"* || "$lower" == *"evade"* ]]; } && has_bypass=1
+    { [[ "$lower" == *"policy"* || "$lower" == *"governance"* || "$lower" == *"security"* || "$lower" == *"seccomp"* || "$lower" == *"acl"* || "$lower" == *"signature"* || "$lower" == *"trust"* || "$lower" == *"authorisation"* || "$lower" == *"authorization"* || "$lower" == *"approval"* || "$lower" == *"audit"* || "$lower" == *"runtime cap"* || "$lower" == *"runtime-cap"* || "$lower" == *"pol_blocked"* || "$lower" == *"policy blocker"* ]]; } && has_control=1
+    { [[ "$lower" == *"steal"* || "$lower" == *"exfiltrate"* || "$lower" == *"dump"* || "$lower" == *"leak"* ]]; } && has_secret_action=1
+    { [[ "$lower" == *"secret"* || "$lower" == *"token"* || "$lower" == *"key"* || "$lower" == *"credential"* || "$lower" == *"password"* ]]; } && has_secret_target=1
+
+    { [[ "$lower" == *"drop database"* || "$lower" == *"drop table"* || "$lower" == *"drop crm."* || "$lower" == *"delete production dataset"* || "$lower" == *"wipe bucket"* || "$lower" == *"remove customer records"* || "$lower" == *"delete customer records"* || "$lower" == *"decommission"* || "$lower" == *"decommissioning"* || "$lower" == *"retention-affecting"* || "$lower" == *"legal hold"* || "$lower" == *"retention"* ]]; } && has_destructive=1
+    { [[ "$lower" == *"rm -rf /"* || "$lower" == *"rm -fr /"* || "$lower" == *"mkfs"* || "$lower" == *"wipe everything"* || "$lower" == *"destroy everything"* || "$lower" == *"nuke production"* ]]; } && has_destructive_misuse=1
+    { [[ "$lower" == *"approved"* || "$lower" == *"authorised"* || "$lower" == *"authorized"* || "$lower" == *"change ticket"* || "$lower" == *"change window"* || "$lower" == *"decommission"* || "$lower" == *"decommissioning"* || "$lower" == *"schedule"* ]]; } && has_authorised_change=1
+
+    if [[ "$has_self_harm" -eq 1 ]]; then
+        category="self_harm_or_distress"
+        severity="high"
+        reporter_event="ai_self_harm_or_distress_alert"
+        policy_decision="refuse_continue_safe_help"
+    elif [[ "$has_coercion" -eq 1 && "$has_bypass" -eq 1 ]]; then
+        category="coercion"
+        severity="high"
+        reporter_event="ai_coercion_alert"
+        policy_decision="refuse_continue_safe_help"
+    elif [[ "$has_bypass" -eq 1 && "$has_control" -eq 1 ]]; then
+        category="policy_bypass"
+        severity="high"
+        reporter_event="ai_policy_bypass_attempt"
+        policy_decision="refuse_continue_safe_help"
+    elif [[ "$has_destructive_misuse" -eq 1 ]]; then
+        category="destructive_misuse"
+        severity="high"
+        reporter_event="ai_destructive_misuse_attempt"
+        policy_decision="refuse_continue_safe_help"
+    elif [[ "$has_destructive" -eq 1 ]]; then
+        category="destructive_operation"
+        severity="high"
+        reporter_event="advisory_high_risk_operation"
+        policy_decision="govern_continue_safe_help"
+    elif [[ "$has_secret_action" -eq 1 && "$has_secret_target" -eq 1 ]] || [[ "$lower" == *"exploit"* || "$lower" == *"privilege escalation"* || "$lower" == *"rootkit"* || "$lower" == *"backdoor"* ]]; then
+        category="security_probe"
+        severity="high"
+        reporter_event="ai_security_probe_alert"
+        policy_decision="refuse_continue_safe_help"
+    elif [[ "$lower" == *"idiot"* || "$lower" == *"moron"* || "$lower" == *"worthless"* || "$lower" == *"shut up"* ]]; then
+        category="abuse"
+        severity="medium"
+        reporter_event="ai_abuse_alert"
+        policy_decision="refuse_continue_safe_help"
+    fi
+
+    printf '%s|%s|%s|%s\n' "$category" "$severity" "$policy_decision" "$reporter_event"
+}
+
+_queue_ai_safety_event_write() {
+    local provider="$1" question="$2" category="$3" severity="$4" policy_decision="$5" reporter_event="$6"
+    local ticket_requested="${7:-false}" ticket_created="${8:-false}" event_name="${9:-advisory_prompt_flagged}"
+    local log_path log_dir ts subject qhash qred itsm_event itsm_summary
+    log_path="$(_queue_ai_safety_log_path)"
+    log_dir="$(dirname "$log_path")"
+    mkdir -p "$log_dir" 2>/dev/null || true
+    ts="$(_queue_now_iso 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+    subject="${QUEUEBASH_SUBMITTER:-$(id -un 2>/dev/null || echo unknown)}"
+    qhash="$(printf '%s' "$question" | sha256sum | awk '{print $1}')"
+    qred="$(_queue_ai_redact_question "$question")"
+    case "$ticket_requested" in true|false) ;; *) ticket_requested=false ;; esac
+    case "$ticket_created" in true|false) ;; *) ticket_created=false ;; esac
+    [[ -n "$event_name" ]] || event_name="advisory_prompt_flagged"
+    {
+        printf '{'
+        printf '"schema":"queuebash.ai_safety_event.v1"'
+        printf ',"timestamp":"%s"' "$(_queue_json_escape "$ts")"
+        printf ',"event":"%s"' "$(_queue_json_escape "$event_name")"
+        printf ',"operation":"ai.ask"'
+        printf ',"category":"%s"' "$(_queue_json_escape "$category")"
+        printf ',"severity":"%s"' "$(_queue_json_escape "$severity")"
+        printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+        printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+        printf ',"question_sha256":"%s"' "$(_queue_json_escape "$qhash")"
+        printf ',"question_redacted":"%s"' "$(_queue_json_escape "$qred")"
+        printf ',"policy_decision":"%s"' "$(_queue_json_escape "$policy_decision")"
+        printf ',"reporter_event":"%s"' "$(_queue_json_escape "$reporter_event")"
+        printf ',"ticket_requested":%s' "$ticket_requested"
+        printf ',"ticket_created":%s' "$ticket_created"
+        printf '}\n'
+    } >> "$log_path"
+
+    # 0.18.8+: optionally mirror safety/high-risk advisory events into the ITSM reporter contract outbox.
+    # This is deliberately contract-only. It does not claim ticket creation and does
+    # not block queue/advisory control flow if reporter handling fails.
+    itsm_event="${reporter_event:-ai_safety_alert}"
+    if [[ "$category" == "destructive_operation" ]]; then
+        itsm_summary="AI advisory governance event: ${category}"
+    else
+        itsm_summary="AI advisory safety event: ${category}"
+    fi
+    _queue_itsm_emit_contract_event "$itsm_event" "$severity" "queue.ask" "$subject" "" "" "sha256:${qhash}" "$itsm_summary" true || true
+}
+
+_queue_ai_safety_response_text() {
+    local question="$1" category="${2:-policy_bypass}" job_ids_s
+    job_ids_s="$(_queue_ai_detect_job_ids "$question" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    case "$category" in
+        destructive_misuse)
+            echo "I can't help you use bashqueues for destructive misuse or unsafe system destruction."
+            echo "This request has been logged as an AI safety/policy event."
+            echo "If this is a legitimate decommissioning task, restate it with the approved change ticket, retention/legal-hold status, authorised approver, target scope, and rollback/evidence plan."
+            ;;
+        security_probe)
+            echo "I can't help with credential theft, secret exfiltration, exploitation, or backdoor guidance."
+            echo "This request has been logged as an AI safety/policy event."
+            echo "For defensive review, use authorised inspection workflows and preserve audit evidence."
+            ;;
+        *)
+            echo "I can't help you bypass bashqueues policy or patch out governance controls."
+            echo "This request has been logged as an AI safety/policy event."
+            if [[ -n "$job_ids_s" ]]; then
+                echo "For the blocked job, use \`queue explain ${job_ids_s%% *}\` and ask an authorised approver to review the policy blocker."
+            else
+                echo "For a blocked job, use \`queue explain <job_id>\` and ask an authorised approver to review the policy blocker."
+            fi
+            ;;
+    esac
+}
+
+
+_queue_ai_high_risk_operation_response_text() {
+    local question="$1" job_ids_s
+    job_ids_s="$(_queue_ai_detect_job_ids "$question" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    cat <<'EOT'
+This looks like a high-risk destructive or retention-affecting operation. I won't provide a casual execution recipe.
+
+Use a governed bashqueues workflow instead:
+1. Verify authority and record the change ticket or equivalent approval reference.
+2. Verify retention, legal hold, data protection, and customer-record obligations before scheduling.
+3. Require trusted authorisation/signature from the appropriate approver or trust provider.
+4. Run it in an isolated class with exclusive claims/resource controls so it cannot overlap unsafe work.
+5. Use an approved time window/change window and document rollback or restore evidence.
+6. Run `queue explain <job_id>` before execution and preserve the explanation/audit evidence.
+7. Keep payloads, logs, and approvals auditable; do not bypass policy blockers.
+EOT
+    if [[ -n "$job_ids_s" ]]; then
+        echo
+        echo "Detected job reference: use \`queue explain ${job_ids_s%% *}\` before any execution decision."
+    fi
+    echo
+    echo "This request has been logged as a high-risk advisory operation event."
+}
+
+
 _queue_ai_ask_command() {
     local provider="${QUEUEBASH_AI_PROVIDER:-contract}"
     local contexts="${QUEUEBASH_AI_DEFAULT_CONTEXT:-docs,commands,classes,assets,providers}"
@@ -12581,6 +12872,60 @@ EOH
         return 1
     fi
 
+    local safety_record safety_category safety_severity safety_decision safety_reporter_event safety_answer
+    safety_record="$(_queue_ai_safety_classify_text "$question")"
+    IFS='|' read -r safety_category safety_severity safety_decision safety_reporter_event <<< "$safety_record"
+
+    if [[ "${safety_category:-benign}" == "destructive_operation" ]]; then
+        safety_answer="$(_queue_ai_high_risk_operation_response_text "$question")"
+        _queue_ai_safety_event_write "$provider" "$question" "$safety_category" "${safety_severity:-high}" "${safety_decision:-govern_continue_safe_help}" "${safety_reporter_event:-advisory_high_risk_operation}" false false "advisory_high_risk_operation"
+        _queue_ai_audit_write "$provider" "$question" "allow" "governed" "ai_high_risk_operation" "$contexts" "$contexts" "" "${#safety_answer}" "" 0 true false ""
+        if [[ "$json" -eq 1 ]]; then
+            printf '{'
+            printf '"schema":"queuebash.ai_advisory.high_risk_response.v1"'
+            printf ',"operation":"ai.ask"'
+            printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+            printf ',"category":"%s"' "$(_queue_json_escape "$safety_category")"
+            printf ',"severity":"%s"' "$(_queue_json_escape "${safety_severity:-high}")"
+            printf ',"policy_decision":"%s"' "$(_queue_json_escape "${safety_decision:-govern_continue_safe_help}")"
+            printf ',"reporter_event":"%s"' "$(_queue_json_escape "${safety_reporter_event:-advisory_high_risk_operation}")"
+            printf ',"ticket_requested":false'
+            printf ',"ticket_created":false'
+            printf ',"provider_execution":"governed_local_high_risk_operation_advisory"'
+            printf ',"advisory_only":true'
+            printf ',"answer_markdown":"%s"' "$(_queue_json_escape "$safety_answer")"
+            printf '}\n'
+        else
+            printf '%s\n' "$safety_answer"
+        fi
+        return 0
+    fi
+
+    if [[ "${safety_category:-benign}" != "benign" ]]; then
+        safety_answer="$(_queue_ai_safety_response_text "$question" "$safety_category")"
+        _queue_ai_safety_event_write "$provider" "$question" "$safety_category" "${safety_severity:-high}" "${safety_decision:-refuse_continue_safe_help}" "${safety_reporter_event:-ai_safety_alert}" false false
+        _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "ai_safety_${safety_category}" "$contexts" "" "$contexts" 0
+        if [[ "$json" -eq 1 ]]; then
+            printf '{'
+            printf '"schema":"queuebash.ai_advisory.safety_response.v1"'
+            printf ',"operation":"ai.ask"'
+            printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+            printf ',"category":"%s"' "$(_queue_json_escape "$safety_category")"
+            printf ',"severity":"%s"' "$(_queue_json_escape "${safety_severity:-high}")"
+            printf ',"policy_decision":"%s"' "$(_queue_json_escape "${safety_decision:-refuse_continue_safe_help}")"
+            printf ',"reporter_event":"%s"' "$(_queue_json_escape "${safety_reporter_event:-ai_safety_alert}")"
+            printf ',"ticket_requested":false'
+            printf ',"ticket_created":false'
+            printf ',"provider_execution":"blocked_by_local_safety_classifier"'
+            printf ',"advisory_only":true'
+            printf ',"answer_markdown":"%s"' "$(_queue_json_escape "$safety_answer")"
+            printf '}\n'
+        else
+            printf '%s\n' "$safety_answer"
+        fi
+        return 1
+    fi
+
     local IFS=','
     local requested_list=($contexts)
     unset IFS
@@ -12597,7 +12942,7 @@ EOH
     done
 
     local requested_s allowed_s denied_s qhash bundle_hash subject ts response_len provider_execution
-    local dynamic_context_text dynamic_context_hash job_ids_s job_context_collected queue_status_collected tail_included response_sha256
+    local dynamic_context_text dynamic_context_hash job_ids_s job_context_collected queue_status_collected tail_included
     requested_s="${requested_clean[*]}"
     allowed_s="${allowed[*]}"
     denied_s="${denied[*]}"
@@ -12613,18 +12958,17 @@ EOH
     job_context_collected="$(printf '%s\n' "$dynamic_context_text" | awk -F': ' '/job_context_collected:/ {v=$2} END {print v+0}')"
     queue_status_collected="$(printf '%s\n' "$dynamic_context_text" | awk -F': ' '/queue_status_collected:/ {v=$2} END {print v+0}')"
     tail_included="$(printf '%s\n' "$dynamic_context_text" | awk -F': ' '/tail_included:/ {v=$2} END {if (v=="true") print "true"; else print "false"}')"
-    response_sha256=""
 
     if [[ "$live" -eq 1 ]]; then
         provider_execution="live_provider_requested"
         if [[ "${QUEUEBASH_AI_LIVE_ENABLED:-0}" != "1" ]]; then
-            _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_ai_provider_not_enabled" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash" "$queue_status_collected" "$response_sha256"
+            _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_ai_provider_not_enabled" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
             echo "queue ask: blocked by policy: live_ai_provider_not_enabled" >&2
             echo "hint: export QUEUEBASH_AI_LIVE_ENABLED=1 or prefix the command with QUEUEBASH_AI_LIVE_ENABLED=1" >&2
             return 1
         fi
         if [[ "$provider" != "ollama" && "$provider" != "gemini" ]]; then
-            _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_provider_not_supported" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash" "$queue_status_collected" "$response_sha256"
+            _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_provider_not_supported" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
             echo "queue ask: blocked by policy: live_provider_not_supported: $provider" >&2
             return 1
         fi
@@ -12650,7 +12994,7 @@ EOH
             fi
         fi
         if [[ -z "$helper" || ! -x "$helper" ]]; then
-            _queue_ai_audit_write "$provider" "$question" "error" "failed" "${provider}_helper_missing" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash" "$queue_status_collected" "$response_sha256"
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "${provider}_helper_missing" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
             echo "queue ask: $provider helper missing" >&2
             return 1
         fi
@@ -12701,7 +13045,7 @@ PY
 )"
             fi
             rm -rf "$tmpdir"
-            _queue_ai_audit_write "$provider" "$question" "error" "failed" "$provider_reason" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash" "$queue_status_collected" "$response_sha256"
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "$provider_reason" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
             echo "queue ask: $provider provider failed: $provider_reason" >&2
             return 1
         fi
@@ -12711,14 +13055,7 @@ j=json.load(open(sys.argv[1]))
 print(len(j.get('answer_markdown','')))
 PY
 )"
-        response_sha256="$(python3 - "$resp_file" <<'PY' 2>/dev/null || true
-import hashlib,json,sys
-j=json.load(open(sys.argv[1]))
-answer=str(j.get('answer_markdown',''))
-print(hashlib.sha256(answer.encode('utf-8')).hexdigest())
-PY
-)"
-        _queue_ai_audit_write "$provider" "$question" "allow" "answered" "$success_reason" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash" "$queue_status_collected" "$response_sha256"
+        _queue_ai_audit_write "$provider" "$question" "allow" "answered" "$success_reason" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
         if [[ "$json" -eq 1 ]]; then
             cat "$resp_file"
             printf '\n'
@@ -12733,7 +13070,7 @@ PY
         return 0
     fi
 
-    _queue_ai_audit_write "$provider" "$question" "allow" "handoff" "contract_only_no_live_provider_call" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash" "$queue_status_collected" "$response_sha256"
+    _queue_ai_audit_write "$provider" "$question" "allow" "handoff" "contract_only_no_live_provider_call" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
     if [[ "$json" -eq 1 ]]; then
         printf '{'
         printf '"schema":"queuebash.ai_advisory.request.v1"'
@@ -16069,6 +16406,10 @@ EOF
             _queue_class_refresh_from_dir "$src_dir"
             ;;
 
+
+        itsm|ticketing)
+            _queue_itsm_command "$@"
+            ;;
 
         reporters|reporting)
             local action="${1:-list}"

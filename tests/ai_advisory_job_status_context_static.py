@@ -15,8 +15,6 @@ required_shell = [
     'dynamic_context_sha256',
     'job_ids_detected',
     'job_context_collected',
-    'queue_status_collected',
-    'response_sha256',
     'tail_included',
     'redactions_applied',
     'command_payload_redacted: true',

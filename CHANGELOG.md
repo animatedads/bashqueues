@@ -1,3 +1,26 @@
+## 0.18.9 - AI high-risk operation governance
+
+- Added deterministic advisory classification for high-risk destructive or retention-affecting operations.
+- Distinguishes destructive misuse, policy-bypass destructive requests, and legitimate approved high-risk work.
+- Returns governed workflow guidance for legitimate destructive operations instead of casual execution recipes.
+- Writes `advisory_high_risk_operation` JSONL audit events with severity high and no ticket-creation claim by default.
+
+## 0.18.8 - ITSM reporter contract
+
+- Added a contract-only ITSM reporter outbox for support/security/operations events.
+- Added `queue itsm status`, `queue itsm emit`, and `queue itsm events` command surfaces.
+- Added `docs/ITSM_REPORTER_CONTRACT.md` and `examples/reporters/itsm.env.example`.
+- Mirrored AI advisory safety events into the ITSM contract outbox when `QUEUEBASH_ITSM_ENABLED=1` without claiming ticket creation.
+- Kept reporter handling non-blocking and contract-only; no live ServiceNow/Jira/Freshservice/Zendesk/BMC/ManageEngine calls are made.
+
+## 0.18.7 - AI safety event reporting
+
+- Added deterministic local advisory prompt classification before live Gemini/Ollama invocation.
+- Added JSONL AI safety event logging for policy-bypass, security-probe, coercion, abuse, and self-harm/distress categories.
+- Added `bin/queue-advisory-classify` helper for the classifier contract.
+- Added policy-compliant refusal text that logs safety/policy events without claiming HR, emergency-service, or ticket escalation.
+- Added advisory safety governance docs and tests.
+
 ## 0.18.6 - AI advisory grounded status context
 
 - Added dynamic `queue ask` grounding for the installed command surface using the live `queue help` output so providers prefer real idioms such as `queue explain`, `queue show`, `queue tail`, `queue history`, `queue pids`, and `queue metrics`.

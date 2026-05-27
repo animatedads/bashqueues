@@ -95,14 +95,65 @@ AI advisory audit records include dynamic-context metadata so operators can see 
   "context_denied": "queue_status",
   "job_ids_detected": "20260525_003929_318087748_027297_1832294",
   "job_context_collected": 1,
-  "queue_status_collected": 0,
   "redactions_applied": true,
   "tail_included": false,
   "context_bundle_sha256": "abc123",
   "response_length": 0,
-  "response_sha256": "...",
   "result": "handoff"
 }
 ```
 
-The default posture remains private: command payloads and stdout/stderr are not included in AI context. Queue-wide collectors set `queue_status_collected` separately from per-job `job_context_collected`. Tail/log excerpts require the separate `job_tail` context and `QUEUEBASH_AI_ALLOW_JOB_TAIL=1`; when included, audit records set `tail_included=true`. Live provider answers may also be recorded with `response_sha256` so response identity can be audited without storing the full response in the audit JSONL.
+The default posture remains private: command payloads and stdout/stderr are not included in AI context. Tail/log excerpts require the separate `job_tail` context and `QUEUEBASH_AI_ALLOW_JOB_TAIL=1`; when included, audit records set `tail_included=true`.
+
+## AI safety event audit fields (0.18.7)
+
+Unsafe advisory prompts are recorded separately from provider responses in `queuebash.ai_safety_event.v1` JSONL records. These records are intentionally boring and redacted by default:
+
+- `event=advisory_prompt_flagged`
+- `operation=ai.ask`
+- `category`
+- `severity`
+- `subject`
+- `provider`
+- `question_sha256`
+- `question_redacted`
+- `policy_decision=refuse_continue_safe_help`
+- `reporter_event`
+- `ticket_requested=false`
+- `ticket_created=false`
+
+0.18.7 does not create tickets or contact external services. Future reporter integrations must set ticket fields only from confirmed reporter output.
+
+## ITSM contract mirroring (0.18.8)
+
+When `QUEUEBASH_ITSM_ENABLED=1`, AI safety events are also mirrored to the ITSM contract outbox as `queuebash.reporter.itsm_event.v1` records. This is a local JSONL outbox only. Core bashqueues still records `ticket_requested:false` and `ticket_created:false` unless a future configured reporter explicitly returns ticket metadata.
+
+The ITSM outbox defaults to:
+
+```text
+~/.queuebash/logs/itsm-events.jsonl
+```
+
+See `docs/ITSM_REPORTER_CONTRACT.md`.
+
+## High-risk operation advisory events (0.18.9)
+
+High-risk destructive or retention-affecting advisory prompts are recorded as JSONL governance events without claiming live ticket creation.
+
+Required fields include:
+
+```json
+{
+  "schema": "queuebash.ai_safety_event.v1",
+  "event": "advisory_high_risk_operation",
+  "operation": "ai.ask",
+  "category": "destructive_operation",
+  "severity": "high",
+  "policy_decision": "govern_continue_safe_help",
+  "reporter_event": "advisory_high_risk_operation",
+  "ticket_requested": false,
+  "ticket_created": false
+}
+```
+
+Destructive misuse and policy-bypass destructive requests remain refusal events.

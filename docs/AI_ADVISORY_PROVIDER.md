@@ -247,8 +247,21 @@ The normalized request JSON may include these additional fields:
   "dynamic_context_text": "redacted shell-generated context",
   "job_ids_detected": "20260525_003929_318087748_027297_1832294",
   "job_context_collected": 1,
-  "queue_status_collected": 0,
   "tail_included": false,
   "redactions_applied": true
 }
 ```
+
+## AI safety event reporting (0.18.7)
+
+Before `queue ask --live` invokes Gemini or Ollama, the local shell front-end runs a deterministic advisory safety classifier. Prompts classified as `policy_bypass`, `security_probe`, `coercion`, `abuse`, or `self_harm_or_distress` are refused locally and do not call the live provider.
+
+Flagged prompts write a JSONL event using schema `queuebash.ai_safety_event.v1`. The default event path is `~/.queuebash/logs/ai-safety.audit.jsonl`, or `QUEUEBASH_AI_SAFETY_LOG` when set.
+
+The response may state that the request was logged as an AI safety/policy event. It must not claim HR contact, emergency service contact, or support-ticket creation unless a future configured reporter returns a real ticket identifier.
+
+## High-risk operation governance (0.18.9)
+
+High-risk destructive or retention-affecting operations are governed before provider invocation. The local classifier categorizes legitimate destructive work as `destructive_operation` and returns a local governed workflow advisory instead of a casual command recipe.
+
+Provider integrations must preserve this distinction: destructive misuse is refused, policy-bypass destructive requests are refused, and legitimate approved decommissioning receives authority/change-ticket, retention/legal-hold, trusted authorisation, isolation, change-window, `queue explain`, and audit-evidence guidance.
