@@ -14,7 +14,7 @@ queue_asset_hints() {
     cat <<'EOF_HINTS'
 fileprofile:profile_exists	target=profile name	params=profile_file=/path profile_root=/path	example=queue_class_shared_asset fileprofile profile_exists wget_google	notes=Finds approved interrogation file/resource profiles.
 fileprofile:profile_signed	target=profile name	params=profile_file=/path profile_root=/path	example=queue_class_shared_asset fileprofile profile_signed wget_google	notes=Requires SHOULD_BE_SIGNED=1, STATUS=approved, SIGNED=1.
-fileprofile:profile_verified	target=profile name	params=profile_file=/path profile_root=/path allow_self_signed=1 required_signer=name[,name]	example=queue_class_shared_asset fileprofile profile_verified wget_google allow_self_signed=0 required_signer=ops-release	notes=Verifies the SHA256 stamp and signer trust policy over the approved profile content.
+fileprofile:profile_verified	target=profile name	params=profile_file=/path profile_root=/path allow_self_signed=1 required_signer=name[,name]	example=queue_class_shared_asset fileprofile profile_verified wget_google allow_self_signed=0 required_signer=ops-release	notes=Verifies the SHA256 payload stamp, optional Ed25519 signature, and signer trust policy over the approved profile content.
 EOF_HINTS
 }
 
@@ -38,7 +38,7 @@ _queue_asset_fileprofile_file() {
 }
 
 _queue_asset_fileprofile_get() { grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2-; }
-_queue_asset_fileprofile_sig_content() { grep -Ev '^FILEPROFILE_SIGNATURE_SHA256=' "$1" 2>/dev/null; }
+_queue_asset_fileprofile_sig_content() { grep -Ev '^FILEPROFILE_(SIGNATURE_SHA256|SIGNATURE_PAYLOAD_SHA256|SIGNATURE_B64|SIGNATURE_ALG|PUBLIC_KEY_SHA256)=' "$1" 2>/dev/null; }
 _queue_asset_fileprofile_hash() { _queue_asset_fileprofile_sig_content "$1" | sha256sum | awk '{print $1}'; }
 _queue_asset_fileprofile_csv_has() {
     local needle="$1" list="$2" x
@@ -49,6 +49,47 @@ _queue_asset_fileprofile_csv_has() {
     done
     return 1
 }
+
+_queue_asset_fileprofile_key_root() {
+    if [[ -n "${QUEUEBASH_PROFILE_KEY_ROOT:-}" ]]; then printf '%s
+' "${QUEUEBASH_PROFILE_KEY_ROOT%/}"; return 0; fi
+    if [[ -n "${QUEUEBASH_AUTHORISATION_KEY_ROOT:-}" ]]; then printf '%s
+' "${QUEUEBASH_AUTHORISATION_KEY_ROOT%/}"; return 0; fi
+    printf '%s/keys
+' "${QUEUEBASH_ROOT:-$HOME/.queuebash}"
+}
+_queue_asset_fileprofile_public_key() { printf '%s/public/%s.ed25519.pub.pem
+' "$(_queue_asset_fileprofile_key_root)" "$1"; }
+_queue_asset_fileprofile_file_sha256() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
+_queue_asset_fileprofile_verify_ed25519() {
+    local file="$1" signed_by sig_b64 pub expected_pub_sha actual_pub_sha tmpdir payload sigfile rc alg
+    alg="$(_queue_asset_fileprofile_get "$file" FILEPROFILE_SIGNATURE_ALG)"
+    sig_b64="$(_queue_asset_fileprofile_get "$file" FILEPROFILE_SIGNATURE_B64)"
+    [[ -n "$sig_b64" ]] || return 0
+    [[ "$alg" == "ed25519" ]] || { echo "asset_check_blocked: fileprofile:profile_verified unsupported_signature_alg alg=${alg:-unknown}"; return 1; }
+    command -v openssl >/dev/null 2>&1 || { echo "asset_check_blocked: fileprofile:profile_verified openssl_required"; return 1; }
+    command -v base64 >/dev/null 2>&1 || { echo "asset_check_blocked: fileprofile:profile_verified base64_required"; return 1; }
+    signed_by="$(_queue_asset_fileprofile_get "$file" FILEPROFILE_SIGNED_BY)"
+    pub="$(_queue_asset_fileprofile_public_key "$signed_by")"
+    [[ -r "$pub" ]] || { echo "asset_check_blocked: fileprofile:profile_verified public_key_missing signer=${signed_by:-unknown} path=$pub"; return 1; }
+    expected_pub_sha="$(_queue_asset_fileprofile_get "$file" FILEPROFILE_PUBLIC_KEY_SHA256)"
+    actual_pub_sha="$(_queue_asset_fileprofile_file_sha256 "$pub")"
+    if [[ -n "$expected_pub_sha" && -n "$actual_pub_sha" && "$expected_pub_sha" != "$actual_pub_sha" ]]; then
+        echo "asset_check_blocked: fileprofile:profile_verified public_key_sha_mismatch signer=${signed_by:-unknown}"
+        return 1
+    fi
+    tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/queue-fileprofile-verify.XXXXXX")" || return 1
+    payload="$tmpdir/payload"; sigfile="$tmpdir/sig.bin"
+    _queue_asset_fileprofile_sig_content "$file" > "$payload"
+    printf '%s' "$sig_b64" | base64 -d > "$sigfile" 2>/dev/null || { rm -rf "$tmpdir"; echo "asset_check_blocked: fileprofile:profile_verified signature_b64_invalid"; return 1; }
+    if openssl pkeyutl -verify -rawin -pubin -inkey "$pub" -sigfile "$sigfile" -in "$payload" >/dev/null 2>&1; then
+        rm -rf "$tmpdir"; return 0
+    fi
+    rc=$?; rm -rf "$tmpdir"
+    echo "asset_check_blocked: fileprofile:profile_verified ed25519_signature_invalid signer=${signed_by:-unknown}"
+    return "$rc"
+}
+
 _queue_asset_fileprofile_trust_ok() {
     local file="$1" shift_dummy="${2:-}"; shift || true
     local allow_self required signed_by self_signed
@@ -96,6 +137,7 @@ queue_asset_check_fileprofile_profile_verified() {
     expected="$(_queue_asset_fileprofile_get "$f" FILEPROFILE_SIGNATURE_SHA256)"
     actual="$(_queue_asset_fileprofile_hash "$f")"
     [[ -n "$expected" && "$expected" == "$actual" ]] || { echo "asset_check_blocked: fileprofile:profile_verified signature_mismatch name=$name"; return 1; }
+    _queue_asset_fileprofile_verify_ed25519 "$f" || return 1
     _queue_asset_fileprofile_trust_ok "$f" _ "$@" || return 1
     signed_by="$(_queue_asset_fileprofile_get "$f" FILEPROFILE_SIGNED_BY)"
     echo "asset_check_ok: fileprofile:profile_verified name=$name signed_by=${signed_by:-unknown}"

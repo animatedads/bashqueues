@@ -111,6 +111,26 @@ normal `--reason` or signed `--authorisation` path.
   - `overfiles`
   - `overdir`
 
+## Full Disclosure: The `bashqueues` Origin Story
+
+In the spirit of open-source transparency and Zero-Trust architecture, we believe in putting our cards on the table about how this system was built.
+
+**The Blueprint:** `bashqueues` was architected by a human with decades of battle scars in software architecture, shell operations, and enterprise systems management. The human design set the physical laws of the system: distributed governance, strict policy boundaries, cryptographic approval paths, and the fail-closed philosophy.
+
+**The Assembly Line:** With the architecture set, construction was carried out with an openly acknowledged AI-assisted software factory. Different AI systems were used for implementation, security review, integration checking, Microsoft-stack modelling, cloud-governance modelling, documentation, packaging, and adversarial critique.
+
+That process is not hidden. It is part of the audit trail. The point was not to ask an AI to invent an operations model; the point was to use AI as a high-throughput assembly and review line under human architectural control.
+
+**The Prime Directive:** Like all trustworthy enterprise packages, `bashqueues` does **not** use AI to make runtime decisions about job management.
+
+There are no Large Language Models in the critical path. There are no stochastic guesses about when a job should run, where it should be routed, which class policy applies, or what system calls a profiled job is allowed to make.
+
+At runtime, `bashqueues` is deterministic, inspectable, policy-verifiable, and designed to fail closed. Where configured, enforcement is delegated to ordinary Linux controls such as filesystem permissions, process ownership, systemd sandbox properties, seccomp syscall filters, capabilities, namespaces, and cryptographic signature verification.
+
+AI helped build the code. Deterministic policy enforces the law.
+
+See `docs/ORIGIN_STORY.md` for the longer form.
+
 
 
 

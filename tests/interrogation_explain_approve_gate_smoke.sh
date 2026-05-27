@@ -54,11 +54,11 @@ grep -q 'global_network_context_ignored' <<<"$explain" || fail "explain omitted 
 if queue profile interrogate approve good >/tmp/approve.out 2>/tmp/approve.err; then
   fail "approve unexpectedly succeeded without --accept-warnings"
 fi
-queue profile interrogate approve good --accept-warnings --signing-key test-key >/tmp/approve.out
+queue profile interrogate approve good --accept-warnings --signing-key self:test-key >/tmp/approve.out
 
-grep -q 'signed_by=test-key' /tmp/approve.out || fail "approve did not report signing key"
+grep -q 'signed_by=self:test-key' /tmp/approve.out || fail "approve did not report signing key"
 grep -q 'SECPROFILE_SIGNED=1' "$QUEUEBASH_ROOT/profiles/interrogation/approved/good.seccomp.env" || fail "seccomp not signed"
-grep -q 'SECPROFILE_SIGNED_BY=test-key' "$QUEUEBASH_ROOT/profiles/interrogation/approved/good.seccomp.env" || fail "seccomp signed_by missing"
+grep -q 'SECPROFILE_SIGNED_BY=self:test-key' "$QUEUEBASH_ROOT/profiles/interrogation/approved/good.seccomp.env" || fail "seccomp signed_by missing"
 
 cat > "$cand/risky.seccomp.env" <<'EOF'
 SECPROFILE_NAME=risky

@@ -1,3 +1,22 @@
+## 0.17.94-docs - origin story documentation
+
+- Added `docs/ORIGIN_STORY.md` describing the AI-assisted construction process and the deterministic runtime boundary.
+- Added a README origin-story section clarifying that AI is not in the job-management critical path.
+- Tightened public wording so enforcement claims distinguish deterministic policy verification from Linux/kernel enforcement configured by specific runners and assets.
+
+## 0.17.94 - secure profiled class gate
+
+- Added `queue profile interrogate class-template CLASS --profile NAME` to generate classes that gate dispatch on approved/signed interrogation profiles.
+- Updated `classes/SECURE_PROFILED.env` so secure-profiled classes perform preflight verification of secprofile, netprofile, and fileprofile assets.
+- Secure profiled class gates default to `allow_self_signed=0` and support `required_signer=...` for trusted Ed25519 profile signers.
+
+## 0.17.93 - Ed25519 profile signing
+
+- Added key-backed Ed25519 signing for interrogation profile approval when `--signing-key NAME` refers to an installed authorisation/profile key.
+- `queue profile interrogate verify` now verifies both the canonical SHA256 payload stamp and the Ed25519 detached signature when present.
+- secprofile/netprofile/fileprofile assets now reject invalid Ed25519 signatures before accepting trusted approved profiles.
+- Self-signed profiles remain available for dev/test and are explicitly marked with `*_SIGNATURE_ALG=sha256-self`.
+
 ## 0.17.92 - profile signature verification
 
 - Added `queue profile interrogate verify NAME` to verify approved seccomp, net, and file profiles without running a job.
@@ -1840,3 +1859,5 @@ Initial public queuebash release:
 - Candidate file profiles now include FILEPROFILE_OBSERVED_DELETE_PATHS and FILEPROFILE_OBSERVED_WRITE_PATHS.
 - `queue profile interrogate explain` now displays observed delete/write paths and adds path evidence notes for destructive syscalls.
 - Added regression tests for unlink/write path extraction and explain output.
+
+- 2026-05-27 00:21:43 BST — AI-PATCH _queue_profile_command in `queuebash.sh`: 0.17.94: add class-template dispatch for secure profiled class gates

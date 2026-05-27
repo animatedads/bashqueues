@@ -3,12 +3,13 @@
 
 This tool deliberately creates *candidate* profiles first.  `approve` promotes a
 candidate to the approved tree and stamps it with a tamper-evident SHA256 over
-its profile content.  It is not a substitute for the wider bashqueues code/key
-trust model; the generated profiles advertise SHOULD_BE_SIGNED=1 so class assets
-can refuse unsigned/candidate policy.
+its profile content.  When an Ed25519 authorisation/profile key is supplied the
+approved profile also carries a detached Ed25519 signature verified against the
+existing bashqueues key root.  Self-signed profiles remain explicit and auditable
+for development, but site policy can require trusted key-backed signatures.
 """
 from __future__ import annotations
-import argparse, hashlib, json, os, re, shutil, sys, time
+import argparse, base64, hashlib, json, os, re, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 from typing import Iterable
 
@@ -763,7 +764,7 @@ def explain_cmd(ns: argparse.Namespace) -> int:
     print("signature status:")
     for kind in PROFILE_KINDS:
         sig = review.get("signature_status", {}).get(kind, {})
-        print(f"  {kind:<8} signed_by={sig.get('signed_by') or '-'} self_signed={sig.get('self_signed') or '0'} signature_valid={1 if sig.get('signature_valid') else 0} signer_trusted={1 if sig.get('signer_trusted') else 0} verified={1 if sig.get('verified') else 0} error={sig.get('error') or '-'}")
+        print(f"  {kind:<8} signed_by={sig.get('signed_by') or '-'} self_signed={sig.get('self_signed') or '0'} signature_valid={1 if sig.get('signature_valid') else 0} ed25519_valid={1 if sig.get('ed25519_valid') else 0} signer_trusted={1 if sig.get('signer_trusted') else 0} verified={1 if sig.get('verified') else 0} error={sig.get('error') or '-'}")
     print()
     s = review["summary"]
     print("behaviour summary:")
@@ -828,21 +829,64 @@ def _prefix_for_kind(kind: str) -> str:
 
 
 def _signature_content_lines(path: Path, kind: str) -> list[str]:
-    """Return the canonical lines used for the current tamper-evident stamp.
+    """Return canonical profile payload lines.
 
-    0.17.88 signed approved profiles by hashing all profile lines except the
-    signature field itself.  Keep that stable so existing approved profiles
-    continue to verify.
+    Signature material is excluded so both SHA256-only legacy approvals and
+    Ed25519-backed approvals hash the same approved payload.  The signed payload
+    deliberately includes status/signer/timestamp fields, but excludes detached
+    signature blobs and derived payload hashes.
     """
     prefix = _prefix_for_kind(kind)
     if not path.exists():
         return []
-    return [ln for ln in path.read_text(errors="replace").splitlines()
-            if not re.match(rf"^{prefix}_SIGNATURE_SHA256=", ln)]
+    sig_field = re.compile(rf"^{prefix}_(SIGNATURE_SHA256|SIGNATURE_PAYLOAD_SHA256|SIGNATURE_B64|SIGNATURE_ALG|PUBLIC_KEY_SHA256)=")
+    return [ln for ln in path.read_text(errors="replace").splitlines() if not sig_field.match(ln)]
+
+
+def _payload_bytes_from_lines(lines: list[str]) -> bytes:
+    return ("\n".join(lines) + "\n").encode("utf-8")
 
 
 def _signature_hash(path: Path, kind: str) -> str:
-    return hashlib.sha256(("\n".join(_signature_content_lines(path, kind)) + "\n").encode("utf-8")).hexdigest()
+    return hashlib.sha256(_payload_bytes_from_lines(_signature_content_lines(path, kind))).hexdigest()
+
+
+def _profile_key_root() -> Path:
+    return Path(os.environ.get("QUEUEBASH_PROFILE_KEY_ROOT") or os.environ.get("QUEUEBASH_AUTHORISATION_KEY_ROOT") or (root() / "keys"))
+
+
+def _profile_private_key(name: str) -> Path:
+    return _profile_key_root() / "private" / f"{safe_name(name)}.ed25519.pem"
+
+
+def _profile_public_key(name: str) -> Path:
+    return _profile_key_root() / "public" / f"{safe_name(name)}.ed25519.pub.pem"
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else ""
+
+
+def _openssl_sign_payload(payload: bytes, private_key: Path) -> str:
+    with tempfile.TemporaryDirectory(prefix="queue-profile-sign-") as td:
+        d = Path(td); data = d / "payload"; sig = d / "sig.bin"
+        data.write_bytes(payload)
+        subprocess.run(["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(private_key), "-in", str(data), "-out", str(sig)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return base64.b64encode(sig.read_bytes()).decode("ascii")
+
+
+def _openssl_verify_payload(payload: bytes, signature_b64: str, public_key: Path) -> tuple[bool, str]:
+    if not public_key.exists():
+        return False, "public_key_missing"
+    try:
+        sig_bytes = base64.b64decode(signature_b64.encode("ascii"), validate=True)
+    except Exception:
+        return False, "signature_b64_invalid"
+    with tempfile.TemporaryDirectory(prefix="queue-profile-verify-") as td:
+        d = Path(td); data = d / "payload"; sig = d / "sig.bin"
+        data.write_bytes(payload); sig.write_bytes(sig_bytes)
+        proc = subprocess.run(["openssl", "pkeyutl", "-verify", "-rawin", "-pubin", "-inkey", str(public_key), "-sigfile", str(sig), "-in", str(data)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return proc.returncode == 0, ("valid" if proc.returncode == 0 else "ed25519_signature_invalid")
 
 
 def _signer_allowed(signed_by: str, self_signed: bool, allow_self_signed: bool, required_signers: list[str]) -> tuple[bool, str]:
@@ -869,6 +913,12 @@ def verify_profile_file(path: Path, kind: str, allow_self_signed: bool = True, r
         "expected_signature": data.get(f"{prefix}_SIGNATURE_SHA256", ""),
         "actual_signature": "",
         "signature_valid": False,
+        "signature_alg": data.get(f"{prefix}_SIGNATURE_ALG", "sha256"),
+        "signature_payload_sha256": data.get(f"{prefix}_SIGNATURE_PAYLOAD_SHA256", ""),
+        "signature_b64_present": bool(data.get(f"{prefix}_SIGNATURE_B64", "")),
+        "public_key_sha256": data.get(f"{prefix}_PUBLIC_KEY_SHA256", ""),
+        "ed25519_valid": False,
+        "ed25519_reason": "not_present",
         "signer_trusted": False,
         "trust_reason": "not_checked",
         "verified": False,
@@ -880,12 +930,31 @@ def verify_profile_file(path: Path, kind: str, allow_self_signed: bool = True, r
     if result["status"] != "approved" or result["should_be_signed"] != "1" or result["signed"] != "1":
         result["error"] = "unsigned_or_candidate"
         return result
-    result["actual_signature"] = _signature_hash(path, kind)
+    payload_lines = _signature_content_lines(path, kind)
+    payload = _payload_bytes_from_lines(payload_lines)
+    result["actual_signature"] = hashlib.sha256(payload).hexdigest()
     result["signature_valid"] = bool(result["expected_signature"] and result["expected_signature"] == result["actual_signature"])
+    if result["signature_payload_sha256"] and result["signature_payload_sha256"] != result["actual_signature"]:
+        result["error"] = "signature_mismatch"
+        return result
     if not result["signature_valid"]:
         result["error"] = "signature_mismatch"
         return result
     self_signed = result["self_signed"] == "1" or result["signed_by"].startswith("self:")
+    sig_b64 = data.get(f"{prefix}_SIGNATURE_B64", "")
+    if sig_b64:
+        pub = _profile_public_key(result["signed_by"])
+        pub_sha = _sha256_file(pub)
+        if result["public_key_sha256"] and pub_sha and result["public_key_sha256"] != pub_sha:
+            result["ed25519_reason"] = "public_key_sha_mismatch"
+            result["error"] = "public_key_sha_mismatch"
+            return result
+        ok, reason = _openssl_verify_payload(payload, sig_b64, pub)
+        result["ed25519_valid"] = ok
+        result["ed25519_reason"] = reason
+        if not ok:
+            result["error"] = reason
+            return result
     trusted, reason = _signer_allowed(result["signed_by"], self_signed, allow_self_signed, required_signers)
     result["signer_trusted"] = trusted
     result["trust_reason"] = reason
@@ -916,14 +985,15 @@ def verify_cmd(ns: argparse.Namespace) -> int:
         print(f"profile: {name}")
         print(f"verified: {1 if rc == 0 else 0}")
         for r in rows:
-            print(f"  {r['kind']:<8} signature_valid={1 if r['signature_valid'] else 0} signer_trusted={1 if r['signer_trusted'] else 0} signed_by={r['signed_by'] or '-'} self_signed={r['self_signed'] or '0'} error={r['error'] or '-'}")
+            print(f"  {r['kind']:<8} signature_valid={1 if r['signature_valid'] else 0} ed25519_valid={1 if r.get('ed25519_valid') else 0} signer_trusted={1 if r['signer_trusted'] else 0} signed_by={r['signed_by'] or '-'} self_signed={r['self_signed'] or '0'} error={r['error'] or '-'}")
     return rc
 
 
 def sign_profile(path: Path, kind: str, signing_key: str, self_signed: bool) -> list[str]:
     prefix = _prefix_for_kind(kind)
     raw_lines = path.read_text(errors="replace").splitlines()
-    filtered = [ln for ln in raw_lines if not re.match(rf"^{prefix}_(STATUS|SIGNED|SIGNED_AT|SIGNED_BY|SELF_SIGNED|SIGNING_KEY|SIGNATURE_SHA256)=", ln)]
+    volatile = re.compile(rf"^{prefix}_(STATUS|SIGNED|SIGNED_AT|SIGNED_BY|SELF_SIGNED|SIGNING_KEY|SIGNATURE_SHA256|SIGNATURE_PAYLOAD_SHA256|SIGNATURE_ALG|SIGNATURE_B64|PUBLIC_KEY_SHA256)=")
+    filtered = [ln for ln in raw_lines if not volatile.match(ln)]
     out = []
     for ln in filtered:
         if ln.startswith(f"{prefix}_SHOULD_BE_SIGNED="):
@@ -935,11 +1005,23 @@ def sign_profile(path: Path, kind: str, signing_key: str, self_signed: bool) -> 
     out.append(f"{prefix}_SIGNED_AT={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}")
     out.append(f"{prefix}_SIGNED_BY={signing_key}")
     out.append(f"{prefix}_SELF_SIGNED={1 if self_signed else 0}")
-    # This is a local tamper-evident signature stamp.  It deliberately records
-    # the signing key identity; integration with the broader queue code-key trust
-    # store can later replace/strengthen this without changing profile consumers.
-    sig = content_hash(out)
-    out.append(f"{prefix}_SIGNATURE_SHA256={sig}")
+    payload = _payload_bytes_from_lines(out)
+    sig_hash = hashlib.sha256(payload).hexdigest()
+    out.append(f"{prefix}_SIGNATURE_PAYLOAD_SHA256={sig_hash}")
+    out.append(f"{prefix}_SIGNATURE_SHA256={sig_hash}")
+    if not self_signed:
+        priv = _profile_private_key(signing_key)
+        pub = _profile_public_key(signing_key)
+        if not priv.exists():
+            raise FileNotFoundError(f"profile signing private key not found: {priv}")
+        if not pub.exists():
+            raise FileNotFoundError(f"profile signing public key not found: {pub}")
+        sig_b64 = _openssl_sign_payload(payload, priv)
+        out.append(f"{prefix}_SIGNATURE_ALG=ed25519")
+        out.append(f"{prefix}_PUBLIC_KEY_SHA256={_sha256_file(pub)}")
+        out.append(f"{prefix}_SIGNATURE_B64={sig_b64}")
+    else:
+        out.append(f"{prefix}_SIGNATURE_ALG=sha256-self")
     return out
 
 
@@ -963,7 +1045,11 @@ def approve_cmd(ns: argparse.Namespace) -> int:
         src = profile_file(broot, name, kind, approved=False)
         if not src.exists():
             print(f"missing candidate: {src}", file=sys.stderr); return 1
-        lines = sign_profile(src, kind, signing_key, self_signed)
+        try:
+            lines = sign_profile(src, kind, signing_key, self_signed)
+        except Exception as e:
+            print(f"approve: signing failed for {kind}: {e}", file=sys.stderr)
+            return 5
         dst = profile_file(broot, name, kind, approved=True)
         write_env(dst, lines)
         approved[kind] = str(dst)
