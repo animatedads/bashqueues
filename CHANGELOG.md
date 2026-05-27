@@ -1,3 +1,29 @@
+## 0.17.97 - Microsoft governance provider contract
+
+- Added `docs/MS_GOVERNANCE_PROVIDER.md`, defining Microsoft/Entra/Graph/SharePoint/Purview/Key Vault as provider backends for bashqueues policy, ACL, key, and delegation decisions.
+- Added normalized JSON contracts for `queue-ms-token`, `queue-ms-policy-resolve`, `queue-ms-acl-check`, and `queue-ms-key-resolve`; provider output is data only and is never evaluated as shell.
+- Added command-operation ACL vocabulary such as `job.submit`, `profile.approve`, `class.manage`, and `dev.patch` so enterprise directory groups can govern sensitive operations.
+- Added `examples/providers/microsoft.env.example` using canonical `/etc/queuebash/policy/providers.d/`, `/var/cache/queuebash/`, and `/usr/libexec/queuebash/` paths.
+- Updated trust-provider documentation to position Microsoft as the first enterprise provider contract, with LDAP and PAM.d/NSS intended to follow the same normalized helper/JSON model.
+- Added static regression tests for the Microsoft provider contract and JSON examples, including checks against `/etc/bashqueues` namespace drift.
+
+## 0.17.96 - trust provider interface
+
+- Added a trust-provider boundary to secprofile, netprofile, and fileprofile verification so local key files are one provider implementation rather than the trust model itself.
+- Added default file-backed trust policy support via `/etc/queuebash/policy/trust.conf`, including allowed/denied signers, required signers, self-signed denial, and a configurable key root.
+- Added an `exec` trust-provider hook for LDAP, Active Directory, domain PKI, Vault/HSM, enterprise PKI, or internal policy-service integrations.
+- Added canonical `/etc/queuebash/interrogation/approved` profile lookup paths while preserving the older `/etc/bashqueues` compatibility path.
+- Extended `queue dev functions` and `queue dev extract` with `--file FILE` so large codebase inspection can use the project interface instead of ad-hoc text scraping.
+- Added `docs/TRUST_PROVIDERS.md` and regression coverage for file and exec provider trust decisions.
+
+## 0.17.95 - runtime seccomp generated profiles
+
+- Added runtime seccomp enforcement for approved/signed interrogation secprofiles.
+- Secure-profiled class defaults now stamp SECCOMP_PROFILED_* metadata onto jobs.
+- systemd runner payloads emit SystemCallFilter= from verified SECPROFILE_ALLOWED_SYSCALLS.
+- Profiled seccomp fails closed when the systemd runner is unavailable or profile verification fails.
+- Runtime seccomp delegates key, ACL, delegation, and trust decisions to the profile verification layer so future file/LDAP/AD/PKI providers can replace local-file trust without changing the runner hot path.
+
 ## 0.17.94-docs - origin story documentation
 
 - Added `docs/ORIGIN_STORY.md` describing the AI-assisted construction process and the deterministic runtime boundary.

@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
-grep -q 'QUEUEBASH_VERSION="0.17.94"' queuebash.sh || fail 'version not bumped to 0.17.94'
+grep -q 'QUEUEBASH_VERSION="0.17.97"' queuebash.sh || fail 'version not bumped to 0.17.95'
 grep -q '_queue_profile_class_template' queuebash.sh || fail 'class template helper missing'
 grep -q 'queue profile interrogate class-template CLASS --profile NAME' queuebash.sh || fail 'class-template usage missing'
 grep -q 'queue_class_shared_asset secprofile profile_verified "$PROFILE_NAME"' classes/SECURE_PROFILED.env || fail 'SECURE_PROFILED missing secprofile gate'

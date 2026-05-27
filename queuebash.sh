@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.17.94"
+QUEUEBASH_VERSION="0.17.97"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -4594,87 +4594,90 @@ _queue_normalize_systemd_cpu_quota() {
     fi
 }
 
-_queue_class_load_defaults_for_class() {
-    local class="${1:-DEFAULT}"
-    local class_file
-    class_file="$(_queue_class_file "$class")"
-    [[ -f "$class_file" ]] || return 0
-
-    (
-        CLASS_DEFAULT_RUNNER=""
-        CLASS_DEFAULT_CPU_LIMIT=""
-        CLASS_DEFAULT_MEM_LIMIT=""
-        CLASS_DEFAULT_MAX_LOG_SIZE_BYTES=""
-        CLASS_DEFAULT_LOG_OVERFLOW_POLICY=""
-        CLASS_DEFAULT_ALLOW_LARGE_LOG=""
-        CLASS_DEFAULT_TIMEOUT=""
-        CLASS_DEFAULT_KILL_AFTER=""
-        CLASS_DEFAULT_LOG_TAG=""
-        CLASS_DEFAULT_OUTPUT_DIR=""
-        CLASS_DEFAULT_ENV_PREFIX=""
-        CLASS_DEFAULT_WORKING_DIR=""
-        CLASS_DEFAULT_RUN_USER=""
-        CLASS_DEFAULT_SUBMIT_USER=""
-        CLASS_DEFAULT_SANDBOX_LEVEL=""
-        CLASS_DEFAULT_RUNTIME_CAPS=""
-        CLASS_DEFAULT_RUNTIME_CAP_INTERVAL=""
-        CLASS_DEFAULT_RUNTIME_CAP_PORTS=""
-        CLASS_DEFAULT_SECCOMP_PROFILE=""
-        CLASS_DEFAULT_SECCOMP_ALLOW=""
-        CLASS_EXEC_ENV=""
-        CLASS_DEFAULT_EXEC_ENV=""
-
-        # Execution/cost caps.
-        CLASS_DEFAULT_CPU_SECONDS=""
-        CLASS_DEFAULT_WALL_SECONDS=""
-        CLASS_DEFAULT_BILLING_CYCLES=""
-        CLASS_DEFAULT_BILLING_UNIT_SECONDS=""
-        CLASS_DEFAULT_BILLING_GRACE_SECONDS=""
-        CLASS_DEFAULT_BILLING_POLICY=""
-        CLASS_DEFAULT_NET_USAGE_INTERFACE=""
-        CLASS_DEFAULT_NET_USAGE_DIRECTION=""
-        CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES=""
-        CLASS_DEFAULT_NET_USAGE_ALLOWANCE_BYTES=""
-        CLASS_DEFAULT_NET_USAGE_COUNTER_FILE=""
-        CLASS_DEFAULT_NET_USAGE_POLICY=""
-
-        source "$class_file" >/dev/null 2>&1 || exit 0
-
-        [[ -n "${CLASS_DEFAULT_RUNNER:-}" ]] && printf 'RUNNER\t%s\n' "$CLASS_DEFAULT_RUNNER"
-        [[ -n "${CLASS_DEFAULT_CPU_LIMIT:-}" ]] && printf 'CPU_LIMIT\t%s\n' "$CLASS_DEFAULT_CPU_LIMIT"
-        [[ -n "${CLASS_DEFAULT_MEM_LIMIT:-}" ]] && printf 'MEM_LIMIT\t%s\n' "$CLASS_DEFAULT_MEM_LIMIT"
-        [[ -n "${CLASS_DEFAULT_MAX_LOG_SIZE_BYTES:-}" ]] && printf 'MAX_LOG_SIZE_BYTES\t%s\n' "$CLASS_DEFAULT_MAX_LOG_SIZE_BYTES"
-        [[ -n "${CLASS_DEFAULT_LOG_OVERFLOW_POLICY:-}" ]] && printf 'LOG_OVERFLOW_POLICY\t%s\n' "$CLASS_DEFAULT_LOG_OVERFLOW_POLICY"
-        [[ -n "${CLASS_DEFAULT_ALLOW_LARGE_LOG:-}" ]] && printf 'ALLOW_LARGE_LOG\t%s\n' "$CLASS_DEFAULT_ALLOW_LARGE_LOG"
-        [[ -n "${CLASS_DEFAULT_TIMEOUT:-}" ]] && printf 'TIMEOUT\t%s\n' "$CLASS_DEFAULT_TIMEOUT"
-        [[ -n "${CLASS_DEFAULT_KILL_AFTER:-}" ]] && printf 'KILL_AFTER\t%s\n' "$CLASS_DEFAULT_KILL_AFTER"
-        [[ -n "${CLASS_DEFAULT_LOG_TAG:-}" ]] && printf 'LOG_TAG\t%s\n' "$CLASS_DEFAULT_LOG_TAG"
-        [[ -n "${CLASS_DEFAULT_OUTPUT_DIR:-}" ]] && printf 'OUTPUT_DIR\t%s\n' "$CLASS_DEFAULT_OUTPUT_DIR"
-        [[ -n "${CLASS_DEFAULT_ENV_PREFIX:-}" ]] && printf 'ENV_PREFIX\t%s\n' "$CLASS_DEFAULT_ENV_PREFIX"
-        [[ -n "${CLASS_DEFAULT_WORKING_DIR:-}" ]] && printf 'PWD_AT_SUBMIT\t%s\n' "$CLASS_DEFAULT_WORKING_DIR"
-        [[ -n "${CLASS_DEFAULT_RUN_USER:-}" ]] && printf 'RUN_USER\t%s\n' "$CLASS_DEFAULT_RUN_USER"
-        [[ -n "${CLASS_DEFAULT_SUBMIT_USER:-}" ]] && printf 'SUBMIT_USER\t%s\n' "$CLASS_DEFAULT_SUBMIT_USER"
-        [[ -n "${CLASS_DEFAULT_SANDBOX_LEVEL:-}" ]] && printf 'SANDBOX_LEVEL\t%s\n' "$CLASS_DEFAULT_SANDBOX_LEVEL"
-        [[ -n "${CLASS_DEFAULT_RUNTIME_CAPS:-}" ]] && printf 'RUNTIME_CAPS\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAPS"
-        [[ -n "${CLASS_DEFAULT_RUNTIME_CAP_INTERVAL:-}" ]] && printf 'RUNTIME_CAP_INTERVAL\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAP_INTERVAL"
-        [[ -n "${CLASS_DEFAULT_RUNTIME_CAP_PORTS:-}" ]] && printf 'RUNTIME_CAP_PORTS\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAP_PORTS"
-        [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILE:-}" ]] && printf 'SECCOMP_PROFILE\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILE"
-        [[ -n "${CLASS_DEFAULT_SECCOMP_ALLOW:-}" ]] && printf 'SECCOMP_ALLOW\t%s\n' "$CLASS_DEFAULT_SECCOMP_ALLOW"
-        [[ -n "${CLASS_DEFAULT_EXEC_ENV:-${CLASS_EXEC_ENV:-}}" ]] && printf 'EXEC_ENV\t%s\n' "${CLASS_DEFAULT_EXEC_ENV:-${CLASS_EXEC_ENV:-}}"
-
-        [[ -n "${CLASS_DEFAULT_CPU_SECONDS:-}" ]] && printf 'CPU_SECONDS\t%s\n' "$CLASS_DEFAULT_CPU_SECONDS"
-        [[ -n "${CLASS_DEFAULT_WALL_SECONDS:-}" ]] && printf 'WALL_SECONDS\t%s\n' "$CLASS_DEFAULT_WALL_SECONDS"
-        [[ -n "${CLASS_DEFAULT_BILLING_CYCLES:-}" ]] && printf 'BILLING_CYCLES\t%s\n' "$CLASS_DEFAULT_BILLING_CYCLES"
-        [[ -n "${CLASS_DEFAULT_BILLING_UNIT_SECONDS:-}" ]] && printf 'BILLING_UNIT_SECONDS\t%s\n' "$CLASS_DEFAULT_BILLING_UNIT_SECONDS"
-        [[ -n "${CLASS_DEFAULT_BILLING_GRACE_SECONDS:-}" ]] && printf 'BILLING_GRACE_SECONDS\t%s\n' "$CLASS_DEFAULT_BILLING_GRACE_SECONDS"
-        [[ -n "${CLASS_DEFAULT_BILLING_POLICY:-}" ]] && printf 'BILLING_POLICY\t%s\n' "$CLASS_DEFAULT_BILLING_POLICY"
-        [[ -n "${CLASS_DEFAULT_NET_USAGE_INTERFACE:-}" ]] && printf 'NET_USAGE_INTERFACE\t%s\n' "$CLASS_DEFAULT_NET_USAGE_INTERFACE"
-        [[ -n "${CLASS_DEFAULT_NET_USAGE_DIRECTION:-}" ]] && printf 'NET_USAGE_DIRECTION\t%s\n' "$CLASS_DEFAULT_NET_USAGE_DIRECTION"
-        [[ -n "${CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES:-}" ]] && printf 'NET_USAGE_LIMIT_BYTES\t%s\n' "$CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES"
-        [[ -n "${CLASS_DEFAULT_NET_USAGE_ALLOWANCE_BYTES:-}" ]] && printf 'NET_USAGE_ALLOWANCE_BYTES\t%s\n' "$CLASS_DEFAULT_NET_USAGE_ALLOWANCE_BYTES"
-        [[ -n "${CLASS_DEFAULT_NET_USAGE_COUNTER_FILE:-}" ]] && printf 'NET_USAGE_COUNTER_FILE\t%s\n' "$CLASS_DEFAULT_NET_USAGE_COUNTER_FILE"
-        [[ -n "${CLASS_DEFAULT_NET_USAGE_POLICY:-}" ]] && printf 'NET_USAGE_POLICY\t%s\n' "$CLASS_DEFAULT_NET_USAGE_POLICY"
-    )
+_queue_class_load_defaults_for_class () 
+{ 
+    local class="${1:-DEFAULT}";
+    local class_file;
+    class_file="$(_queue_class_file "$class")";
+    [[ -f "$class_file" ]] || return 0;
+    ( CLASS_DEFAULT_RUNNER="";
+    CLASS_DEFAULT_CPU_LIMIT="";
+    CLASS_DEFAULT_MEM_LIMIT="";
+    CLASS_DEFAULT_MAX_LOG_SIZE_BYTES="";
+    CLASS_DEFAULT_LOG_OVERFLOW_POLICY="";
+    CLASS_DEFAULT_ALLOW_LARGE_LOG="";
+    CLASS_DEFAULT_TIMEOUT="";
+    CLASS_DEFAULT_KILL_AFTER="";
+    CLASS_DEFAULT_LOG_TAG="";
+    CLASS_DEFAULT_OUTPUT_DIR="";
+    CLASS_DEFAULT_ENV_PREFIX="";
+    CLASS_DEFAULT_WORKING_DIR="";
+    CLASS_DEFAULT_RUN_USER="";
+    CLASS_DEFAULT_SUBMIT_USER="";
+    CLASS_DEFAULT_SANDBOX_LEVEL="";
+    CLASS_DEFAULT_RUNTIME_CAPS="";
+    CLASS_DEFAULT_RUNTIME_CAP_INTERVAL="";
+    CLASS_DEFAULT_RUNTIME_CAP_PORTS="";
+    CLASS_DEFAULT_SECCOMP_PROFILE="";
+    CLASS_DEFAULT_SECCOMP_ALLOW="";
+    CLASS_DEFAULT_SECCOMP_PROFILED_NAME="";
+    CLASS_DEFAULT_SECCOMP_PROFILE_ALLOW_SELF_SIGNED="";
+    CLASS_DEFAULT_SECCOMP_PROFILE_REQUIRED_SIGNER="";
+    CLASS_DEFAULT_SECCOMP_PROFILE_ROOT="";
+    CLASS_DEFAULT_SECCOMP_PROFILED_ENFORCE="";
+    CLASS_EXEC_ENV="";
+    CLASS_DEFAULT_EXEC_ENV="";
+    CLASS_DEFAULT_CPU_SECONDS="";
+    CLASS_DEFAULT_WALL_SECONDS="";
+    CLASS_DEFAULT_BILLING_CYCLES="";
+    CLASS_DEFAULT_BILLING_UNIT_SECONDS="";
+    CLASS_DEFAULT_BILLING_GRACE_SECONDS="";
+    CLASS_DEFAULT_BILLING_POLICY="";
+    CLASS_DEFAULT_NET_USAGE_INTERFACE="";
+    CLASS_DEFAULT_NET_USAGE_DIRECTION="";
+    CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES="";
+    CLASS_DEFAULT_NET_USAGE_ALLOWANCE_BYTES="";
+    CLASS_DEFAULT_NET_USAGE_COUNTER_FILE="";
+    CLASS_DEFAULT_NET_USAGE_POLICY="";
+    source "$class_file" > /dev/null 2>&1 || exit 0;
+    [[ -n "${CLASS_DEFAULT_RUNNER:-}" ]] && printf 'RUNNER\t%s\n' "$CLASS_DEFAULT_RUNNER";
+    [[ -n "${CLASS_DEFAULT_CPU_LIMIT:-}" ]] && printf 'CPU_LIMIT\t%s\n' "$CLASS_DEFAULT_CPU_LIMIT";
+    [[ -n "${CLASS_DEFAULT_MEM_LIMIT:-}" ]] && printf 'MEM_LIMIT\t%s\n' "$CLASS_DEFAULT_MEM_LIMIT";
+    [[ -n "${CLASS_DEFAULT_MAX_LOG_SIZE_BYTES:-}" ]] && printf 'MAX_LOG_SIZE_BYTES\t%s\n' "$CLASS_DEFAULT_MAX_LOG_SIZE_BYTES";
+    [[ -n "${CLASS_DEFAULT_LOG_OVERFLOW_POLICY:-}" ]] && printf 'LOG_OVERFLOW_POLICY\t%s\n' "$CLASS_DEFAULT_LOG_OVERFLOW_POLICY";
+    [[ -n "${CLASS_DEFAULT_ALLOW_LARGE_LOG:-}" ]] && printf 'ALLOW_LARGE_LOG\t%s\n' "$CLASS_DEFAULT_ALLOW_LARGE_LOG";
+    [[ -n "${CLASS_DEFAULT_TIMEOUT:-}" ]] && printf 'TIMEOUT\t%s\n' "$CLASS_DEFAULT_TIMEOUT";
+    [[ -n "${CLASS_DEFAULT_KILL_AFTER:-}" ]] && printf 'KILL_AFTER\t%s\n' "$CLASS_DEFAULT_KILL_AFTER";
+    [[ -n "${CLASS_DEFAULT_LOG_TAG:-}" ]] && printf 'LOG_TAG\t%s\n' "$CLASS_DEFAULT_LOG_TAG";
+    [[ -n "${CLASS_DEFAULT_OUTPUT_DIR:-}" ]] && printf 'OUTPUT_DIR\t%s\n' "$CLASS_DEFAULT_OUTPUT_DIR";
+    [[ -n "${CLASS_DEFAULT_ENV_PREFIX:-}" ]] && printf 'ENV_PREFIX\t%s\n' "$CLASS_DEFAULT_ENV_PREFIX";
+    [[ -n "${CLASS_DEFAULT_WORKING_DIR:-}" ]] && printf 'PWD_AT_SUBMIT\t%s\n' "$CLASS_DEFAULT_WORKING_DIR";
+    [[ -n "${CLASS_DEFAULT_RUN_USER:-}" ]] && printf 'RUN_USER\t%s\n' "$CLASS_DEFAULT_RUN_USER";
+    [[ -n "${CLASS_DEFAULT_SUBMIT_USER:-}" ]] && printf 'SUBMIT_USER\t%s\n' "$CLASS_DEFAULT_SUBMIT_USER";
+    [[ -n "${CLASS_DEFAULT_SANDBOX_LEVEL:-}" ]] && printf 'SANDBOX_LEVEL\t%s\n' "$CLASS_DEFAULT_SANDBOX_LEVEL";
+    [[ -n "${CLASS_DEFAULT_RUNTIME_CAPS:-}" ]] && printf 'RUNTIME_CAPS\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAPS";
+    [[ -n "${CLASS_DEFAULT_RUNTIME_CAP_INTERVAL:-}" ]] && printf 'RUNTIME_CAP_INTERVAL\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAP_INTERVAL";
+    [[ -n "${CLASS_DEFAULT_RUNTIME_CAP_PORTS:-}" ]] && printf 'RUNTIME_CAP_PORTS\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAP_PORTS";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILE:-}" ]] && printf 'SECCOMP_PROFILE\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILE";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_ALLOW:-}" ]] && printf 'SECCOMP_ALLOW\t%s\n' "$CLASS_DEFAULT_SECCOMP_ALLOW";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILED_NAME:-}" ]] && printf 'SECCOMP_PROFILED_NAME\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILED_NAME";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILE_ALLOW_SELF_SIGNED:-}" ]] && printf 'SECCOMP_PROFILE_ALLOW_SELF_SIGNED\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILE_ALLOW_SELF_SIGNED";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILE_REQUIRED_SIGNER:-}" ]] && printf 'SECCOMP_PROFILE_REQUIRED_SIGNER\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILE_REQUIRED_SIGNER";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILE_ROOT:-}" ]] && printf 'SECCOMP_PROFILE_ROOT\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILE_ROOT";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILED_ENFORCE:-}" ]] && printf 'SECCOMP_PROFILED_ENFORCE\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILED_ENFORCE";
+    [[ -n "${CLASS_DEFAULT_EXEC_ENV:-${CLASS_EXEC_ENV:-}}" ]] && printf 'EXEC_ENV\t%s\n' "${CLASS_DEFAULT_EXEC_ENV:-${CLASS_EXEC_ENV:-}}";
+    [[ -n "${CLASS_DEFAULT_CPU_SECONDS:-}" ]] && printf 'CPU_SECONDS\t%s\n' "$CLASS_DEFAULT_CPU_SECONDS";
+    [[ -n "${CLASS_DEFAULT_WALL_SECONDS:-}" ]] && printf 'WALL_SECONDS\t%s\n' "$CLASS_DEFAULT_WALL_SECONDS";
+    [[ -n "${CLASS_DEFAULT_BILLING_CYCLES:-}" ]] && printf 'BILLING_CYCLES\t%s\n' "$CLASS_DEFAULT_BILLING_CYCLES";
+    [[ -n "${CLASS_DEFAULT_BILLING_UNIT_SECONDS:-}" ]] && printf 'BILLING_UNIT_SECONDS\t%s\n' "$CLASS_DEFAULT_BILLING_UNIT_SECONDS";
+    [[ -n "${CLASS_DEFAULT_BILLING_GRACE_SECONDS:-}" ]] && printf 'BILLING_GRACE_SECONDS\t%s\n' "$CLASS_DEFAULT_BILLING_GRACE_SECONDS";
+    [[ -n "${CLASS_DEFAULT_BILLING_POLICY:-}" ]] && printf 'BILLING_POLICY\t%s\n' "$CLASS_DEFAULT_BILLING_POLICY";
+    [[ -n "${CLASS_DEFAULT_NET_USAGE_INTERFACE:-}" ]] && printf 'NET_USAGE_INTERFACE\t%s\n' "$CLASS_DEFAULT_NET_USAGE_INTERFACE";
+    [[ -n "${CLASS_DEFAULT_NET_USAGE_DIRECTION:-}" ]] && printf 'NET_USAGE_DIRECTION\t%s\n' "$CLASS_DEFAULT_NET_USAGE_DIRECTION";
+    [[ -n "${CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES:-}" ]] && printf 'NET_USAGE_LIMIT_BYTES\t%s\n' "$CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES";
+    [[ -n "${CLASS_DEFAULT_NET_USAGE_ALLOWANCE_BYTES:-}" ]] && printf 'NET_USAGE_ALLOWANCE_BYTES\t%s\n' "$CLASS_DEFAULT_NET_USAGE_ALLOWANCE_BYTES";
+    [[ -n "${CLASS_DEFAULT_NET_USAGE_COUNTER_FILE:-}" ]] && printf 'NET_USAGE_COUNTER_FILE\t%s\n' "$CLASS_DEFAULT_NET_USAGE_COUNTER_FILE";
+    [[ -n "${CLASS_DEFAULT_NET_USAGE_POLICY:-}" ]] && printf 'NET_USAGE_POLICY\t%s\n' "$CLASS_DEFAULT_NET_USAGE_POLICY" )
 }
 
 _queue_expand_job_template() {
@@ -8570,33 +8573,80 @@ _queue_seccomp_normalise_profile() {
     esac
 }
 
-_queue_emit_seccomp_systemd_props() {
-    local profile allow item prop
-    profile="$(_queue_seccomp_normalise_profile "${1:-}")"
-    allow="${2:-}"
+_queue_profiled_seccomp_allowed_syscalls() {
+    local profile="${1:-}" allow_self="${2:-0}" required="${3:-}" profile_root="${4:-}"
+    local args=() verify_out helper
 
-    if [[ -n "$profile" ]]; then
-        if [[ "${SECCOMP_POLICY_NAME:-}" == "$profile" && "${#SECCOMP_POLICY_SYSTEMD_PROPERTIES[@]}" -gt 0 ]]; then
-            for prop in "${SECCOMP_POLICY_SYSTEMD_PROPERTIES[@]:-}"; do
-                [[ -n "$prop" ]] && printf '%s\0' -p "$prop"
-            done
-        else
-            SECCOMP_SYSTEMD_PROPERTIES=()
-            if _queue_policy_source_file seccomp "$profile"; then
-                for prop in "${SECCOMP_SYSTEMD_PROPERTIES[@]:-}"; do
-                    [[ -n "$prop" ]] && printf '%s\0' -p "$prop"
-                done
-            fi
-        fi
+    [[ -n "$profile" ]] || { echo "profiled_seccomp_blocked: profile_required"; return 1; }
+    args+=("allow_self_signed=$allow_self")
+    [[ -n "$required" ]] && args+=("required_signer=$required")
+    [[ -n "$profile_root" ]] && args+=("profile_root=$profile_root")
+
+    # Runtime seccomp deliberately delegates key, ACL, delegation, and trust
+    # policy decisions to the secprofile asset verification layer.  File-backed
+    # keys are one provider implementation, not the trust architecture.
+    if ! verify_out="$(_queue_asset_implied_preflight_args runtime_seccomp secprofile profile_verified "$profile" "${args[@]}" 2>&1)"; then
+        printf '%s\n' "$verify_out"
+        return 1
     fi
 
-    # Exception overlays may punch carefully-audited holes such as @debug for strace.
-    # Systemd accepts multiple SystemCallFilter= properties; later allow-lists are
-    # intentionally emitted as separate properties for auditability in launch_argv.
-    for item in $allow; do
-        [[ -n "$item" ]] || continue
-        printf '%s\0' -p "SystemCallFilter=$item"
-    done
+    helper="$(_queue_asset_helper_path secprofile)"
+    [[ -r "$helper" ]] || { echo "profiled_seccomp_blocked: secprofile_helper_missing"; return 1; }
+
+    (
+        local file raw item cleaned out=()
+        _queue_code_signature_check_file_for_execution "$helper" || exit 44
+        source "$helper" || exit 40
+        file="$(_queue_asset_secprofile_file "$profile" "${args[@]}" 2>/dev/null || true)"
+        [[ -r "$file" ]] || { echo "profiled_seccomp_blocked: secprofile_file_missing profile=$profile"; exit 1; }
+        raw="$(_queue_asset_secprofile_get "$file" SECPROFILE_ALLOWED_SYSCALLS)"
+        raw="${raw//,/ }"
+        for item in $raw; do
+            cleaned="${item//[[:space:]]/}"
+            [[ -n "$cleaned" ]] || continue
+            case "$cleaned" in
+                *[!A-Za-z0-9_@.+:-]*)
+                    echo "profiled_seccomp_blocked: invalid_syscall_token token=$cleaned"
+                    exit 1
+                    ;;
+            esac
+            out+=("$cleaned")
+        done
+        [[ "${#out[@]}" -gt 0 ]] || { echo "profiled_seccomp_blocked: no_allowed_syscalls profile=$profile"; exit 1; }
+        printf '%s' "${out[*]}"
+    )
+}
+
+_queue_emit_seccomp_systemd_props () 
+{ 
+    local profile allow item prop profiled_allow;
+    profile="$(_queue_seccomp_normalise_profile "${1:-}")";
+    allow="${2:-}";
+    if [[ -n "$profile" ]]; then
+        if [[ "${SECCOMP_POLICY_NAME:-}" == "$profile" && "${#SECCOMP_POLICY_SYSTEMD_PROPERTIES[@]}" -gt 0 ]]; then
+            for prop in "${SECCOMP_POLICY_SYSTEMD_PROPERTIES[@]:-}";
+            do
+                [[ -n "$prop" ]] && printf '%s\0' -p "$prop";
+            done;
+        else
+            SECCOMP_SYSTEMD_PROPERTIES=();
+            if _queue_policy_source_file seccomp "$profile"; then
+                for prop in "${SECCOMP_SYSTEMD_PROPERTIES[@]:-}";
+                do
+                    [[ -n "$prop" ]] && printf '%s\0' -p "$prop";
+                done;
+            fi;
+        fi;
+    fi;
+    for item in $allow;
+    do
+        [[ -n "$item" ]] || continue;
+        printf '%s\0' -p "SystemCallFilter=$item";
+    done;
+    profiled_allow="${SECCOMP_PROFILED_ALLOWED_SYSCALLS:-}";
+    if [[ -n "$profiled_allow" ]]; then
+        printf '%s\0' -p "SystemCallFilter=$profiled_allow";
+    fi
 }
 
 _queue_runtime_caps_drop_list() {
@@ -12605,9 +12655,9 @@ _queue_backup_create() {
 _queue_dev_usage() {
     cat <<'EOF'
 Usage:
-  queue dev functions [--json] [prefix]
+  queue dev functions [--file FILE] [--json] [prefix]
   queue dev locate FUNCTION [--json]
-  queue dev extract FUNCTION [--json]
+  queue dev extract FUNCTION [--file FILE] [--json]
   queue dev scope [--json] [--prefix PREFIX]
   queue dev patch --file FILE --function FUNCTION --source SOURCE [--json] [--no-syntax-check]
   queue dev comment --file FILE --function FUNCTION --message TEXT [--changelog] [--json]
@@ -12668,30 +12718,94 @@ _queue_dev_locate() {
 }
 
 _queue_dev_extract() {
-    local fn="${1:-}" json=0 body
+    local fn="${1:-}" json=0 body file="" tmp=""
     shift || true
     while [[ "$#" -gt 0 ]]; do
-        case "${1:-}" in --json|-j) json=1; shift ;; *) echo "queue dev extract: unexpected argument: $1" >&2; return 2 ;; esac
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            --file) file="${2:-}"; shift 2 ;;
+            --file=*) file="${1#--file=}"; shift ;;
+            *) echo "queue dev extract: unexpected argument: $1" >&2; return 2 ;;
+        esac
     done
-    [[ -n "$fn" ]] || { echo "Usage: queue dev extract FUNCTION [--json]" >&2; return 2; }
+    [[ -n "$fn" ]] || { echo "Usage: queue dev extract FUNCTION [--file FILE] [--json]" >&2; return 2; }
     _queue_dev_valid_function_name "$fn" || { echo "queue dev extract: invalid function name: $fn" >&2; return 2; }
-    body="$(declare -f "$fn" 2>/dev/null || true)"
+    if [[ -n "$file" ]]; then
+        [[ -f "$file" ]] || { echo "queue dev extract: target file not found: $file" >&2; return 1; }
+        tmp="$(mktemp "${TMPDIR:-/tmp}/queue-dev-extract.XXXXXX")" || return 1
+        if ! _queue_dev_file_extract_to "$file" "$fn" "$tmp" >/dev/null; then
+            rm -f -- "$tmp"
+            echo "queue dev extract: function not found: $fn in $file" >&2
+            return 1
+        fi
+        body="$(cat "$tmp")"
+        rm -f -- "$tmp"
+    else
+        body="$(declare -f "$fn" 2>/dev/null || true)"
+    fi
     [[ -n "$body" ]] || { echo "queue dev extract: function not found: $fn" >&2; return 1; }
     if [[ "$json" -eq 1 ]]; then
-        printf '{"function":"%s","body":"%s"}\n' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$body")"
+        printf '{"function":"%s","file":"%s","body":"%s"}\n' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "${file:-runtime}")" "$(_queue_json_escape "$body")"
     else
         printf '%s\n' "$body"
     fi
 }
 
 _queue_dev_functions() {
-    local json=0 prefix="" fn out name lineno file first=0
+    local json=0 prefix="" file="" fn out name lineno src first=0
     while [[ "$#" -gt 0 ]]; do
         case "${1:-}" in
             --json|-j) json=1; shift ;;
+            --file) file="${2:-}"; shift 2 ;;
+            --file=*) file="${1#--file=}"; shift ;;
             *) [[ -z "$prefix" ]] && prefix="$1" || { echo "queue dev functions: unexpected argument: $1" >&2; return 2; }; shift ;;
         esac
     done
+    if [[ -n "$file" ]]; then
+        [[ -f "$file" ]] || { echo "queue dev functions: target file not found: $file" >&2; return 1; }
+        if [[ "$json" -eq 1 ]]; then
+            printf '{"functions":['
+            while IFS=$'\t' read -r fn lineno src; do
+                [[ -n "$fn" ]] || continue
+                [[ -n "$prefix" && "$fn" != "$prefix"* ]] && continue
+                _queue_json_comma first
+                printf '{"function":"%s","file":"%s","line_start":%s}' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "${lineno:-0}"
+            done < <(python3 - "$file" <<'PYDEV_FUNCTIONS_FILE'
+import re, sys, pathlib
+file=sys.argv[1]
+text=pathlib.Path(file).read_text().splitlines()
+pat1=re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*(?:\{|$)')
+pat2=re.compile(r'^\s*function\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*(?:\{|$)')
+seen=set()
+for i,line in enumerate(text,1):
+    m=pat1.match(line) or pat2.match(line)
+    if not m: continue
+    name=m.group(1)
+    if name in seen: continue
+    seen.add(name)
+    print(f'{name}\t{i}\t{file}')
+PYDEV_FUNCTIONS_FILE
+            )
+            printf ']}\n'
+        else
+            python3 - "$file" <<'PYDEV_FUNCTIONS_FILE'
+import re, sys, pathlib
+file=sys.argv[1]
+text=pathlib.Path(file).read_text().splitlines()
+pat1=re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*(?:\{|$)')
+pat2=re.compile(r'^\s*function\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*(?:\{|$)')
+seen=set()
+for i,line in enumerate(text,1):
+    m=pat1.match(line) or pat2.match(line)
+    if not m: continue
+    name=m.group(1)
+    if name in seen: continue
+    seen.add(name)
+    print(f'{name}\t{i}\t{file}')
+PYDEV_FUNCTIONS_FILE
+        fi
+        return 0
+    fi
     if [[ "$json" -eq 1 ]]; then
         printf '{"functions":['
         while IFS= read -r fn; do
@@ -12699,11 +12813,10 @@ _queue_dev_functions() {
             [[ -n "$prefix" && "$fn" != "$prefix"* ]] && continue
             out="$(_queue_dev_function_location "$fn" 2>/dev/null || true)"
             [[ -n "$out" ]] || continue
-            read -r name lineno file <<< "$out"
+            read -r name lineno src <<< "$out"
             [[ "$lineno" =~ ^[0-9]+$ ]] || lineno=0
             _queue_json_comma first
-            printf '{"function":"%s","file":"%s","line_start":%s}' \
-                "$(_queue_json_escape "$name")" "$(_queue_json_escape "$file")" "$lineno"
+            printf '{"function":"%s","file":"%s","line_start":%s}' "$(_queue_json_escape "$name")" "$(_queue_json_escape "$src")" "$lineno"
         done < <(compgen -A function | sort)
         printf ']}\n'
     else
@@ -12712,8 +12825,8 @@ _queue_dev_functions() {
             [[ -n "$prefix" && "$fn" != "$prefix"* ]] && continue
             out="$(_queue_dev_function_location "$fn" 2>/dev/null || true)"
             [[ -n "$out" ]] || continue
-            read -r name lineno file <<< "$out"
-            printf '%s\t%s\t%s\n' "$name" "$lineno" "$file"
+            read -r name lineno src <<< "$out"
+            printf '%s\t%s\t%s\n' "$name" "$lineno" "$src"
         done < <(compgen -A function | sort)
     fi
 }
@@ -13829,93 +13942,156 @@ _queue_profile_class_safe_name() {
     [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]]
 }
 
-_queue_profile_class_template() {
-    local class="${1:-}" profile="" required="" allow_self="0" force="0"
-    local runner="systemd" sandbox="strict" caps="no-spawn-shell,no-network-tools,only-local-sockets" max_concurrent="5"
-    local root dst tmp
-
-    [[ -n "$class" ]] || { echo "Usage: queue profile interrogate class-template CLASS --profile NAME [--required-signer NAME] [--allow-self-signed 0|1] [--force]" >&2; return 2; }
-    shift || true
-
+_queue_profile_class_template () 
+{ 
+    local class="${1:-}" profile="" required="" allow_self="0" force="0";
+    local runner="systemd" sandbox="strict" caps="no-spawn-shell,no-network-tools,only-local-sockets" max_concurrent="5";
+    local root dst tmp;
+    [[ -n "$class" ]] || { 
+        echo "Usage: queue profile interrogate class-template CLASS --profile NAME [--required-signer NAME] [--allow-self-signed 0|1] [--force]" 1>&2;
+        return 2
+    };
+    shift || true;
     while [[ "$#" -gt 0 ]]; do
-        case "$1" in
+        case "$1" in 
             --profile)
-                [[ "$#" -ge 2 ]] || { echo "queue profile interrogate class-template: --profile requires a value" >&2; return 2; }
-                profile="$2"; shift 2 ;;
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --profile requires a value" 1>&2;
+                    return 2
+                };
+                profile="$2";
+                shift 2
+            ;;
             --required-signer)
-                [[ "$#" -ge 2 ]] || { echo "queue profile interrogate class-template: --required-signer requires a value" >&2; return 2; }
-                required="$2"; shift 2 ;;
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --required-signer requires a value" 1>&2;
+                    return 2
+                };
+                required="$2";
+                shift 2
+            ;;
             --allow-self-signed)
-                [[ "$#" -ge 2 ]] || { echo "queue profile interrogate class-template: --allow-self-signed requires 0 or 1" >&2; return 2; }
-                allow_self="$2"; shift 2 ;;
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --allow-self-signed requires 0 or 1" 1>&2;
+                    return 2
+                };
+                allow_self="$2";
+                shift 2
+            ;;
             --runner)
-                [[ "$#" -ge 2 ]] || { echo "queue profile interrogate class-template: --runner requires a value" >&2; return 2; }
-                runner="$2"; shift 2 ;;
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --runner requires a value" 1>&2;
+                    return 2
+                };
+                runner="$2";
+                shift 2
+            ;;
             --sandbox)
-                [[ "$#" -ge 2 ]] || { echo "queue profile interrogate class-template: --sandbox requires a value" >&2; return 2; }
-                sandbox="$2"; shift 2 ;;
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --sandbox requires a value" 1>&2;
+                    return 2
+                };
+                sandbox="$2";
+                shift 2
+            ;;
             --caps)
-                [[ "$#" -ge 2 ]] || { echo "queue profile interrogate class-template: --caps requires a value" >&2; return 2; }
-                caps="$2"; shift 2 ;;
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --caps requires a value" 1>&2;
+                    return 2
+                };
+                caps="$2";
+                shift 2
+            ;;
             --max-concurrent)
-                [[ "$#" -ge 2 ]] || { echo "queue profile interrogate class-template: --max-concurrent requires a value" >&2; return 2; }
-                max_concurrent="$2"; shift 2 ;;
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --max-concurrent requires a value" 1>&2;
+                    return 2
+                };
+                max_concurrent="$2";
+                shift 2
+            ;;
             --force)
-                force="1"; shift ;;
+                force="1";
+                shift
+            ;;
             *)
-                echo "queue profile interrogate class-template: unexpected argument: $1" >&2
-                return 2 ;;
-        esac
-    done
+                echo "queue profile interrogate class-template: unexpected argument: $1" 1>&2;
+                return 2
+            ;;
+        esac;
+    done;
+    _queue_profile_class_safe_name "$class" || { 
+        echo "queue profile interrogate class-template: invalid class name: $class" 1>&2;
+        return 2
+    };
+    _queue_profile_class_safe_name "$profile" || { 
+        echo "queue profile interrogate class-template: invalid or missing profile name: ${profile:-}" 1>&2;
+        return 2
+    };
+    case "$allow_self" in 
+        0 | 1 | yes | no | true | false | on | off)
 
-    _queue_profile_class_safe_name "$class" || { echo "queue profile interrogate class-template: invalid class name: $class" >&2; return 2; }
-    _queue_profile_class_safe_name "$profile" || { echo "queue profile interrogate class-template: invalid or missing profile name: ${profile:-}" >&2; return 2; }
-    case "$allow_self" in 0|1|yes|no|true|false|on|off) ;; *) echo "queue profile interrogate class-template: invalid --allow-self-signed: $allow_self" >&2; return 2 ;; esac
-    [[ "$max_concurrent" =~ ^[0-9]+$ ]] || { echo "queue profile interrogate class-template: --max-concurrent must be numeric" >&2; return 2; }
-
-    root="$(_queue_root)"
-    mkdir -p "$root/classes"
-    dst="$root/classes/$class.env"
+        ;;
+        *)
+            echo "queue profile interrogate class-template: invalid --allow-self-signed: $allow_self" 1>&2;
+            return 2
+        ;;
+    esac;
+    [[ "$max_concurrent" =~ ^[0-9]+$ ]] || { 
+        echo "queue profile interrogate class-template: --max-concurrent must be numeric" 1>&2;
+        return 2
+    };
+    root="$(_queue_root)";
+    mkdir -p "$root/classes";
+    dst="$root/classes/$class.env";
     if [[ -e "$dst" && "$force" != "1" ]]; then
-        echo "queue profile interrogate class-template: class already exists: $dst" >&2
-        echo "Use --force to replace it." >&2
-        return 1
-    fi
-
-    tmp="$(mktemp "$root/classes/.${class}.XXXXXX")" || return 1
-    {
-        printf '# bashqueues class: %s\n' "$class"
-        printf '# Purpose:\n'
-        printf '#   Runs only when approved/signed interrogation profiles pass class preflight gates.\n'
-        printf '# Generated by: queue profile interrogate class-template\n'
-        printf '\n'
-        printf 'CLASS_ALLOW_PARALLEL=1\n'
-        printf 'CLASS_MAX_CONCURRENT=%q\n' "$max_concurrent"
-        printf 'CLASS_DEFAULT_RUNNER=%q\n' "$runner"
-        printf 'CLASS_DEFAULT_SANDBOX_LEVEL=%q\n' "$sandbox"
-        printf 'CLASS_DEFAULT_RUNTIME_CAPS=%q\n' "$caps"
-        printf '\n'
-        printf 'PROFILE_NAME=%q\n' "$profile"
-        printf 'PROFILE_ALLOW_SELF_SIGNED=%q\n' "$allow_self"
-        printf 'PROFILE_REQUIRED_SIGNER=%q\n' "$required"
-        printf '\n'
-        printf 'profile_gate_args=(allow_self_signed="$PROFILE_ALLOW_SELF_SIGNED")\n'
-        printf '[[ -n "$PROFILE_REQUIRED_SIGNER" ]] && profile_gate_args+=(required_signer="$PROFILE_REQUIRED_SIGNER")\n'
-        printf '\n'
-        printf 'queue_class_shared_asset secprofile profile_verified "$PROFILE_NAME" "${profile_gate_args[@]}"\n'
-        printf 'queue_class_shared_asset netprofile profile_verified "$PROFILE_NAME" "${profile_gate_args[@]}"\n'
+        echo "queue profile interrogate class-template: class already exists: $dst" 1>&2;
+        echo "Use --force to replace it." 1>&2;
+        return 1;
+    fi;
+    tmp="$(mktemp "$root/classes/.${class}.XXXXXX")" || return 1;
+    { 
+        printf '# bashqueues class: %s\n' "$class";
+        printf '# Purpose:\n';
+        printf '#   Runs only when approved/signed interrogation profiles pass class preflight gates.\n';
+        printf '# Generated by: queue profile interrogate class-template\n';
+        printf '\n';
+        printf 'CLASS_ALLOW_PARALLEL=1\n';
+        printf 'CLASS_MAX_CONCURRENT=%q\n' "$max_concurrent";
+        printf 'CLASS_DEFAULT_RUNNER=%q\n' "$runner";
+        printf 'CLASS_DEFAULT_SANDBOX_LEVEL=%q\n' "$sandbox";
+        printf 'CLASS_DEFAULT_RUNTIME_CAPS=%q\n' "$caps";
+        printf 'CLASS_DEFAULT_SECCOMP_PROFILED_NAME=%q\n' "$profile";
+        printf 'CLASS_DEFAULT_SECCOMP_PROFILE_ALLOW_SELF_SIGNED=%q\n' "$allow_self";
+        printf 'CLASS_DEFAULT_SECCOMP_PROFILE_REQUIRED_SIGNER=%q\n' "$required";
+        printf 'CLASS_DEFAULT_SECCOMP_PROFILED_ENFORCE=1\n';
+        printf '\n';
+        printf 'PROFILE_NAME=%q\n' "$profile";
+        printf 'PROFILE_ALLOW_SELF_SIGNED=%q\n' "$allow_self";
+        printf 'PROFILE_REQUIRED_SIGNER=%q\n' "$required";
+        printf '\n';
+        printf 'profile_gate_args=(allow_self_signed="$PROFILE_ALLOW_SELF_SIGNED")\n';
+        printf '[[ -n "$PROFILE_REQUIRED_SIGNER" ]] && profile_gate_args+=(required_signer="$PROFILE_REQUIRED_SIGNER")\n';
+        printf '\n';
+        printf 'queue_class_shared_asset secprofile profile_verified "$PROFILE_NAME" "${profile_gate_args[@]}"\n';
+        printf 'queue_class_shared_asset netprofile profile_verified "$PROFILE_NAME" "${profile_gate_args[@]}"\n';
         printf 'queue_class_shared_asset fileprofile profile_verified "$PROFILE_NAME" "${profile_gate_args[@]}"\n'
-    } > "$tmp" || { rm -f "$tmp"; return 1; }
-
-    if ! bash -n "$tmp"; then
-        rm -f "$tmp"
+    } > "$tmp" || { 
+        rm -f "$tmp";
         return 1
-    fi
-    mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
-    echo "Created secure profiled class: $class"
-    echo "class file: $dst"
-    echo "profile: $profile"
-    echo "allow_self_signed: $allow_self"
+    };
+    if ! bash -n "$tmp"; then
+        rm -f "$tmp";
+        return 1;
+    fi;
+    mv -f "$tmp" "$dst" || { 
+        rm -f "$tmp";
+        return 1
+    };
+    echo "Created secure profiled class: $class";
+    echo "class file: $dst";
+    echo "profile: $profile";
+    echo "allow_self_signed: $allow_self";
     echo "required_signer: ${required:-any-non-self-signed-signer}"
 }
 
@@ -16879,7 +17055,12 @@ _queue_worker ()
                 [[ -n "${RUNTIME_CAPS:-}" ]] && printf 'RUNTIME_CAPS=%q\n' "${RUNTIME_CAPS:-}";
                 [[ -n "${RUNTIME_CAP_PORTS:-}" ]] && printf 'RUNTIME_CAP_PORTS=%q\n' "${RUNTIME_CAP_PORTS:-}";
                 [[ -n "${SECCOMP_PROFILE:-}" ]] && printf 'SECCOMP_PROFILE=%q\n' "${SECCOMP_PROFILE:-}";
-                [[ -n "${SECCOMP_ALLOW:-}" ]] && printf 'SECCOMP_ALLOW=%q\n' "${SECCOMP_ALLOW:-}"
+                [[ -n "${SECCOMP_ALLOW:-}" ]] && printf 'SECCOMP_ALLOW=%q\n' "${SECCOMP_ALLOW:-}";
+                [[ -n "${SECCOMP_PROFILED_NAME:-}" ]] && printf 'SECCOMP_PROFILED_NAME=%q\n' "${SECCOMP_PROFILED_NAME:-}";
+                [[ -n "${SECCOMP_PROFILE_ALLOW_SELF_SIGNED:-}" ]] && printf 'SECCOMP_PROFILE_ALLOW_SELF_SIGNED=%q\n' "${SECCOMP_PROFILE_ALLOW_SELF_SIGNED:-}";
+                [[ -n "${SECCOMP_PROFILE_REQUIRED_SIGNER:-}" ]] && printf 'SECCOMP_PROFILE_REQUIRED_SIGNER=%q\n' "${SECCOMP_PROFILE_REQUIRED_SIGNER:-}";
+                [[ -n "${SECCOMP_PROFILE_ROOT:-}" ]] && printf 'SECCOMP_PROFILE_ROOT=%q\n' "${SECCOMP_PROFILE_ROOT:-}";
+                [[ -n "${SECCOMP_PROFILED_ENFORCE:-}" ]] && printf 'SECCOMP_PROFILED_ENFORCE=%q\n' "${SECCOMP_PROFILED_ENFORCE:-}"
             } >> "$running";
             limit_status="$(_queue_limit_status_text "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")";
             [[ "$runner_planned" == "systemd" ]] && limit_status="systemd-run-user-service-pipe";
@@ -16909,6 +17090,21 @@ _queue_worker ()
             { 
                 printf 'RUNNER_USED=%q\n' "$runner_used"
             } >> "$running";
+            if [[ "${SECCOMP_PROFILED_ENFORCE:-}" == "1" || -n "${SECCOMP_PROFILED_NAME:-}" ]]; then
+                if [[ "$runner_used" != "systemd" ]]; then
+                    echo;
+                    echo "PROFILED_SECCOMP_BLOCKED: systemd_runner_required runner=$runner_used profile=${SECCOMP_PROFILED_NAME:-}";
+                    exit 78;
+                fi;
+                if ! SECCOMP_PROFILED_ALLOWED_SYSCALLS="$(_queue_profiled_seccomp_allowed_syscalls "${SECCOMP_PROFILED_NAME:-}" "${SECCOMP_PROFILE_ALLOW_SELF_SIGNED:-0}" "${SECCOMP_PROFILE_REQUIRED_SIGNER:-}" "${SECCOMP_PROFILE_ROOT:-}" 2>&1)"; then
+                    echo;
+                    echo "PROFILED_SECCOMP_BLOCKED: verification_failed profile=${SECCOMP_PROFILED_NAME:-}";
+                    echo "$SECCOMP_PROFILED_ALLOWED_SYSCALLS";
+                    exit 78;
+                fi;
+                export SECCOMP_PROFILED_ALLOWED_SYSCALLS;
+                printf 'SECCOMP_PROFILED_ALLOWED_SYSCALLS=%q\n' "$SECCOMP_PROFILED_ALLOWED_SYSCALLS" >> "$running";
+            fi;
             effective_timeout="$(_queue_caps_effective_timeout_for_current_job 2> /dev/null || true)";
             mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${PWD_AT_SUBMIT:-$PWD}" "$runner_used" "${effective_timeout:-}" "${KILL_AFTER:-}" "${SANDBOX_LEVEL:-}" "${RUN_USER:-}" "${COMMAND[@]}");
             echo "systemd_user_bus: $(_queue_systemd_user_service_status_text)";

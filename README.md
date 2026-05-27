@@ -129,7 +129,12 @@ At runtime, `bashqueues` is deterministic, inspectable, policy-verifiable, and d
 
 AI helped build the code. Deterministic policy enforces the law.
 
-See `docs/ORIGIN_STORY.md` for the longer form.
+See [docs/ORIGIN_STORY.md](docs/ORIGIN_STORY.md) for the longer form.
+
+Enterprise provider contracts:
+
+- [Trust providers](docs/TRUST_PROVIDERS.md)
+- [Microsoft governance provider contract](docs/MS_GOVERNANCE_PROVIDER.md)
 
 
 

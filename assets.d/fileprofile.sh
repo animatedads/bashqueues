@@ -14,7 +14,7 @@ queue_asset_hints() {
     cat <<'EOF_HINTS'
 fileprofile:profile_exists	target=profile name	params=profile_file=/path profile_root=/path	example=queue_class_shared_asset fileprofile profile_exists wget_google	notes=Finds approved interrogation file/resource profiles.
 fileprofile:profile_signed	target=profile name	params=profile_file=/path profile_root=/path	example=queue_class_shared_asset fileprofile profile_signed wget_google	notes=Requires SHOULD_BE_SIGNED=1, STATUS=approved, SIGNED=1.
-fileprofile:profile_verified	target=profile name	params=profile_file=/path profile_root=/path allow_self_signed=1 required_signer=name[,name]	example=queue_class_shared_asset fileprofile profile_verified wget_google allow_self_signed=0 required_signer=ops-release	notes=Verifies the SHA256 payload stamp, optional Ed25519 signature, and signer trust policy over the approved profile content.
+fileprofile:profile_verified	target=profile name	params=profile_file=/path profile_root=/path allow_self_signed=1 required_signer=name[,name] trust_provider=file|exec trust_policy=/etc/queuebash/policy/trust.conf trust_helper=/path/to/helper	example=queue_class_shared_asset fileprofile profile_verified wget_google allow_self_signed=0 required_signer=ops-release	notes=Verifies the SHA256 payload stamp, optional Ed25519 signature, and signer trust policy over the approved profile content through the configured trust provider.
 EOF_HINTS
 }
 
@@ -31,6 +31,7 @@ _queue_asset_fileprofile_file() {
     for cand in \
         "$profile_root/approved/$safe.file.env" \
         "$qroot/profiles/interrogation/approved/$safe.file.env" \
+        "/etc/queuebash/interrogation/approved/$safe.file.env" \
         "/etc/bashqueues/interrogation/approved/$safe.file.env"; do
         [[ -n "$cand" && -f "$cand" ]] && { printf '%s\n' "$cand"; return 0; }
     done
@@ -58,8 +59,33 @@ _queue_asset_fileprofile_key_root() {
     printf '%s/keys
 ' "${QUEUEBASH_ROOT:-$HOME/.queuebash}"
 }
-_queue_asset_fileprofile_public_key() { printf '%s/public/%s.ed25519.pub.pem
-' "$(_queue_asset_fileprofile_key_root)" "$1"; }
+_queue_asset_fileprofile_public_key() {
+    local signer="$1" provider helper key_path policy_file
+    provider="${QUEUEBASH_TRUST_PROVIDER:-file}"
+    policy_file="${QUEUEBASH_TRUST_POLICY_FILE:-/etc/queuebash/policy/trust.conf}"
+    if [[ -r "$policy_file" ]]; then
+        # shellcheck source=/dev/null
+        source "$policy_file" >/dev/null 2>&1 || true
+        provider="${TRUST_PROVIDER:-$provider}"
+    fi
+    case "$provider" in
+        file|local|filesystem)
+            printf '%s/public/%s.ed25519.pub.pem
+' "$(_queue_asset_fileprofile_key_root)" "$signer"
+            ;;
+        exec|external|plugin)
+            helper="${QUEUEBASH_TRUST_PROVIDER_HELPER:-${TRUST_PROVIDER_HELPER:-}}"
+            [[ -n "$helper" && -x "$helper" ]] || return 1
+            key_path="$($helper public-key fileprofile "$signer" 2>/dev/null || true)"
+            [[ -n "$key_path" ]] || return 1
+            printf '%s
+' "$key_path"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
 _queue_asset_fileprofile_file_sha256() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
 _queue_asset_fileprofile_verify_ed25519() {
     local file="$1" signed_by sig_b64 pub expected_pub_sha actual_pub_sha tmpdir payload sigfile rc alg
@@ -92,23 +118,63 @@ _queue_asset_fileprofile_verify_ed25519() {
 
 _queue_asset_fileprofile_trust_ok() {
     local file="$1" shift_dummy="${2:-}"; shift || true
-    local allow_self required signed_by self_signed
+    local allow_self required signed_by self_signed provider helper policy_file allowed denied
     allow_self="$(queue_asset_param allow_self_signed "$@" || echo 1)"
     required="$(queue_asset_param required_signer "$@" || true)"
+    provider="$(queue_asset_param trust_provider "$@" || echo "${QUEUEBASH_TRUST_PROVIDER:-file}")"
+    helper="$(queue_asset_param trust_helper "$@" || echo "${QUEUEBASH_TRUST_PROVIDER_HELPER:-}")"
+    policy_file="$(queue_asset_param trust_policy "$@" || echo "${QUEUEBASH_TRUST_POLICY_FILE:-/etc/queuebash/policy/trust.conf}")"
     signed_by="$(_queue_asset_fileprofile_get "$file" FILEPROFILE_SIGNED_BY)"
     self_signed="$(_queue_asset_fileprofile_get "$file" FILEPROFILE_SELF_SIGNED)"
-    if [[ -n "$required" ]] && ! _queue_asset_fileprofile_csv_has "$signed_by" "$required"; then
-        echo "asset_check_blocked: fileprofile:profile_verified signer_not_required signed_by=${signed_by:-unknown} required=$required"
-        return 1
+    if [[ -r "$policy_file" ]]; then
+        # The file provider is deliberately only one provider implementation.
+        # Enterprise deployments can use trust_provider=exec to delegate this
+        # decision to LDAP/AD/domain PKI/Vault/HSM or an internal policy API.
+        # shellcheck source=/dev/null
+        source "$policy_file" >/dev/null 2>&1 || true
+        provider="${TRUST_PROVIDER:-$provider}"
+        helper="${TRUST_PROVIDER_HELPER:-$helper}"
+        [[ -z "$required" && -n "${TRUST_REQUIRED_SIGNERS:-}" ]] && required="$TRUST_REQUIRED_SIGNERS"
+        [[ "${TRUST_DENY_SELF_SIGNED:-0}" =~ ^(1|yes|true|on)$ ]] && allow_self=0
+        allowed="${TRUST_ALLOWED_SIGNERS:-}"
+        denied="${TRUST_DENIED_SIGNERS:-}"
     fi
-    case "$allow_self" in 0|no|false|off)
-        if [[ "$self_signed" == "1" || "$signed_by" == self:* ]]; then
-            echo "asset_check_blocked: fileprofile:profile_verified self_signed_not_allowed signed_by=${signed_by:-unknown}"
+    case "$provider" in
+        file|local|filesystem)
+            if [[ -n "${denied:-}" ]] && _queue_asset_fileprofile_csv_has "$signed_by" "$denied"; then
+                echo "asset_check_blocked: fileprofile:profile_verified signer_denied signed_by=${signed_by:-unknown} provider=file"
+                return 1
+            fi
+            if [[ -n "${allowed:-}" ]] && ! _queue_asset_fileprofile_csv_has "$signed_by" "$allowed"; then
+                echo "asset_check_blocked: fileprofile:profile_verified signer_not_allowed signed_by=${signed_by:-unknown} allowed=$allowed provider=file"
+                return 1
+            fi
+            if [[ -n "$required" ]] && ! _queue_asset_fileprofile_csv_has "$signed_by" "$required"; then
+                echo "asset_check_blocked: fileprofile:profile_verified signer_not_required signed_by=${signed_by:-unknown} required=$required provider=file"
+                return 1
+            fi
+            case "$allow_self" in 0|no|false|off)
+                if [[ "$self_signed" == "1" || "$signed_by" == self:* ]]; then
+                    echo "asset_check_blocked: fileprofile:profile_verified self_signed_not_allowed signed_by=${signed_by:-unknown} provider=file"
+                    return 1
+                fi
+                ;;
+            esac
+            return 0
+            ;;
+        exec|external|plugin)
+            [[ -n "$helper" && -x "$helper" ]] || { echo "asset_check_blocked: fileprofile:profile_verified trust_provider_helper_missing provider=exec"; return 1; }
+            "$helper" signer-allowed fileprofile "$signed_by" "self_signed=$self_signed" "allow_self_signed=$allow_self" "required_signer=$required" "profile_file=$file" >/dev/null || {
+                echo "asset_check_blocked: fileprofile:profile_verified trust_provider_denied signer=${signed_by:-unknown} provider=exec"
+                return 1
+            }
+            return 0
+            ;;
+        *)
+            echo "asset_check_blocked: fileprofile:profile_verified unsupported_trust_provider provider=$provider"
             return 1
-        fi
-        ;;
+            ;;
     esac
-    return 0
 }
 
 queue_asset_check_fileprofile_profile_exists() {

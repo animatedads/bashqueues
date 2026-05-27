@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.17.94"' queuebash.sh || fail "version not bumped to 0.17.94"
+grep -q 'QUEUEBASH_VERSION="0.17.97"' queuebash.sh || fail "version not bumped to 0.17.95"
 grep -q '_queue_env_command' queuebash.sh || fail "env command missing"
 grep -q '_queue_install_bundled_env_profiles' queuebash.sh || fail "bundled env installer missing"
 grep -q 'CLASS_EXEC_ENV' queuebash.sh || fail "CLASS_EXEC_ENV default handling missing"
