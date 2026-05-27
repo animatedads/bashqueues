@@ -138,6 +138,7 @@ Enterprise provider contracts:
 - [Directory governance provider contracts](docs/DIRECTORY_GOVERNANCE_PROVIDERS.md)
 - [AI advisory provider contract](docs/AI_ADVISORY_PROVIDER.md)
 - [AI advisory audit logging](docs/AI_AUDIT_LOGGING.md)
+- Local Ollama advisory provider: `queue ask --provider ollama --model llama3 --live` when `QUEUEBASH_AI_LIVE_ENABLED=1`
 
 
 
@@ -3130,3 +3131,37 @@ See `docs/DEV_INTROSPECTION.md`.
 ## Class library and cron selector
 
 bashqueues includes common class templates for backups, batch processing, migrations, deployments, transfers, reports, alerts, sensitive exports, deadline-critical work, log housekeeping, and interactive priority jobs. The optional `bin/bashqueues-cron-class-selector.py` helper can classify cron commands when no explicit `#class`/`BASHQUEUES_CLASS` directive is present; the cron bridge still falls back to a generated strict safe class if no safe match is accepted.
+
+
+### Gemini advisory provider
+
+`queue ask` can use Gemini as a live advisory provider when explicitly enabled by policy. The provider is advisory-only, audited, and receives only policy-allowed context.
+
+```bash
+export QUEUEBASH_AI_LIVE_ENABLED=1
+export QUEUEBASH_AI_GEMINI_API_KEY_FILE="$HOME/.queuebash/secrets/gemini_api_key"
+queue ask --provider gemini --live --context docs,tests,classes "How do I submit a job?"
+```
+
+Provider output is data, never shell, and cannot approve, submit, cancel, patch, sign, or override policy.
+
+## Module and Provider command contract
+
+`queue module` is the standard extension surface for classes, assets, caps and
+providers. It now includes provider configuration and policy discovery commands:
+
+```bash
+queue module help provider
+queue module configure provider gemini --set QUEUEBASH_PROVIDER_KIND=ai
+queue module policy provider gemini
+queue module acl set provider gemini ai.ask BQ_AI_Users
+```
+
+Provider modules are configuration/data modules. They let enterprise installs
+connect bashqueues to Microsoft, LDAP, PAM/NSS, IBM Cloud, PKI, Vault/HSM or
+internal policy services while single-user installs remain simple and file-backed.
+Provider output is data, never shell.
+
+### AI advisory grounded status context
+
+`queue ask` includes installed command and asset/facility grounding so live AI providers are less likely to invent non-installed commands. Redacted queue/job status is available only when explicitly enabled with `QUEUEBASH_AI_ALLOW_QUEUE_STATUS=1`, `QUEUEBASH_AI_ALLOW_JOB_STATUS=1`, and/or `QUEUEBASH_AI_ALLOW_JOB_METADATA=1`. Job log/tail excerpts remain separately gated by `QUEUEBASH_AI_ALLOW_JOB_TAIL=1`.

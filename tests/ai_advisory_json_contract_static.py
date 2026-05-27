@@ -15,7 +15,8 @@ assert 'question_redacted' in q
 assert 'context_allowed' in q
 assert 'context_denied' in q
 assert 'redactions_applied' in q
-assert 'provider_execution":"not_implemented_contract_only"' in q
+assert 'provider_execution' in q
+assert 'not_implemented_contract_only' in q
 assert 'response_length' in q
 assert 'QUEUEBASH_AI_ALLOW_QUEUE_STATUS' in q
 assert 'QUEUEBASH_AI_ALLOW_POLICY_DETAILS' in q

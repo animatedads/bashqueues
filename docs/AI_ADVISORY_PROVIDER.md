@@ -84,7 +84,7 @@ Future enterprise implementations should resolve these decisions through the sam
   "context_requested": "docs commands classes queue_status",
   "context_allowed": "docs commands classes",
   "context_denied": "queue_status",
-  "context_bundle_sha256": "...",
+  "context_bundle_sha256": "abc123",
   "advisory_only": true,
   "provider_execution": "not_implemented_contract_only"
 }
@@ -142,3 +142,112 @@ ai.context.profile_details
 ```
 
 Single-user installations need not know about this enterprise backplate; the file-backed/default model remains simple.
+
+## Local Ollama provider
+
+`0.18.1` added the first live provider path: local Ollama. `0.18.2` hardens provider failure handling so local timeouts and daemon errors fail closed without Python tracebacks. It is still advisory-only and is disabled unless policy explicitly enables live AI calls.
+
+Recommended local test model:
+
+```bash
+ollama pull llama3
+```
+
+Example:
+
+```bash
+QUEUEBASH_AI_LIVE_ENABLED=1 \
+queue ask --provider ollama --model llama3 --context docs,tests,classes \
+  --live "Which class should I use for a safe overnight maintenance job?"
+```
+
+Policy details are not disclosed by default. To include `policies` or `policy_definitions`, policy must allow it:
+
+```bash
+QUEUEBASH_AI_ALLOW_POLICY_DETAILS=1
+```
+
+The Ollama helper treats tests as the highest-authority implementation evidence when documentation and tests disagree. This keeps advice grounded in the actual implementation patterns rather than marketing text or stale manuals.
+
+The helper builds a bounded context bundle from policy-allowed context categories only. By default it limits per-file and total context size, skips obvious secret material, and sends the request to the local Ollama daemon. First local model loads can be slow, so the default timeout is 180 seconds and can be overridden with `QUEUEBASH_AI_OLLAMA_TIMEOUT`. Provider failures return normalized JSON errors and are audited; tracebacks should not reach users. It never executes model output.
+
+Configuration example:
+
+```bash
+QUEUEBASH_AI_PROVIDER=ollama
+QUEUEBASH_AI_MODEL=llama3
+QUEUEBASH_AI_OLLAMA_URL=http://127.0.0.1:11434/api/generate
+QUEUEBASH_AI_LIVE_ENABLED=0
+QUEUEBASH_AI_CONTEXT_FILE_BYTES=16000
+QUEUEBASH_AI_CONTEXT_TOTAL_BYTES=120000
+QUEUEBASH_AI_OLLAMA_TIMEOUT=180
+```
+
+Operational rule:
+
+```text
+Live helpers always operate under bashqueues policy. If policy does not allow a provider, model, context category, or live call, the helper is not invoked and the request is audited as blocked.
+```
+
+
+## Gemini advisory provider
+
+`0.18.3` adds a Gemini live advisory provider as a cloud fallback to local Ollama. It uses the same `queue ask` policy and audit gate. Live calls require `QUEUEBASH_AI_LIVE_ENABLED=1`.
+
+`0.18.4` refreshes the default model to `gemini-2.5-flash` and adds `queue-ai-ask-gemini --list-models` for model discovery when Google changes availability or account entitlements.
+
+Example:
+
+```bash
+export QUEUEBASH_AI_LIVE_ENABLED=1
+export QUEUEBASH_AI_GEMINI_API_KEY_FILE="$HOME/.queuebash/secrets/gemini_api_key"
+queue ask --provider gemini --model gemini-2.5-flash --live --context docs,tests,classes \
+  "How do I submit a bashqueues job?"
+```
+
+Key lookup order:
+
+1. `QUEUEBASH_AI_GEMINI_API_KEY_FILE`
+2. `QUEUEBASH_AI_GEMINI_API_KEY`
+3. `QUEUEBASH_AI_GEMINI_KEY`
+4. `GEMINI_API_KEY`
+5. `GOOGLE_API_KEY`
+
+The helper must not log API keys. HTTP error bodies are redacted before being returned as provider failure reasons.
+
+The provider reads only context categories allowed by the `queue ask` front end. Tests remain higher-authority implementation evidence when documentation and tests disagree. Provider output remains advisory text only and is never evaluated as shell.
+
+## Grounded status context (0.18.6)
+
+`queue ask` now adds a dynamic shell-generated context bundle before provider invocation. The bundle is advisory-only and redacted by default. It gives AI providers current local grounding for:
+
+- the installed command surface from the running `queue help` implementation;
+- installed asset/facility names from `assets.d/*.sh`;
+- detected bashqueues job IDs in the question;
+- optional redacted queue and job status context when explicitly policy-enabled.
+
+The provider must prefer this installed command inventory over generic guesses. If a command is not present in the installed help text or implementation evidence, the provider should say that it is uncertain instead of inventing a command.
+
+Status-context gates are intentionally separate:
+
+```text
+QUEUEBASH_AI_ALLOW_QUEUE_STATUS=1
+QUEUEBASH_AI_ALLOW_JOB_STATUS=1
+QUEUEBASH_AI_ALLOW_JOB_METADATA=1
+QUEUEBASH_AI_ALLOW_JOB_TAIL=1
+```
+
+`queue_status`, `job_status`, and `job_metadata` do not include command payloads or stdout/stderr by default. Log or tail excerpts are included only when the requested context includes `job_tail` and `QUEUEBASH_AI_ALLOW_JOB_TAIL=1` is set. Even then, the shell front-end performs only basic redaction and the event is audited as `tail_included=true`.
+
+The normalized request JSON may include these additional fields:
+
+```json
+{
+  "dynamic_context_sha256": "abc123",
+  "dynamic_context_text": "redacted shell-generated context",
+  "job_ids_detected": "20260525_003929_318087748_027297_1832294",
+  "job_context_collected": 1,
+  "tail_included": false,
+  "redactions_applied": true
+}
+```

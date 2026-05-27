@@ -1,3 +1,46 @@
+## 0.18.6 - AI advisory grounded status context
+
+- Added dynamic `queue ask` grounding for the installed command surface using the live `queue help` output so providers prefer real idioms such as `queue explain`, `queue show`, `queue tail`, `queue history`, `queue pids`, and `queue metrics`.
+- Added installed asset/facility grounding from `assets.d/*.sh`, including facilities such as `secaudit`, `secprofile`, `netprofile`, `fileprofile`, `integrity`, `finops`, `legal`, and `env` when present.
+- Added bashqueues job ID detection in advisory questions and redacted job/queue context collection behind separate gates: `QUEUEBASH_AI_ALLOW_QUEUE_STATUS`, `QUEUEBASH_AI_ALLOW_JOB_STATUS`, `QUEUEBASH_AI_ALLOW_JOB_METADATA`, and `QUEUEBASH_AI_ALLOW_JOB_TAIL`.
+- Kept command payloads and stdout/stderr out of the default job context; tail/log excerpts require the separate `job_tail` context and `QUEUEBASH_AI_ALLOW_JOB_TAIL=1`.
+- Enriched AI advisory audit JSONL with detected job IDs, job-context collection counts, tail inclusion, redaction status, and the dynamic context bundle hash.
+- Passed dynamic redacted shell context through to Ollama and Gemini helpers and hardened their prompts to avoid invented commands and to report denied/unavailable status context honestly.
+
+## 0.18.5 - module provider command contract
+
+- Expanded `queue module` to include `provider` modules alongside classes, assets and caps.
+- Added `queue module help`, `queue module configure provider`, `queue module policy` and `queue module acl` command surfaces.
+- Provider module configuration now lives under `policy/providers.d` in the queue root, matching the provider boundary introduced for Microsoft, LDAP, PAM/NSS and AI advisory providers.
+- Documented the module/provider contract and the future ACL handoff shape for command-operation permissions.
+
+## 0.18.4 - Gemini model discovery and default refresh
+
+- Updated the Gemini advisory provider default from the removed/stale `gemini-1.5-flash` to `gemini-2.5-flash`.
+- Added `queue-ai-ask-gemini --list-models` so operators can ask the Gemini API which models support `generateContent`.
+- Improved Gemini 404 failures with a model-discovery hint while preserving API-key redaction.
+
+## 0.18.3 - Gemini advisory provider
+
+- Added `queue ask --provider gemini --live` as a cloud advisory provider alongside local Ollama.
+- Added `bin/queue-ai-ask-gemini` with normalized request/response JSON, bounded docs/tests/policies context, no command execution, and clean provider failure handling.
+- Added Gemini key lookup via `QUEUEBASH_AI_GEMINI_API_KEY_FILE`, `QUEUEBASH_AI_GEMINI_API_KEY`, `QUEUEBASH_AI_GEMINI_KEY`, `GEMINI_API_KEY`, and `GOOGLE_API_KEY`.
+- Kept provider output advisory-only and audited; API keys are not logged and provider error text is redacted.
+
+## 0.18.2 - Ollama advisory provider failure handling
+
+- Hardened `bin/queue-ai-ask-ollama` so local provider timeouts, HTTP errors, bad JSON, unreachable daemons, and empty model responses return controlled JSON errors instead of Python tracebacks.
+- Increased the default Ollama timeout to 180 seconds to tolerate first model-load latency on local workstations; `QUEUEBASH_AI_OLLAMA_TIMEOUT` remains configurable.
+- Improved `queue ask --live` diagnostics with an export hint for `QUEUEBASH_AI_LIVE_ENABLED=1` and provider failure reasons such as `ollama_timeout_after_180s` or `ollama_unreachable`.
+- Added regression tests proving live-helper failures are audited, fail closed, and do not leak tracebacks.
+
+## 0.18.1 - Ollama AI advisory provider
+- Added local Ollama live provider support for `queue ask --provider ollama --live`.
+- Live AI calls are explicitly opt-in via `QUEUEBASH_AI_LIVE_ENABLED=1` and remain advisory-only.
+- Added `bin/queue-ai-ask-ollama`, a bounded local helper that builds redacted context from policy-allowed docs/tests/policies/classes/assets/providers sources and never executes model output.
+- Added tests/implementation context categories, with tests treated as higher-authority implementation evidence.
+- Added Ollama provider docs, example config, and static/smoke tests for live-helper policy gating and audit behaviour.
+
 ## 0.18.0 - AI advisory provider contract
 
 - Added `queue ask` as a policy-gated AI advisory contract command. It builds a deterministic provider handoff and audit record, but does not call a live AI provider in this release.
@@ -1904,3 +1947,7 @@ Initial public queuebash release:
 - 2026-05-27 00:21:43 BST — AI-PATCH _queue_profile_command in `queuebash.sh`: 0.17.94: add class-template dispatch for secure profiled class gates
 
 - 2026-05-27 15:37:17 BST — AI-PATCH _queue_ai_ask_command in `queuebash.sh`: 0.18.0: add policy-gated queue ask advisory contract and audit handoff
+
+- 2026-05-27 16:07:28 BST — AI-PATCH _queue_ai_ask_command in `queuebash.sh`: 0.18.1: add opt-in local Ollama advisory provider path with live policy gate and audit-preserving handoff
+
+- 2026-05-27 17:45:21 BST — AI-PATCH _queue_module_command in `queuebash.sh`: 0.18.5: centralise module/provider command surface.

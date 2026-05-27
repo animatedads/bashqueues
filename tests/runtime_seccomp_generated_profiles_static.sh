@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
-grep -q 'QUEUEBASH_VERSION="0.18.0"' queuebash.sh || fail 'version not bumped to 0.17.95'
+grep -q 'QUEUEBASH_VERSION="0.18.6"' queuebash.sh || fail 'version not bumped to 0.18.6'
 grep -q '_queue_profiled_seccomp_allowed_syscalls' queuebash.sh || fail 'profiled seccomp helper missing'
 grep -q 'SECCOMP_PROFILED_ALLOWED_SYSCALLS' queuebash.sh || fail 'profiled syscall env not used'
 grep -q 'SystemCallFilter=\$profiled_allow' queuebash.sh || fail 'SystemCallFilter not emitted from profiled syscalls'

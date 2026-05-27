@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.0"
+QUEUEBASH_VERSION="0.18.6"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -12153,14 +12153,26 @@ _queue_cron_command() {
 _queue_ai_context_allowed() {
     local ctx="$1"
     case "$ctx" in
-        docs|manuals|commands|classes|assets|providers)
+        docs|manuals|commands|classes|assets|providers|tests|implementation_tests)
             return 0
             ;;
-        queue_status|job_status|job_metadata)
+        queue_status)
             [[ "${QUEUEBASH_AI_ALLOW_QUEUE_STATUS:-0}" == "1" ]]
             return $?
             ;;
-        policy_details|profile_details)
+        job_status)
+            [[ "${QUEUEBASH_AI_ALLOW_JOB_STATUS:-0}" == "1" || "${QUEUEBASH_AI_ALLOW_QUEUE_STATUS:-0}" == "1" ]]
+            return $?
+            ;;
+        job_metadata)
+            [[ "${QUEUEBASH_AI_ALLOW_JOB_METADATA:-0}" == "1" || "${QUEUEBASH_AI_ALLOW_QUEUE_STATUS:-0}" == "1" ]]
+            return $?
+            ;;
+        job_tail|job_log|job_logs)
+            [[ "${QUEUEBASH_AI_ALLOW_JOB_TAIL:-0}" == "1" ]]
+            return $?
+            ;;
+        policies|policy_definitions|policy_details|profile_details)
             [[ "${QUEUEBASH_AI_ALLOW_POLICY_DETAILS:-0}" == "1" ]]
             return $?
             ;;
@@ -12194,6 +12206,7 @@ _queue_ai_redact_question() {
 
 _queue_ai_audit_write() {
     local provider="$1" question="$2" decision="$3" result="$4" reason="$5" requested="$6" allowed="$7" denied="$8" response_len="${9:-0}"
+    local job_ids_detected="${10:-}" job_context_collected="${11:-0}" redactions_applied="${12:-true}" tail_included="${13:-false}" context_bundle_hash="${14:-}"
     local log_path log_dir ts subject qhash qred bundle_hash
     log_path="$(_queue_ai_audit_log_path)"
     log_dir="$(dirname "$log_path")"
@@ -12202,7 +12215,15 @@ _queue_ai_audit_write() {
     subject="${QUEUEBASH_SUBMITTER:-$(id -un 2>/dev/null || echo unknown)}"
     qhash="$(printf '%s' "$question" | sha256sum | awk '{print $1}')"
     qred="$(_queue_ai_redact_question "$question")"
-    bundle_hash="$(printf '%s|%s|%s|%s' "$provider" "$requested" "$allowed" "$denied" | sha256sum | awk '{print $1}')"
+    if [[ -n "$context_bundle_hash" ]]; then
+        bundle_hash="$context_bundle_hash"
+    else
+        bundle_hash="$(printf '%s|%s|%s|%s' "$provider" "$requested" "$allowed" "$denied" | sha256sum | awk '{print $1}')"
+    fi
+    [[ "$job_context_collected" =~ ^[0-9]+$ ]] || job_context_collected=0
+    [[ "$response_len" =~ ^[0-9]+$ ]] || response_len=0
+    case "$redactions_applied" in true|false) ;; *) redactions_applied=true ;; esac
+    case "$tail_included" in true|false) ;; *) tail_included=false ;; esac
     {
         printf '{'
         printf '"schema":"queuebash.ai_advisory.audit.v1"'
@@ -12215,21 +12236,250 @@ _queue_ai_audit_write() {
         printf ',"context_requested":"%s"' "$(_queue_json_escape "$requested")"
         printf ',"context_allowed":"%s"' "$(_queue_json_escape "$allowed")"
         printf ',"context_denied":"%s"' "$(_queue_json_escape "$denied")"
+        printf ',"job_ids_detected":"%s"' "$(_queue_json_escape "$job_ids_detected")"
+        printf ',"job_context_collected":%s' "$job_context_collected"
+        printf ',"redactions_applied":%s' "$redactions_applied"
+        printf ',"tail_included":%s' "$tail_included"
         printf ',"policy_decision":"%s"' "$(_queue_json_escape "$decision")"
-        printf ',"redactions_applied":true'
         printf ',"context_bundle_sha256":"%s"' "$(_queue_json_escape "$bundle_hash")"
-        printf ',"response_length":%s' "${response_len:-0}"
+        printf ',"response_length":%s' "$response_len"
         [[ -n "$reason" ]] && printf ',"reason":"%s"' "$(_queue_json_escape "$reason")"
         printf ',"result":"%s"' "$(_queue_json_escape "$result")"
         printf '}\n'
     } >> "$log_path"
 }
 
+_queue_ai_list_contains() {
+    local needle="$1" item
+    shift || true
+    for item in "$@"; do
+        [[ "$item" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
+_queue_ai_detect_job_ids() {
+    local text="$1"
+    printf '%s\n' "$text" | grep -Eo '[0-9]{8}_[0-9]{6}_[0-9]+_[0-9]+_[0-9]+' | awk '!seen[$0]++'
+}
+
+_queue_ai_source_dir() {
+    local source_dir
+    source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)" || return 1
+    printf '%s\n' "$source_dir"
+}
+
+_queue_ai_command_inventory_text() {
+    echo "Installed queue command inventory (from this queuebash.sh help text):"
+    if declare -F _queue_help >/dev/null 2>&1; then
+        _queue_help 2>/dev/null | sed -n '1,140p' | sed 's/^/  /'
+    else
+        echo "  queue help unavailable"
+    fi
+    echo
+    echo "Grounding rule: prefer installed idioms shown above. Do not invent commands such as queue status/log/events unless they are actually present in the installed help or implementation evidence. For job inspection, installed idioms include queue explain <job_id>, queue show <job_id>, queue tail <job_id>, queue history <job_id>, queue pids <job_id>, and queue metrics <job_id> when present above."
+}
+
+_queue_ai_asset_inventory_text() {
+    local source_dir asset_dir f name first=1
+    source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
+    asset_dir="$source_dir/assets.d"
+    echo "Installed asset/facility inventory (from assets.d/*.sh):"
+    if [[ -d "$asset_dir" ]]; then
+        for f in "$asset_dir"/*.sh; do
+            [[ -f "$f" ]] || continue
+            name="$(basename "$f" .sh)"
+            if [[ "$first" -eq 1 ]]; then
+                printf '  %s' "$name"
+                first=0
+            else
+                printf ', %s' "$name"
+            fi
+        done
+        echo
+    else
+        echo "  assets.d unavailable"
+    fi
+    echo "Grounding rule: installed asset facilities above are authoritative for this package. secaudit/secprofile/netprofile/fileprofile/integrity/finops/legal/env are valid only if present above."
+}
+
+_queue_ai_queue_status_text() {
+    local root state count
+    root="$(_queue_root 2>/dev/null || true)"
+    echo "Redacted queue status context:"
+    if [[ -z "$root" || ! -d "$root" ]]; then
+        echo "  queue_root: unavailable"
+        return 0
+    fi
+    echo "  queue_root: $root"
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ "$state" == "pending" ]] && declare -F _queue_pending_job_files >/dev/null 2>&1; then
+            count="$(_queue_pending_job_files "$root" 2>/dev/null | wc -l | tr -d ' ')"
+        elif [[ -d "$root/$state" ]]; then
+            count="$(find "$root/$state" -maxdepth 1 -type f -name '*.job' 2>/dev/null | wc -l | tr -d ' ')"
+        else
+            count=0
+        fi
+        echo "  $state: $count"
+    done
+}
+
+_queue_ai_job_file_for_id() {
+    local id="$1" root f
+    root="$(_queue_root 2>/dev/null || true)"
+    [[ -n "$root" ]] || return 1
+    if declare -F _queue_find_jobs >/dev/null 2>&1; then
+        f="$(_queue_find_jobs "$id" 2>/dev/null | head -n 1 || true)"
+        [[ -n "$f" && -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
+    fi
+    f="$(find "$root" -type f -name "$id.job" 2>/dev/null | head -n 1 || true)"
+    [[ -n "$f" && -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
+    return 1
+}
+
+_queue_ai_job_status_text() {
+    local id="$1" include_metadata="${2:-0}" include_tail="${3:-0}" root f state name class runner runner_used submitted started finished rc duration cleared log log_size tail_lines
+    root="$(_queue_root 2>/dev/null || true)"
+    echo "Redacted job status context for $id:"
+    f="$(_queue_ai_job_file_for_id "$id" 2>/dev/null || true)"
+    if [[ -z "$f" || ! -f "$f" ]]; then
+        echo "  found: false"
+        return 1
+    fi
+    state="$(_queue_state_for_job_path "$f" "$root" 2>/dev/null || echo unknown)"
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
+    class="$(_queue_class_for_job_file "$f" 2>/dev/null || _queue_job_var_value "$f" JOB_CLASS 2>/dev/null || echo DEFAULT)"
+    runner="$(_queue_job_var_value "$f" RUNNER 2>/dev/null || true)"
+    runner_used="$(_queue_job_var_value "$f" RUNNER_USED 2>/dev/null || true)"
+    submitted="$(_queue_job_var_value "$f" SUBMITTED_AT 2>/dev/null || true)"
+    started="$(_queue_job_var_value "$f" RUN_STARTED_AT 2>/dev/null || true)"
+    finished="$(_queue_job_var_value "$f" EXEC_FINISHED_AT 2>/dev/null || _queue_job_var_value "$f" FINISHED_AT 2>/dev/null || true)"
+    rc="$(_queue_job_var_value "$f" EXIT_CODE 2>/dev/null || true)"
+    duration="$(_queue_job_var_value "$f" DURATION_SECONDS 2>/dev/null || true)"
+    cleared="$(_queue_job_var_value "$f" JOB_CLEARED 2>/dev/null || true)"
+    echo "  found: true"
+    echo "  job_id: $id"
+    echo "  state: ${state:-unknown}"
+    echo "  name: ${name:-}"
+    echo "  class: ${class:-}"
+    echo "  runner_requested: ${runner:-auto}"
+    echo "  runner_used: ${runner_used:-unknown}"
+    echo "  submitted_at: ${submitted:-}"
+    echo "  run_started_at: ${started:-}"
+    echo "  finished_at: ${finished:-}"
+    echo "  exit_code: ${rc:-}"
+    echo "  duration_seconds: ${duration:-}"
+    echo "  clearance_recorded: ${cleared:-0}"
+    echo "  command_payload_redacted: true"
+    echo "  stdout_stderr_redacted: true"
+    if [[ "$include_metadata" == "1" ]]; then
+        echo "  metadata_included: true"
+        echo "  job_file_state_path: ${state:-unknown}/$id.job"
+        echo "  run_pid: $(_queue_job_var_value "$f" RUN_PID 2>/dev/null || true)"
+        echo "  run_pgid: $(_queue_job_var_value "$f" RUN_PGID 2>/dev/null || true)"
+        echo "  systemd_unit: $(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+        echo "  sandbox_policy: $(_queue_job_var_value "$f" SANDBOX_POLICY_NAME 2>/dev/null || true)"
+        echo "  seccomp_policy: $(_queue_job_var_value "$f" SECCOMP_POLICY_NAME 2>/dev/null || true)"
+        echo "  runtime_caps: $(_queue_job_var_value "$f" RUNTIME_CAPS 2>/dev/null || true)"
+    else
+        echo "  metadata_included: false"
+    fi
+    log="$(_queue_log_existing_path "$id" 2>/dev/null || true)"
+    if [[ -f "$log" ]]; then
+        log_size="$(wc -c < "$log" 2>/dev/null | tr -d ' ')"
+    else
+        log_size=0
+    fi
+    echo "  log_size_bytes: ${log_size:-0}"
+    if [[ "$include_tail" == "1" && -f "$log" ]]; then
+        tail_lines="${QUEUEBASH_AI_JOB_TAIL_LINES:-40}"
+        [[ "$tail_lines" =~ ^[0-9]+$ ]] || tail_lines=40
+        [[ "$tail_lines" -gt 100 ]] && tail_lines=100
+        echo "  tail_included: true"
+        echo "  tail_lines: $tail_lines"
+        echo "  tail_redacted_note: tail/log output is policy-enabled by QUEUEBASH_AI_ALLOW_JOB_TAIL=1; secrets are not guaranteed absent."
+        echo "  --- tail begin ---"
+        _queue_log_tail "$log" "$tail_lines" 2>/dev/null | sed -E 's/(password|passwd|token|secret|api[_-]?key)=([^[:space:]]+)/\1=<redacted>/Ig' | sed 's/^/  /'
+        echo "  --- tail end ---"
+    else
+        echo "  tail_included: false"
+    fi
+    return 0
+}
+
+_queue_ai_build_dynamic_context() {
+    local question="$1" allowed_s="$2" denied_s="$3"
+    local -a allowed_words=() job_ids=()
+    local word id include_queue=0 include_job=0 include_metadata=0 include_tail=0 job_context_count=0 tail_included=false
+    for word in $allowed_s; do allowed_words+=("$word"); done
+    _queue_ai_list_contains commands "${allowed_words[@]}" && include_queue=0
+    _queue_ai_list_contains queue_status "${allowed_words[@]}" && include_queue=1
+    _queue_ai_list_contains job_status "${allowed_words[@]}" && include_job=1
+    _queue_ai_list_contains job_metadata "${allowed_words[@]}" && include_metadata=1
+    _queue_ai_list_contains job_tail "${allowed_words[@]}" && include_tail=1
+    _queue_ai_list_contains job_log "${allowed_words[@]}" && include_tail=1
+    _queue_ai_list_contains job_logs "${allowed_words[@]}" && include_tail=1
+    while IFS= read -r id; do
+        [[ -n "$id" ]] && job_ids+=("$id")
+    done < <(_queue_ai_detect_job_ids "$question")
+
+    {
+        echo "=== queuebash dynamic advisory context ==="
+        echo "This context is generated by the local shell front-end before provider invocation. It is advisory-only and redacted by default."
+        echo
+        if _queue_ai_list_contains commands "${allowed_words[@]}"; then
+            _queue_ai_command_inventory_text
+        else
+            echo "Installed command inventory: not included because commands context was not allowed/requested."
+        fi
+        echo
+        if _queue_ai_list_contains assets "${allowed_words[@]}"; then
+            _queue_ai_asset_inventory_text
+        else
+            echo "Installed asset/facility inventory: not included because assets context was not allowed/requested."
+        fi
+        echo
+        if [[ "$include_queue" -eq 1 ]]; then
+            _queue_ai_queue_status_text
+        elif [[ " $denied_s " == *" queue_status "* ]]; then
+            echo "Queue status context was requested but denied by policy."
+        else
+            echo "Queue status context was not requested."
+        fi
+        echo
+        if [[ "${#job_ids[@]}" -gt 0 ]]; then
+            echo "Detected bashqueues job IDs in question: ${job_ids[*]}"
+            if [[ "$include_job" -eq 1 ]]; then
+                for id in "${job_ids[@]}"; do
+                    echo
+                    if _queue_ai_job_status_text "$id" "$include_metadata" "$include_tail"; then
+                        job_context_count=$((job_context_count + 1))
+                        [[ "$include_tail" -eq 1 ]] && tail_included=true
+                    fi
+                done
+            elif [[ " $denied_s " == *" job_status "* || " $denied_s " == *" job_metadata "* ]]; then
+                echo "Job status/metadata context was requested but denied by policy."
+            else
+                echo "Job status context was not requested."
+            fi
+        else
+            echo "Detected bashqueues job IDs in question: none"
+        fi
+        echo
+        echo "Dynamic context collection summary:"
+        echo "  context_denied: ${denied_s:-none}"
+        echo "  job_context_collected: $job_context_count"
+        echo "  tail_included: $tail_included"
+        echo "  redactions_applied: true"
+    }
+}
+
 # [AI-PATCH | 2026-05-27 15:37:17 BST]: 0.18.0: add policy-gated queue ask advisory contract and audit handoff
+# [AI-PATCH | 2026-05-27 16:07:28 BST]: 0.18.1: add opt-in local Ollama advisory provider path with live policy gate and audit-preserving handoff
 _queue_ai_ask_command() {
     local provider="${QUEUEBASH_AI_PROVIDER:-contract}"
-    local contexts="${QUEUEBASH_AI_DEFAULT_CONTEXT:-docs,commands,classes,providers}"
-    local json=0
+    local contexts="${QUEUEBASH_AI_DEFAULT_CONTEXT:-docs,commands,classes,assets,providers}"
+    local json=0 live=0 model="${QUEUEBASH_AI_MODEL:-}"
     local question_parts=()
     while [[ "$#" -gt 0 ]]; do
         case "$1" in
@@ -12241,30 +12491,65 @@ _queue_ai_ask_command() {
                 contexts="${2:-}"
                 shift 2
                 ;;
+            --model)
+                model="${2:-}"
+                shift 2
+                ;;
+            --live)
+                live=1
+                shift
+                ;;
             --json|-j)
                 json=1
                 shift
                 ;;
             --help|-h)
-                cat <<'EOF'
+                cat <<'EOH'
 Usage:
-  queue ask [--provider NAME] [--context csv] [--json] "question"
+  queue ask [--provider NAME] [--context csv] [--model NAME] [--live] [--json] "question"
 
 Purpose:
   Build a policy-gated advisory request for an AI responder provider.
-  This command audits the request and returns a deterministic provider handoff.
+  By default this command audits the request and returns a deterministic provider handoff.
+
+Live providers:
+  Live provider calls require explicit policy enablement:
+    QUEUEBASH_AI_LIVE_ENABLED=1
+
+  Local Ollama:
+    queue ask --provider ollama --model llama3 --live "question"
+
+  Google Gemini API:
+    queue ask --provider gemini --model gemini-2.5-flash --live "question"
+
+  Gemini key lookup order:
+    QUEUEBASH_AI_GEMINI_API_KEY_FILE
+    QUEUEBASH_AI_GEMINI_API_KEY
+    QUEUEBASH_AI_GEMINI_KEY
+    GEMINI_API_KEY
+    GOOGLE_API_KEY
 
 Important:
   queue ask is advisory only. It cannot approve, submit, cancel, sign, override,
   patch, or execute jobs. Provider output is data and is never evaluated as shell.
 
 Default contexts:
-  docs,commands,classes,providers
+  docs,commands,classes,assets,providers
+
+Additional safe implementation context:
+  tests,implementation_tests
 
 Optional contexts requiring explicit policy/env allowance:
-  queue_status,job_status,job_metadata       require QUEUEBASH_AI_ALLOW_QUEUE_STATUS=1
-  policy_details,profile_details             require QUEUEBASH_AI_ALLOW_POLICY_DETAILS=1
-EOF
+  queue_status                              require QUEUEBASH_AI_ALLOW_QUEUE_STATUS=1
+  job_status                                require QUEUEBASH_AI_ALLOW_JOB_STATUS=1
+  job_metadata                              require QUEUEBASH_AI_ALLOW_JOB_METADATA=1
+  job_tail                                  require QUEUEBASH_AI_ALLOW_JOB_TAIL=1
+  policies,policy_definitions,policy_details require QUEUEBASH_AI_ALLOW_POLICY_DETAILS=1
+  profile_details                            require QUEUEBASH_AI_ALLOW_POLICY_DETAILS=1
+
+Default queue/job context is redacted. Command payloads and stdout/stderr are not
+included unless a separately gated job_tail context is explicitly allowed.
+EOH
                 return 0
                 ;;
             --)
@@ -12280,7 +12565,7 @@ EOF
     done
     local question="${question_parts[*]}"
     if [[ -z "$question" ]]; then
-        echo "Usage: queue ask [--provider NAME] [--context csv] \"question\"" >&2
+        echo "Usage: queue ask [--provider NAME] [--context csv] [--model NAME] [--live] [--json] \"question\"" >&2
         return 2
     fi
     if [[ "${QUEUEBASH_AI_ASK_ENABLED:-1}" == "0" ]]; then
@@ -12288,29 +12573,150 @@ EOF
         echo "queue ask: blocked by policy: ai_ask_disabled" >&2
         return 1
     fi
+
     local IFS=','
     local requested_list=($contexts)
     unset IFS
-    local allowed=() denied=() ctx
+    local allowed=() denied=() requested_clean=() ctx
     for ctx in "${requested_list[@]}"; do
         ctx="${ctx// /}"
         [[ -z "$ctx" ]] && continue
+        requested_clean+=("$ctx")
         if _queue_ai_context_allowed "$ctx"; then
             allowed+=("$ctx")
         else
             denied+=("$ctx")
         fi
     done
-    local requested_s allowed_s denied_s qhash bundle_hash subject ts response_len
-    requested_s="${requested_list[*]}"
+
+    local requested_s allowed_s denied_s qhash bundle_hash subject ts response_len provider_execution
+    local dynamic_context_text dynamic_context_hash job_ids_s job_context_collected tail_included
+    requested_s="${requested_clean[*]}"
     allowed_s="${allowed[*]}"
     denied_s="${denied[*]}"
     qhash="$(printf '%s' "$question" | sha256sum | awk '{print $1}')"
-    bundle_hash="$(printf '%s|%s|%s|%s' "$provider" "$requested_s" "$allowed_s" "$denied_s" | sha256sum | awk '{print $1}')"
     subject="${QUEUEBASH_SUBMITTER:-$(id -un 2>/dev/null || echo unknown)}"
     ts="$(_queue_now_iso 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
     response_len=0
-    _queue_ai_audit_write "$provider" "$question" "allow" "handoff" "contract_only_no_live_provider_call" "$requested_s" "$allowed_s" "$denied_s" "$response_len"
+    provider_execution="not_implemented_contract_only"
+    job_ids_s="$(_queue_ai_detect_job_ids "$question" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    dynamic_context_text="$(_queue_ai_build_dynamic_context "$question" "$allowed_s" "$denied_s")"
+    dynamic_context_hash="$(printf '%s' "$dynamic_context_text" | sha256sum | awk '{print $1}')"
+    bundle_hash="$(printf '%s|%s|%s|%s|%s' "$provider" "$requested_s" "$allowed_s" "$denied_s" "$dynamic_context_hash" | sha256sum | awk '{print $1}')"
+    job_context_collected="$(printf '%s\n' "$dynamic_context_text" | awk -F': ' '/job_context_collected:/ {v=$2} END {print v+0}')"
+    tail_included="$(printf '%s\n' "$dynamic_context_text" | awk -F': ' '/tail_included:/ {v=$2} END {if (v=="true") print "true"; else print "false"}')"
+
+    if [[ "$live" -eq 1 ]]; then
+        provider_execution="live_provider_requested"
+        if [[ "${QUEUEBASH_AI_LIVE_ENABLED:-0}" != "1" ]]; then
+            _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_ai_provider_not_enabled" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+            echo "queue ask: blocked by policy: live_ai_provider_not_enabled" >&2
+            echo "hint: export QUEUEBASH_AI_LIVE_ENABLED=1 or prefix the command with QUEUEBASH_AI_LIVE_ENABLED=1" >&2
+            return 1
+        fi
+        if [[ "$provider" != "ollama" && "$provider" != "gemini" ]]; then
+            _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_provider_not_supported" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+            echo "queue ask: blocked by policy: live_provider_not_supported: $provider" >&2
+            return 1
+        fi
+        local helper tmpdir req_file resp_file helper_rc helper_name provider_reason success_reason default_model
+        if [[ "$provider" == "ollama" ]]; then
+            helper="${QUEUEBASH_AI_OLLAMA_HELPER:-}"
+            helper_name="queue-ai-ask-ollama"
+            default_model="llama3"
+            success_reason="live_ollama_provider"
+        else
+            helper="${QUEUEBASH_AI_GEMINI_HELPER:-}"
+            helper_name="queue-ai-ask-gemini"
+            default_model="${QUEUEBASH_AI_GEMINI_MODEL:-gemini-2.5-flash}"
+            success_reason="live_gemini_provider"
+        fi
+        if [[ -z "$helper" ]]; then
+            local source_dir
+            source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
+            if [[ -x "$source_dir/bin/$helper_name" ]]; then
+                helper="$source_dir/bin/$helper_name"
+            else
+                helper="$(command -v "$helper_name" 2>/dev/null || true)"
+            fi
+        fi
+        if [[ -z "$helper" || ! -x "$helper" ]]; then
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "${provider}_helper_missing" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+            echo "queue ask: $provider helper missing" >&2
+            return 1
+        fi
+        tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/queue-ai-ask.XXXXXX")" || return 1
+        req_file="$tmpdir/request.json"
+        resp_file="$tmpdir/response.json"
+        {
+            printf '{'
+            printf '"schema":"queuebash.ai_advisory.request.v1"'
+            printf ',"timestamp":"%s"' "$(_queue_json_escape "$ts")"
+            printf ',"operation":"ai.ask"'
+            printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+            printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+            printf ',"model":"%s"' "$(_queue_json_escape "${model:-$default_model}")"
+            printf ',"question":"%s"' "$(_queue_json_escape "$question")"
+            printf ',"question_sha256":"%s"' "$(_queue_json_escape "$qhash")"
+            printf ',"question_redacted":"%s"' "$(_queue_json_escape "$(_queue_ai_redact_question "$question")")"
+            printf ',"context_requested":"%s"' "$(_queue_json_escape "$requested_s")"
+            printf ',"context_allowed":"%s"' "$(_queue_json_escape "$allowed_s")"
+            printf ',"context_denied":"%s"' "$(_queue_json_escape "$denied_s")"
+            printf ',"context_bundle_sha256":"%s"' "$(_queue_json_escape "$bundle_hash")"
+            printf ',"dynamic_context_sha256":"%s"' "$(_queue_json_escape "$dynamic_context_hash")"
+            printf ',"dynamic_context_text":"%s"' "$(_queue_json_escape "$dynamic_context_text")"
+            printf ',"job_ids_detected":"%s"' "$(_queue_json_escape "$job_ids_s")"
+            printf ',"job_context_collected":%s' "${job_context_collected:-0}"
+            printf ',"tail_included":%s' "$tail_included"
+            printf ',"redactions_applied":true'
+            printf ',"advisory_only":true'
+            printf '}\n'
+        } > "$req_file"
+        if "$helper" --request-json "$req_file" --output-json "$resp_file"; then
+            helper_rc=0
+        else
+            helper_rc=$?
+        fi
+        if [[ "$helper_rc" -ne 0 || ! -s "$resp_file" ]]; then
+            provider_reason="${provider}_provider_failed"
+            if [[ -s "$resp_file" ]]; then
+                provider_reason="$(python3 - "$resp_file" <<'PY' 2>/dev/null || printf 'provider_failed'
+import json,sys
+try:
+    j=json.load(open(sys.argv[1]))
+    print(j.get('reason') or j.get('decision') or 'provider_failed')
+except Exception:
+    print('provider_failed')
+PY
+)"
+            fi
+            rm -rf "$tmpdir"
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "$provider_reason" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+            echo "queue ask: $provider provider failed: $provider_reason" >&2
+            return 1
+        fi
+        response_len="$(python3 - "$resp_file" <<'PY' 2>/dev/null || echo 0
+import json,sys
+j=json.load(open(sys.argv[1]))
+print(len(j.get('answer_markdown','')))
+PY
+)"
+        _queue_ai_audit_write "$provider" "$question" "allow" "answered" "$success_reason" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+        if [[ "$json" -eq 1 ]]; then
+            cat "$resp_file"
+            printf '\n'
+        else
+            python3 - "$resp_file" <<'PY'
+import json,sys
+j=json.load(open(sys.argv[1]))
+print(j.get('answer_markdown',''))
+PY
+        fi
+        rm -rf "$tmpdir"
+        return 0
+    fi
+
+    _queue_ai_audit_write "$provider" "$question" "allow" "handoff" "contract_only_no_live_provider_call" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
     if [[ "$json" -eq 1 ]]; then
         printf '{'
         printf '"schema":"queuebash.ai_advisory.request.v1"'
@@ -12318,23 +12724,34 @@ EOF
         printf ',"operation":"ai.ask"'
         printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
         printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+        [[ -n "$model" ]] && printf ',"model":"%s"' "$(_queue_json_escape "$model")"
         printf ',"question_sha256":"%s"' "$(_queue_json_escape "$qhash")"
         printf ',"question_redacted":"%s"' "$(_queue_json_escape "$(_queue_ai_redact_question "$question")")"
         printf ',"context_requested":"%s"' "$(_queue_json_escape "$requested_s")"
         printf ',"context_allowed":"%s"' "$(_queue_json_escape "$allowed_s")"
         printf ',"context_denied":"%s"' "$(_queue_json_escape "$denied_s")"
         printf ',"context_bundle_sha256":"%s"' "$(_queue_json_escape "$bundle_hash")"
+        printf ',"dynamic_context_sha256":"%s"' "$(_queue_json_escape "$dynamic_context_hash")"
+        printf ',"dynamic_context_text":"%s"' "$(_queue_json_escape "$dynamic_context_text")"
+        printf ',"job_ids_detected":"%s"' "$(_queue_json_escape "$job_ids_s")"
+        printf ',"job_context_collected":%s' "${job_context_collected:-0}"
+        printf ',"tail_included":%s' "$tail_included"
+        printf ',"redactions_applied":true'
         printf ',"advisory_only":true'
-        printf ',"provider_execution":"not_implemented_contract_only"'
+        printf ',"provider_execution":"%s"' "$(_queue_json_escape "$provider_execution")"
         printf '}\n'
     else
         echo "queue ask advisory request"
         echo "  provider:         $provider"
+        [[ -n "$model" ]] && echo "  model:            $model"
         echo "  operation:        ai.ask"
         echo "  advisory only:    yes"
         echo "  question_sha256:  $qhash"
         echo "  context allowed:  ${allowed_s:-none}"
         echo "  context denied:   ${denied_s:-none}"
+        echo "  job ids detected: ${job_ids_s:-none}"
+        echo "  job context:      ${job_context_collected:-0} collected"
+        echo "  tail included:    $tail_included"
         echo "  context bundle:   $bundle_hash"
         echo "  provider call:    not implemented in this contract release"
         echo "  audit log:        $(_queue_ai_audit_log_path)"
@@ -12649,7 +13066,7 @@ _queue_array_contains() {
 # -------------------------------------------------------------------
 
 _queue_module_valid_kind() {
-    case "${1:-}" in class|classes|asset|assets|cap|caps) return 0 ;; *) return 1 ;; esac
+    case "${1:-}" in class|classes|asset|assets|cap|caps|provider|providers) return 0 ;; *) return 1 ;; esac
 }
 
 _queue_module_normal_kind() {
@@ -12657,6 +13074,7 @@ _queue_module_normal_kind() {
         class|classes) echo class ;;
         asset|assets) echo asset ;;
         cap|caps) echo cap ;;
+        provider|providers) echo provider ;;
         *) return 1 ;;
     esac
 }
@@ -12667,10 +13085,10 @@ _queue_module_paths() {
         class) active="$root/classes/$name.env"; disabled="$root/classes/.disabled/$name.env" ;;
         asset) active="$root/assets.d/$name.sh"; disabled="$root/assets.d/.disabled/$name.sh" ;;
         cap) active="$root/caps.d/$name.sh"; disabled="$root/caps.d/.disabled/$name.sh" ;;
+        provider) active="$root/policy/providers.d/$name.env"; disabled="$root/policy/providers.d/.disabled/$name.env" ;;
         *) return 1 ;;
     esac
-    printf '%s	%s
-' "$active" "$disabled"
+    printf '%s\t%s\n' "$active" "$disabled"
 }
 
 _queue_module_status() {
@@ -12684,7 +13102,7 @@ _queue_module_status() {
 
 _queue_module_disable() {
     local kind="$(_queue_module_normal_kind "${1:-}")" name="${2:-}" force="${3:-}" paths active disabled ddir used
-    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue modules disable class|asset|cap NAME [--force]" >&2; return 2; }
+    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue modules disable class|asset|cap|provider NAME [--force]" >&2; return 2; }
     paths="$(_queue_module_paths "$kind" "$name")" || return 2
     active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"; ddir="$(dirname "$disabled")"
     [[ -f "$active" ]] || { [[ -f "$disabled" ]] && { echo "$kind module already disabled: $name"; return 0; }; echo "queue modules disable: not found: $kind $name" >&2; return 1; }
@@ -12705,7 +13123,7 @@ _queue_module_disable() {
 
 _queue_module_enable() {
     local kind="$(_queue_module_normal_kind "${1:-}")" name="${2:-}" paths active disabled
-    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue modules enable class|asset|cap NAME" >&2; return 2; }
+    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue modules enable class|asset|cap|provider NAME" >&2; return 2; }
     paths="$(_queue_module_paths "$kind" "$name")" || return 2
     active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"
     [[ ! -f "$active" ]] || { echo "$kind module already enabled: $name"; return 0; }
@@ -12714,6 +13132,7 @@ _queue_module_enable() {
         class) _queue_class_validate_file "$name" "$disabled" || return $? ;;
         asset) _queue_asset_replace_validate_source "$name" "$disabled" || return $? ;;
         cap) bash -n "$disabled" || return 3 ;;
+        provider) bash -n "$disabled" || return 3 ;;
     esac
     mv "$disabled" "$active" || return 1
     chmod +x "$active" 2>/dev/null || true
@@ -12725,19 +13144,25 @@ _queue_module_enable() {
 _queue_modules_list() {
     local root="$(_queue_root)" f name
     _queue_prune_obsolete_asset_plugins >/dev/null 2>&1 || true
-    mkdir -p "$root/classes/.disabled" "$root/assets.d/.disabled" "$root/caps.d/.disabled"
+    mkdir -p \
+        "$root/classes/.disabled" \
+        "$root/assets.d/.disabled" \
+        "$root/caps.d/.disabled" \
+        "$root/policy/providers.d/.disabled"
     for f in "$root/classes"/*.env; do [[ -f "$f" ]] && printf 'class\t%s\tenabled\t%s\n' "$(basename "$f" .env)" "$f"; done
     for f in "$root/classes/.disabled"/*.env; do [[ -f "$f" ]] && printf 'class\t%s\tdisabled\t%s\n' "$(basename "$f" .env)" "$f"; done
     for f in "$root/assets.d"/*.sh; do [[ -f "$f" ]] && printf 'asset\t%s\tenabled\t%s\n' "$(basename "$f" .sh)" "$f"; done
     for f in "$root/assets.d/.disabled"/*.sh; do [[ -f "$f" ]] && printf 'asset\t%s\tdisabled\t%s\n' "$(basename "$f" .sh)" "$f"; done
     for f in "$root/caps.d"/*.sh; do [[ -f "$f" ]] && printf 'cap\t%s\tenabled\t%s\n' "$(basename "$f" .sh)" "$f"; done
     for f in "$root/caps.d/.disabled"/*.sh; do [[ -f "$f" ]] && printf 'cap\t%s\tdisabled\t%s\n' "$(basename "$f" .sh)" "$f"; done
+    for f in "$root/policy/providers.d"/*.env; do [[ -f "$f" ]] && printf 'provider\t%s\tenabled\t%s\n' "$(basename "$f" .env)" "$f"; done
+    for f in "$root/policy/providers.d/.disabled"/*.env; do [[ -f "$f" ]] && printf 'provider\t%s\tdisabled\t%s\n' "$(basename "$f" .env)" "$f"; done
     return 0
 }
 
 _queue_modules_explain() {
     local spec="${1:-}" kind name paths active disabled status
-    [[ "$spec" == *:* ]] || { echo "Usage: queue modules explain class:NAME|asset:NAME|cap:NAME" >&2; return 2; }
+    [[ "$spec" == *:* ]] || { echo "Usage: queue modules explain class:NAME|asset:NAME|cap:NAME|provider:NAME" >&2; return 2; }
     kind="$(_queue_module_normal_kind "${spec%%:*}")" || { echo "queue modules explain: invalid kind: ${spec%%:*}" >&2; return 2; }
     name="${spec#*:}"
     paths="$(_queue_module_paths "$kind" "$name")" || return 2
@@ -12752,7 +13177,7 @@ _queue_modules_explain() {
     case "$kind" in
         class) [[ -f "$active" ]] && _queue_class_explain "$name" || { [[ -f "$disabled" ]] && sed 's/^/  /' "$disabled" || true; } ;;
         asset) [[ -f "$active" ]] && _queue_asset_explain "$name" || { [[ -f "$disabled" ]] && sed 's/^/  /' "$disabled" || true; } ;;
-        cap)
+        cap|provider)
             local src=""
             if [[ -f "$active" ]]; then
                 src="$active"
@@ -12764,6 +13189,194 @@ _queue_modules_explain() {
                 sed 's/^/  /' "$src" || true
             fi
             ;;
+    esac
+}
+
+_queue_module_help() {
+    local topic="${1:-}"
+    case "$topic" in
+        ""|module|modules)
+            cat <<'EOF'
+queue module - standard extension contract
+
+Usage:
+  queue module list [--json]
+  queue module explain class:NAME|asset:NAME|cap:NAME|provider:NAME
+  queue module help [class|asset|cap|provider|kind:NAME]
+  queue module configure provider NAME [--show|--path|--set KEY=VALUE ...]
+  queue module policy provider NAME
+  queue module acl set|remove KIND NAME OPERATION SUBJECT
+  queue module enable class|asset|cap|provider NAME
+  queue module disable class|asset|cap|provider NAME [--force]
+  queue module refresh class|asset|cap <directory>
+
+Kinds:
+  class     execution class definitions
+  asset     preflight/resource policy plugins
+  cap       runtime capability plugins
+  provider  enterprise/local provider configuration modules
+
+ACL note:
+  queue module acl is a command-surface handoff. Where the ACL subsystem is
+  available, it should be equivalent to queue acl set/remove module ... .
+EOF
+            ;;
+        provider|providers)
+            cat <<'EOF'
+Provider modules
+
+Provider modules declare how bashqueues reaches external governance systems.
+They are data/configuration modules, not executable policy rows.
+
+Default single-user installations do not need provider configuration.
+Enterprise installations can add provider modules for Microsoft, LDAP, PAM/NSS,
+IBM, PKI, Vault/HSM, or internal policy APIs.
+
+Canonical locations:
+  user queue root:    ~/.queuebash/policy/providers.d/NAME.env
+  system policy root: /etc/queuebash/policy/providers.d/NAME.env
+
+Commands:
+  queue module configure provider NAME --set KEY=VALUE
+  queue module configure provider NAME --show
+  queue module policy provider NAME
+EOF
+            ;;
+        class|classes|asset|assets|cap|caps)
+            echo "queue module help: '$topic' modules use list/explain/enable/disable/refresh."
+            echo "Example: queue module explain ${topic%%s}:NAME"
+            ;;
+        *:*)
+            _queue_modules_explain "$topic"
+            ;;
+        *)
+            echo "queue module help: unknown topic: $topic" >&2
+            return 2
+            ;;
+    esac
+}
+
+_queue_module_configure() {
+    local kind="$(_queue_module_normal_kind "${1:-}")" name="${2:-}"
+    [[ "$kind" == "provider" && -n "$name" ]] || { echo "Usage: queue module configure provider NAME [--show|--path|--set KEY=VALUE ...]" >&2; return 2; }
+    shift 2
+    local paths active disabled dir show=0 path_only=0 pair key value tmp
+    paths="$(_queue_module_paths provider "$name")" || return 2
+    active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"; dir="$(dirname "$active")"
+    mkdir -p "$dir"
+
+    if [[ "$#" -eq 0 ]]; then
+        echo "provider: $name"
+        echo "path:     $active"
+        echo "status:   $(_queue_module_status provider "$name" 2>/dev/null || echo missing)"
+        echo "usage:    queue module configure provider $name --set KEY=VALUE [--set KEY=VALUE ...]"
+        return 0
+    fi
+
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --show) show=1; shift ;;
+            --path) path_only=1; shift ;;
+            --set)
+                pair="${2:-}"
+                [[ "$pair" == *=* ]] || { echo "queue module configure: --set requires KEY=VALUE" >&2; return 2; }
+                key="${pair%%=*}"; value="${pair#*=}"
+                [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "queue module configure: invalid key: $key" >&2; return 2; }
+                touch "$active"
+                tmp="${active}.tmp.$$"
+                awk -v k="$key" 'BEGIN{found=0} $0 ~ "^" k "=" {next} {print} END{}' "$active" > "$tmp"
+                printf '%s=%q\n' "$key" "$value" >> "$tmp"
+                mv "$tmp" "$active"
+                shift 2 ;;
+            *) echo "Usage: queue module configure provider NAME [--show|--path|--set KEY=VALUE ...]" >&2; return 2 ;;
+        esac
+    done
+    if [[ "$path_only" -eq 1 ]]; then
+        echo "$active"
+    elif [[ "$show" -eq 1 ]]; then
+        [[ -f "$active" ]] && sed -n '1,200p' "$active" || true
+    else
+        echo "Configured provider module: $name"
+        echo "Path: $active"
+    fi
+}
+
+_queue_module_policy() {
+    local kind="$(_queue_module_normal_kind "${1:-}")" name="${2:-}" paths active disabled
+    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue module policy class|asset|cap|provider NAME" >&2; return 2; }
+    paths="$(_queue_module_paths "$kind" "$name")" || return 2
+    active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"
+    echo "MODULE POLICY: $kind:$name"
+    echo "status: $(_queue_module_status "$kind" "$name" 2>/dev/null || echo missing)"
+    echo "active: $active"
+    echo "disabled: $disabled"
+    echo
+    case "$kind" in
+        provider)
+            cat <<'EOF'
+provider policy contract:
+  - provider output is normalized data, never shell
+  - malformed provider output fails closed
+  - command-operation ACLs should resolve through the ACL provider
+  - single-user installs may remain file-backed and require no enterprise backplate
+  - enterprise installs may delegate to Microsoft, LDAP, PAM/NSS, IBM, PKI or Vault/HSM
+EOF
+            ;;
+        class|asset|cap)
+            echo "module policy is derived from the class/asset/cap definition and any mandatory provider or ACL policy."
+            echo "Use: queue module explain $kind:$name"
+            ;;
+    esac
+}
+
+_queue_module_acl() {
+    local action="${1:-}" kind="${2:-}" name="${3:-}" operation="${4:-}" subject="${5:-}"
+    case "$action" in set|remove|delete|rm) ;; *) echo "Usage: queue module acl set|remove KIND NAME OPERATION SUBJECT" >&2; return 2 ;; esac
+    [[ -n "$kind" && -n "$name" && -n "$operation" && -n "$subject" ]] || { echo "Usage: queue module acl set|remove KIND NAME OPERATION SUBJECT" >&2; return 2; }
+    kind="$(_queue_module_normal_kind "$kind")" || { echo "queue module acl: invalid kind" >&2; return 2; }
+    cat <<EOF
+queue module acl: operation ACL handoff
+action:    $action
+resource:  module:$kind:$name
+operation: $operation
+subject:   $subject
+
+This command surface is reserved for the ACL subsystem. It is equivalent to:
+  queue acl $action module $kind:$name $operation $subject
+
+No ACL backend is active in this build, so no policy was changed.
+EOF
+    return 3
+}
+
+# [AI-PATCH | 2026-05-27 17:45:21 BST]: 0.18.5: centralise module/provider command surface.
+_queue_module_command() {
+    case "${1:-list}" in
+        list|"")
+            if [[ "${2:-}" == "--json" || "${1:-}" == "--json" ]]; then
+                _queue_modules_list_json
+            else
+                _queue_modules_list | sort
+            fi
+            ;;
+        explain|show) shift; _queue_modules_explain "$@" ;;
+        help) shift; _queue_module_help "$@" ;;
+        configure|config) shift; _queue_module_configure "$@" ;;
+        policy|policies) shift; _queue_module_policy "$@" ;;
+        acl) shift; _queue_module_acl "$@" ;;
+        enable) shift; _queue_module_enable "$@" ;;
+        disable) shift; _queue_module_disable "$@" ;;
+        refresh)
+            local kind="${2:-}" dir="${3:-}"
+            case "$kind" in
+                class|classes) _queue_classes_refresh "$dir" ;;
+                asset|assets) _queue_asset_refresh_from_dir "$dir" ;;
+                cap|caps) _queue_cap_refresh "$dir" ;;
+                provider|providers) echo "queue modules refresh provider: provider modules are configuration; use queue module configure provider NAME" >&2; return 2 ;;
+                *) echo "Usage: queue modules refresh class|asset|cap <directory>" >&2; return 2 ;;
+            esac
+            ;;
+        *) echo "Usage: queue module list|help|explain|configure|policy|acl|enable|disable|refresh" >&2; return 2 ;;
     esac
 }
 
@@ -15606,22 +16219,7 @@ EOF
             ;;
 
         module|modules)
-            case "${1:-list}" in
-                list|"") _queue_modules_list | sort ;;
-                explain|show) shift; _queue_modules_explain "$@" ;;
-                enable) shift; _queue_module_enable "$@" ;;
-                disable) shift; _queue_module_disable "$@" ;;
-                refresh)
-                    local kind="${2:-}" dir="${3:-}"
-                    case "$kind" in
-                        class|classes) _queue_classes_refresh "$dir" ;;
-                        asset|assets) _queue_asset_refresh_from_dir "$dir" ;;
-                        cap|caps) _queue_cap_refresh "$dir" ;;
-                        *) echo "Usage: queue modules refresh class|asset|cap <directory>" >&2; return 2 ;;
-                    esac
-                    ;;
-                *) echo "Usage: queue modules list|explain <kind:name>|enable kind name|disable kind name [--force]|refresh kind <directory>" >&2; return 2 ;;
-            esac
+            _queue_module_command "$@"
             ;;
 
 

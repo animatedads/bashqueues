@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""Local Ollama advisory provider for bashqueues queue ask.
+
+This helper is intentionally advisory-only. It reads a normalized request JSON,
+builds a bounded context bundle from policy-allowed repository sources, calls the
+local Ollama HTTP API, and returns normalized response JSON. It never executes
+model output.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import sys
+import time
+import socket
+import urllib.error
+import urllib.request
+from typing import Dict, Iterable, List, Tuple
+
+SCHEMA_RESPONSE = "queuebash.ai_advisory.response.v1"
+DEFAULT_MODEL = os.environ.get("QUEUEBASH_AI_OLLAMA_MODEL", "llama3")
+DEFAULT_URL = os.environ.get("QUEUEBASH_AI_OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
+MAX_FILE_BYTES = int(os.environ.get("QUEUEBASH_AI_CONTEXT_FILE_BYTES", "16000"))
+MAX_TOTAL_BYTES = int(os.environ.get("QUEUEBASH_AI_CONTEXT_TOTAL_BYTES", "120000"))
+TIMEOUT = float(os.environ.get("QUEUEBASH_AI_OLLAMA_TIMEOUT", "180"))
+
+ROOT = pathlib.Path(os.environ.get("QUEUEBASH_AI_CONTEXT_ROOT", os.getcwd())).resolve()
+
+CONTEXT_MAP = {
+    "docs": ["docs", "README.md", "CHANGELOG.md"],
+    "manuals": ["docs", "README.md"],
+    "tests": ["tests"],
+    "implementation_tests": ["tests"],
+    "policies": ["policies.d"],
+    "policy_definitions": ["policies.d"],
+    "classes": ["classes"],
+    "assets": ["assets.d"],
+    "providers": ["docs/TRUST_PROVIDERS.md", "docs/MS_GOVERNANCE_PROVIDER.md", "docs/DIRECTORY_GOVERNANCE_PROVIDERS.md"],
+    # These are intentionally not read from live queue state here. The shell
+    # front-end must gate and bundle those in a future provider-aware phase.
+    "commands": ["README.md", "docs"],
+}
+
+TEXT_SUFFIXES = {
+    ".md", ".txt", ".env", ".sh", ".py", ".json", ".yml", ".yaml", ".service", ".timer"
+}
+
+
+def die(msg: str, code: int = 1) -> None:
+    print(msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def safe_under_root(path: pathlib.Path) -> bool:
+    try:
+        path.resolve().relative_to(ROOT)
+        return True
+    except Exception:
+        return False
+
+
+def iter_files_for_contexts(contexts: Iterable[str]) -> Iterable[pathlib.Path]:
+    seen = set()
+    # Tests are deliberately treated as high-authority implementation evidence.
+    ordered_contexts = []
+    for preferred in ("tests", "implementation_tests", "docs", "manuals", "policies", "policy_definitions"):
+        if preferred in contexts and preferred not in ordered_contexts:
+            ordered_contexts.append(preferred)
+    for ctx in contexts:
+        if ctx not in ordered_contexts:
+            ordered_contexts.append(ctx)
+
+    for ctx in ordered_contexts:
+        for rel in CONTEXT_MAP.get(ctx, []):
+            p = (ROOT / rel).resolve()
+            if not safe_under_root(p) or not p.exists():
+                continue
+            if p.is_file():
+                candidates = [p]
+            else:
+                candidates = sorted(x for x in p.rglob("*") if x.is_file())
+            for f in candidates:
+                if f in seen:
+                    continue
+                seen.add(f)
+                if not safe_under_root(f):
+                    continue
+                if f.name.startswith(".") or f.suffix.lower() not in TEXT_SUFFIXES:
+                    continue
+                yield f
+
+
+def read_context(contexts: List[str]) -> Tuple[str, List[Dict[str, object]]]:
+    parts: List[str] = []
+    manifest: List[Dict[str, object]] = []
+    total = 0
+    for f in iter_files_for_contexts(contexts):
+        if total >= MAX_TOTAL_BYTES:
+            break
+        try:
+            data = f.read_bytes()[:MAX_FILE_BYTES]
+        except Exception:
+            continue
+        try:
+            text = data.decode("utf-8", errors="replace")
+        except Exception:
+            continue
+        # Basic secret hygiene: skip likely secret material. The queue ask shell
+        # layer should already redact, but the helper also refuses obvious keys.
+        lowered = text[:2048].lower()
+        if "-----begin private key-----" in lowered or "client_secret" in lowered or "password=" in lowered:
+            continue
+        rel = str(f.relative_to(ROOT))
+        chunk = f"\n--- FILE: {rel} ---\n{text}\n"
+        remaining = MAX_TOTAL_BYTES - total
+        if len(chunk.encode("utf-8")) > remaining:
+            chunk = chunk.encode("utf-8")[:remaining].decode("utf-8", errors="replace")
+        parts.append(chunk)
+        total += len(chunk.encode("utf-8"))
+        manifest.append({"path": rel, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+    return "".join(parts), manifest
+
+
+def write_json(path: str, obj: Dict[str, object]) -> None:
+    pathlib.Path(path).write_text(json.dumps(obj, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def call_ollama(url: str, model: str, prompt: str) -> str:
+    payload = json.dumps({
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"temperature": 0.2},
+    }).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+    except TimeoutError as e:
+        raise RuntimeError(f"ollama_timeout_after_{int(TIMEOUT)}s") from e
+    except socket.timeout as e:
+        raise RuntimeError(f"ollama_timeout_after_{int(TIMEOUT)}s") from e
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:
+            detail = str(e)
+        raise RuntimeError(f"ollama_http_error_{e.code}: {detail}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"ollama_unreachable: {e.reason}") from e
+    except Exception as e:
+        raise RuntimeError(f"ollama_request_failed: {e}") from e
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"ollama_invalid_json: {e}") from e
+    answer = data.get("response", "")
+    if not isinstance(answer, str) or not answer.strip():
+        raise RuntimeError("ollama_empty_response")
+    return answer
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--request-json", required=True)
+    ap.add_argument("--output-json", required=True)
+    ap.add_argument("--url", default=DEFAULT_URL)
+    ap.add_argument("--model", default=None)
+    args = ap.parse_args()
+
+    req = json.load(open(args.request_json, encoding="utf-8"))
+    if req.get("schema") != "queuebash.ai_advisory.request.v1":
+        die("invalid_request_schema")
+    if req.get("operation") != "ai.ask":
+        die("invalid_operation")
+    if req.get("advisory_only") is not True:
+        die("advisory_only_required")
+
+    model = args.model or req.get("model") or DEFAULT_MODEL
+    contexts = [x for x in str(req.get("context_allowed", "")).split() if x]
+    question = req.get("question") or req.get("question_redacted") or ""
+    if not question:
+        die("missing_question")
+
+    dynamic_context_text = str(req.get("dynamic_context_text", "") or "")
+    context_text, manifest = read_context(contexts)
+    combined_context = dynamic_context_text + ("\n" if dynamic_context_text and context_text else "") + context_text
+    context_hash = hashlib.sha256(combined_context.encode("utf-8")).hexdigest()
+    if dynamic_context_text:
+        manifest.insert(0, {
+            "path": "<dynamic-shell-context>",
+            "bytes": len(dynamic_context_text.encode("utf-8")),
+            "sha256": hashlib.sha256(dynamic_context_text.encode("utf-8")).hexdigest(),
+            "redacted": True,
+        })
+    prompt = f"""You are a bashqueues advisory provider.
+
+Rules:
+- You are advisory only. Do not claim to have executed commands.
+- Do not suggest bypassing bashqueues policy, signatures, ACLs, trust providers, seccomp, caps, legal, FinOps, or integrity gates.
+- Treat tests as the highest-authority implementation evidence when docs and tests differ.
+- Suggest queue commands only as suggestions. Never output shell intended for automatic execution.
+- If policy-restricted context is absent, say what is missing rather than guessing.
+
+Dynamic and static allowed context follows. It may be partial and redacted.
+Use the installed command inventory and asset/facility inventory from the dynamic shell context as authoritative. Do not invent queue commands.
+If current status context is denied, say it is denied. If it is allowed but unavailable, say which collector failed.
+{combined_context}
+
+Question:
+{question}
+
+Answer with practical, concise guidance for a bashqueues user or administrator.
+"""
+    started = time.time()
+    try:
+        answer = call_ollama(args.url, str(model), prompt)
+    except Exception as e:
+        elapsed_ms = int((time.time() - started) * 1000)
+        reason = str(e) or e.__class__.__name__
+        out = {
+            "schema": SCHEMA_RESPONSE,
+            "provider": "ollama",
+            "model": str(model),
+            "decision": "error",
+            "reason": reason,
+            "answer_markdown": "",
+            "advisory_only": True,
+            "actions_suggested_authority": "none",
+            "context_manifest": manifest,
+            "context_bundle_sha256": context_hash,
+            "response_sha256": "",
+            "response_length": 0,
+            "elapsed_ms": elapsed_ms,
+            "redactions_observed": True,
+        }
+        write_json(args.output_json, out)
+        print(f"ollama_provider_error: {reason}", file=sys.stderr)
+        return 1
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    answer_hash = hashlib.sha256(answer.encode("utf-8")).hexdigest()
+    out = {
+        "schema": SCHEMA_RESPONSE,
+        "provider": "ollama",
+        "model": str(model),
+        "decision": "answered",
+        "answer_markdown": answer,
+        "advisory_only": True,
+        "actions_suggested_authority": "suggestion_only",
+        "context_manifest": manifest,
+        "context_bundle_sha256": context_hash,
+        "response_sha256": answer_hash,
+        "response_length": len(answer),
+        "elapsed_ms": elapsed_ms,
+        "redactions_observed": True,
+    }
+    write_json(args.output_json, out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,411 @@
+#!/usr/bin/env python3
+"""Google Gemini advisory provider for bashqueues queue ask.
+
+This helper is intentionally advisory-only. It reads a normalized request JSON,
+builds a bounded context bundle from policy-allowed repository sources, calls the
+Google Gemini API, and returns normalized response JSON. It never executes model
+output and never writes API keys to logs or provider result JSON.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import re
+import socket
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Dict, Iterable, List, Tuple
+
+SCHEMA_RESPONSE = "queuebash.ai_advisory.response.v1"
+DEFAULT_MODEL = os.environ.get("QUEUEBASH_AI_GEMINI_MODEL", "gemini-2.5-flash")
+DEFAULT_ENDPOINT = os.environ.get(
+    "QUEUEBASH_AI_GEMINI_ENDPOINT",
+    "https://generativelanguage.googleapis.com/v1beta",
+).rstrip("/")
+
+MAX_FILE_BYTES = int(os.environ.get("QUEUEBASH_AI_CONTEXT_FILE_BYTES", "16000"))
+MAX_TOTAL_BYTES = int(os.environ.get("QUEUEBASH_AI_CONTEXT_TOTAL_BYTES", "120000"))
+TIMEOUT = float(os.environ.get("QUEUEBASH_AI_GEMINI_TIMEOUT", "60"))
+MAX_OUTPUT_TOKENS = int(os.environ.get("QUEUEBASH_AI_GEMINI_MAX_OUTPUT_TOKENS", "4096"))
+TEMPERATURE = float(os.environ.get("QUEUEBASH_AI_GEMINI_TEMPERATURE", "0.2"))
+ROOT = pathlib.Path(os.environ.get("QUEUEBASH_AI_CONTEXT_ROOT", os.getcwd())).resolve()
+
+CONTEXT_MAP = {
+    "docs": ["docs", "README.md", "CHANGELOG.md"],
+    "manuals": ["docs", "README.md"],
+    "tests": ["tests"],
+    "implementation_tests": ["tests"],
+    "policies": ["policies.d"],
+    "policy_definitions": ["policies.d"],
+    "classes": ["classes"],
+    "assets": ["assets.d"],
+    "providers": [
+        "docs/TRUST_PROVIDERS.md",
+        "docs/MS_GOVERNANCE_PROVIDER.md",
+        "docs/DIRECTORY_GOVERNANCE_PROVIDERS.md",
+        "docs/AI_ADVISORY_PROVIDER.md",
+    ],
+    "commands": ["README.md", "docs"],
+}
+
+TEXT_SUFFIXES = {".md", ".txt", ".env", ".sh", ".py", ".json", ".yml", ".yaml", ".service", ".timer"}
+SECRET_PATTERNS = (
+    "-----begin private key-----",
+    "client_secret",
+    "password=",
+    "api_key=",
+    "apikey=",
+    "token=",
+    "bearer ",
+)
+
+
+def die(msg: str, code: int = 1) -> None:
+    print(msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def safe_under_root(path: pathlib.Path) -> bool:
+    try:
+        path.resolve().relative_to(ROOT)
+        return True
+    except Exception:
+        return False
+
+
+def read_key_file(path: str) -> str:
+    p = pathlib.Path(path).expanduser()
+    try:
+        key = p.read_text(encoding="utf-8").strip()
+    except Exception as exc:
+        raise RuntimeError(f"gemini_api_key_file_unreadable: {exc.__class__.__name__}") from exc
+    if not key:
+        raise RuntimeError("gemini_api_key_file_empty")
+    return key
+
+
+def resolve_api_key() -> str:
+    key_file = os.environ.get("QUEUEBASH_AI_GEMINI_API_KEY_FILE")
+    if key_file:
+        return read_key_file(key_file)
+    for name in (
+        "QUEUEBASH_AI_GEMINI_API_KEY",
+        "QUEUEBASH_AI_GEMINI_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+    ):
+        value = os.environ.get(name)
+        if value:
+            return value.strip()
+    raise RuntimeError("gemini_api_key_missing")
+
+
+def redact_secret_values(text: str) -> str:
+    # Avoid leaking API keys from Google error bodies or accidental URLs.
+    text = re.sub(r"key=([A-Za-z0-9_\-]+)", "key=<redacted>", text)
+    text = re.sub(r"AIza[0-9A-Za-z_\-]{20,}", "<redacted-google-api-key>", text)
+    return text[:500]
+
+
+def iter_files_for_contexts(contexts: Iterable[str]) -> Iterable[pathlib.Path]:
+    seen = set()
+    ordered_contexts: List[str] = []
+    for preferred in ("tests", "implementation_tests", "docs", "manuals", "policies", "policy_definitions"):
+        if preferred in contexts and preferred not in ordered_contexts:
+            ordered_contexts.append(preferred)
+    for ctx in contexts:
+        if ctx not in ordered_contexts:
+            ordered_contexts.append(ctx)
+
+    for ctx in ordered_contexts:
+        for rel in CONTEXT_MAP.get(ctx, []):
+            p = (ROOT / rel).resolve()
+            if not safe_under_root(p) or not p.exists():
+                continue
+            candidates = [p] if p.is_file() else sorted(x for x in p.rglob("*") if x.is_file())
+            for f in candidates:
+                if f in seen:
+                    continue
+                seen.add(f)
+                if not safe_under_root(f):
+                    continue
+                if f.name.startswith(".") or f.suffix.lower() not in TEXT_SUFFIXES:
+                    continue
+                yield f
+
+
+def read_context(contexts: List[str]) -> Tuple[str, List[Dict[str, object]]]:
+    parts: List[str] = []
+    manifest: List[Dict[str, object]] = []
+    total = 0
+    for f in iter_files_for_contexts(contexts):
+        if total >= MAX_TOTAL_BYTES:
+            break
+        try:
+            data = f.read_bytes()[:MAX_FILE_BYTES]
+        except Exception:
+            continue
+        try:
+            text = data.decode("utf-8", errors="replace")
+        except Exception:
+            continue
+        lowered = text[:4096].lower()
+        if any(pattern in lowered for pattern in SECRET_PATTERNS):
+            continue
+        rel = str(f.relative_to(ROOT))
+        chunk = f"\n--- FILE: {rel} ---\n{text}\n"
+        remaining = MAX_TOTAL_BYTES - total
+        if len(chunk.encode("utf-8")) > remaining:
+            chunk = chunk.encode("utf-8")[:remaining].decode("utf-8", errors="replace")
+        parts.append(chunk)
+        total += len(chunk.encode("utf-8"))
+        manifest.append({"path": rel, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+    return "".join(parts), manifest
+
+
+def write_json(path: str, obj: Dict[str, object]) -> None:
+    pathlib.Path(path).write_text(json.dumps(obj, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def gemini_url(path: str, api_key: str) -> str:
+    return f"{DEFAULT_ENDPOINT}/{path.lstrip('/')}?key={urllib.parse.quote(api_key, safe='')}"
+
+
+def read_http_json(url: str) -> Dict[str, object]:
+    req = urllib.request.Request(url, headers={"Content-Type": "application/json"}, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+    except TimeoutError as exc:
+        raise RuntimeError(f"gemini_timeout_after_{int(TIMEOUT)}s") from exc
+    except socket.timeout as exc:
+        raise RuntimeError(f"gemini_timeout_after_{int(TIMEOUT)}s") from exc
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = str(exc)
+        safe_detail = redact_secret_values(detail)
+        if exc.code == 404 and "not found" in safe_detail.lower():
+            safe_detail = safe_detail + " | hint: run queue-ai-ask-gemini --list-models or try --model gemini-2.5-flash"
+        raise RuntimeError(f"gemini_http_error_{exc.code}: {safe_detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"gemini_unreachable: {redact_secret_values(str(exc.reason))}") from exc
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"gemini_invalid_json: {exc}") from exc
+
+
+def list_generate_content_models() -> Dict[str, object]:
+    api_key = resolve_api_key()
+    data = read_http_json(gemini_url("models", api_key))
+    models = []
+    for m in data.get("models", []):
+        name = str(m.get("name", ""))
+        model_id = name.split("/", 1)[1] if name.startswith("models/") else name
+        methods = m.get("supportedGenerationMethods", []) or []
+        if "generateContent" in methods:
+            models.append({
+                "name": name,
+                "model": model_id,
+                "display_name": m.get("displayName", ""),
+                "supported_generation_methods": methods,
+            })
+    return {
+        "schema": "queuebash.ai_advisory.gemini_models.v1",
+        "provider": "gemini",
+        "endpoint": DEFAULT_ENDPOINT,
+        "default_model": DEFAULT_MODEL,
+        "generate_content_models": models,
+    }
+
+
+def call_gemini(model: str, prompt: str) -> str:
+    api_key = resolve_api_key()
+    quoted_model = urllib.parse.quote(model, safe="")
+    url = gemini_url(f"models/{quoted_model}:generateContent", api_key)
+    payload = json.dumps(
+        {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": TEMPERATURE,
+                "topP": 0.95,
+                "topK": 40,
+                "maxOutputTokens": MAX_OUTPUT_TOKENS,
+            },
+        }
+    ).encode("utf-8")
+
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+    except TimeoutError as exc:
+        raise RuntimeError(f"gemini_timeout_after_{int(TIMEOUT)}s") from exc
+    except socket.timeout as exc:
+        raise RuntimeError(f"gemini_timeout_after_{int(TIMEOUT)}s") from exc
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = str(exc)
+        safe_detail = redact_secret_values(detail)
+        if exc.code == 404 and "not found" in safe_detail.lower():
+            safe_detail = safe_detail + " | hint: run queue-ai-ask-gemini --list-models or try --model gemini-2.5-flash"
+        raise RuntimeError(f"gemini_http_error_{exc.code}: {safe_detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"gemini_unreachable: {redact_secret_values(str(exc.reason))}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"gemini_request_failed: {redact_secret_values(str(exc))}") from exc
+
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"gemini_invalid_json: {exc}") from exc
+
+    candidates = data.get("candidates", [])
+    if not candidates:
+        block_reason = data.get("promptFeedback", {}).get("blockReason")
+        if block_reason:
+            raise RuntimeError(f"gemini_blocked_by_safety: {block_reason}")
+        raise RuntimeError("gemini_empty_candidates")
+
+    try:
+        parts = candidates[0]["content"]["parts"]
+        answer = "".join(str(part.get("text", "")) for part in parts)
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError(f"gemini_response_structure_error: {exc.__class__.__name__}") from exc
+
+    if not isinstance(answer, str) or not answer.strip():
+        raise RuntimeError("gemini_empty_response")
+    return answer
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--request-json", required=False)
+    ap.add_argument("--output-json", required=False)
+    ap.add_argument("--model", default=None)
+    ap.add_argument("--list-models", action="store_true", help="list Gemini models supporting generateContent")
+    args = ap.parse_args()
+
+    if args.list_models:
+        try:
+            print(json.dumps(list_generate_content_models(), indent=2, sort_keys=True))
+            return 0
+        except Exception as exc:
+            reason = redact_secret_values(str(exc) or exc.__class__.__name__)
+            print(f"gemini_provider_error: {reason}", file=sys.stderr)
+            return 1
+
+    if not args.request_json or not args.output_json:
+        die("request_json_and_output_json_required")
+
+    try:
+        with open(args.request_json, encoding="utf-8") as fh:
+            req = json.load(fh)
+    except Exception:
+        die("invalid_request_json")
+
+    if req.get("schema") != "queuebash.ai_advisory.request.v1":
+        die("invalid_request_schema")
+    if req.get("operation") != "ai.ask":
+        die("invalid_operation")
+    if req.get("advisory_only") is not True:
+        die("advisory_only_required")
+
+    model = args.model or req.get("model") or DEFAULT_MODEL
+    contexts = [x for x in str(req.get("context_allowed", "")).split() if x]
+    question = req.get("question") or req.get("question_redacted") or ""
+    if not question:
+        die("missing_question")
+
+    dynamic_context_text = str(req.get("dynamic_context_text", "") or "")
+    context_text, manifest = read_context(contexts)
+    combined_context = dynamic_context_text + ("\n" if dynamic_context_text and context_text else "") + context_text
+    context_hash = hashlib.sha256(combined_context.encode("utf-8")).hexdigest()
+    if dynamic_context_text:
+        manifest.insert(0, {
+            "path": "<dynamic-shell-context>",
+            "bytes": len(dynamic_context_text.encode("utf-8")),
+            "sha256": hashlib.sha256(dynamic_context_text.encode("utf-8")).hexdigest(),
+            "redacted": True,
+        })
+    prompt = f"""You are a bashqueues advisory provider.
+
+Rules:
+- You are advisory only. Do not claim to have executed commands.
+- Do not suggest bypassing bashqueues policy, signatures, ACLs, trust providers, seccomp, caps, legal, FinOps, integrity gates, or audit logging.
+- Treat tests as the highest-authority implementation evidence when docs and tests differ.
+- Suggest queue commands only as suggestions. Never output shell intended for automatic execution.
+- If policy-restricted context is absent, say what is missing rather than guessing.
+- Keep the answer practical and focused on bashqueues.
+
+Dynamic and static allowed context follows. It may be partial and redacted.
+Use the installed command inventory and asset/facility inventory from the dynamic shell context as authoritative. Do not invent queue commands.
+If current status context is denied, say it is denied. If it is allowed but unavailable, say which collector failed.
+{combined_context}
+
+Question:
+{question}
+
+Answer with practical, concise guidance for a bashqueues user or administrator.
+"""
+    started = time.time()
+    try:
+        answer = call_gemini(str(model), prompt)
+    except Exception as exc:
+        elapsed_ms = int((time.time() - started) * 1000)
+        reason = redact_secret_values(str(exc) or exc.__class__.__name__)
+        out = {
+            "schema": SCHEMA_RESPONSE,
+            "provider": "gemini",
+            "model": str(model),
+            "decision": "error",
+            "reason": reason,
+            "answer_markdown": "",
+            "advisory_only": True,
+            "actions_suggested_authority": "none",
+            "context_manifest": manifest,
+            "context_bundle_sha256": context_hash,
+            "response_sha256": "",
+            "response_length": 0,
+            "elapsed_ms": elapsed_ms,
+            "redactions_observed": True,
+        }
+        write_json(args.output_json, out)
+        print(f"gemini_provider_error: {reason}", file=sys.stderr)
+        return 1
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    answer_hash = hashlib.sha256(answer.encode("utf-8")).hexdigest()
+    out = {
+        "schema": SCHEMA_RESPONSE,
+        "provider": "gemini",
+        "model": str(model),
+        "decision": "answered",
+        "answer_markdown": answer,
+        "advisory_only": True,
+        "actions_suggested_authority": "suggestion_only",
+        "context_manifest": manifest,
+        "context_bundle_sha256": context_hash,
+        "response_sha256": answer_hash,
+        "response_length": len(answer),
+        "elapsed_ms": elapsed_ms,
+        "redactions_observed": True,
+    }
+    write_json(args.output_json, out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
