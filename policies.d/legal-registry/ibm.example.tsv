@@ -1,0 +1,5 @@
+# id	legal_class	retention_until	jurisdiction_scope	destructive_allowed	export_allowed
+# IBM regulated examples; copy into /etc/queuebash/legal_registry.tsv or a site registry.
+dataset:ibm-finreg-records	RETENTION_LOCKED	2031-01-01	FINREG	0	1
+dataset:ibm-legal-readonly	LITIGATION_HOLD	2031-01-01	LEGAL	0	0
+dataset:ibm-compliance-export	STANDARD	2027-01-01	GDPR,UK_DPA	0	1

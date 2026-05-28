@@ -1,0 +1,6 @@
+# signer<TAB>operation<TAB>resource<TAB>public_key_ref<TAB>status<TAB>delegation<TAB>reason
+self:hc3	profile.sign	profile:dev	sha256:example-self-dev-key	active	self:hc3	local user may sign development profiles
+team:security-review	profile.approve	*	sha256:example-security-review-key	active	team:security-review	security review may approve profiles
+org:bashqueues	trust-provider.add	*	sha256:example-org-key	active	org:bashqueues	org key may add trust providers
+external:vendor-xyz	profile.approve	*	sha256:example-vendor-key	revoked	external:vendor-xyz	vendor key revoked pending review
+*	policy.override	*	revoked	*	policy override denied by default

@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.11"' queuebash.sh || fail 'version not bumped to 0.18.11'
+grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
 grep -q '0.18.6 - AI advisory grounded status context' CHANGELOG.md || fail 'changelog entry missing'
 
 grep -q '_queue_ai_build_dynamic_context' queuebash.sh || fail 'dynamic context builder missing'

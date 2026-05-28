@@ -1,3 +1,72 @@
+## 0.18.22 - internal dev splice tool
+
+- Added `queue dev splice` for constrained anchored text splicing during internal refactor work.
+- Added dry-run/idempotency support, JSON diagnostics with `queuebash.dev_splice_response.v1`, atomic writes, and permission preservation.
+- Repaired file-based splice modes so `--after-file`, `--before-file`, `--replace-file`, `--insert-file`, and `--with-file` preserve exact file content including trailing newlines.
+- Required explicit `--with` or `--with-file` for replacements; omission no longer means silent deletion.
+- Kept this release tooling-only: `_queue_resolve_job_operand` is still intentionally not implemented.
+
+## 0.18.20 - internal refactor job resolution inventory
+
+- Added `docs/JOB_RESOLUTION_INVENTORY.md` to map job operand resolution patterns inside the giant `queue()` dispatcher before any helper extraction.
+- Added static inventory coverage test for the documented command branches, classifications, and no-behaviour-change guardrails.
+- No job-resolution behaviour changed in this release.
+
+
+## 0.18.19 - internal refactor policy installer backfill
+
+- Backfilled bundled policy installation coverage after the 0.18.18 installer refactor.
+- Added shared policy-family/tree installer helpers for provider/governance policy examples.
+- Preserved no-overwrite and `.disabled` semantics; examples remain examples and are not activated or renamed.
+
+
+## 0.18.18 - internal refactor bundled installers
+
+- Refactored bundled installer duplication behind shared helpers for source-directory resolution and non-overwriting flat-file installs.
+- Kept install behaviour unchanged: local files are not overwritten, `.disabled` entries are respected, shell plugin executable bits are restored, and obsolete asset pruning remains explicit for asset-side `net_usage`.
+- Added focused regression coverage for bundled class/env/asset/cap/reporter/policy installation.
+
+
+## 0.18.17 - profile multi-signature file verifier
+
+- Added the first practical profile multi-signature verifier layer.
+- `queue profile-signature verify` now reads `signatures.json`, applies required-signer TSV policy, and consults the key-provider registry contract for signer trust.
+- Verification remains non-migrating and does not perform cryptographic signature checks yet.
+
+## 0.18.16 - profile multi-signature contract
+
+- Added contract-first profile multi-signature sidecar schema `queuebash.profile_signatures.v1`.
+- Added profile signature verification response schema `queuebash.profile_signature_verification.v1`.
+- Added signer namespaces for `self:`, `team:`, `org:`, `external:`, and `trusted-ca:` identities.
+- Added required-signer policy examples for author, reviewer, approver, and countersigner roles.
+- Added `queue profile-signature` command family for schema, roles, verify, explain, and policy examples.
+- Kept existing signed profiles unmigrated; cryptographic verification and enforcement are reserved for later packages.
+
+## 0.18.15 - key provider registry contract
+
+- Added contract-first key provider registry command surface.
+- Added local file-backed key registry provider for single-user installs and tests.
+- Added normalized `queuebash.key_lookup_response.v1` JSON responses.
+- Added signer delegation, revocation, and rotation registry semantics without live Vault/HSM/IBM/Azure integrations.
+- Preserved fail-closed behaviour for missing, malformed, or unsupported providers.
+
+
+## 0.18.13 - enterprise ACL provider modules
+
+- Added contract-first ACL provider command surface (`queue acl`).
+- Documented normalized ACL decisions: allow, deny, error, reason, evidence, TTL/cache policy.
+- Added ACL and key/trust provider contract docs.
+- Added file, LDAP, and PAM/NSS provider examples using `/etc/queuebash` paths.
+- Privileged provider errors remain fail-closed; providers supply data, never shell.
+## 0.18.12 - IBM Cloud FinOps legal integrity
+
+- Added `assets.d/ibm_finops.sh` as a contract-only IBM Cloud FinOps cache asset.
+- Added IBM FinOps example cache, health, and policy files under canonical `/etc/queuebash` paths.
+- Added IBM legal registry and integrity manifest examples for regulated workloads.
+- Refined IBM financial-services/legal class templates with local FinOps cache gates.
+- Corrected legal/integrity asset examples and defaults away from stale `/etc/bashqueues` paths.
+- Kept IBM Cloud Logs/Activity Tracker reporters, HPCS key provider, Watson, Satellite identity, and live IBM cost collectors out of scope.
+
 ## 0.18.11 - IBM Cloud identity and sovereignty
 
 - Added `assets.d/ibm_identity.sh` as a narrow IBM Cloud identity/region asset.
@@ -974,6 +1043,14 @@ Panel command line object actions are now available for Assets and Classes. From
 - Add static regression coverage for completion ordering.
 
 # Changelog
+
+## 0.18.15 - file ACL provider
+
+- Added a local file-backed ACL provider for `queue acl check` and `queue acl explain`.
+- Added TSV policy format under `~/.queuebash/policy/acl/file_acl.tsv` or `/etc/queuebash/policy/acl/file_acl.tsv`.
+- Added atomic local `queue acl set/remove module provider:file ...` mutation for the file provider.
+- Kept LDAP/PAM/NSS/Microsoft/IBM as provider contracts for later releases.
+
 
 ## 0.17.30 - Authorisation signer key-root fix
 

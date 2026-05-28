@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
 cd "$ROOT"
-grep -q 'QUEUEBASH_VERSION="0.18.11"' queuebash.sh || fail "version not bumped to 0.18.11"
+grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail "version not bumped to 0.18.22"
 grep -q '_queue_clearance_archive_job_file' queuebash.sh || fail "clearance archive helper missing"
 grep -q '_queue_cleared_candidate_files_for_state' queuebash.sh || fail "cleared archive scanner missing"
 grep -q 'root/clearance/\$state' queuebash.sh || fail "queue audit cleared must scan clearance archive state dirs"

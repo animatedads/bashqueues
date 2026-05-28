@@ -1,0 +1,4 @@
+# Example integrity manifest for IBM regulated financial-services jobs.
+# Copy to /etc/queuebash/manifests/ibm_finreg.manifest and replace hashes/paths.
+# Format: <sha256> <absolute-path>
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 /opt/bashqueues/ibm-finreg/README.empty

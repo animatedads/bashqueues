@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.11"
+QUEUEBASH_VERSION="0.18.22"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -233,66 +233,86 @@ _queue_root() {
     echo "${QUEUEBASH_SELECTED_ROOT:-${QUEUEBASH_ROOT:-$HOME/.queuebash}}"
 }
 
-_queue_install_bundled_classes() {
-    local root="$(_queue_root)"
-    local source_dir="${QUEUEBASH_CLASS_SOURCE_DIR:-}"
-    local src dst base script_dir
+_queue_bundled_script_dir() {
+    local script_dir=""
+    if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+    fi
+    [[ -n "$script_dir" && -d "$script_dir" ]] || return 1
+    printf '%s\n' "$script_dir"
+}
 
-    if [[ -z "$source_dir" ]]; then
-        if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
-            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
-            if [[ -n "$script_dir" && -d "$script_dir/classes" ]]; then
-                source_dir="$script_dir/classes"
-            fi
-        fi
+_queue_resolve_bundled_source_dir() {
+    # _queue_resolve_bundled_source_dir OVERRIDE SUBDIR
+    # Resolution order deliberately matches the old installer functions:
+    #   explicit env override -> checked-out tree beside queuebash.sh -> ./SUBDIR
+    local override="${1:-}"
+    local subdir="${2:-}"
+    local script_dir=""
+
+    if [[ -n "$override" ]]; then
+        [[ -d "$override" ]] || return 1
+        printf '%s\n' "$override"
+        return 0
     fi
 
-    if [[ -z "$source_dir" && -d "./classes" ]]; then
-        source_dir="./classes"
+    script_dir="$(_queue_bundled_script_dir 2>/dev/null || true)"
+    if [[ -n "$script_dir" && -d "$script_dir/$subdir" ]]; then
+        printf '%s\n' "$script_dir/$subdir"
+        return 0
     fi
+
+    if [[ -d "./$subdir" ]]; then
+        printf '%s\n' "./$subdir"
+        return 0
+    fi
+
+    return 1
+}
+
+_queue_install_bundled_flat_files() {
+    # _queue_install_bundled_flat_files SOURCE_DIR TARGET_DIR GLOB MODE
+    # Copies bundled files without overwriting local/site-edited files and while
+    # respecting TARGET_DIR/.disabled/NAME. MODE may be "executable" or "plain".
+    local source_dir="${1:-}"
+    local target_dir="${2:-}"
+    local pattern="${3:-*}"
+    local mode="${4:-plain}"
+    local src dst base old_nullglob
 
     [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
+    [[ -n "$target_dir" ]] || return 0
 
-    mkdir -p "$root/classes"
+    mkdir -p "$target_dir"
+
+    old_nullglob="$(shopt -p nullglob || true)"
     shopt -s nullglob
-    for src in "$source_dir"/*.env; do
+    for src in "$source_dir"/$pattern; do
         [[ -f "$src" ]] || continue
         base="$(basename "$src")"
-        dst="$root/classes/$base"
-        [[ ! -e "$dst" && ! -e "$root/classes/.disabled/$base" ]] && cp "$src" "$dst"
+        dst="$target_dir/$base"
+        if [[ ! -e "$dst" && ! -e "$target_dir/.disabled/$base" ]]; then
+            cp "$src" "$dst"
+            if [[ "$mode" == "executable" ]]; then
+                chmod +x "$dst" 2>/dev/null || true
+            fi
+        fi
     done
-    shopt -u nullglob
+    eval "$old_nullglob" 2>/dev/null || true
+}
+
+_queue_install_bundled_classes() {
+    local root="$(_queue_root)"
+    local source_dir
+    source_dir="$(_queue_resolve_bundled_source_dir "${QUEUEBASH_CLASS_SOURCE_DIR:-}" "classes" 2>/dev/null || true)"
+    _queue_install_bundled_flat_files "$source_dir" "$root/classes" "*.env" plain
 }
 
 _queue_install_bundled_env_profiles() {
     local root="$(_queue_root)"
-    local source_dir="${QUEUEBASH_ENV_SOURCE_DIR:-}"
-    local src dst base script_dir
-
-    if [[ -z "$source_dir" ]]; then
-        if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
-            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
-            if [[ -n "$script_dir" && -d "$script_dir/envs.d" ]]; then
-                source_dir="$script_dir/envs.d"
-            fi
-        fi
-    fi
-
-    if [[ -z "$source_dir" && -d "./envs.d" ]]; then
-        source_dir="./envs.d"
-    fi
-
-    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
-
-    mkdir -p "$root/envs.d"
-    shopt -s nullglob
-    for src in "$source_dir"/*.env; do
-        [[ -f "$src" ]] || continue
-        base="$(basename "$src")"
-        dst="$root/envs.d/$base"
-        [[ ! -e "$dst" && ! -e "$root/envs.d/.disabled/$base" ]] && cp "$src" "$dst"
-    done
-    shopt -u nullglob
+    local source_dir
+    source_dir="$(_queue_resolve_bundled_source_dir "${QUEUEBASH_ENV_SOURCE_DIR:-}" "envs.d" 2>/dev/null || true)"
+    _queue_install_bundled_flat_files "$source_dir" "$root/envs.d" "*.env" plain
 }
 
 
@@ -342,145 +362,130 @@ _queue_prune_obsolete_asset_plugins() {
 
 _queue_install_bundled_asset_plugins() {
     local root="$(_queue_root)"
-    local source_dir="${QUEUEBASH_PLUGIN_SOURCE_DIR:-}"
-    local src dst base script_dir
-
-    if [[ -z "$source_dir" ]]; then
-        # Prefer the checked-out source tree when queuebash.sh is sourced/run from it.
-        if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
-            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
-            if [[ -n "$script_dir" && -d "$script_dir/assets.d" ]]; then
-                source_dir="$script_dir/assets.d"
-            fi
-        fi
-    fi
-
-    if [[ -z "$source_dir" && -d "./assets.d" ]]; then
-        source_dir="./assets.d"
-    fi
-
-    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
-
-    mkdir -p "$root/assets.d"
+    local source_dir
+    source_dir="$(_queue_resolve_bundled_source_dir "${QUEUEBASH_PLUGIN_SOURCE_DIR:-}" "assets.d" 2>/dev/null || true)"
     _queue_prune_obsolete_asset_plugins >/dev/null 2>&1 || true
-    shopt -s nullglob
-    for src in "$source_dir"/*.sh; do
-        [[ -f "$src" ]] || continue
-        base="$(basename "$src")"
-        dst="$root/assets.d/$base"
-
-        # Never overwrite local/site-edited plugins; also respect disabled modules.
-        if [[ ! -e "$dst" && ! -e "$root/assets.d/.disabled/$base" ]]; then
-            cp "$src" "$dst"
-            chmod +x "$dst" 2>/dev/null || true
-        fi
-    done
-    shopt -u nullglob
+    _queue_install_bundled_flat_files "$source_dir" "$root/assets.d" "*.sh" executable
 }
 
 
 _queue_install_bundled_reporter_plugins() {
     local root="$(_queue_root)"
-    local source_dir="${QUEUEBASH_REPORTER_PLUGIN_SOURCE_DIR:-}"
-    local src dst base script_dir
-
-    if [[ -z "$source_dir" ]]; then
-        if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
-            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
-            if [[ -n "$script_dir" && -d "$script_dir/reporters.d" ]]; then
-                source_dir="$script_dir/reporters.d"
-            fi
-        fi
-    fi
-
-    if [[ -z "$source_dir" && -d "./reporters.d" ]]; then
-        source_dir="./reporters.d"
-    fi
-
-    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
-
-    mkdir -p "$root/reporters.d"
-    shopt -s nullglob
-    for src in "$source_dir"/*.sh; do
-        [[ -f "$src" ]] || continue
-        base="$(basename "$src")"
-        dst="$root/reporters.d/$base"
-        if [[ ! -e "$dst" && ! -e "$root/reporters.d/.disabled/$base" ]]; then
-            cp "$src" "$dst"
-            chmod +x "$dst" 2>/dev/null || true
-        fi
-    done
-    shopt -u nullglob
+    local source_dir
+    source_dir="$(_queue_resolve_bundled_source_dir "${QUEUEBASH_REPORTER_PLUGIN_SOURCE_DIR:-}" "reporters.d" 2>/dev/null || true)"
+    _queue_install_bundled_flat_files "$source_dir" "$root/reporters.d" "*.sh" executable
 }
 
 _queue_install_bundled_cap_plugins() {
     local root="$(_queue_root)"
-    local source_dir="${QUEUEBASH_CAP_PLUGIN_SOURCE_DIR:-}"
-    local src dst base script_dir
+    local source_dir
+    source_dir="$(_queue_resolve_bundled_source_dir "${QUEUEBASH_CAP_PLUGIN_SOURCE_DIR:-}" "caps.d" 2>/dev/null || true)"
+    _queue_install_bundled_flat_files "$source_dir" "$root/caps.d" "*.sh" executable
+}
 
-    if [[ -z "$source_dir" ]]; then
-        if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
-            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
-            if [[ -n "$script_dir" && -d "$script_dir/caps.d" ]]; then
-                source_dir="$script_dir/caps.d"
-            fi
-        fi
-    fi
+_queue_install_bundled_tree_files() {
+    # _queue_install_bundled_tree_files SOURCE_ROOT TARGET_ROOT RELDIR PATTERN MODE
+    # Copy a single bundled policy/example family without flattening it.  This
+    # preserves the family directory under policies.d, avoids overwriting local
+    # files, and respects TARGET_ROOT/RELDIR/.disabled/NAME.  MODE is reserved
+    # for symmetry with _queue_install_bundled_flat_files and currently supports
+    # "plain" only for policy data files.
+    local source_root="${1:-}"
+    local target_root="${2:-}"
+    local reldir="${3:-}"
+    local pattern="${4:-*}"
+    local mode="${5:-plain}"
+    local source_dir target_dir src dst base old_nullglob
 
-    if [[ -z "$source_dir" && -d "./caps.d" ]]; then
-        source_dir="./caps.d"
-    fi
+    [[ -n "$source_root" && -d "$source_root" ]] || return 0
+    [[ -n "$target_root" ]] || return 0
+    [[ -n "$reldir" ]] || return 0
 
-    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
+    source_dir="$source_root/$reldir"
+    target_dir="$target_root/$reldir"
+    [[ -d "$source_dir" ]] || return 0
 
-    mkdir -p "$root/caps.d"
+    mkdir -p "$target_dir"
+    old_nullglob="$(shopt -p nullglob || true)"
     shopt -s nullglob
-    for src in "$source_dir"/*.sh; do
+    for src in "$source_dir"/$pattern; do
         [[ -f "$src" ]] || continue
         base="$(basename "$src")"
-        dst="$root/caps.d/$base"
-        if [[ ! -e "$dst" && ! -e "$root/caps.d/.disabled/$base" ]]; then
+        dst="$target_dir/$base"
+        if [[ ! -e "$dst" && ! -e "$target_dir/.disabled/$base" ]]; then
             cp "$src" "$dst"
-            chmod +x "$dst" 2>/dev/null || true
+            if [[ "$mode" == "executable" ]]; then
+                chmod +x "$dst" 2>/dev/null || true
+            fi
         fi
     done
-    shopt -u nullglob
+    eval "$old_nullglob" 2>/dev/null || true
+}
+
+_queue_install_bundled_policy_family() {
+    # _queue_install_bundled_policy_family SOURCE_DIR ROOT FAMILY PATTERN
+    # Install a named bundled policy family under ROOT/policies.d/FAMILY.  This
+    # deliberately includes example files as examples; names are preserved and
+    # nothing is activated or renamed by the installer.
+    local source_dir="${1:-}"
+    local root="${2:-}"
+    local family="${3:-}"
+    local pattern="${4:-*}"
+    _queue_install_bundled_tree_files "$source_dir" "$root/policies.d" "$family" "$pattern" plain
+}
+
+_queue_install_bundled_policy_top_level() {
+    # Install deliberate top-level compatibility policy files only.  Do not use
+    # a broad recursive copy here: provider/governance policy families must be
+    # named explicitly below so install coverage remains auditable.
+    local source_dir="${1:-}"
+    local root="${2:-}"
+    local name src dst
+    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
+    mkdir -p "$root/policies.d"
+    for name in endpoint_jurisdiction.env legal_framework.env legal_registry.env; do
+        src="$source_dir/$name"
+        dst="$root/policies.d/$name"
+        [[ -f "$src" ]] || continue
+        if [[ ! -e "$dst" && ! -e "$root/policies.d/.disabled/$name" ]]; then
+            cp "$src" "$dst"
+        fi
+    done
 }
 
 _queue_install_bundled_policies() {
     local root="$(_queue_root)"
-    local source_dir="${QUEUEBASH_POLICY_SOURCE_DIR:-}"
-    local src dst rel script_dir kind base
+    local source_dir
 
-    if [[ -z "$source_dir" ]]; then
-        if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
-            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
-            if [[ -n "$script_dir" && -d "$script_dir/policies.d" ]]; then
-                source_dir="$script_dir/policies.d"
-            fi
-        fi
-    fi
-
-    if [[ -z "$source_dir" && -d "./policies.d" ]]; then
-        source_dir="./policies.d"
-    fi
-
+    source_dir="$(_queue_resolve_bundled_source_dir "${QUEUEBASH_POLICY_SOURCE_DIR:-}" "policies.d" 2>/dev/null || true)"
     [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
 
-    mkdir -p "$root/policies.d/sandbox" "$root/policies.d/seccomp" "$root/policies.d/class-statement"
-    shopt -s nullglob
-    for src in "$source_dir"/*/*.env; do
-        [[ -f "$src" ]] || continue
-        kind="$(basename "$(dirname "$src")")"
-        case "$kind" in sandbox|seccomp|class-statement) ;; *) continue ;; esac
-        base="$(basename "$src")"
-        dst="$root/policies.d/$kind/$base"
-        if [[ ! -e "$dst" && ! -e "$root/policies.d/$kind/.disabled/$base" ]]; then
-            mkdir -p "$(dirname "$dst")"
-            cp "$src" "$dst"
-        fi
-    done
-    shopt -u nullglob
+    # Legacy policy families retained exactly, plus newer governance/provider
+    # examples added since 0.18.11.  Examples stay examples; this installer only
+    # copies bundled scaffolding when no local file or .disabled marker exists.
+    _queue_install_bundled_policy_family "$source_dir" "$root" sandbox "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" seccomp "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" class-statement "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" code-signing "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" endpoint-jurisdiction "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" legal-framework "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" reporting "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" security "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" snmp-map "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" sovereign "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" sovereign "*.env.example"
+    _queue_install_bundled_policy_family "$source_dir" "$root" finops "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" finops "*.env.example"
+    _queue_install_bundled_policy_family "$source_dir" "$root" acl "*.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" acl "*.example.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" key "*.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" key "*.example.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" profile-signatures "*.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" profile-signatures "*.example.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" legal-registry "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" legal-registry "*.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" legal-registry "*.example.tsv"
+    _queue_install_bundled_policy_top_level "$source_dir" "$root"
 }
 
 _queue_init() {
@@ -7384,7 +7389,7 @@ _queue_authorisation_keygen() {
     echo "public:    $pub"
     echo "public_sha256: $pub_sha"
     echo ""
-    echo "Policy statement lines for policies.d/class-statement/default.env or /etc/bashqueues/policies.d/class-statement/default.env:"
+    echo "Policy statement lines for policies.d/class-statement/default.env or /etc/queuebash/policies.d/class-statement/default.env:"
     printf 'CLASS_POLICY_AUTHORISATION_SIGNER_%s_PUBLIC_KEY_SHA256=%q\n' "$suffix" "$pub_sha"
     printf 'CLASS_POLICY_AUTHORISATION_SIGNER_%s_PUBLIC_KEY_PEM_B64=%q\n' "$suffix" "$pub_b64"
 }
@@ -8219,7 +8224,7 @@ _queue_job_policy_execution_check() {
         [[ -n "$policy_file" && -f "$policy_file" ]] || exit 0
         policy_origin="$(_queue_policy_origin "$policy_file" 2>/dev/null || echo unknown)"
         # The terminal execution gate is for shared/admin policy, normally
-        # /etc/bashqueues/policies.d/class-statement/default.env.  Bundled policy
+        # /etc/queuebash/policies.d/class-statement/default.env.  Bundled policy
         # remains submit-time guidance/default behaviour unless promoted into the
         # shared/admin policy location.
         [[ "$policy_origin" == "shared" || "${QUEUEBASH_POLICY_BLOCK_ENFORCE:-}" == "1" ]] || exit 0
@@ -13184,6 +13189,8 @@ Usage:
   queue env validate NAME [--json]
 
   queue ask [--provider NAME] [--context csv] [--json] "question"
+  queue acl help|check|explain|set|remove
+  queue key-provider help|lookup|registry|register|revoke|rotate
 
   queue limits
   queue version
@@ -13548,6 +13555,665 @@ _queue_modules_explain() {
     esac
 }
 
+
+
+# [AI-PATCH | 2026-05-27 22:20:00 BST]: 0.18.15: key provider registry contract.
+_queue_key_provider_known_operations_text() {
+    cat <<'EOF'
+profile.approve
+profile.sign
+profile.verify
+authorisation.generate
+authorisation.verify
+code.sign
+code.verify
+trust-provider.add
+trust-provider.revoke
+trust-provider.verify
+key.lookup
+key.delegate
+key.revoke
+key.rotate
+policy.override
+module.configure
+ai.ask
+EOF
+}
+
+_queue_key_provider_help() {
+    cat <<'EOF'
+Usage:
+  queue key-provider help
+  queue key-provider operations
+  queue key-provider status [--json]
+  queue key-provider lookup SIGNER OPERATION RESOURCE [--json]
+  queue key-provider explain SIGNER OPERATION RESOURCE [--json]
+  queue key-provider registry [--json]
+  queue key-provider register SIGNER OPERATION RESOURCE PUBLIC_KEY_REF [--status active|revoked] [--delegation NAME] [--reason TEXT]
+  queue key-provider revoke SIGNER OPERATION RESOURCE [--reason TEXT]
+  queue key-provider rotate SIGNER OPERATION RESOURCE NEW_PUBLIC_KEY_REF [--reason TEXT]
+
+Contract:
+  Providers answer key lookup, signer delegation, revocation, and rotation questions.
+  Core enforces decisions; providers supply normalized data only and never shell.
+  Missing, malformed, or failed provider output fails closed for privileged operations.
+
+File provider:
+  QUEUEBASH_KEY_PROVIDER=file
+  QUEUEBASH_FILE_KEY_REGISTRY=$HOME/.queuebash/policy/keys/key_registry.tsv
+  QUEUEBASH_FILE_KEY_DEFAULT=deny
+EOF
+}
+
+_queue_key_provider_registry_path() {
+    printf '%s\n' "${QUEUEBASH_FILE_KEY_REGISTRY:-$(_queue_root)/policy/keys/key_registry.tsv}"
+}
+
+_queue_key_provider_active() {
+    case "${QUEUEBASH_KEY_PROVIDER:-}" in
+        file|file_key|file-key) return 0 ;;
+        "") return 1 ;;
+        *) return 2 ;;
+    esac
+}
+
+_queue_key_provider_safe_field() {
+    local v="${1:-}"
+    [[ -n "$v" ]] || return 1
+    [[ "$v" != *$'\t'* && "$v" != *$'\n'* && "$v" != *$'\r'* ]]
+}
+
+_queue_key_provider_json() {
+    local signer="${1:-}" operation="${2:-}" resource="${3:-}" decision="${4:-error}" reason="${5:-no_key_provider_active}"
+    local provider="${6:-${QUEUEBASH_KEY_PROVIDER:-contract}}" public_key_ref="${7:-}" status="${8:-unknown}" revoked="${9:-true}"
+    local delegation="${10:-}" evidence_json="${11:-[]}" fail_closed="${12:-true}" ttl_seconds="${13:-0}" cache_policy="${14:-no-store}" contract_only="${15:-false}"
+    printf '{'
+    printf '"schema":"queuebash.key_lookup_response.v1"'
+    printf ',"timestamp":"%s"' "$(_queue_json_escape "$(_queue_now_iso)")"
+    printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+    printf ',"signer":"%s"' "$(_queue_json_escape "$signer")"
+    printf ',"operation":"%s"' "$(_queue_json_escape "$operation")"
+    printf ',"resource":"%s"' "$(_queue_json_escape "$resource")"
+    printf ',"decision":"%s"' "$(_queue_json_escape "$decision")"
+    printf ',"reason":"%s"' "$(_queue_json_escape "$reason")"
+    printf ',"public_key_ref":"%s"' "$(_queue_json_escape "$public_key_ref")"
+    printf ',"status":"%s"' "$(_queue_json_escape "$status")"
+    printf ',"revoked":%s' "$revoked"
+    printf ',"delegation":"%s"' "$(_queue_json_escape "$delegation")"
+    printf ',"evidence":%s' "${evidence_json:-[]}"
+    printf ',"ttl_seconds":%s' "${ttl_seconds:-0}"
+    printf ',"cache_policy":"%s"' "$(_queue_json_escape "$cache_policy")"
+    printf ',"fail_closed":%s' "$fail_closed"
+    printf ',"contract_only":%s' "$contract_only"
+    printf '}\n'
+}
+
+_queue_key_provider_file_registry_rows_json() {
+    local file="$(_queue_key_provider_registry_path)" line_no=0 line signer op res pub status delegation reason first=1
+    printf '['
+    [[ -f "$file" ]] || { printf ']'; return 0; }
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_no=$((line_no + 1))
+        [[ -z "${line//[[:space:]]/}" || "${line:0:1}" == "#" ]] && continue
+        IFS=$'\t' read -r signer op res pub status delegation reason extra <<< "$line"
+        [[ -n "${signer:-}" && -n "${op:-}" && -n "${res:-}" && -n "${pub:-}" && -n "${status:-}" ]] || continue
+        [[ "$first" -eq 0 ]] && printf ','
+        first=0
+        printf '{"line":%s,"signer":"%s","operation":"%s","resource":"%s","public_key_ref":"%s","status":"%s","delegation":"%s","reason":"%s"}' \
+            "$line_no" "$(_queue_json_escape "$signer")" "$(_queue_json_escape "$op")" "$(_queue_json_escape "$res")" "$(_queue_json_escape "$pub")" "$(_queue_json_escape "$status")" "$(_queue_json_escape "${delegation:-}")" "$(_queue_json_escape "${reason:-}")"
+    done < "$file"
+    printf ']'
+}
+
+_queue_key_provider_file_lookup() {
+    local signer="${1:-}" operation="${2:-}" resource="${3:-}" json="${4:-0}"
+    local file line line_no=0 best_score=-1 best_line=0 best_signer best_op best_res best_pub best_status best_delegation best_reason malformed=0
+    file="$(_queue_key_provider_registry_path)"
+    if [[ ! -f "$file" ]]; then
+        _queue_key_provider_json "$signer" "$operation" "$resource" "error" "file_key_registry_not_found" "file" "" "missing" true "" "[{\"policy_file\":\"$(_queue_json_escape "$file")\"}]" true 0 "no-store" false
+        return 1
+    fi
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_no=$((line_no + 1))
+        [[ -z "${line//[[:space:]]/}" || "${line:0:1}" == "#" ]] && continue
+        local r_signer r_op r_res r_pub r_status r_delegation r_reason r_extra score=0
+        IFS=$'\t' read -r r_signer r_op r_res r_pub r_status r_delegation r_reason r_extra <<< "$line"
+        if [[ -n "${r_extra:-}" || -z "${r_signer:-}" || -z "${r_op:-}" || -z "${r_res:-}" || -z "${r_pub:-}" || -z "${r_status:-}" ]]; then
+            malformed=1; break
+        fi
+        case "$r_status" in active|revoked|rotated|expired|disabled) ;; *) malformed=1; break ;; esac
+        [[ "$r_signer" == "$signer" || "$r_signer" == "*" ]] || continue
+        [[ "$r_op" == "$operation" || "$r_op" == "*" ]] || continue
+        [[ "$r_res" == "$resource" || "$r_res" == "*" ]] || continue
+        [[ "$r_signer" == "$signer" ]] && score=$((score+4))
+        [[ "$r_op" == "$operation" ]] && score=$((score+2))
+        [[ "$r_res" == "$resource" ]] && score=$((score+1))
+        if [[ "$score" -gt "$best_score" ]]; then
+            best_score="$score"; best_line="$line_no"; best_signer="$r_signer"; best_op="$r_op"; best_res="$r_res"; best_pub="$r_pub"; best_status="$r_status"; best_delegation="${r_delegation:-}"; best_reason="${r_reason:-}"
+        fi
+    done < "$file"
+    if [[ "$malformed" -eq 1 ]]; then
+        _queue_key_provider_json "$signer" "$operation" "$resource" "error" "file_key_registry_malformed" "file" "" "malformed" true "" "[{\"policy_file\":\"$(_queue_json_escape "$file")\",\"line\":$line_no}]" true 0 "no-store" false
+        return 1
+    fi
+    if [[ "$best_score" -lt 0 ]]; then
+        _queue_key_provider_json "$signer" "$operation" "$resource" "deny" "no matching key trust rule" "file" "" "not_found" true "" "[{\"policy_file\":\"$(_queue_json_escape "$file")\"}]" true 0 "no-store" false
+        return 1
+    fi
+    local decision="allow" fail_closed=false revoked=false
+    case "$best_status" in
+        active) decision="allow"; fail_closed=false; revoked=false ;;
+        revoked|rotated|expired|disabled) decision="deny"; fail_closed=true; revoked=true ;;
+    esac
+    _queue_key_provider_json "$signer" "$operation" "$resource" "$decision" "${best_reason:-matched file key registry}" "file" "$best_pub" "$best_status" "$revoked" "$best_delegation" "[{\"policy_file\":\"$(_queue_json_escape "$file")\",\"line\":$best_line,\"matched_signer\":\"$(_queue_json_escape "$best_signer")\",\"matched_operation\":\"$(_queue_json_escape "$best_op")\",\"matched_resource\":\"$(_queue_json_escape "$best_res")\"}]" "$fail_closed" 0 "no-store" false
+    [[ "$decision" == "allow" ]]
+}
+
+_queue_key_provider_lookup() {
+    local signer="" operation="" resource="" json=0
+    signer="${1:-}"; operation="${2:-}"; resource="${3:-}"; shift 3 2>/dev/null || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --json|-j) json=1; shift ;;
+            *) echo "queue key-provider lookup: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$signer" && -n "$operation" && -n "$resource" ]] || { echo "Usage: queue key-provider lookup SIGNER OPERATION RESOURCE [--json]" >&2; return 2; }
+    case "${QUEUEBASH_KEY_PROVIDER:-}" in
+        file|file_key|file-key) _queue_key_provider_file_lookup "$signer" "$operation" "$resource" "$json" ;;
+        "") _queue_key_provider_json "$signer" "$operation" "$resource" "error" "no_key_provider_active" "contract" "" "unknown" true "" "[]" true 0 "no-store" true; return 1 ;;
+        *) _queue_key_provider_json "$signer" "$operation" "$resource" "error" "unsupported_key_provider" "${QUEUEBASH_KEY_PROVIDER}" "" "unknown" true "" "[]" true 0 "no-store" false; return 1 ;;
+    esac
+}
+
+_queue_key_provider_status() {
+    local json=0; [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]] && json=1
+    local provider="${QUEUEBASH_KEY_PROVIDER:-}" file="$(_queue_key_provider_registry_path)"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.key_provider_status.v1","provider":"%s","file_registry":"%s","active":%s,"contract_only":false}\n' "$(_queue_json_escape "${provider:-none}")" "$(_queue_json_escape "$file")" "$([[ "$provider" == "file" || "$provider" == "file_key" || "$provider" == "file-key" ]] && echo true || echo false)"
+    else
+        echo "key provider: ${provider:-none}"
+        echo "file registry: $file"
+        [[ -f "$file" ]] && echo "registry exists: yes" || echo "registry exists: no"
+    fi
+}
+
+_queue_key_provider_registry() {
+    local json=0; [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]] && json=1
+    local file="$(_queue_key_provider_registry_path)"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.key_registry.v1","provider":"file","policy_file":"%s","entries":' "$(_queue_json_escape "$file")"
+        _queue_key_provider_file_registry_rows_json
+        printf '}\n'
+    else
+        echo "file key registry: $file"
+        [[ -f "$file" ]] && sed -n '1,200p' "$file" || echo "not found"
+    fi
+}
+
+_queue_key_provider_file_mutate() {
+    local action="$1" signer="$2" operation="$3" resource="$4" public_key_ref="${5:-}" status="${6:-active}" delegation="${7:-}" reason="${8:-manual update}"
+    local file dir tmp bak line now
+    [[ "${QUEUEBASH_KEY_PROVIDER:-}" == "file" || "${QUEUEBASH_KEY_PROVIDER:-}" == "file_key" || "${QUEUEBASH_KEY_PROVIDER:-}" == "file-key" ]] || { echo "queue key-provider $action: mutation is implemented only for provider:file" >&2; return 2; }
+    for v in "$signer" "$operation" "$resource"; do _queue_key_provider_safe_field "$v" || { echo "queue key-provider $action: invalid field" >&2; return 2; }; done
+    if [[ "$action" != "revoke" ]]; then _queue_key_provider_safe_field "$public_key_ref" || { echo "queue key-provider $action: invalid public_key_ref" >&2; return 2; }; fi
+    _queue_key_provider_safe_field "$reason" || { echo "queue key-provider $action: invalid reason" >&2; return 2; }
+    file="$(_queue_key_provider_registry_path)"; dir="$(dirname "$file")"; mkdir -p "$dir" || return 1
+    tmp="$file.tmp.$$"; bak="$file.bak.$(date +%Y%m%d%H%M%S)"
+    [[ -f "$file" ]] && cp "$file" "$bak" 2>/dev/null || true
+    if [[ -f "$file" ]]; then
+        awk -F '\t' -v s="$signer" -v o="$operation" -v r="$resource" 'BEGIN{OFS="\t"} /^#/ || NF==0 {print; next} !($1==s && $2==o && $3==r) {print}' "$file" > "$tmp" || { rm -f "$tmp"; return 1; }
+    else
+        { echo '# signer<TAB>operation<TAB>resource<TAB>public_key_ref<TAB>status<TAB>delegation<TAB>reason'; } > "$tmp"
+    fi
+    case "$action" in
+        register|rotate)
+            [[ "$action" == "rotate" ]] && status="active"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$signer" "$operation" "$resource" "$public_key_ref" "$status" "$delegation" "$reason" >> "$tmp"
+            ;;
+        revoke)
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$signer" "$operation" "$resource" "${public_key_ref:-revoked}" "revoked" "$delegation" "$reason" >> "$tmp"
+            ;;
+    esac
+    mv "$tmp" "$file" || { rm -f "$tmp"; return 1; }
+    chmod 0644 "$file" 2>/dev/null || true
+    echo "updated file key registry: $file"
+}
+
+_queue_key_provider_register_revoke_rotate() {
+    local action="$1" signer="${2:-}" operation="${3:-}" resource="${4:-}" public_key_ref="${5:-}" status="active" delegation="" reason="manual update"
+    shift 4 2>/dev/null || true
+    [[ "$action" == "revoke" ]] || shift 1 2>/dev/null || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --status) status="${2:-active}"; shift 2 ;;
+            --delegation) delegation="${2:-}"; shift 2 ;;
+            --reason) reason="${2:-}"; shift 2 ;;
+            *) echo "queue key-provider $action: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    if [[ "$action" == "revoke" ]]; then
+        [[ -n "$signer" && -n "$operation" && -n "$resource" ]] || { echo "Usage: queue key-provider revoke SIGNER OPERATION RESOURCE [--reason TEXT]" >&2; return 2; }
+        _queue_key_provider_file_mutate revoke "$signer" "$operation" "$resource" "" revoked "$delegation" "$reason"
+    else
+        [[ -n "$signer" && -n "$operation" && -n "$resource" && -n "$public_key_ref" ]] || { echo "Usage: queue key-provider $action SIGNER OPERATION RESOURCE PUBLIC_KEY_REF [--reason TEXT]" >&2; return 2; }
+        _queue_key_provider_file_mutate "$action" "$signer" "$operation" "$resource" "$public_key_ref" "$status" "$delegation" "$reason"
+    fi
+}
+
+_queue_key_provider_command() {
+    case "${1:-help}" in
+        help|--help|-h|"") _queue_key_provider_help ;;
+        operations|ops) _queue_key_provider_known_operations_text ;;
+        status) shift; _queue_key_provider_status "$@" ;;
+        lookup|check) shift; _queue_key_provider_lookup "$@" ;;
+        explain) shift; _queue_key_provider_lookup "$@" ;;
+        registry|list|ls) shift; _queue_key_provider_registry "$@" ;;
+        register|add|set) shift; _queue_key_provider_register_revoke_rotate register "$@" ;;
+        revoke) shift; _queue_key_provider_register_revoke_rotate revoke "$@" ;;
+        rotate) shift; _queue_key_provider_register_revoke_rotate rotate "$@" ;;
+        *) echo "Usage: queue key-provider help|operations|status|lookup|explain|registry|register|revoke|rotate" >&2; return 2 ;;
+    esac
+}
+
+# [AI-PATCH | 2026-05-27 21:14:00 BST]: 0.18.13: enterprise ACL/provider contract command surface.
+_queue_acl_known_operations_text() {
+    cat <<'EOF'
+job.submit
+job.cancel
+job.delete
+queue.clear
+queue.health.fix
+profile.approve
+profile.sign
+profile.verify
+trust-provider.add
+trust-provider.revoke
+class.manage
+policy.override
+module.configure
+dev.extract
+dev.patch
+ai.ask
+ai.context.queue_status
+ai.context.job_metadata
+EOF
+}
+
+_queue_acl_operation_known() {
+    local op="${1:-}"
+    [[ -n "$op" ]] || return 1
+    _queue_acl_known_operations_text | grep -Fx -- "$op" >/dev/null 2>&1
+}
+
+_queue_acl_decision_json() {
+    local subject="${1:-}" operation="${2:-}" resource="${3:-}" decision="${4:-error}" reason="${5:-no_acl_provider_active}"
+    local provider="${6:-${QUEUEBASH_ACL_PROVIDER:-contract}}"
+    local evidence_json="${7:-[]}"
+    local fail_closed="${8:-true}"
+    local contract_only="${9:-false}"
+    local ttl_seconds="${10:-0}"
+    local cache_policy="${11:-no-store}"
+    printf '{'
+    printf '"schema":"queuebash.acl_decision.v1"'
+    printf ',"timestamp":"%s"' "$(_queue_json_escape "$(_queue_now_iso)")"
+    printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+    printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+    printf ',"operation":"%s"' "$(_queue_json_escape "$operation")"
+    printf ',"resource":"%s"' "$(_queue_json_escape "$resource")"
+    printf ',"decision":"%s"' "$(_queue_json_escape "$decision")"
+    printf ',"reason":"%s"' "$(_queue_json_escape "$reason")"
+    printf ',"evidence":%s' "${evidence_json:-[]}"
+    printf ',"ttl_seconds":%s' "${ttl_seconds:-0}"
+    printf ',"cache_policy":"%s"' "$(_queue_json_escape "$cache_policy")"
+    printf ',"fail_closed":%s' "${fail_closed:-true}"
+    printf ',"contract_only":%s' "${contract_only:-false}"
+    printf '}\n'
+}
+
+_queue_acl_file_policy_path() {
+    if [[ -n "${QUEUEBASH_FILE_ACL_POLICY:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_FILE_ACL_POLICY"
+        return 0
+    fi
+    printf '%s/policy/acl/file_acl.tsv\n' "$(_queue_root)"
+}
+
+_queue_acl_provider_active() {
+    case "${QUEUEBASH_ACL_PROVIDER:-}" in
+        file|file_acl) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_queue_acl_tsv_field_valid() {
+    case "${1:-}" in
+        ''|*$'\t'*|*$'\n'*|*$'\r'*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+_queue_acl_file_rule_json() {
+    local policy_file="$1" line_no="$2"
+    printf '[{"type":"file_acl","policy_file":"%s","line":%s}]' "$(_queue_json_escape "$policy_file")" "$line_no"
+}
+
+_queue_acl_file_check() {
+    local subject="$1" operation="$2" resource="$3" json="$4"
+    local policy_file default_decision best_score=-1 best_line=0 best_subject='' best_operation='' best_resource='' best_decision='' best_reason=''
+    local line line_no=0 rule_subject rule_operation rule_resource rule_decision rule_reason extra score
+    policy_file="$(_queue_acl_file_policy_path)"
+    default_decision="${QUEUEBASH_FILE_ACL_DEFAULT:-deny}"
+
+    if [[ ! -f "$policy_file" ]]; then
+        if [[ "$json" -eq 1 ]]; then
+            _queue_acl_decision_json "$subject" "$operation" "$resource" "error" "file_acl_policy_missing" "file" "$(printf '[{"type":"file_acl","policy_file":"%s"}]' "$(_queue_json_escape "$policy_file")")" true false 0 no-store
+        else
+            echo "ACL decision: error"
+            echo "provider:  file"
+            echo "reason:    file_acl_policy_missing"
+            echo "policy:    $policy_file"
+            echo "fail:      closed"
+        fi
+        return 3
+    fi
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_no=$((line_no + 1))
+        case "$line" in
+            ''|'#'*) continue ;;
+        esac
+        IFS=$'\t' read -r rule_subject rule_operation rule_resource rule_decision rule_reason extra <<< "$line"
+        if [[ -n "${extra:-}" || -z "${rule_subject:-}" || -z "${rule_operation:-}" || -z "${rule_resource:-}" || -z "${rule_decision:-}" || -z "${rule_reason:-}" ]]; then
+            if [[ "$json" -eq 1 ]]; then
+                _queue_acl_decision_json "$subject" "$operation" "$resource" "error" "file_acl_policy_malformed" "file" "$(_queue_acl_file_rule_json "$policy_file" "$line_no")" true false 0 no-store
+            else
+                echo "ACL decision: error"
+                echo "provider:  file"
+                echo "reason:    file_acl_policy_malformed"
+                echo "policy:    $policy_file"
+                echo "line:      $line_no"
+                echo "fail:      closed"
+            fi
+            return 3
+        fi
+        case "$rule_decision" in allow|deny|error) ;; *)
+            if [[ "$json" -eq 1 ]]; then
+                _queue_acl_decision_json "$subject" "$operation" "$resource" "error" "file_acl_policy_malformed" "file" "$(_queue_acl_file_rule_json "$policy_file" "$line_no")" true false 0 no-store
+            else
+                echo "ACL decision: error"
+                echo "provider:  file"
+                echo "reason:    file_acl_policy_malformed"
+                echo "policy:    $policy_file"
+                echo "line:      $line_no"
+                echo "fail:      closed"
+            fi
+            return 3 ;;
+        esac
+
+        [[ "$rule_subject" == "$subject" || "$rule_subject" == "*" ]] || continue
+        [[ "$rule_operation" == "$operation" || "$rule_operation" == "*" ]] || continue
+        [[ "$rule_resource" == "$resource" || "$rule_resource" == "*" ]] || continue
+
+        score=0
+        [[ "$rule_subject" == "$subject" ]] && score=$((score + 4))
+        [[ "$rule_operation" == "$operation" ]] && score=$((score + 2))
+        [[ "$rule_resource" == "$resource" ]] && score=$((score + 1))
+        if [[ "$score" -gt "$best_score" ]]; then
+            best_score="$score"
+            best_line="$line_no"
+            best_subject="$rule_subject"
+            best_operation="$rule_operation"
+            best_resource="$rule_resource"
+            best_decision="$rule_decision"
+            best_reason="$rule_reason"
+        fi
+    done < "$policy_file"
+
+    if [[ "$best_score" -lt 0 ]]; then
+        if [[ "$default_decision" == "allow" ]]; then
+            best_decision="allow"
+            best_reason="file_acl_default_allow"
+        else
+            best_decision="deny"
+            best_reason="no_matching_file_acl_rule"
+        fi
+        if [[ "$json" -eq 1 ]]; then
+            _queue_acl_decision_json "$subject" "$operation" "$resource" "$best_decision" "$best_reason" "file" "$(printf '[{"type":"file_acl","policy_file":"%s","matched":false}]' "$(_queue_json_escape "$policy_file")")" true false 0 no-store
+        else
+            echo "ACL decision: $best_decision"
+            echo "provider:  file"
+            echo "subject:   $subject"
+            echo "operation: $operation"
+            echo "resource:  $resource"
+            echo "reason:    $best_reason"
+            echo "policy:    $policy_file"
+            echo "fail:      closed"
+        fi
+        [[ "$best_decision" == "allow" ]] && return 0 || return 1
+    fi
+
+    local fail_closed=true
+    [[ "$best_decision" == "allow" ]] && fail_closed=false
+    if [[ "$json" -eq 1 ]]; then
+        _queue_acl_decision_json "$subject" "$operation" "$resource" "$best_decision" "$best_reason" "file" "$(_queue_acl_file_rule_json "$policy_file" "$best_line")" "$fail_closed" false 0 no-store
+    else
+        echo "ACL decision: $best_decision"
+        echo "provider:  file"
+        echo "subject:   $subject"
+        echo "operation: $operation"
+        echo "resource:  $resource"
+        echo "reason:    $best_reason"
+        echo "policy:    $policy_file"
+        echo "line:      $best_line"
+        echo "matched:   $best_subject $best_operation $best_resource"
+        echo "fail:      $([[ "$fail_closed" == true ]] && echo closed || echo open-for-allow)"
+    fi
+    [[ "$best_decision" == "allow" ]] && return 0
+    [[ "$best_decision" == "deny" ]] && return 1
+    return 3
+}
+
+_queue_acl_file_mutate() {
+    local action="$1" operation="$2" subject="$3" resource="$4" decision="$5" reason="$6"
+    local policy_file dir tmp backup line_no=0 line rule_subject rule_operation rule_resource rule_decision rule_reason extra removed=0
+    policy_file="$(_queue_acl_file_policy_path)"
+    dir="$(dirname "$policy_file")"
+    if [[ -z "$policy_file" || "$policy_file" == "/" || "$policy_file" == *$'\n'* ]]; then
+        echo "queue acl $action: invalid file ACL policy path" >&2
+        return 2
+    fi
+    mkdir -p "$dir" || { echo "queue acl $action: cannot create $dir" >&2; return 1; }
+    [[ -e "$policy_file" ]] || : > "$policy_file"
+    [[ -w "$policy_file" && -w "$dir" ]] || { echo "queue acl $action: policy path is not writable: $policy_file" >&2; return 1; }
+    tmp="$(mktemp "$dir/.file_acl.XXXXXX")" || return 1
+    backup="$policy_file.bak.$(date +%Y%m%d%H%M%S)"
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_no=$((line_no + 1))
+        case "$line" in
+            ''|'#'*) printf '%s\n' "$line" >> "$tmp"; continue ;;
+        esac
+        IFS=$'\t' read -r rule_subject rule_operation rule_resource rule_decision rule_reason extra <<< "$line"
+        if [[ -n "${extra:-}" || -z "${rule_subject:-}" || -z "${rule_operation:-}" || -z "${rule_resource:-}" || -z "${rule_decision:-}" || -z "${rule_reason:-}" ]]; then
+            rm -f "$tmp"
+            echo "queue acl $action: refusing to edit malformed policy $policy_file at line $line_no" >&2
+            return 3
+        fi
+        if [[ "$rule_subject" == "$subject" && "$rule_operation" == "$operation" && "$rule_resource" == "$resource" ]]; then
+            removed=1
+            [[ "$action" == "remove" ]] && continue
+            printf '%s\t%s\t%s\t%s\t%s\n' "$subject" "$operation" "$resource" "$decision" "$reason" >> "$tmp"
+            continue
+        fi
+        printf '%s\n' "$line" >> "$tmp"
+    done < "$policy_file"
+
+    if [[ "$action" == "set" && "$removed" -eq 0 ]]; then
+        printf '%s\t%s\t%s\t%s\t%s\n' "$subject" "$operation" "$resource" "$decision" "$reason" >> "$tmp"
+    fi
+    cp -p "$policy_file" "$backup" 2>/dev/null || cp "$policy_file" "$backup" 2>/dev/null || true
+    mv "$tmp" "$policy_file"
+    echo "queue acl $action: file provider policy updated"
+    echo "policy:  $policy_file"
+    echo "backup:  $backup"
+    echo "subject: $subject"
+    echo "op:      $operation"
+    echo "resource:$resource"
+    [[ "$action" == "set" ]] && echo "decision:$decision"
+    return 0
+}
+
+_queue_acl_command_help() {
+    cat <<'EOF'
+queue acl - enterprise ACL/provider decision contract
+
+Usage:
+  queue acl check SUBJECT OPERATION RESOURCE [--json]
+  queue acl explain SUBJECT OPERATION RESOURCE [--json]
+  queue acl operations
+  queue acl set module provider:NAME OPERATION SUBJECT [RESOURCE] [--decision allow|deny] [--reason TEXT]
+  queue acl remove module provider:NAME OPERATION SUBJECT [RESOURCE]
+
+File provider configuration:
+  QUEUEBASH_ACL_PROVIDER=file
+  QUEUEBASH_FILE_ACL_POLICY="$HOME/.queuebash/policy/acl/file_acl.tsv"
+  QUEUEBASH_FILE_ACL_DEFAULT=deny
+
+File policy format:
+  subject<TAB>operation<TAB>resource<TAB>decision<TAB>reason
+
+Purpose:
+  Normalise privileged operation checks as:
+    Can subject X perform operation Y on resource Z in context C?
+
+Provider decision contract:
+  allow | deny | error
+  reason
+  evidence
+  ttl/cache policy
+
+Design rules:
+  bashqueues core enforces decisions.
+  Providers supply normalized data, never shell.
+  Missing, malformed, or provider-error responses fail closed for privileged operations.
+  Single-user installs may remain file-backed and require no enterprise provider.
+EOF
+}
+
+_queue_acl_check() {
+    local subject="${1:-}" operation="${2:-}" resource="${3:-}" json=0 reason decision="error"
+    shift 3 2>/dev/null || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --json|-j) json=1; shift ;;
+            *) echo "Usage: queue acl check SUBJECT OPERATION RESOURCE [--json]" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$subject" && -n "$operation" && -n "$resource" ]] || { echo "Usage: queue acl check SUBJECT OPERATION RESOURCE [--json]" >&2; return 2; }
+    if ! _queue_acl_operation_known "$operation"; then
+        reason="unknown_operation"
+        if [[ "$json" -eq 1 ]]; then
+            _queue_acl_decision_json "$subject" "$operation" "$resource" "$decision" "$reason" "${QUEUEBASH_ACL_PROVIDER:-contract}" "[]" true true 0 no-store
+        else
+            echo "ACL decision: $decision"
+            echo "subject:   $subject"
+            echo "operation: $operation"
+            echo "resource:  $resource"
+            echo "reason:    $reason"
+            echo "fail:      closed"
+        fi
+        return 3
+    fi
+    if _queue_acl_provider_active; then
+        _queue_acl_file_check "$subject" "$operation" "$resource" "$json"
+        return "$?"
+    fi
+    reason="no_acl_provider_active"
+    if [[ "$json" -eq 1 ]]; then
+        _queue_acl_decision_json "$subject" "$operation" "$resource" "$decision" "$reason" "${QUEUEBASH_ACL_PROVIDER:-contract}" "[]" true true 0 no-store
+    else
+        echo "ACL decision: $decision"
+        echo "subject:   $subject"
+        echo "operation: $operation"
+        echo "resource:  $resource"
+        echo "reason:    $reason"
+        echo "contract:  queuebash.acl_decision.v1"
+        echo "note:      no concrete ACL provider is active; privileged checks fail closed."
+    fi
+    return 3
+}
+
+_queue_acl_explain() {
+    local subject="${1:-}" operation="${2:-}" resource="${3:-}" json=0
+    shift 3 2>/dev/null || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in --json|-j) json=1; shift ;; *) echo "Usage: queue acl explain SUBJECT OPERATION RESOURCE [--json]" >&2; return 2 ;; esac
+    done
+    [[ -n "$subject" && -n "$operation" && -n "$resource" ]] || { echo "Usage: queue acl explain SUBJECT OPERATION RESOURCE [--json]" >&2; return 2; }
+    _queue_acl_check "$subject" "$operation" "$resource" ${json:+--json}
+}
+
+_queue_acl_set_remove() {
+    local action="$1" scope="${2:-}" target="${3:-}" operation="${4:-}" subject="${5:-}" resource="*" decision="allow" reason="local file ACL rule"
+    shift 5 2>/dev/null || true
+    if [[ "${1:-}" != --* && -n "${1:-}" ]]; then
+        resource="$1"
+        shift
+    fi
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --resource) resource="${2:-*}"; shift 2 ;;
+            --decision) decision="${2:-allow}"; shift 2 ;;
+            --reason) reason="${2:-}"; shift 2 ;;
+            *) echo "Usage: queue acl set|remove module provider:NAME OPERATION SUBJECT [RESOURCE] [--decision allow|deny] [--reason TEXT]" >&2; return 2 ;;
+        esac
+    done
+    [[ "$scope" == "module" && "$target" == provider:* && -n "$operation" && -n "$subject" ]] || {
+        echo "Usage: queue acl set|remove module provider:NAME OPERATION SUBJECT [RESOURCE]" >&2
+        return 2
+    }
+    if ! _queue_acl_operation_known "$operation"; then
+        echo "queue acl $action: unknown normalized operation: $operation" >&2
+        return 2
+    fi
+    case "$decision" in allow|deny) ;; *) echo "queue acl set: decision must be allow or deny" >&2; return 2 ;; esac
+    _queue_acl_tsv_field_valid "$subject" || { echo "queue acl $action: invalid subject" >&2; return 2; }
+    _queue_acl_tsv_field_valid "$operation" || { echo "queue acl $action: invalid operation" >&2; return 2; }
+    _queue_acl_tsv_field_valid "$resource" || { echo "queue acl $action: invalid resource" >&2; return 2; }
+    _queue_acl_tsv_field_valid "$reason" || { echo "queue acl $action: invalid reason" >&2; return 2; }
+    if [[ "$target" != "provider:file" && "$target" != "provider:file_acl" ]]; then
+        cat <<EOF
+queue acl $action: provider ACL contract handoff
+module:    $target
+operation: $operation
+subject:   $subject
+resource:  $resource
+
+Only the local file provider is mutable in 0.18.15.
+Provider modules must implement this as normalized data, never shell.
+EOF
+        return 3
+    fi
+    if ! _queue_acl_provider_active; then
+        echo "queue acl $action: file ACL provider is not active; set QUEUEBASH_ACL_PROVIDER=file" >&2
+        return 3
+    fi
+    _queue_acl_file_mutate "$action" "$operation" "$subject" "$resource" "$decision" "$reason"
+}
+
+_queue_acl_command() {
+    case "${1:-help}" in
+        help|--help|-h|"") _queue_acl_command_help ;;
+        operations|ops) _queue_acl_known_operations_text ;;
+        check) shift; _queue_acl_check "$@" ;;
+        explain) shift; _queue_acl_explain "$@" ;;
+        set|add) shift; _queue_acl_set_remove set "$@" ;;
+        remove|rm|delete) shift; _queue_acl_set_remove remove "$@" ;;
+        *) echo "Usage: queue acl help|operations|check|explain|set|remove" >&2; return 2 ;;
+    esac
+}
+
 _queue_module_help() {
     local topic="${1:-}"
     case "$topic" in
@@ -13562,6 +14228,9 @@ Usage:
   queue module configure provider NAME [--show|--path|--set KEY=VALUE ...]
   queue module policy provider NAME
   queue module acl set|remove KIND NAME OPERATION SUBJECT
+  queue acl check SUBJECT OPERATION RESOURCE [--json]
+  queue acl set module provider:NAME OPERATION SUBJECT
+  queue acl remove module provider:NAME OPERATION SUBJECT
   queue module enable class|asset|cap|provider NAME
   queue module disable class|asset|cap|provider NAME [--force]
   queue module refresh class|asset|cap <directory>
@@ -13825,6 +14494,7 @@ Usage:
   queue dev extract FUNCTION [--file FILE] [--json]
   queue dev scope [--json] [--prefix PREFIX]
   queue dev patch --file FILE --function FUNCTION --source SOURCE [--json] [--no-syntax-check]
+  queue dev splice --file FILE (--after TEXT|--before TEXT|--replace TEXT --with TEXT) [--insert TEXT] [--dry-run] [--json]
   queue dev comment --file FILE --function FUNCTION --message TEXT [--changelog] [--json]
   queue dev diff --file FILE [--function FUNCTION] [--json]
   queue dev strip --file FILE --function FUNCTION [--json]
@@ -13840,6 +14510,8 @@ created by queue dev patch for function-level memory, context, and rollback.
 symbols provides a lightweight static symbol table for variables, constants,
 string literals, and function membership. flow provides a static execution-path
 graph of function calls and shell control nodes for AI-assisted impact analysis.
+splice provides constrained anchored text transformations with dry-run, idempotency,
+JSON diagnostics, and atomic writes. It treats content as text only.
 EOF
 }
 
@@ -14602,7 +15274,8 @@ _queue_dev_symbols() {
         return 2
     fi
 
-    local out status=0
+    local out status=0 old_errexit=0
+    case $- in *e*) old_errexit=1; set +e ;; esac
     out="$(python3 - "$file" "$fn" "$source_kind" <<'PYDEV_SYMBOLS'
 import json, re, sys, pathlib
 path, requested_function, source_kind = sys.argv[1:4]
@@ -14610,7 +15283,7 @@ try:
     text = pathlib.Path(path).read_text()
 except Exception as exc:
     print(json.dumps({"status":"error","message":f"read failed: {exc}"}))
-    sys.exit(1)
+    sys.exit(0)
 lines = text.splitlines(True)
 
 def mask_heredocs(src_lines):
@@ -14805,7 +15478,8 @@ _queue_dev_flow() {
         return 2
     fi
 
-    local out status=0
+    local out status=0 old_errexit=0
+    case $- in *e*) old_errexit=1; set +e ;; esac
     out="$(python3 - "$file" "$fn" "$source_kind" <<'PYDEV_FLOW'
 import json, re, sys, pathlib
 path, requested_function, source_kind = sys.argv[1:4]
@@ -14813,7 +15487,7 @@ try:
     text = pathlib.Path(path).read_text()
 except Exception as exc:
     print(json.dumps({"status":"error","message":f"read failed: {exc}"}))
-    sys.exit(1)
+    sys.exit(0)
 lines = text.splitlines(True)
 
 def mask_heredocs(src_lines):
@@ -15031,6 +15705,244 @@ PYDEV_FLOW
     fi
 }
 
+
+_queue_dev_splice() {
+    local file="" mode="" after="" before="" replace="" with="" insert="" if_missing="" if_present="" json=0 dry_run=0 all=0
+    local after_file="" before_file="" replace_file="" with_file="" insert_file=""
+    local with_supplied=0 insert_supplied=0
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --file) file="${2:-}"; shift 2 ;;
+            --after) after="${2:-}"; mode="${mode:+$mode,}after"; shift 2 ;;
+            --before) before="${2:-}"; mode="${mode:+$mode,}before"; shift 2 ;;
+            --replace) replace="${2:-}"; mode="${mode:+$mode,}replace"; shift 2 ;;
+            --with) with="${2:-}"; with_supplied=1; shift 2 ;;
+            --insert) insert="${2:-}"; insert_supplied=1; shift 2 ;;
+            --after-file) after_file="${2:-}"; mode="${mode:+$mode,}after_file"; shift 2 ;;
+            --before-file) before_file="${2:-}"; mode="${mode:+$mode,}before_file"; shift 2 ;;
+            --replace-file) replace_file="${2:-}"; mode="${mode:+$mode,}replace_file"; shift 2 ;;
+            --with-file) with_file="${2:-}"; with_supplied=1; shift 2 ;;
+            --insert-file) insert_file="${2:-}"; insert_supplied=1; shift 2 ;;
+            --if-missing) if_missing="${2:-}"; shift 2 ;;
+            --if-present) if_present="${2:-}"; shift 2 ;;
+            --dry-run|--dryrun|-n) dry_run=1; shift ;;
+            --json|-j) json=1; shift ;;
+            --all) all=1; shift ;;
+            --help|-h)
+                cat <<'USAGE'
+Usage:
+  queue dev splice --file FILE --after TEXT --insert TEXT [--if-missing TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --before TEXT --insert TEXT [--if-missing TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --replace TEXT --with TEXT [--if-present TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --after-file NEEDLE_FILE --insert-file INSERT_FILE [--if-missing TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --before-file NEEDLE_FILE --insert-file INSERT_FILE [--if-missing TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --replace-file OLD_FILE --with-file NEW_FILE [--all] [--dry-run] [--json]
+
+Constrained anchored text splicing. Operates on one file, treats inserted text as
+plain text, supports dry-run/idempotency, and writes atomically without creating
+queuebash.sh.bak.* or *.devpatch.* artifacts. File-based splice inputs are read
+inside the helper so trailing newlines are preserved exactly.
+USAGE
+                return 0 ;;
+            *) echo "queue dev splice: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+
+    [[ -n "$file" ]] || { echo "queue dev splice: --file is required" >&2; return 2; }
+    [[ -f "$file" ]] || { echo "queue dev splice: file not found: $file" >&2; return 1; }
+
+    IFS=',' read -r -a _splice_modes <<< "$mode"
+    local mode_count=0 m selected_mode=""
+    for m in "${_splice_modes[@]}"; do
+        [[ -n "$m" ]] || continue
+        mode_count=$((mode_count + 1))
+        selected_mode="$m"
+    done
+    [[ "$mode_count" -eq 1 ]] || { echo "queue dev splice: exactly one transformation mode is required" >&2; return 2; }
+
+    case "$selected_mode" in
+        after_file)
+            [[ -f "$after_file" ]] || { echo "queue dev splice: after-file not found: $after_file" >&2; return 1; }
+            selected_mode="after" ;;
+        before_file)
+            [[ -f "$before_file" ]] || { echo "queue dev splice: before-file not found: $before_file" >&2; return 1; }
+            selected_mode="before" ;;
+        replace_file)
+            [[ -f "$replace_file" ]] || { echo "queue dev splice: replace-file not found: $replace_file" >&2; return 1; }
+            selected_mode="replace" ;;
+    esac
+    if [[ -n "$insert_file" ]]; then
+        [[ -f "$insert_file" ]] || { echo "queue dev splice: insert-file not found: $insert_file" >&2; return 1; }
+    fi
+    if [[ -n "$with_file" ]]; then
+        [[ -f "$with_file" ]] || { echo "queue dev splice: with-file not found: $with_file" >&2; return 1; }
+    fi
+
+    case "$selected_mode" in
+        after)
+            [[ -n "$after" || -n "$after_file" ]] || { echo "queue dev splice: --after/--after-file is required" >&2; return 2; }
+            [[ "$insert_supplied" -eq 1 ]] || { echo "queue dev splice: --insert/--insert-file is required" >&2; return 2; } ;;
+        before)
+            [[ -n "$before" || -n "$before_file" ]] || { echo "queue dev splice: --before/--before-file is required" >&2; return 2; }
+            [[ "$insert_supplied" -eq 1 ]] || { echo "queue dev splice: --insert/--insert-file is required" >&2; return 2; } ;;
+        replace)
+            [[ -n "$replace" || -n "$replace_file" ]] || { echo "queue dev splice: --replace/--replace-file is required" >&2; return 2; }
+            [[ "$with_supplied" -eq 1 ]] || { echo "queue dev splice: --replace/--replace-file requires explicit --with/--with-file" >&2; return 2; } ;;
+        *) echo "queue dev splice: unsupported mode: $selected_mode" >&2; return 2 ;;
+    esac
+
+    local -a py_args
+    py_args=(--file "$file" --mode "$selected_mode")
+    [[ "$dry_run" -eq 1 ]] && py_args+=(--dry-run)
+    [[ "$all" -eq 1 ]] && py_args+=(--all)
+    [[ -n "$if_missing" ]] && py_args+=(--if-missing "$if_missing")
+    [[ -n "$if_present" ]] && py_args+=(--if-present "$if_present")
+    case "$selected_mode" in
+        after)
+            if [[ -n "$after_file" ]]; then py_args+=(--after-file "$after_file"); else py_args+=(--after-text "$after"); fi
+            if [[ -n "$insert_file" ]]; then py_args+=(--insert-file "$insert_file"); else py_args+=(--insert-text "$insert"); fi ;;
+        before)
+            if [[ -n "$before_file" ]]; then py_args+=(--before-file "$before_file"); else py_args+=(--before-text "$before"); fi
+            if [[ -n "$insert_file" ]]; then py_args+=(--insert-file "$insert_file"); else py_args+=(--insert-text "$insert"); fi ;;
+        replace)
+            if [[ -n "$replace_file" ]]; then py_args+=(--replace-file "$replace_file"); else py_args+=(--replace-text "$replace"); fi
+            if [[ -n "$with_file" ]]; then py_args+=(--with-file "$with_file"); else py_args+=(--with-text "$with"); fi ;;
+    esac
+
+    local out status=0 old_errexit=0
+    case $- in *e*) old_errexit=1; set +e ;; esac
+    out="$(python3 - "${py_args[@]}" <<'PYDEV_SPLICE'
+import argparse, json, os, pathlib, stat, sys, tempfile
+schema = "queuebash.dev_splice_response.v1"
+parser = argparse.ArgumentParser(prog="queue dev splice helper", add_help=False)
+parser.add_argument("--file", required=True)
+parser.add_argument("--mode", required=True, choices=("after", "before", "replace"))
+parser.add_argument("--dry-run", action="store_true")
+parser.add_argument("--all", action="store_true")
+parser.add_argument("--if-missing", default="")
+parser.add_argument("--if-present", default="")
+parser.add_argument("--after-text", default=None)
+parser.add_argument("--before-text", default=None)
+parser.add_argument("--replace-text", default=None)
+parser.add_argument("--with-text", dest="with_text", default=None)
+parser.add_argument("--insert-text", default=None)
+parser.add_argument("--after-file", default=None)
+parser.add_argument("--before-file", default=None)
+parser.add_argument("--replace-file", default=None)
+parser.add_argument("--with-file", dest="with_file", default=None)
+parser.add_argument("--insert-file", default=None)
+args = parser.parse_args()
+path = args.file
+res = {"schema": schema, "file": path, "mode": args.mode, "anchor_found": False, "occurrences": 0, "changed": False, "skipped": False, "error": False, "reason": "", "dry_run": bool(args.dry_run), "bytes_before": 0, "bytes_after": 0}
+
+def emit(code=0, **updates):
+    res.update(updates)
+    print(json.dumps(res, separators=(",", ":")))
+    sys.exit(code)
+
+def read_text_pair(text_value, filename):
+    if filename is not None:
+        return pathlib.Path(filename).read_text()
+    return "" if text_value is None else text_value
+
+try:
+    p = pathlib.Path(path)
+    if not p.exists() or not p.is_file():
+        raise FileNotFoundError(path)
+    data = p.read_text()
+    res["bytes_before"] = len(data.encode())
+
+    if args.if_missing and args.if_missing in data:
+        emit(0, skipped=True, reason="already_present", bytes_after=res["bytes_before"])
+    if args.if_present and args.if_present not in data:
+        emit(0, skipped=True, reason="not_present", bytes_after=res["bytes_before"])
+
+    if args.mode == "after":
+        needle = read_text_pair(args.after_text, args.after_file)
+        insert = read_text_pair(args.insert_text, args.insert_file)
+        if needle == "":
+            emit(2, error=True, reason="empty_anchor", bytes_after=res["bytes_before"])
+        count = data.count(needle)
+        res["occurrences"] = count
+        res["anchor_found"] = count > 0
+        if count == 0:
+            emit(1, error=True, reason="anchor_missing", bytes_after=res["bytes_before"])
+        new = data.replace(needle, needle + insert, 1)
+    elif args.mode == "before":
+        needle = read_text_pair(args.before_text, args.before_file)
+        insert = read_text_pair(args.insert_text, args.insert_file)
+        if needle == "":
+            emit(2, error=True, reason="empty_anchor", bytes_after=res["bytes_before"])
+        count = data.count(needle)
+        res["occurrences"] = count
+        res["anchor_found"] = count > 0
+        if count == 0:
+            emit(1, error=True, reason="anchor_missing", bytes_after=res["bytes_before"])
+        new = data.replace(needle, insert + needle, 1)
+    else:
+        needle = read_text_pair(args.replace_text, args.replace_file)
+        with_text = read_text_pair(args.with_text, args.with_file)
+        if needle == "":
+            emit(2, error=True, reason="empty_replace_text", bytes_after=res["bytes_before"])
+        count = data.count(needle)
+        res["occurrences"] = count
+        res["anchor_found"] = count > 0
+        if count == 0:
+            emit(1, error=True, reason="replace_text_missing", bytes_after=res["bytes_before"])
+        if count > 1 and not args.all:
+            emit(1, error=True, reason="replace_text_not_unique", bytes_after=res["bytes_before"])
+        new = data.replace(needle, with_text) if args.all else data.replace(needle, with_text, 1)
+
+    res["bytes_after"] = len(new.encode())
+    if new == data:
+        emit(0, changed=False, skipped=True, reason="unchanged")
+    if args.dry_run:
+        emit(0, changed=False, skipped=False, reason="dry_run")
+
+    st = p.stat()
+    fd, tmp = tempfile.mkstemp(prefix=f".{p.name}.splice.", dir=str(p.parent))
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(new)
+        os.chmod(tmp, stat.S_IMODE(st.st_mode))
+        os.replace(tmp, path)
+    finally:
+        try:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        except Exception:
+            pass
+    emit(0, changed=True, reason="changed")
+except Exception as exc:
+    emit(1, error=True, reason=f"exception:{exc.__class__.__name__}:{exc}", bytes_after=res.get("bytes_before", 0))
+PYDEV_SPLICE
+)"
+    status=$?
+    if [[ "$out" == *'"error":true'* ]]; then
+        status=1
+    fi
+    [[ "$old_errexit" -eq 1 ]] && set -e
+    if [[ "$json" -eq 1 ]]; then
+        printf '%s\n' "$out"
+    else
+        local reason changed skipped error
+        reason="$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("reason",""))' 2>/dev/null || true)"
+        changed="$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("changed",False))' 2>/dev/null || true)"
+        skipped="$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("skipped",False))' 2>/dev/null || true)"
+        error="$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("error",False))' 2>/dev/null || true)"
+        if [[ "$error" == "True" ]]; then
+            echo "queue dev splice: error: $reason" >&2
+        elif [[ "$skipped" == "True" ]]; then
+            echo "queue dev splice: skipped: $reason"
+        elif [[ "$changed" == "True" ]]; then
+            echo "queue dev splice: changed: $file"
+        else
+            echo "queue dev splice: unchanged: $reason"
+        fi
+    fi
+    return "$status"
+}
+
 _queue_dev_command() {
     local sub="${1:-}"
     shift || true
@@ -15045,6 +15957,7 @@ _queue_dev_command() {
         strip|rollback) _queue_dev_strip "$@" ;;
         symbols) _queue_dev_symbols "$@" ;;
         flow|graph|paths) _queue_dev_flow "$@" ;;
+        splice) _queue_dev_splice "$@" ;;
         help|--help|-h|"") _queue_dev_usage ;;
         *) echo "queue dev: unknown subcommand: $sub" >&2; _queue_dev_usage >&2; return 2 ;;
     esac
@@ -15339,6 +16252,369 @@ USAGE
     esac
 }
 
+
+
+# Profile multi-signature contract (0.18.16).
+#
+# This command family deliberately publishes and validates contract data only.
+# It does not migrate legacy signed profiles and it does not perform live
+# cryptographic signature verification yet.  Later packages can bind this
+# contract to key-provider lookup, signer delegation, and profile approval
+# enforcement.
+_queue_profile_multisig_help() {
+    cat <<'HELP'
+Usage:
+  queue profile-signature help
+  queue profile-signature schema
+  queue profile-signature roles
+  queue profile-signature verify PROFILE_DIR [--policy FILE] [--json]
+  queue profile-signature explain PROFILE_DIR [--policy FILE] [--json]
+  queue profile-signature required-policy-example
+
+Profile multi-signature contract:
+  Sidecar: PROFILE_DIR/signatures.json
+  Schema:  queuebash.profile_signatures.v1
+  Result:  queuebash.profile_signature_verification.v1
+
+Signer namespaces:
+  self:NAME
+  team:NAME
+  org:NAME
+  external:NAME
+  trusted-ca:NAME
+
+Roles:
+  author reviewer approver countersigner issuer auditor
+
+This release is contract-first. It validates the sidecar structure, signer
+namespaces, signature metadata, and optional required-role policy. It does not
+force migration of existing profiles or perform cryptographic verification.
+HELP
+}
+
+_queue_profile_multisig_roles() {
+    cat <<'EOF'
+author
+reviewer
+approver
+countersigner
+issuer
+auditor
+EOF
+}
+
+_queue_profile_multisig_policy_example() {
+    cat <<'EOF'
+# queuebash profile multi-signature required-signer policy
+# Format: profile_glob<TAB>role<TAB>signer_pattern<TAB>required<TAB>reason
+# signer_pattern may be an exact signer such as org:bashqueues or a namespace
+# wildcard such as team:* or trusted-ca:*.
+*	author	self:*	required	profile must have an author signature
+*	reviewer	team:security-review	required	security team review required
+prod-*	approver	org:bashqueues	required	production profiles require org approval
+vendor-*	countersigner	org:bashqueues	required	external vendor signatures need local countersign
+EOF
+}
+
+_queue_profile_multisig_schema() {
+    cat <<'EOF'
+{
+  "schema": "queuebash.profile_signatures.v1",
+  "profile": "PROFILE_NAME",
+  "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "signatures": [
+    {
+      "signer": "self:operator",
+      "role": "author",
+      "alg": "ed25519",
+      "public_key_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "signature_b64": "ZmFrZS1zaWduYXR1cmU=",
+      "signed_at": "2026-05-27T12:00:00Z",
+      "key_provider_ref": "file:self:operator:profile.sign:PROFILE_NAME"
+    },
+    {
+      "signer": "team:security-review",
+      "role": "reviewer",
+      "alg": "ed25519",
+      "public_key_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "signature_b64": "ZmFrZS1yZXZpZXctc2lnbmF0dXJl",
+      "signed_at": "2026-05-27T12:30:00Z"
+    }
+  ]
+}
+EOF
+}
+
+_queue_profile_multisig_verify() {
+    local profile_dir="${1:-}" policy_file="" json=0 explain=0
+    shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --policy) policy_file="${2:-}"; shift 2 ;;
+            --json) json=1; shift ;;
+            --explain) explain=1; shift ;;
+            *) echo "queue profile-signature verify: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$profile_dir" ]] || { echo "Usage: queue profile-signature verify PROFILE_DIR [--policy FILE] [--json]" >&2; return 2; }
+
+    local sidecar="$profile_dir/signatures.json"
+    local profile_name
+    profile_name="$(basename "$profile_dir")"
+
+    # 0.18.17 is the first practical file verifier.  It validates the
+    # signatures.json structure, applies required-signer TSV policy, and
+    # consults the key-provider registry contract for every signer.  It still
+    # deliberately leaves cryptographic signature verification disabled until a
+    # later package wires an approved verifier/provider path.
+    python3 - "$sidecar" "$policy_file" "$profile_name" "$json" "$explain" <<'PYSIGVERIFY'
+import fnmatch, json, os, re, sys
+sidecar, policy_file, profile_name, json_mode, explain_mode = sys.argv[1:6]
+json_mode = json_mode == "1"
+allowed_roles = {"author", "reviewer", "approver", "countersigner", "issuer", "auditor"}
+allowed_ns = {"self", "team", "org", "external", "trusted-ca"}
+allowed_alg = {"ed25519", "rsa-pss-sha256", "ecdsa-p256-sha256", "sha256-manifest"}
+hex64 = re.compile(r"^[A-Fa-f0-9]{64}$")
+b64ish = re.compile(r"^[A-Za-z0-9+/=_-]+$")
+safe_field = re.compile(r"^[A-Za-z0-9_@.:/+=, -]+$")
+
+KEY_PROVIDER = os.environ.get("QUEUEBASH_KEY_PROVIDER", "")
+KEY_REGISTRY = os.environ.get("QUEUEBASH_FILE_KEY_REGISTRY") or os.path.join(os.environ.get("QUEUEBASH_ROOT", os.path.expanduser("~/.queuebash")), "policy", "keys", "key_registry.tsv")
+
+
+def _bool(v):
+    return bool(v)
+
+
+def result(decision, reason, fail_closed=True, **extra):
+    d = {
+        "schema": "queuebash.profile_signature_verification.v1",
+        "decision": decision,
+        "reason": reason,
+        "profile": profile_name,
+        "sidecar": sidecar,
+        "policy_file": policy_file,
+        "fail_closed": bool(fail_closed),
+        "contract_only": False,
+        "file_verifier": True,
+        "cryptographic_verification_performed": False,
+        "cryptographic_verification_status": "not_performed",
+        "migration_required": False,
+        "key_provider_consulted": extra.pop("key_provider_consulted", False),
+        "key_provider": KEY_PROVIDER or "none",
+    }
+    d.update(extra)
+    if json_mode:
+        print(json.dumps(d, sort_keys=True, separators=(",", ":")))
+    else:
+        print(f"profile multi-signature: {decision}")
+        print(f"reason: {reason}")
+        print(f"profile: {profile_name}")
+        print("file verifier: true")
+        print("cryptographic verification: not performed")
+        print(f"key provider: {d.get('key_provider')}")
+        if extra.get("signers"):
+            print("signers:")
+            for signer in extra["signers"]:
+                kp = signer.get("key_provider_decision", "unknown")
+                print(f"  {signer.get('signer','?')} role={signer.get('role','?')} alg={signer.get('alg','?')} key={kp}")
+        if extra.get("missing_required"):
+            print("missing required signatures:")
+            for m in extra["missing_required"]:
+                print(f"  role={m.get('role')} signer_pattern={m.get('signer_pattern')} reason={m.get('reason')}")
+        if extra.get("key_provider_failures"):
+            print("key provider failures:")
+            for k in extra["key_provider_failures"]:
+                print(f"  signer={k.get('signer')} decision={k.get('decision')} reason={k.get('reason')}")
+        if extra.get("errors"):
+            print("errors:")
+            for e in extra["errors"]:
+                print(f"  {e}")
+    return 0 if decision == "allow" else 1
+
+
+def key_provider_json(signer, operation, resource, decision, reason, provider, public_key_ref="", key_status="unknown", revoked=True, evidence=None, fail_closed=True, contract_only=False):
+    return {
+        "schema": "queuebash.key_lookup_response.v1",
+        "signer": signer,
+        "operation": operation,
+        "resource": resource,
+        "decision": decision,
+        "reason": reason,
+        "provider": provider,
+        "public_key_ref": public_key_ref,
+        "key_status": key_status,
+        "revoked": bool(revoked),
+        "evidence": evidence or [],
+        "ttl_seconds": 0,
+        "cache_policy": "no-store",
+        "fail_closed": bool(fail_closed),
+        "contract_only": bool(contract_only),
+    }
+
+
+def file_key_lookup(signer, operation, resource):
+    file = KEY_REGISTRY
+    if not os.path.exists(file):
+        return key_provider_json(signer, operation, resource, "error", "file_key_registry_not_found", "file", evidence=[{"policy_file": file}], fail_closed=True)
+    best = None
+    best_score = -1
+    try:
+        with open(file, "r", encoding="utf-8") as f:
+            for lineno, raw in enumerate(f, 1):
+                line = raw.rstrip("\n")
+                if not line.strip() or line.lstrip().startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) != 7:
+                    return key_provider_json(signer, operation, resource, "error", "file_key_registry_malformed", "file", evidence=[{"policy_file": file, "line": lineno}], fail_closed=True)
+                r_signer, r_op, r_res, r_pub, r_status, r_delegation, r_reason = parts
+                if not all([r_signer, r_op, r_res, r_pub, r_status]) or r_status not in {"active", "revoked", "rotated", "expired", "disabled"}:
+                    return key_provider_json(signer, operation, resource, "error", "file_key_registry_malformed", "file", evidence=[{"policy_file": file, "line": lineno}], fail_closed=True)
+                if r_signer not in (signer, "*") or r_op not in (operation, "*") or r_res not in (resource, "*"):
+                    continue
+                score = (4 if r_signer == signer else 0) + (2 if r_op == operation else 0) + (1 if r_res == resource else 0)
+                if score > best_score:
+                    best_score = score
+                    best = (lineno, r_signer, r_op, r_res, r_pub, r_status, r_delegation, r_reason)
+    except OSError:
+        return key_provider_json(signer, operation, resource, "error", "file_key_registry_unreadable", "file", evidence=[{"policy_file": file}], fail_closed=True)
+    if best is None:
+        return key_provider_json(signer, operation, resource, "deny", "no matching key trust rule", "file", key_status="not_found", evidence=[{"policy_file": file}], fail_closed=True)
+    lineno, r_signer, r_op, r_res, r_pub, r_status, r_delegation, r_reason = best
+    if r_status == "active":
+        return key_provider_json(signer, operation, resource, "allow", r_reason or "matched file key registry", "file", public_key_ref=r_pub, key_status=r_status, revoked=False, evidence=[{"policy_file": file, "line": lineno, "matched_signer": r_signer, "matched_operation": r_op, "matched_resource": r_res}], fail_closed=False)
+    return key_provider_json(signer, operation, resource, "deny", r_reason or f"key status {r_status}", "file", public_key_ref=r_pub, key_status=r_status, revoked=True, evidence=[{"policy_file": file, "line": lineno, "matched_signer": r_signer, "matched_operation": r_op, "matched_resource": r_res}], fail_closed=True)
+
+
+def key_lookup(signer, operation, resource):
+    if KEY_PROVIDER in {"file", "file_key", "file-key"}:
+        return file_key_lookup(signer, operation, resource)
+    if KEY_PROVIDER == "":
+        return key_provider_json(signer, operation, resource, "error", "no_key_provider_active", "contract", key_status="unknown", evidence=[], fail_closed=True, contract_only=True)
+    return key_provider_json(signer, operation, resource, "error", "unsupported_key_provider", KEY_PROVIDER, key_status="unknown", evidence=[], fail_closed=True)
+
+
+if not os.path.exists(sidecar):
+    sys.exit(result("error", "profile_signatures_sidecar_missing", True))
+try:
+    with open(sidecar, "r", encoding="utf-8") as f:
+        data = json.load(f)
+except json.JSONDecodeError:
+    sys.exit(result("error", "profile_signatures_json_invalid", True))
+except OSError:
+    sys.exit(result("error", "profile_signatures_sidecar_unreadable", True))
+
+errors = []
+if data.get("schema") != "queuebash.profile_signatures.v1":
+    errors.append("schema_mismatch")
+artifact = data.get("artifact_sha256", "")
+if not hex64.match(str(artifact)):
+    errors.append("artifact_sha256_invalid")
+sigs = data.get("signatures")
+if not isinstance(sigs, list) or not sigs:
+    errors.append("signatures_missing_or_empty")
+
+seen = []
+roles = set()
+for idx, sig in enumerate(sigs if isinstance(sigs, list) else []):
+    if not isinstance(sig, dict):
+        errors.append(f"signature_{idx}_not_object")
+        continue
+    signer = str(sig.get("signer", ""))
+    role = str(sig.get("role", ""))
+    alg = str(sig.get("alg", ""))
+    pk = str(sig.get("public_key_sha256", ""))
+    sb = str(sig.get("signature_b64", ""))
+    signed_at = str(sig.get("signed_at", ""))
+    ns = signer.split(":", 1)[0] if ":" in signer else ""
+    if ns not in allowed_ns or ":" not in signer or signer.endswith(":"):
+        errors.append(f"signature_{idx}_signer_namespace_invalid")
+    if role not in allowed_roles:
+        errors.append(f"signature_{idx}_role_invalid")
+    if alg not in allowed_alg:
+        errors.append(f"signature_{idx}_alg_invalid")
+    if not hex64.match(pk):
+        errors.append(f"signature_{idx}_public_key_sha256_invalid")
+    if not sb or not b64ish.match(sb):
+        errors.append(f"signature_{idx}_signature_b64_invalid")
+    if not signed_at or "T" not in signed_at:
+        errors.append(f"signature_{idx}_signed_at_invalid")
+    seen.append({"signer": signer, "role": role, "alg": alg, "public_key_sha256": pk})
+    roles.add((signer, role))
+
+if errors:
+    sys.exit(result("error", "profile_signatures_contract_invalid", True, errors=errors, signers=seen, signature_count=len(seen)))
+
+missing = []
+policy_rules = []
+if policy_file:
+    try:
+        with open(policy_file, "r", encoding="utf-8") as f:
+            for lineno, raw in enumerate(f, 1):
+                line = raw.rstrip("\n")
+                if not line or line.lstrip().startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 5:
+                    sys.exit(result("error", "profile_signature_policy_malformed", True, policy_line=lineno, signers=seen))
+                pg, role, signer_pattern, required, reason = parts[:5]
+                if role not in allowed_roles:
+                    sys.exit(result("error", "profile_signature_policy_malformed", True, policy_line=lineno, policy_error="invalid_role", signers=seen))
+                if required != "required":
+                    continue
+                if not fnmatch.fnmatch(profile_name, pg):
+                    continue
+                policy_rules.append({"line": lineno, "role": role, "signer_pattern": signer_pattern, "reason": reason})
+    except OSError:
+        sys.exit(result("error", "profile_signature_policy_unreadable", True, signers=seen))
+    for rule in policy_rules:
+        role = rule["role"]
+        pattern = rule["signer_pattern"]
+        if not any(sig_role == role and fnmatch.fnmatch(signer, pattern) for signer, sig_role in roles):
+            missing.append(rule)
+
+if missing:
+    sys.exit(result("deny", "required_signature_missing", True, signers=seen, missing_required=missing, required_policy_count=len(policy_rules), signature_count=len(seen)))
+
+lookup_failures = []
+lookup_records = []
+for signer in seen:
+    lookup = key_lookup(signer["signer"], "profile.sign", profile_name)
+    signer["key_provider_decision"] = lookup.get("decision")
+    signer["key_provider_reason"] = lookup.get("reason")
+    signer["public_key_ref"] = lookup.get("public_key_ref", "")
+    lookup_records.append(lookup)
+    if lookup.get("decision") != "allow":
+        lookup_failures.append({
+            "signer": signer["signer"],
+            "role": signer["role"],
+            "decision": lookup.get("decision"),
+            "reason": lookup.get("reason"),
+            "provider": lookup.get("provider"),
+        })
+
+if lookup_failures:
+    sys.exit(result("deny", "key_provider_trust_not_satisfied", True, signers=seen, key_provider_lookups=lookup_records, key_provider_failures=lookup_failures, key_provider_consulted=True, required_policy_count=len(policy_rules), signature_count=len(seen)))
+
+sys.exit(result("allow", "profile_signatures_file_verifier_valid", False, signers=seen, key_provider_lookups=lookup_records, key_provider_consulted=True, required_policy_count=len(policy_rules), signature_count=len(seen)))
+PYSIGVERIFY
+}
+
+_queue_profile_multisig_command() {
+    local sub="${1:-help}"
+    shift || true
+    case "$sub" in
+        help|-h|--help) _queue_profile_multisig_help ;;
+        schema|example) _queue_profile_multisig_schema ;;
+        roles|signer-roles) _queue_profile_multisig_roles ;;
+        required-policy-example|policy-example) _queue_profile_multisig_policy_example ;;
+        verify) _queue_profile_multisig_verify "$@" ;;
+        explain) _queue_profile_multisig_verify "$@" --explain ;;
+        *) echo "Usage: queue profile-signature help|schema|roles|verify|explain|required-policy-example" >&2; return 2 ;;
+    esac
+}
+
 queue() {
     local dryrun=0
 
@@ -15423,6 +16699,18 @@ queue() {
 
         ask|ai-ask|advisory|advise)
             _queue_ai_ask_command "$@"
+            ;;
+
+        acl|access-control)
+            _queue_acl_command "$@"
+            ;;
+
+        key-provider|keyprovider|trust-provider|trustprovider)
+            _queue_key_provider_command "$@"
+            ;;
+
+        profile-signature|profile-signatures|profile-sig|profile-multisig|multisig)
+            _queue_profile_multisig_command "$@"
             ;;
 
         version|--version|-V)

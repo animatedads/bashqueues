@@ -6,7 +6,7 @@ cd "$ROOT"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.11"' queuebash.sh || fail "version not bumped to 0.18.11"
+grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail "version not bumped to 0.18.22"
 grep -q '_queue_itsm_emit_contract_event' queuebash.sh || fail "missing ITSM contract emitter"
 grep -q '_queue_itsm_command' queuebash.sh || fail "missing queue itsm command handler"
 grep -q 'queuebash.reporter.itsm_event.v1' queuebash.sh || fail "missing ITSM event schema"

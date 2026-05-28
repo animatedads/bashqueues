@@ -1,0 +1,24 @@
+{
+  "schema": "queuebash.profile_signatures.v1",
+  "profile": "goodrexx",
+  "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "signatures": [
+    {
+      "signer": "self:hc3",
+      "role": "author",
+      "alg": "ed25519",
+      "public_key_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "signature_b64": "ZmFrZS1zaWduYXR1cmU=",
+      "signed_at": "2026-05-27T12:00:00Z",
+      "key_provider_ref": "file:self:hc3:profile.sign:goodrexx"
+    },
+    {
+      "signer": "team:security-review",
+      "role": "reviewer",
+      "alg": "ed25519",
+      "public_key_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "signature_b64": "ZmFrZS1yZXZpZXctc2lnbmF0dXJl",
+      "signed_at": "2026-05-27T12:30:00Z"
+    }
+  ]
+}

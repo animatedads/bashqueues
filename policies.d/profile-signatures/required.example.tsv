@@ -1,0 +1,5 @@
+# profile_glob<TAB>role<TAB>signer_pattern<TAB>required<TAB>reason
+*	author	self:*	required	profile must have an author signature
+*	reviewer	team:security-review	required	security team review required
+prod-*	approver	org:bashqueues	required	production profiles require org approval
+vendor-*	countersigner	org:bashqueues	required	external vendor signatures need local countersign

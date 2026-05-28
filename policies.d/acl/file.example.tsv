@@ -1,0 +1,6 @@
+# subject<TAB>operation<TAB>resource<TAB>decision<TAB>reason
+hc3	job.submit	*	allow	local user may submit jobs
+hc3	ai.ask	*	allow	local user may ask AI
+hc3	ai.context.queue_status	*	allow	local user may expose queue status
+hc3	dev.patch	*	deny	dev patch requires explicit admin
+*	profile.approve	*	deny	profile approval denied by default

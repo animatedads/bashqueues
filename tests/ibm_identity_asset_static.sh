@@ -9,7 +9,7 @@ grep -q 'ibm_identity:target_region_allowed' assets.d/ibm_identity.sh || fail 'm
 grep -q 'QUEUEBASH_IBM_REGION' assets.d/ibm_identity.sh || fail 'missing QUEUEBASH_IBM_REGION support'
 grep -q 'QUEUEBASH_IBM_ACCOUNT_ID' assets.d/ibm_identity.sh || fail 'missing account id support'
 grep -q 'tool_missing=ibmcloud' assets.d/ibm_identity.sh || fail 'missing fail-closed missing CLI message'
-grep -q 'QUEUEBASH_VERSION="0.18.11"' queuebash.sh || fail 'version not bumped to 0.18.11'
+grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
 
 # Smoke the asset without live IBM credentials by using a fake ibmcloud binary.
 tmp="$(mktemp -d)"

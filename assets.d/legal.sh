@@ -11,7 +11,7 @@ FACILITIES
 
 queue_asset_hints() {
     cat <<'EOF_HINTS'
-legal:retention_respected	target=dataset-or-case-id	params=registry_file=/path effect=readonly|export|destructive|delete|archive now=YYYY-MM-DD allow_user_registry=1	example=queue_class_shared_asset legal retention_respected dataset:case-123 effect=destructive registry_file=/etc/bashqueues/legal_registry.tsv	notes=Registry-backed; does not trust user-supplied JOB_LEGAL_CLASS as authority.
+legal:retention_respected	target=dataset-or-case-id	params=registry_file=/path effect=readonly|export|destructive|delete|archive now=YYYY-MM-DD allow_user_registry=1	example=queue_class_shared_asset legal retention_respected dataset:case-123 effect=destructive registry_file=/etc/queuebash/legal_registry.tsv	notes=Registry-backed; does not trust user-supplied JOB_LEGAL_CLASS as authority.
 legal:jurisdiction_allowed	target=dataset-or-case-id	params=registry_file=/path worker_jurisdiction=UK_DPA allow_user_registry=1	example=queue_class_shared_asset legal jurisdiction_allowed dataset:case-123 worker_jurisdiction=UK_DPA	notes=Allows empty/*/any scopes; otherwise worker jurisdiction must match one listed registry scope.
 EOF_HINTS
 }
@@ -32,12 +32,12 @@ _queue_asset_legal_default_registry() {
         printf '%s\n' "$QUEUEBASH_LEGAL_REGISTRY"
     elif [[ -n "${QUEUEBASH_ROOT:-}" && -f "$QUEUEBASH_ROOT/policies.d/legal_registry.tsv" ]]; then
         printf '%s\n' "$QUEUEBASH_ROOT/policies.d/legal_registry.tsv"
-    elif [[ -f /etc/bashqueues/legal_registry.tsv ]]; then
-        printf '%s\n' /etc/bashqueues/legal_registry.tsv
-    elif [[ -f /etc/bashqueues/policies.d/legal-registry/default.tsv ]]; then
-        printf '%s\n' /etc/bashqueues/policies.d/legal-registry/default.tsv
+    elif [[ -f /etc/queuebash/legal_registry.tsv ]]; then
+        printf '%s\n' /etc/queuebash/legal_registry.tsv
+    elif [[ -f /etc/queuebash/policies.d/legal-registry/default.tsv ]]; then
+        printf '%s\n' /etc/queuebash/policies.d/legal-registry/default.tsv
     else
-        printf '%s\n' /etc/bashqueues/legal_registry.tsv
+        printf '%s\n' /etc/queuebash/legal_registry.tsv
     fi
 }
 

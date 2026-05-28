@@ -1,0 +1,17 @@
+{
+  "schema": "queuebash.ibm_finops_cache.v1",
+  "generated_at_epoch": 1790000000,
+  "provider": "ibm",
+  "region": "eu-gb",
+  "account_id_sha256": "sha256:redacted",
+  "spend": {
+    "account": {
+      "month": 123.45
+    }
+  },
+  "budgets": {
+    "ibm-finreg": {
+      "remaining": 2500.00
+    }
+  }
+}

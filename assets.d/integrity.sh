@@ -18,8 +18,8 @@ FACILITIES
 queue_asset_hints() {
     cat <<'EOF_HINTS'
 integrity:file_sha256	target=file path	params=sha256=HEX		example=queue_class_shared_asset integrity file_sha256 /opt/jobs/month_end.sh sha256=abc123...	notes=Strict single-file immutable payload check.
-integrity:manifest_verified	target=manifest path	params=allow_user_manifest=0|1		example=queue_class_shared_asset integrity manifest_verified /etc/bashqueues/manifests/month_end.manifest	notes=Manifest lines may be '<sha256> <path>' or 'sha256 <path> <hash>'. Blank lines and # comments are ignored.
-integrity:tree_manifest_verified	target=tree root	params=manifest=/path/to/manifest allow_user_manifest=0|1		example=queue_class_shared_asset integrity tree_manifest_verified /opt/batch/month_end manifest=/etc/bashqueues/manifests/month_end.tree	notes=Relative manifest paths are resolved under the tree root; absolute paths must remain inside the tree.
+integrity:manifest_verified	target=manifest path	params=allow_user_manifest=0|1		example=queue_class_shared_asset integrity manifest_verified /etc/queuebash/manifests/month_end.manifest	notes=Manifest lines may be '<sha256> <path>' or 'sha256 <path> <hash>'. Blank lines and # comments are ignored.
+integrity:tree_manifest_verified	target=tree root	params=manifest=/path/to/manifest allow_user_manifest=0|1		example=queue_class_shared_asset integrity tree_manifest_verified /opt/batch/month_end manifest=/etc/queuebash/manifests/month_end.tree	notes=Relative manifest paths are resolved under the tree root; absolute paths must remain inside the tree.
 EOF_HINTS
 }
 

@@ -125,3 +125,42 @@ Use current bashqueues paths:
 ```
 
 Do not use legacy `legacy system policy namespace` namespace in new IBM policy examples.
+
+## 0.18.12 IBM FinOps, legal, and integrity contract
+
+0.18.12 adds the IBM FinOps/legal/integrity layer without introducing live IBM
+API calls in the worker preflight path. The contract is intentionally local and
+cache-backed:
+
+- `assets.d/ibm_finops.sh` reads a local IBM FinOps cache and health file.
+- `ibm_finops:cost_cache_fresh` requires the local cache to be recent.
+- `ibm_finops:budget_remaining` checks a named budget remaining value.
+- `ibm_finops:spend_below` checks cached spend for a scope/period.
+- `ibm_finops:anomaly_free` blocks on cached FinOps anomaly severity.
+
+The default example paths are canonical queuebash paths:
+
+```text
+/etc/queuebash/finops/ibm_cost_cache.json
+/etc/queuebash/finops/ibm_finops.health
+/etc/queuebash/legal_registry.tsv
+/etc/queuebash/manifests/ibm_finreg.manifest
+```
+
+The cache schema is documented in `policies.d/finops/ibm.env.example`, with
+sample files in `examples/ibm/`. A future collector may populate these files
+from IBM billing/cost APIs, but 0.18.12 only defines the gate contract and local
+cache semantics.
+
+`CLOUD_IBM_FINREG` and `CLOUD_IBM_LEGAL_COMPLIANCE` now include IBM FinOps cache
+health gates alongside the IBM identity, sovereignty, legal, and integrity gates.
+This is a template posture: sites should copy the class and replace dataset IDs,
+registry paths, manifests, budgets, and spend thresholds with local policy.
+
+Still out of scope for this release:
+
+- IBM Cloud Logs / Activity Tracker reporter integration
+- IBM HPCS key-provider contract
+- IBM Watson advisory provider
+- IBM Satellite worker identity
+- live IBM FinOps scraper/collector

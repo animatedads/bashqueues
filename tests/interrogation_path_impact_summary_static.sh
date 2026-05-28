@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.11"' queuebash.sh || fail 'version not bumped to 0.18.11'
+grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
 grep -q 'PROFILE_EFFECTIVE_USER' bin/queue-interrogate || fail 'effective user not captured'
 grep -q 'PROFILE_ENV_USER' bin/queue-interrogate || fail 'env user not captured'
 grep -q 'def path_impact_summary' bin/queue-interrogate-compile || fail 'path impact helper missing'
