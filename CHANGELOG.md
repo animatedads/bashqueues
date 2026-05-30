@@ -1,5 +1,11 @@
 # 0.18.62 - BOB_MERGER remote-admin transaction plan/apply/rollback merge
 
+## 0.18.65 - BOB_MERGER QBTEST wave3-wave8 function coverage
+
+- Added embedded QBTEST coverage from Bob13 wave3/wave5, wave6/wave7, and wave8 by transplanting QBTEST blocks onto current functions rather than applying stale whole-file queuebash snapshots.
+- Preserved 0.18.62 remote-admin transaction plan/apply/rollback functionality and the fake-QBTEST-removal rule.
+
+
 - Merge Bob10 remote-admin plan/apply/rollback payload under the current merger version identity.
 - Add ACL gates for `remote-admin.plan.read`, `remote-admin.plan.write`, `remote-admin.plan.apply`, `remote-admin.rollback.read`, and `remote-admin.rollback.apply`.
 - Re-check underlying operation ACLs during plan apply, preserving `remote-admin.acl.write` as the crown-jewel ACL permission.

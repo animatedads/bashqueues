@@ -1,5 +1,10 @@
 # 0.18.62 BOB_MERGER remote-admin transaction plan/apply/rollback merge
 
+## 0.18.65 BOB_MERGER QBTEST wave3-wave8 function coverage
+
+Merged Bob13 QBTEST wave3/wave5, wave6/wave7, and wave8 function-level embedded tests by extracting QBTEST blocks from patchset queuebash.sh files and reapplying them against the matching functions on the current merger head. Preserves remote-admin transaction plan/apply/rollback work and avoids stale whole-file queuebash overwrite.
+
+
 Merges Bob10 remote-admin transaction plan/apply/rollback functionality onto the accepted 0.18.61 QBTEST wave1 base. Adds typed, ACL-gated `queue remote-admin` plan creation/show, plan apply, rollback list/show/apply, per-operation ACL re-check during apply, and local rollback snapshots. Secrets remain excluded from plans; no generic editor, arbitrary shell, secret disclosure, queue dispatch refactor, or live remote mutation path is introduced.
 
 # 0.18.61 BOB_MERGER QBTEST wave1 embedded coverage merge
