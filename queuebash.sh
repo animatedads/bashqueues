@@ -652,6 +652,10 @@ _queue_pending_job_files() {
 
     shopt -u nullglob
 }
+# QBTEST:BEGIN name=pending-job-files function=_queue_pending_job_files language=bash
+# QBTEST:B64
+# cm9vdD0iJChfcXVldWVfcm9vdCkiCm1rZGlyIC1wICIkcm9vdC9wZW5kaW5nIgojIFNob3VsZCByZXR1cm4gYSBsaXN0IChwb3NzaWJseSBlbXB0eSkgd2l0aG91dCBlcnJvcgpvdXQ9IiQoX3F1ZXVlX3BlbmRpbmdfam9iX2ZpbGVzICIkcm9vdCIgfHwgdHJ1ZSkiCiMgSnVzdCB2ZXJpZnkgaXQgZG9lc24ndCBjcmFzaDsgcmVzdWx0IG1heSBiZSBlbXB0eQpbWyAiJD8iID09ICIwIiB8fCAteiAiJG91dCIgXV0=
+# QBTEST:END
 
 _queue_job_pending_path_by_id() {
     local id="$1"
@@ -1452,6 +1456,10 @@ _queue_class_list_names() {
     for f in "$root/classes"/*.env; do [[ -f "$f" ]] && basename "$f" .env; done | sort
     shopt -u nullglob
 }
+# QBTEST:BEGIN name=class-list-names function=_queue_class_list_names language=bash
+# QBTEST:B64
+# cm9vdD0iJChfcXVldWVfcm9vdCkiCm1rZGlyIC1wICIkcm9vdC9jbGFzc2VzIgplY2hvICIiID4gIiRyb290L2NsYXNzZXMvdzExYWxwaGEuZW52IgplY2hvICIiID4gIiRyb290L2NsYXNzZXMvdzExYmV0YS5lbnYiCm91dD0iJChfcXVldWVfY2xhc3NfbGlzdF9uYW1lcykiCltbICIkb3V0IiA9PSAqdzExYWxwaGEqIF1dCltbICIkb3V0IiA9PSAqdzExYmV0YSogXV0Kcm0gLWYgIiRyb290L2NsYXNzZXMvdzExYWxwaGEuZW52IiAiJHJvb3QvY2xhc3Nlcy93MTFiZXRhLmVudiI=
+# QBTEST:END
 
 
 _queue_class_validate_no_legacy_assets() {
@@ -1544,6 +1552,10 @@ _queue_class_delete() {
     { printf 'class=%q\n' "$class"; printf 'archive=%q\n' "$archive"; printf 'original=%q\n' "$dst"; printf 'archived_at=%q\n' "$(_queue_now_iso)"; } > "$meta"
     echo "Archived queue class: $dst"; echo "Archive: $archive"
 }
+# QBTEST:BEGIN name=class-delete function=_queue_class_delete language=bash
+# QBTEST:B64
+# cm9vdD0iJChfcXVldWVfcm9vdCkiCm1rZGlyIC1wICIkcm9vdC9jbGFzc2VzIgpjYXQgPiAiJHJvb3QvY2xhc3Nlcy93MTFkZWxfdGVzdC5lbnYiIDw8J0VOVkVPRicKQ0xBU1NfTkFNRT13MTFkZWxfdGVzdApDTEFTU19NQVhfQ09OQ1VSUkVOVD0xCkVOVkVPRgpfcXVldWVfY2xhc3NfZGVsZXRlIHcxMWRlbF90ZXN0CiMgQWZ0ZXIgZGVsZXRlLCBjbGFzcyBmaWxlIHNob3VsZCBiZSBnb25lCltbICEgLWYgIiRyb290L2NsYXNzZXMvdzExZGVsX3Rlc3QuZW52IiBdXQojIEFyY2hpdmUgc2hvdWxkIGV4aXN0CmFyY2hkaXI9IiQoX3F1ZXVlX2NsYXNzX2FyY2hpdmVfZGlyKSIKW1sgLW4gIiQobHMgIiRhcmNoZGlyIi93MTFkZWxfdGVzdC4qLmVudiAyPi9kZXYvbnVsbCB8IGhlYWQgLTEpIiBdXQpybSAtZiAiJGFyY2hkaXIiL3cxMWRlbF90ZXN0LiouZW52ICIkYXJjaGRpciIvdzExZGVsX3Rlc3QuKi5tZXRh
+# QBTEST:END
 
 _queue_class_latest_archive() { local class="$1" dir="$(_queue_class_archive_dir)"; ls -1t "$dir/${class}".*.env 2>/dev/null | head -1 || true; }
 # QBTEST:BEGIN name=class-latest-archive function=_queue_class_latest_archive language=bash
@@ -1561,6 +1573,10 @@ _queue_class_undelete() {
     tmp="$root/classes/.${class}.undelete.$$"; cp "$archive" "$tmp" || { rm -f "$tmp"; return 1; }; mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
     echo "Restored archived queue class: $dst"; echo "Restored from: $archive"
 }
+# QBTEST:BEGIN name=class-undelete function=_queue_class_undelete language=bash
+# QBTEST:B64
+# cm9vdD0iJChfcXVldWVfcm9vdCkiCmFyY2hkaXI9IiQoX3F1ZXVlX2NsYXNzX2FyY2hpdmVfZGlyKSIKbWtkaXIgLXAgIiRyb290L2NsYXNzZXMiICIkYXJjaGRpciIKIyBDcmVhdGUgYSB2YWxpZCBhcmNoaXZlCmNhdCA+ICIkYXJjaGRpci93MTF1bmRlbC4yMDI2MDEwMV8xMjAwMDBfMDAwMDAwMDAwLmVudiIgPDwnRU5WRU9GJwpDTEFTU19OQU1FPXcxMXVuZGVsCkNMQVNTX01BWF9DT05DVVJSRU5UPTEKRU5WRU9GCltbICEgLWYgIiRyb290L2NsYXNzZXMvdzExdW5kZWwuZW52IiBdXQpfcXVldWVfY2xhc3NfdW5kZWxldGUgdzExdW5kZWwgIiRhcmNoZGlyL3cxMXVuZGVsLjIwMjYwMTAxXzEyMDAwMF8wMDAwMDAwMDAuZW52IgpbWyAtZiAiJHJvb3QvY2xhc3Nlcy93MTF1bmRlbC5lbnYiIF1dCnJtIC1mICIkcm9vdC9jbGFzc2VzL3cxMXVuZGVsLmVudiIgIiRhcmNoZGlyL3cxMXVuZGVsLjIwMjYwMTAxXzEyMDAwMF8wMDAwMDAwMDAuZW52Ig==
+# QBTEST:END
 
 _queue_class_backups() { local class="${1:-}" dir="$(_queue_class_backup_dir)"; mkdir -p "$dir"; if [[ -n "$class" ]]; then ls -1t "$dir/${class}".*.env 2>/dev/null || true; else ls -1t "$dir"/*.env 2>/dev/null || true; fi; }
 # QBTEST:BEGIN name=class-backups function=_queue_class_backups language=bash
@@ -3123,6 +3139,10 @@ _queue_class_claim_count() {
     safe="$(_queue_class_safe_token "$class")"
     find "$root/claims/classes" -maxdepth 1 -type d -name "$safe.*.claim" 2>/dev/null | wc -l | tr -d ' '
 }
+# QBTEST:BEGIN name=class-claim-count function=_queue_class_claim_count language=bash
+# QBTEST:B64
+# cm9vdD0iJChfcXVldWVfcm9vdCkiCnNhZmU9IiQoX3F1ZXVlX2NsYXNzX3NhZmVfdG9rZW4gdGVzdGNsc193MTFfY2MgfHwgdHJ1ZSkiCltbIC1uICIkc2FmZSIgXV0KY2xhaW1kaXI9IiRyb290L2NsYWltcy9jbGFzc2VzIgpta2RpciAtcCAiJGNsYWltZGlyIgojIE5vIGNsYWltcyBpbml0aWFsbHkKY250PSIkKF9xdWV1ZV9jbGFzc19jbGFpbV9jb3VudCB0ZXN0Y2xzX3cxMV9jYykiCltbICIkY250IiA9fiBeWzAtOV0rJCBdXQojIENyZWF0ZSBhIGZha2UgY2xhaW0gZGlyCm1rZGlyIC1wICIkY2xhaW1kaXIvJHtzYWZlfS5xaWQxLmNsYWltIgpjbnQyPSIkKF9xdWV1ZV9jbGFzc19jbGFpbV9jb3VudCB0ZXN0Y2xzX3cxMV9jYykiCltbICIkY250MiIgLWdlIDEgXV0Kcm0gLXJmICIkY2xhaW1kaXIvJHtzYWZlfS5xaWQxLmNsYWltIg==
+# QBTEST:END
 
 _queue_asset_has_any_claim() {
     local asset="$1" root safe
@@ -3250,6 +3270,10 @@ _queue_selected_user_for_display() {
 _queue_draft_dir() {
     printf '%s/drafts\n' "$(_queue_root)"
 }
+# QBTEST:BEGIN name=draft-dir function=_queue_draft_dir language=bash
+# QBTEST:B64
+# ZD0iJChfcXVldWVfZHJhZnRfZGlyKSIKW1sgLW4gIiRkIiBdXQpbWyAiJGQiID09ICpkcmFmdHMgXV0=
+# QBTEST:END
 
 _queue_draft_archive_dir() {
     printf '%s/drafts/.archive\n' "$(_queue_root)"
@@ -3258,6 +3282,10 @@ _queue_draft_archive_dir() {
 _queue_draft_id() {
     printf 'DRAFT-%s-%06d\n' "$(date +%Y%m%d_%H%M%S 2>/dev/null || date +%s)" "$(( RANDOM % 1000000 ))"
 }
+# QBTEST:BEGIN name=draft-id function=_queue_draft_id language=bash
+# QBTEST:B64
+# aWQ9IiQoX3F1ZXVlX2RyYWZ0X2lkKSIKW1sgLW4gIiRpZCIgXV0KW1sgIiRpZCIgPT0gRFJBRlQtKiBdXQppZDI9IiQoX3F1ZXVlX2RyYWZ0X2lkKSIKW1sgIiRpZCIgIT0gIiRpZDIiIF1d
+# QBTEST:END
 
 _queue_draft_file() {
     local id="$1"
@@ -5948,11 +5976,19 @@ _queue_report_event() {
 _queue_itsm_log_path() {
     printf '%s\n' "${QUEUEBASH_ITSM_EVENT_LOG:-$(_queue_root)/logs/itsm-events.jsonl}"
 }
+# QBTEST:BEGIN name=itsm-log-path function=_queue_itsm_log_path language=bash
+# QBTEST:B64
+# cD0iJChfcXVldWVfaXRzbV9sb2dfcGF0aCkiCltbIC1uICIkcCIgXV0KW1sgIiRwIiA9PSAqaXRzbSogXV0KW1sgIiRwIiA9PSAqLmpzb25sIF1dCmV4cG9ydCBRVUVVRUJBU0hfSVRTTV9FVkVOVF9MT0c9L3RtcC90ZXN0X2l0c20uanNvbmwKW1sgIiQoX3F1ZXVlX2l0c21fbG9nX3BhdGgpIiA9PSAiL3RtcC90ZXN0X2l0c20uanNvbmwiIF1dCnVuc2V0IFFVRVVFQkFTSF9JVFNNX0VWRU5UX0xPRw==
+# QBTEST:END
 
 _queue_itsm_enabled() {
     [[ "${QUEUEBASH_ITSM_ENABLED:-0}" == "1" ]] || return 1
     return 0
 }
+# QBTEST:BEGIN name=itsm-enabled function=_queue_itsm_enabled language=bash
+# QBTEST:B64
+# dW5zZXQgUVVFVUVCQVNIX0lUU01fRU5BQkxFRAohIF9xdWV1ZV9pdHNtX2VuYWJsZWQKZXhwb3J0IFFVRVVFQkFTSF9JVFNNX0VOQUJMRUQ9MQpfcXVldWVfaXRzbV9lbmFibGVkCmV4cG9ydCBRVUVVRUJBU0hfSVRTTV9FTkFCTEVEPTAKISBfcXVldWVfaXRzbV9lbmFibGVkCnVuc2V0IFFVRVVFQkFTSF9JVFNNX0VOQUJMRUQ=
+# QBTEST:END
 
 _queue_itsm_csv_has() {
     local list="${1:-}" needle="${2:-}" item
@@ -5964,12 +6000,20 @@ _queue_itsm_csv_has() {
     done
     return 1
 }
+# QBTEST:BEGIN name=itsm-csv-has function=_queue_itsm_csv_has language=bash
+# QBTEST:B64
+# X3F1ZXVlX2l0c21fY3N2X2hhcyAiYSxiLGMiICJiIgpfcXVldWVfaXRzbV9jc3ZfaGFzICJmb28sYmFyIiAiZm9vIgpfcXVldWVfaXRzbV9jc3ZfaGFzICIqLG90aGVyIiAiYW55dGhpbmciCiEgX3F1ZXVlX2l0c21fY3N2X2hhcyAiYSxiLGMiICJkIgohIF9xdWV1ZV9pdHNtX2Nzdl9oYXMgImEsYiIgIiI=
+# QBTEST:END
 
 _queue_itsm_event_allowed() {
     local event="${1:-}"
     local events="${QUEUEBASH_ITSM_EVENTS:-failed,policy_blocked,integrity_violation,ai_safety_alert,ai_policy_bypass_attempt,ai_self_harm_or_distress_alert,ai_coercion_alert,ai_abuse_alert,finops_anomaly,legal_event}"
     _queue_itsm_csv_has "$events" "$event"
 }
+# QBTEST:BEGIN name=itsm-event-allowed function=_queue_itsm_event_allowed language=bash
+# QBTEST:B64
+# X3F1ZXVlX2l0c21fZXZlbnRfYWxsb3dlZCAiZmFpbGVkIgpfcXVldWVfaXRzbV9ldmVudF9hbGxvd2VkICJwb2xpY3lfYmxvY2tlZCIKX3F1ZXVlX2l0c21fZXZlbnRfYWxsb3dlZCAiYWlfc2FmZXR5X2FsZXJ0IgohIF9xdWV1ZV9pdHNtX2V2ZW50X2FsbG93ZWQgIm5vdF9hX3JlYWxfZXZlbnRfeHl6IgohIF9xdWV1ZV9pdHNtX2V2ZW50X2FsbG93ZWQgIiI=
+# QBTEST:END
 
 _queue_itsm_correlation_key() {
     local material="${1:-}"
@@ -5979,6 +6023,10 @@ _queue_itsm_correlation_key() {
         printf 'sha256:unavailable\n'
     fi
 }
+# QBTEST:BEGIN name=itsm-correlation-key function=_queue_itsm_correlation_key language=bash
+# QBTEST:B64
+# az0iJChfcXVldWVfaXRzbV9jb3JyZWxhdGlvbl9rZXkgInRlc3RtYXRlcmlhbCIpIgpbWyAiJGsiID09IHNoYTI1NjoqIF1dCltbICIkeyNrfSIgLWd0IDEwIF1dCmsyPSIkKF9xdWV1ZV9pdHNtX2NvcnJlbGF0aW9uX2tleSAidGVzdG1hdGVyaWFsIikiCltbICIkayIgPT0gIiRrMiIgXV0KazM9IiQoX3F1ZXVlX2l0c21fY29ycmVsYXRpb25fa2V5ICJkaWZmZXJlbnQiKSIKW1sgIiRrIiAhPSAiJGszIiBdXQ==
+# QBTEST:END
 
 _queue_itsm_emit_contract_event() {
     local event="$1" severity="${2:-medium}" source="${3:-queue}" subject="${4:-}" job_id="${5:-}" class_name="${6:-}" correlation_key="${7:-}" summary="${8:-}" detail_redacted="${9:-true}"
@@ -6609,6 +6657,10 @@ _queue_job_log_max_bytes() {
     [[ "$v" =~ ^[0-9]+$ ]] || v=52428800
     printf '%s\n' "$v"
 }
+# QBTEST:BEGIN name=job-log-max-bytes function=_queue_job_log_max_bytes language=bash
+# QBTEST:B64
+# dG1wPSQobWt0ZW1wIC0tc3VmZml4PS5qb2IpCiMgRGVmYXVsdCB3aGVuIGtleSBtaXNzaW5nCm91dD0iJChfcXVldWVfam9iX2xvZ19tYXhfYnl0ZXMgIiR0bXAiKSIKW1sgIiRvdXQiID1+IF5bMC05XSskIF1dCiMgQ3VzdG9tIHZhbHVlCnByaW50ZiAnTUFYX0xPR19TSVpFX0JZVEVTPTEwNDg1NzZcbicgPiAiJHRtcCIKW1sgIiQoX3F1ZXVlX2pvYl9sb2dfbWF4X2J5dGVzICIkdG1wIikiID09ICIxMDQ4NTc2IiBdXQojIEludmFsaWQgdmFsdWUg4oaSIGRlZmF1bHQKcHJpbnRmICdNQVhfTE9HX1NJWkVfQllURVM9bm90YW51bWJlclxuJyA+ICIkdG1wIgpvdXQyPSIkKF9xdWV1ZV9qb2JfbG9nX21heF9ieXRlcyAiJHRtcCIpIgpbWyAiJG91dDIiID1+IF5bMC05XSskIF1dCnJtIC1mICIkdG1wIg==
+# QBTEST:END
 
 _queue_parse_size_to_bytes() {
     local v="$1"
@@ -9766,6 +9818,10 @@ _queue_job_id_from_file() {
     local f="$1"
     grep '^JOB_ID=' "$f" 2>/dev/null | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null
 }
+# QBTEST:BEGIN name=job-id-from-file function=_queue_job_id_from_file language=bash
+# QBTEST:B64
+# dG1wPSQobWt0ZW1wIC0tc3VmZml4PS5qb2IpCnByaW50ZiAnSk9CX0lEPWFiYzEyM1xuSk9CX05BTUU9dGVzdFxuJyA+ICIkdG1wIgppZD0iJChfcXVldWVfam9iX2lkX2Zyb21fZmlsZSAiJHRtcCIpIgpbWyAiJGlkIiA9PSAiYWJjMTIzIiBdXQojIE1pc3Npbmcga2V5IOKGkiBlbXB0eQp0bXAyPSQobWt0ZW1wIC0tc3VmZml4PS5qb2IpCnByaW50ZiAnSk9CX05BTUU9dGVzdFxuJyA+ICIkdG1wMiIKb3V0PSIkKF9xdWV1ZV9qb2JfaWRfZnJvbV9maWxlICIkdG1wMiIgfHwgdHJ1ZSkiCltbIC16ICIkb3V0IiBdXQpybSAtZiAiJHRtcCIgIiR0bXAyIg==
+# QBTEST:END
 
 _queue_health_running_is_stale() {
     local f="$1"
@@ -10550,12 +10606,20 @@ _queue_log_plain_path() {
     local root="$(_queue_root)"
     printf '%s/logs/%s.log\n' "$root" "$id"
 }
+# QBTEST:BEGIN name=log-plain-path function=_queue_log_plain_path language=bash
+# QBTEST:B64
+# cD0iJChfcXVldWVfbG9nX3BsYWluX3BhdGggImpvYmlkMTIzIikiCltbIC1uICIkcCIgXV0KW1sgIiRwIiA9PSAqbG9ncy9qb2JpZDEyMy5sb2cgXV0=
+# QBTEST:END
 
 _queue_log_gz_path() {
     local id="$1"
     local root="$(_queue_root)"
     printf '%s/logs/%s.log.gz\n' "$root" "$id"
 }
+# QBTEST:BEGIN name=log-gz-path function=_queue_log_gz_path language=bash
+# QBTEST:B64
+# cD0iJChfcXVldWVfbG9nX2d6X3BhdGggImpvYmlkMTIzIikiCltbIC1uICIkcCIgXV0KW1sgIiRwIiA9PSAqbG9ncy9qb2JpZDEyMy5sb2cuZ3ogXV0=
+# QBTEST:END
 
 _queue_job_stream_temp_cleanup() {
     local id="$1"
@@ -10705,6 +10769,10 @@ _queue_job_log_policy() {
         *) printf '%s\n' "stderr-only" ;;
     esac
 }
+# QBTEST:BEGIN name=job-log-policy function=_queue_job_log_policy language=bash
+# QBTEST:B64
+# dG1wPSQobWt0ZW1wIC0tc3VmZml4PS5qb2IpCiMgRGVmYXVsdCBwb2xpY3kKb3V0PSIkKF9xdWV1ZV9qb2JfbG9nX3BvbGljeSAiJHRtcCIpIgpbWyAtbiAiJG91dCIgXV0KIyBLbm93biB2YWx1ZXMKZm9yIHYgaW4gc3RkZXJyLW9ubHkgc3RkZXJyIGRyYWluIGtpbGwgYWxsb3c7IGRvCiAgICBwcmludGYgIkxPR19PVkVSRkxPV19QT0xJQ1k9JXNcbiIgIiR2IiA+ICIkdG1wIgogICAgW1sgIiQoX3F1ZXVlX2pvYl9sb2dfcG9saWN5ICIkdG1wIikiID09ICIkdiIgXV0KZG9uZQojIFVua25vd24g4oaSIHN0ZGVyci1vbmx5CnByaW50ZiAnTE9HX09WRVJGTE9XX1BPTElDWT11bmtub3duX3BvbGljeVxuJyA+ICIkdG1wIgpbWyAiJChfcXVldWVfam9iX2xvZ19wb2xpY3kgIiR0bXAiKSIgPT0gInN0ZGVyci1vbmx5IiBdXQpybSAtZiAiJHRtcCI=
+# QBTEST:END
 
 _queue_log_overflow_marker_path() {
     local id="$1"
@@ -10712,6 +10780,10 @@ _queue_log_overflow_marker_path() {
     local root="$(_queue_root)"
     printf '%s/logs/.%s.%s.suppressed\n' "$root" "$id" "$stream"
 }
+# QBTEST:BEGIN name=log-overflow-marker-path function=_queue_log_overflow_marker_path language=bash
+# QBTEST:B64
+# cD0iJChfcXVldWVfbG9nX292ZXJmbG93X21hcmtlcl9wYXRoICJqb2JpZDEyMyIgInN0ZG91dCIpIgpbWyAtbiAiJHAiIF1dCltbICIkcCIgPT0gKmpvYmlkMTIzKiBdXQpbWyAiJHAiID09ICpzdGRvdXQqIF1dCltbICIkcCIgPT0gKi5zdXBwcmVzc2VkIF1d
+# QBTEST:END
 
 _queue_mark_log_stream_suppressed() {
     local id="$1"
@@ -10902,6 +10974,10 @@ _queue_job_var_value() {
     local key="$2"
     grep "^${key}=" "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null
 }
+# QBTEST:BEGIN name=job-var-value function=_queue_job_var_value language=bash
+# QBTEST:B64
+# dG1wPSQobWt0ZW1wIC0tc3VmZml4PS5qb2IpCnByaW50ZiAnRk9PPWJhclxuQkFaPXF1eFxuJyA+ICIkdG1wIgpbWyAiJChfcXVldWVfam9iX3Zhcl92YWx1ZSAiJHRtcCIgRk9PKSIgPT0gImJhciIgXV0KW1sgIiQoX3F1ZXVlX2pvYl92YXJfdmFsdWUgIiR0bXAiIEJBWikiID09ICJxdXgiIF1dCm91dD0iJChfcXVldWVfam9iX3Zhcl92YWx1ZSAiJHRtcCIgTUlTU0lORyB8fCB0cnVlKSIKW1sgLXogIiRvdXQiIF1dCiMgTGFzdCB2YWx1ZSB3aW5zIHdpdGggZHVwbGljYXRlcwpwcmludGYgJ0RVUD1maXJzdFxuRFVQPXNlY29uZFxuJyA+PiAiJHRtcCIKW1sgIiQoX3F1ZXVlX2pvYl92YXJfdmFsdWUgIiR0bXAiIERVUCkiID09ICJzZWNvbmQiIF1dCnJtIC1mICIkdG1wIg==
+# QBTEST:END
 
 _queue_job_var_first_value() {
     local f="$1" key value
@@ -10915,6 +10991,10 @@ _queue_job_var_first_value() {
     done
     return 1
 }
+# QBTEST:BEGIN name=job-var-first-value function=_queue_job_var_first_value language=bash
+# QBTEST:B64
+# dG1wPSQobWt0ZW1wIC0tc3VmZml4PS5qb2IpCnByaW50ZiAnQUxQSEE9aGVsbG9cbkJFVEE9d29ybGRcbicgPiAiJHRtcCIKW1sgIiQoX3F1ZXVlX2pvYl92YXJfZmlyc3RfdmFsdWUgIiR0bXAiIEFMUEhBIEJFVEEpIiA9PSAiaGVsbG8iIF1dCltbICIkKF9xdWV1ZV9qb2JfdmFyX2ZpcnN0X3ZhbHVlICIkdG1wIiBNSVNTSU5HIEJFVEEpIiA9PSAid29ybGQiIF1dCiEgX3F1ZXVlX2pvYl92YXJfZmlyc3RfdmFsdWUgIiR0bXAiIE1JU1NJTkcgQUxTT19NSVNTSU5HIDI+L2Rldi9udWxsCnJtIC1mICIkdG1wIg==
+# QBTEST:END
 
 _queue_human_bytes() {
     local b="${1:-0}"
@@ -10995,6 +11075,10 @@ _queue_class_for_job_file() {
         printf '%s\n' "${JOB_CLASS:-${CLASS:-DEFAULT}}"
     )
 }
+# QBTEST:BEGIN name=class-for-job-file function=_queue_class_for_job_file language=bash
+# QBTEST:B64
+# dG1wPSQobWt0ZW1wIC0tc3VmZml4PS5qb2IpCnByaW50ZiAnSk9CX0NMQVNTPW15Y2xhc3NfdzExXG4nID4gIiR0bXAiCmM9IiQoX3F1ZXVlX2NsYXNzX2Zvcl9qb2JfZmlsZSAiJHRtcCIpIgpbWyAiJGMiID09ICJteWNsYXNzX3cxMSIgXV0KIyBGYWxscyBiYWNrIHRvIENMQVNTPSBpZiBKT0JfQ0xBU1MgbWlzc2luZwpwcmludGYgJ0NMQVNTPWZhbGxiYWNrX3cxMVxuJyA+ICIkdG1wIgpjMj0iJChfcXVldWVfY2xhc3NfZm9yX2pvYl9maWxlICIkdG1wIikiCltbICIkYzIiID09ICJmYWxsYmFja193MTEiIF1dCiMgTm8gY2xhc3Mg4oaSIERFRkFVTFQKOiA+ICIkdG1wIgpjMz0iJChfcXVldWVfY2xhc3NfZm9yX2pvYl9maWxlICIkdG1wIikiCltbICIkYzMiID09ICJERUZBVUxUIiBdXQpybSAtZiAiJHRtcCI=
+# QBTEST:END
 
 _queue_job_pending_dispatch_diagnose() {
     local f="$1"
@@ -14670,6 +14754,10 @@ EOF
 _queue_key_provider_registry_path() {
     printf '%s\n' "${QUEUEBASH_FILE_KEY_REGISTRY:-$(_queue_root)/policy/keys/key_registry.tsv}"
 }
+# QBTEST:BEGIN name=key-provider-registry-path function=_queue_key_provider_registry_path language=bash
+# QBTEST:B64
+# cD0iJChfcXVldWVfa2V5X3Byb3ZpZGVyX3JlZ2lzdHJ5X3BhdGgpIgpbWyAtbiAiJHAiIF1dCltbICIkcCIgPT0gKi50c3YgXV0KZXhwb3J0IFFVRVVFQkFTSF9GSUxFX0tFWV9SRUdJU1RSWT0vdG1wL3Rlc3RfcmVnaXN0cnkudHN2CltbICIkKF9xdWV1ZV9rZXlfcHJvdmlkZXJfcmVnaXN0cnlfcGF0aCkiID09ICIvdG1wL3Rlc3RfcmVnaXN0cnkudHN2IiBdXQp1bnNldCBRVUVVRUJBU0hfRklMRV9LRVlfUkVHSVNUUlk=
+# QBTEST:END
 
 _queue_key_provider_active() {
     case "${QUEUEBASH_KEY_PROVIDER:-}" in
@@ -14684,6 +14772,10 @@ _queue_key_provider_safe_field() {
     [[ -n "$v" ]] || return 1
     [[ "$v" != *$'\t'* && "$v" != *$'\n'* && "$v" != *$'\r'* ]]
 }
+# QBTEST:BEGIN name=key-provider-safe-field function=_queue_key_provider_safe_field language=bash
+# QBTEST:B64
+# X3F1ZXVlX2tleV9wcm92aWRlcl9zYWZlX2ZpZWxkICJoZWxsbyIKX3F1ZXVlX2tleV9wcm92aWRlcl9zYWZlX2ZpZWxkICJoYXMuZG90QGhvc3QiCiEgX3F1ZXVlX2tleV9wcm92aWRlcl9zYWZlX2ZpZWxkICIiCiEgX3F1ZXVlX2tleV9wcm92aWRlcl9zYWZlX2ZpZWxkICQnaGFzXHR0YWInCiEgX3F1ZXVlX2tleV9wcm92aWRlcl9zYWZlX2ZpZWxkICQnaGFzXG5uZXdsaW5lJw==
+# QBTEST:END
 
 _queue_key_provider_json() {
     local signer="${1:-}" operation="${2:-}" resource="${3:-}" decision="${4:-error}" reason="${5:-no_key_provider_active}"
