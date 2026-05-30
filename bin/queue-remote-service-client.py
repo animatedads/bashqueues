@@ -164,6 +164,195 @@ def show_service(name, json_out):
             print("%s=%s" % (k, v))
 
 
+def default_config_dir():
+    val = os.environ.get("QUEUE_REMOTE_CONFIG_DIR") or os.environ.get("QUEUEBASH_REMOTE_CONFIG_DIR")
+    if val:
+        return os.path.expanduser(val)
+    return os.path.join(queue_root(), "remote.d")
+
+
+def default_secret_dir():
+    val = os.environ.get("QUEUE_REMOTE_SECRET_DIR") or os.environ.get("QUEUEBASH_REMOTE_SECRET_DIR")
+    if val:
+        return os.path.expanduser(val)
+    return os.path.join(queue_root(), "secrets")
+
+
+def norm_url(url):
+    parsed = urllib.parse.urlparse(url)
+    if not parsed.scheme:
+        url = "http://" + url
+        parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise SystemExit("queue remote add: invalid --url; expected http(s)://host:port")
+    return url.rstrip("/")
+
+
+def env_quote(value):
+    value = str(value)
+    if re.match(r"^[A-Za-z0-9_./:@%+=,-]+$", value):
+        return value
+    return '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+
+def service_config_path(config_dir, service):
+    return os.path.join(os.path.expanduser(config_dir), service + ".env")
+
+
+def write_file_atomic(path, content, mode=0o600):
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, mode=0o700, exist_ok=True)
+    tmp = path + ".tmp.%s" % os.getpid()
+    with open(tmp, "w") as f:
+        f.write(content)
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
+
+
+def build_service_config(service, url, endpoint, client_id, key_id, secret_file, secret_env, ttl, timeout, allow_raw):
+    lines = [
+        "QUEUE_REMOTE_SERVICE=%s" % service,
+        "QUEUE_REMOTE_URL=%s" % env_quote(url),
+        "QUEUE_REMOTE_ENDPOINT=%s" % env_quote(endpoint),
+        "QUEUE_REMOTE_CLIENT_ID=%s" % env_quote(client_id),
+        "QUEUE_REMOTE_KEY_ID=%s" % env_quote(key_id),
+    ]
+    if secret_file:
+        lines.append("QUEUE_REMOTE_SECRET_FILE=%s" % env_quote(secret_file))
+    if secret_env:
+        lines.append("QUEUE_REMOTE_SECRET_ENV=%s" % env_quote(secret_env))
+    lines.extend([
+        "QUEUE_REMOTE_REQUEST_TTL_SECONDS=%s" % int(ttl),
+        "QUEUE_REMOTE_HTTP_TIMEOUT_SECONDS=%s" % int(timeout),
+        "QUEUE_REMOTE_ALLOW_RAW_OPERATIONS=%s" % ("1" if allow_raw else "0"),
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def add_service(argv, json_out):
+    if not argv:
+        raise SystemExit("queue remote add: missing service name")
+    service = argv[0]
+    if not valid_service_name(service):
+        raise SystemExit("queue remote add: invalid service name: %s" % service)
+    opts = {
+        "url": "",
+        "endpoint": DEFAULT_ENDPOINT,
+        "client_id": os.environ.get("USER", "queue-remote-client"),
+        "key_id": "default",
+        "secret": None,
+        "secret_file": "",
+        "secret_env": "",
+        "config_dir": default_config_dir(),
+        "secret_dir": default_secret_dir(),
+        "ttl": "60",
+        "timeout": "30",
+        "allow_raw": False,
+        "force": False,
+        "dry_run": False,
+    }
+    i = 1
+    while i < len(argv):
+        a = argv[i]
+        def need_value(name):
+            if i + 1 >= len(argv):
+                raise SystemExit("queue remote add: %s requires a value" % name)
+            return argv[i + 1]
+        if a == "--url":
+            opts["url"] = need_value(a); i += 2
+        elif a == "--endpoint":
+            opts["endpoint"] = need_value(a); i += 2
+        elif a == "--client-id":
+            opts["client_id"] = need_value(a); i += 2
+        elif a == "--key-id":
+            opts["key_id"] = need_value(a); i += 2
+        elif a == "--secret":
+            opts["secret"] = need_value(a); i += 2
+        elif a == "--secret-file":
+            opts["secret_file"] = os.path.expanduser(need_value(a)); i += 2
+        elif a == "--secret-env":
+            opts["secret_env"] = need_value(a); i += 2
+        elif a == "--config-dir":
+            opts["config_dir"] = os.path.expanduser(need_value(a)); i += 2
+        elif a == "--secret-dir":
+            opts["secret_dir"] = os.path.expanduser(need_value(a)); i += 2
+        elif a == "--ttl-seconds":
+            opts["ttl"] = need_value(a); i += 2
+        elif a == "--timeout-seconds":
+            opts["timeout"] = need_value(a); i += 2
+        elif a == "--allow-raw":
+            opts["allow_raw"] = True; i += 1
+        elif a == "--force":
+            opts["force"] = True; i += 1
+        elif a == "--dry-run":
+            opts["dry_run"] = True; i += 1
+        else:
+            raise SystemExit("queue remote add: unexpected argument: %s" % a)
+    if not opts["url"]:
+        raise SystemExit("queue remote add: --url is required")
+    url = norm_url(opts["url"])
+    endpoint = opts["endpoint"] or DEFAULT_ENDPOINT
+    if not endpoint.startswith("/"):
+        endpoint = "/" + endpoint
+    try:
+        ttl = int(opts["ttl"]); timeout = int(opts["timeout"])
+        if ttl <= 0 or timeout <= 0:
+            raise ValueError()
+    except Exception:
+        raise SystemExit("queue remote add: ttl/timeout must be positive integers")
+    if opts["secret"] and opts["secret_env"]:
+        raise SystemExit("queue remote add: use --secret or --secret-env, not both")
+    if opts["secret_file"] and opts["secret_env"]:
+        raise SystemExit("queue remote add: use --secret-file or --secret-env, not both")
+    secret_file = opts["secret_file"]
+    secret_written = False
+    if opts["secret"]:
+        if not secret_file:
+            secret_file = os.path.join(opts["secret_dir"], service + ".secret")
+        secret_written = True
+    elif not secret_file and not opts["secret_env"]:
+        raise SystemExit("queue remote add: provide --secret, --secret-file, or --secret-env")
+    cfg_path = service_config_path(opts["config_dir"], service)
+    if os.path.exists(cfg_path) and not opts["force"]:
+        raise SystemExit("queue remote add: config already exists: %s (use --force to replace)" % cfg_path)
+    content = build_service_config(service, url, endpoint, opts["client_id"], opts["key_id"], secret_file, opts["secret_env"], ttl, timeout, opts["allow_raw"])
+    result = {
+        "schema": CLIENT_SCHEMA,
+        "operation": "add",
+        "status": "dry_run" if opts["dry_run"] else "created",
+        "service": service,
+        "path": cfg_path,
+        "url": url,
+        "endpoint": endpoint,
+        "client_id": opts["client_id"],
+        "key_id": opts["key_id"],
+        "secret_file": secret_file or "",
+        "secret_env": opts["secret_env"],
+        "secret_written": bool(secret_written and not opts["dry_run"]),
+        "raw_operations_allowed": bool(opts["allow_raw"]),
+    }
+    if not opts["dry_run"]:
+        if secret_written:
+            write_file_atomic(secret_file, opts["secret"] + "\n", 0o600)
+        elif secret_file and not os.path.exists(secret_file):
+            raise SystemExit("queue remote add: secret file does not exist: %s" % secret_file)
+        write_file_atomic(cfg_path, content, 0o600)
+    if json_out:
+        safe = dict(result)
+        print(json.dumps(safe, sort_keys=True))
+    else:
+        print("created remote service: %s" % service if not opts["dry_run"] else "dry-run remote service: %s" % service)
+        print("config: %s" % cfg_path)
+        print("url: %s%s" % (url, endpoint))
+        if secret_file:
+            print("secret_file: %s" % secret_file)
+        if opts["secret_env"]:
+            print("secret_env: %s" % opts["secret_env"])
+        print("test: queue remote %s health --json" % service)
+        print("list: queue remote %s queue list --json" % service)
+
+
 def cfg_get(cfg, *names):
     for name in names:
         if cfg.get(name):
@@ -372,6 +561,7 @@ def format_response(data, json_out):
 def usage():
     print("""Usage:
   queue remote list [--json]
+  queue remote add SERVICE --url URL (--secret SECRET|--secret-file FILE|--secret-env ENV) [--json]
   queue remote show SERVICE [--json]
   queue remote SERVICE health [--json]
   queue remote SERVICE version [--json]
@@ -381,6 +571,9 @@ def usage():
   queue remote SERVICE worker status [--json]
   queue remote SERVICE service ps [--json]
   queue remote SERVICE raw OPERATION [TARGET] [--json]
+
+Connection setup:
+  queue remote add local --url http://127.0.0.1:8765 --secret-file ~/.queuebash/secrets/local.secret
 
 Configuration:
   SERVICE is loaded from remote.d/SERVICE.env under QUEUE_REMOTE_CONFIG_DIR,
@@ -406,6 +599,9 @@ def main(argv):
         return 2
     if args[0] == "list":
         list_services(json_out)
+        return 0
+    if args[0] == "add":
+        add_service(args[1:], json_out)
         return 0
     if args[0] == "show":
         if len(args) < 2:

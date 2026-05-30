@@ -98,3 +98,8 @@ The Groq provider is a live-capable, fixture-tested ask provider using an OpenAI
 ## Perplexity Sonar provider
 
 The Perplexity provider is fixture-gated by default, uses the same advisory-only `queue ask` contract, and requires explicit live enablement plus a site-managed API key for live calls.
+
+## Related non-AI provider sockets
+
+`0.18.71` carries `providers.d/grid_energy/grid_energy_provider.sh` as a separate non-AI Grid FinOps provider. It follows the same fixture-first, no-live-default, bounded-JSON philosophy as ask providers, but it is used by asset/class policy gates rather than by `queue ask`.
+

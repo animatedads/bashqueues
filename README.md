@@ -1,8 +1,32 @@
-# 0.18.62 BOB_MERGER remote-admin transaction plan/apply/rollback merge
+# 0.18.71 BOB_MERGER grid energy cost model contract merge
+
+Folded Bob11 grid energy cost model branch payload onto the accepted 0.18.70 cloud cost/service-availability base. Adds a fixture-first Grid FinOps / electrical-cost model for energy-aware scheduling through the new `grid_energy` asset/provider, energy-aware classes, docs, policy examples, fixtures, and tests. No live grid API calls, credentials, OT/ICS writes, provisioning, destruction, or queue dispatch refactor are introduced by default.
+
+# 0.18.70 BOB_MERGER cloud cost and service availability wiring merge
+
+Merged Bob10 cloud cost/service-availability wiring onto the accepted 0.18.69 remote connection entry base. Adds fixture-first `queue cloud-signals` helper rails for OCI, AWS, Azure, GCP, and IBM Cloud local availability and cost policy evidence. Preserves no-live/no-credentials/no-billing-query/no-provisioning/no-dispatch-refactor boundaries.
+
+# 0.18.69 BOB_MERGER remote connection entry command merge
+
+Merged the remote connection entry command branch onto the accepted 0.18.68 remote-admin dual-control base. Adds `queue remote add SERVICE --url URL ...` to create local client-side `remote.d` entries and optional local secret files without mutating server ACL/client registry/listener policy. Preserves remote-admin transaction/dual-control work, provider parity reporting, embedded QBTEST coverage, and no shell/run/exec command exposure.
+
+# 0.18.68 BOB_MERGER remote-admin dual-control ACL plan approval merge
+
+Merged Bob10 remote-admin dual-control ACL plan approval branch payload onto the accepted 0.18.67 provider parity report base. Adds `queue remote-admin plan approve PLAN_FILE [--out FILE]`, `remote-admin.plan.approve`, distinct-approver dual-control for transaction plans that mutate `acl.tsv`, and apply-time dual-control validation before the existing per-operation ACL re-checks. Preserves `remote-admin.acl.write` as the crown-jewel ACL permission. Secrets remain excluded from plans; no generic editor, arbitrary shell, secret disclosure, queue dispatch refactor, or live remote mutation path is introduced.
+
+# 0.18.67 BOB_MERGER provider parity report merge
+
+Merged Bob2 provider parity report branch payload onto the accepted 0.18.66 Perplexity/QBTEST coverage base. Adds an offline provider-family parity report helper, policy fixture, documentation, and static/smoke/JSON contract tests while preserving embedded QBTEST coverage and existing ask/cloud/remote-admin provider surfaces.
+
+# 0.18.66 BOB_MERGER Perplexity Sonar ask-provider merge
+
+Merged Bob11 Perplexity Sonar ask-provider branch payload onto the accepted 0.18.65 QBTEST coverage base. Adds fixture-gated `queue ask --provider perplexity` helper, provider descriptor, docs, policy/examples, and offline tests while preserving embedded QBTEST coverage.
 
 ## 0.18.65 BOB_MERGER QBTEST wave3-wave8 function coverage
 
 Merged Bob13 QBTEST wave3/wave5, wave6/wave7, and wave8 function-level embedded tests by extracting QBTEST blocks from patchset queuebash.sh files and reapplying them against the matching functions on the current merger head. Preserves remote-admin transaction plan/apply/rollback work and avoids stale whole-file queuebash overwrite.
+
+# 0.18.62 BOB_MERGER remote-admin transaction plan/apply/rollback merge
 
 
 Merges Bob10 remote-admin transaction plan/apply/rollback functionality onto the accepted 0.18.61 QBTEST wave1 base. Adds typed, ACL-gated `queue remote-admin` plan creation/show, plan apply, rollback list/show/apply, per-operation ACL re-check during apply, and local rollback snapshots. Secrets remain excluded from plans; no generic editor, arbitrary shell, secret disclosure, queue dispatch refactor, or live remote mutation path is introduced.

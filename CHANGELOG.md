@@ -1,3 +1,23 @@
+# 0.18.71 BOB_MERGER grid energy cost model contract merge
+
+Folded Bob11 grid energy cost model branch payload onto the accepted 0.18.70 cloud cost/service-availability base. Adds a fixture-first Grid FinOps / electrical-cost model for energy-aware scheduling through the new `grid_energy` asset/provider, energy-aware classes, docs, policy examples, fixtures, and tests. No live grid API calls, credentials, OT/ICS writes, provisioning, destruction, or queue dispatch refactor are introduced by default.
+
+# 0.18.70 - BOB_MERGER cloud cost and service availability wiring merge
+
+- Fold Bob10 cloud cost/service-availability wiring under the current merger-line identity.
+- Add `queue cloud-signals` / `queue cloud-cost` / `queue cloud-availability` dispatch aliases.
+- Add `providers.d/cloud_signals/cloud_signals_provider.sh` for fixture-first availability and cost evidence.
+- Add local policy/catalog examples for OCI, AWS, Azure, GCP, and IBM Cloud.
+- Preserve no live cloud API calls, credentials, billing queries, provisioning/destruction, or queue dispatch refactor.
+
+# 0.18.69 - BOB_MERGER remote connection entry command merge
+
+- Fold remote connection entry command patch under current merger-line identity.
+- Add `queue remote add SERVICE --url URL` client-side service entry creation with `--secret`, `--secret-file`, or `--secret-env`.
+- Support config/secret directory overrides, TTL/timeout settings, dry-run, force, JSON output, and redacted show behaviour.
+- Preserve server-side remote-admin ACL/client/listener policy boundaries; no server mutation, arbitrary shell, or run/exec/cmd command exposure.
+- Preserve 0.18.68 remote-admin dual-control ACL plan approval, provider parity report, Perplexity provider, and 105 embedded QBTEST blocks.
+
 # 0.18.68 - BOB_MERGER remote-admin dual-control ACL plan approval merge
 
 - Added `queue remote-admin plan approve PLAN_FILE [--out FILE]` for transaction-plan approval.

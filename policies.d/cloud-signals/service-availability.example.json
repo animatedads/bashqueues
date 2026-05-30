@@ -1,0 +1,36 @@
+{
+  "schema": "queuebash.cloud_signals.availability_policy.v1",
+  "note": "Fixture/local policy only. This is not live provider status and must not be presented as current cloud availability.",
+  "platforms": {
+    "aws": {
+      "regions": {
+        "eu-west-2": {"compliance": ["uk-dpa", "gdpr"], "services": {"compute": {"status": "available", "evidence": {"source": "local-fixture"}}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}},
+        "us-east-1": {"compliance": ["us", "itar-review"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}}
+      }
+    },
+    "azure": {
+      "regions": {
+        "uksouth": {"compliance": ["uk-dpa", "gdpr"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}},
+        "eastus": {"compliance": ["us", "itar-review"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}}
+      }
+    },
+    "gcp": {
+      "regions": {
+        "europe-west2": {"compliance": ["uk-dpa", "gdpr"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}},
+        "us-central1": {"compliance": ["us", "export-review"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}}
+      }
+    },
+    "ibm": {
+      "regions": {
+        "eu-gb": {"compliance": ["uk-dpa", "gdpr"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "review"}}},
+        "us-south": {"compliance": ["us", "export-review"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "review"}}}
+      }
+    },
+    "oci": {
+      "regions": {
+        "uk-london-1": {"compliance": ["uk-dpa", "gdpr"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}},
+        "us-ashburn-1": {"compliance": ["us", "itar-review"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}}
+      }
+    }
+  }
+}

@@ -10,6 +10,10 @@ grep -q '0.18.35 APAC/China cloud provider contracts' README.md || fail 'README 
 grep -q '_queue_remote_command' queuebash.sh || fail 'queue remote command function missing'
 grep -q 'remote|remote-queue|rq)' queuebash.sh || fail 'queue dispatcher lacks remote command branch'
 grep -q 'queue remote list|show SERVICE' queuebash.sh || fail 'queue help lacks remote usage'
+grep -q 'queue remote add SERVICE --url URL' docs/REMOTE_QUEUE_COMMAND.md || fail 'remote add docs missing'
+grep -q 'def add_service' bin/queue-remote-service-client.py || fail 'remote add implementation missing'
+grep -q 'QUEUE_REMOTE_CONFIG_DIR' bin/queue-remote-service-client.py || fail 'remote add config dir support missing'
+grep -q 'QUEUE_REMOTE_SECRET_DIR' bin/queue-remote-service-client.py || fail 'remote add secret dir support missing'
 
 for f in bin/queue-remote-service-client.py docs/REMOTE_QUEUE_COMMAND.md examples/remote.d/oci-node-b.env.example; do
   [[ -f "$f" ]] || fail "missing $f"
@@ -19,6 +23,8 @@ python3 -m py_compile bin/queue-remote-service-client.py || fail 'remote service
 
 grep -q 'queuebash.remote_queue_request.v1' docs/REMOTE_QUEUE_COMMAND.md || fail 'request schema missing from docs'
 grep -q 'QUEUE_REMOTE_SECRET_FILE' docs/REMOTE_QUEUE_COMMAND.md || fail 'secret file config missing from docs'
+grep -q -- '--dry-run' docs/REMOTE_QUEUE_COMMAND.md || fail 'remote add dry-run docs missing'
+grep -q -- '--secret-file' docs/REMOTE_QUEUE_COMMAND.md || fail 'remote add secret-file docs missing'
 grep -q 'No returned value is evaluated as shell\|never evaluated as shell' docs/REMOTE_QUEUE_COMMAND.md docs/REMOTE_QUEUE_SERVICE_PROVIDER.md || fail 'shell evaluation ban missing'
 grep -q 'run.*exec.*shell.*command.*cmd' docs/REMOTE_QUEUE_COMMAND.md || fail 'blocked alias list missing'
 

@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.grid_energy_observation.v1",
+  "market": "uk_eso",
+  "zone": "GB",
+  "source": "fixture",
+  "observed_at_epoch": 4102444800,
+  "price_per_kwh": 0.07,
+  "carbon_gco2_kwh": 80
+}

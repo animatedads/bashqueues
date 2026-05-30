@@ -1,0 +1,6 @@
+# market	zone	cache_file	notes
+ercot	HB_HOUSTON	/var/cache/bashqueues/grid-energy/ercot_hb_houston.json	ERCOT translated local cache; no live call in worker preflight
+nordpool	SE3	/var/cache/bashqueues/grid-energy/nordpool_se3.json	Nord Pool translated local cache; no live call in worker preflight
+entsoe	DE_LU	/var/cache/bashqueues/grid-energy/entsoe_de_lu.json	ENTSO-E translated local cache; no live call in worker preflight
+uk_eso	GB	/var/cache/bashqueues/grid-energy/uk_eso_gb.json	UK ESO translated local cache; no live call in worker preflight
+custom	SITE_A	/var/cache/bashqueues/grid-energy/custom_site_a.json	Site utility or EMS translated local cache

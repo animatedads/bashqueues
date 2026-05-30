@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.cloud_signals.explain.v1",
+  "provider": "aws",
+  "region": "eu-west-2",
+  "service": "compute",
+  "estimated_hourly_usd": 0.5,
+  "monthly_budget_usd": 750.0,
+  "note": "Example only; generated decisions should be produced by providers.d/cloud_signals/cloud_signals_provider.sh."
+}

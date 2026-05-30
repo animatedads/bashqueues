@@ -1,0 +1,17 @@
+{
+  "schema": "queuebash.cloud_signals.cost_catalog.v1",
+  "note": "Fixture/local cost policy only. Values are guardrail examples, not provider price claims. Replace with organisation-approved catalog data before production use.",
+  "default_monthly_budget_usd": 500.0,
+  "defaults": {
+    "compute": {"max_hourly_usd": 1.0},
+    "object-storage": {"max_hourly_usd": 0.2},
+    "gpu": {"max_hourly_usd": 25.0}
+  },
+  "platforms": {
+    "aws": {"monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}},
+    "azure": {"monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}},
+    "gcp": {"monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}},
+    "ibm": {"monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}},
+    "oci": {"monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}}
+  }
+}

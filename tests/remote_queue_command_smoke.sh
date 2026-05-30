@@ -29,6 +29,24 @@ export QUEUEBASH_ROOT="$tmp/queue-root"
 export QUEUE_REMOTE_CONFIG_DIR="$tmp/remote.d"
 client=(python3 bin/queue-remote-service-client.py)
 
+"${client[@]}" add local-management --url 127.0.0.1:8765 --endpoint /remote-queue --client-id queue-admin --key-id default --secret add-secret --secret-dir "$tmp/secrets" --json > "$tmp/add.json"
+python3 - "$tmp/add.json" <<'PY'
+import json, sys
+obj=json.load(open(sys.argv[1]))
+assert obj['schema']=='queuebash.remote_queue_client.v1'
+assert obj['operation']=='add'
+assert obj['service']=='local-management'
+assert obj['status']=='created'
+assert obj['url']=='http://127.0.0.1:8765'
+assert 'add-secret' not in json.dumps(obj)
+PY
+[[ -f "$tmp/remote.d/local-management.env" ]] || fail 'remote add did not create service env'
+[[ -f "$tmp/secrets/local-management.secret" ]] || fail 'remote add did not create secret file'
+grep -q 'QUEUE_REMOTE_URL=http://127.0.0.1:8765' "$tmp/remote.d/local-management.env" || fail 'remote add URL missing'
+grep -q 'QUEUE_REMOTE_SECRET_FILE=' "$tmp/remote.d/local-management.env" || fail 'remote add secret file missing'
+"${client[@]}" show local-management --json > "$tmp/add-show.json"
+grep -q '<redacted>' "$tmp/add-show.json" || fail 'remote add show must redact secret-bearing fields'
+
 "${client[@]}" list --json > "$tmp/list.json"
 python3 - "$tmp/list.json" <<'PY'
 import json, sys

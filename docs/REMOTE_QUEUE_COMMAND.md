@@ -12,6 +12,7 @@ This is a client-side command surface for signed, named remote queue service ope
 
 ```text
 queue remote list [--json]
+queue remote add SERVICE --url URL (--secret SECRET|--secret-file FILE|--secret-env ENV) [--json]
 queue remote show SERVICE [--json]
 queue remote SERVICE health [--json]
 queue remote SERVICE version [--json]
@@ -26,6 +27,41 @@ queue remote SERVICE raw OPERATION [TARGET] [--json]
 ```
 
 The `raw` form is still guarded by the client allowlist unless `QUEUE_REMOTE_ALLOW_RAW_OPERATIONS=1` is explicitly set in the service configuration. It must not be used as a shell bypass.
+
+## Creating a connection entry
+
+Use `queue remote add` to create the local client-side service entry.  This command writes only the client configuration under `remote.d`; it does not mutate the remote server ACL, client registry, listener policy, or secret store.
+
+Example for a local listener on `127.0.0.1:8765`:
+
+```bash
+mkdir -p "$HOME/.queuebash/secrets"
+printf '%s\n' 'PUT_THE_SHARED_SECRET_HERE' > "$HOME/.queuebash/secrets/local-management.secret"
+chmod 600 "$HOME/.queuebash/secrets/local-management.secret"
+
+queue remote add local-management \
+  --url http://127.0.0.1:8765 \
+  --endpoint /remote-queue \
+  --client-id queue-admin \
+  --key-id default \
+  --secret-file "$HOME/.queuebash/secrets/local-management.secret"
+
+queue remote local-management queue list --json
+```
+
+If you want the helper to write the local secret file at the same time, pass `--secret SECRET`.  The secret value is never printed by `queue remote add` or `queue remote show`.  The same secret/key identity must already be accepted by the remote listener's server-side client registry and ACL.
+
+Useful setup options:
+
+```text
+--config-dir DIR       Write SERVICE.env to DIR instead of $QUEUEBASH_ROOT/remote.d
+--secret-dir DIR       Write generated/inline secret files to DIR instead of $QUEUEBASH_ROOT/secrets
+--secret-file FILE     Reference an existing secret file
+--secret-env ENV       Reference a secret-bearing environment variable
+--force                Replace an existing SERVICE.env
+--dry-run              Show what would be written without creating files
+--json                 Emit machine-readable setup result
+```
 
 ## Service configuration
 

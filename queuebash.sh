@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.65"
+QUEUEBASH_VERSION="0.18.71"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -13136,7 +13136,7 @@ EOT
 
 _queue_ai_ask_provider_known() {
     case "${1:-}" in
-        contract|fixture|ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras) return 0 ;;
+        contract|fixture|ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras|perplexity) return 0 ;;
     esac
     local source_dir
     source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
@@ -13149,7 +13149,7 @@ _queue_ai_ask_provider_known() {
 
 _queue_ai_provider_requires_network() {
     case "${1:-}" in
-        gemini|openai|anthropic|watsonx|mistral|deepseek|groq|cerebras|bedrock|azure_ai|vertex_ai) echo true ;;
+        gemini|openai|anthropic|watsonx|mistral|deepseek|groq|cerebras|perplexity|bedrock|azure_ai|vertex_ai) echo true ;;
         *) echo false ;;
     esac
 }
@@ -13160,7 +13160,7 @@ _queue_ai_provider_requires_network() {
 
 _queue_ai_provider_supports_json() {
     case "${1:-}" in
-        contract|fixture|ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras) echo true ;;
+        contract|fixture|ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras|perplexity) echo true ;;
         *) echo false ;;
     esac
 }
@@ -13171,7 +13171,7 @@ _queue_ai_provider_supports_json() {
 
 _queue_ai_provider_live_supported() {
     case "${1:-}" in
-        ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras) echo true ;;
+        ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras|perplexity) echo true ;;
         *) echo false ;;
     esac
 }
@@ -13235,6 +13235,11 @@ _queue_ai_provider_available() {
             [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-cerebras"
             [[ -x "$helper" ]] && echo true || echo false
             ;;
+        perplexity)
+            helper="${QUEUEBASH_AI_PERPLEXITY_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-perplexity"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
         *)
             [[ -f "$source_dir/providers.d/ask/$provider.sh" ]] && echo true || echo false
             ;;
@@ -13242,8 +13247,8 @@ _queue_ai_provider_available() {
 }
 
 _queue_ai_provider_list() {
-    local source_dir f base seen=" contract fixture gemini ollama openai anthropic watsonx openai_compat mistral deepseek groq cerebras "
-    printf '%s\n' contract fixture gemini ollama openai anthropic watsonx openai_compat mistral deepseek groq cerebras
+    local source_dir f base seen=" contract fixture gemini ollama openai anthropic watsonx openai_compat mistral deepseek groq cerebras perplexity "
+    printf '%s\n' contract fixture gemini ollama openai anthropic watsonx openai_compat mistral deepseek groq cerebras perplexity
     source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
     if [[ -d "$source_dir/providers.d/ask" ]]; then
         for f in "$source_dir"/providers.d/ask/*.sh; do
@@ -13443,6 +13448,7 @@ Live providers:
   Groq:
     queue ask --provider groq --model llama-3.3-70b-versatile --live "question"
     queue ask --provider cerebras --model gpt-oss-120b --live "question"
+    queue ask --provider perplexity --model sonar-pro --live "question"
 
   Gemini key lookup order:
     QUEUEBASH_AI_GEMINI_API_KEY_FILE
@@ -13485,6 +13491,11 @@ Live providers:
     QUEUEBASH_AI_GROQ_ENDPOINT (default: https://api.groq.com/openai/v1/chat/completions)
     QUEUEBASH_AI_CEREBRAS_MODEL (default: gpt-oss-120b)
     QUEUEBASH_AI_CEREBRAS_ENDPOINT (default: https://api.cerebras.ai/v1/chat/completions)
+
+  Perplexity key lookup order:
+    QUEUEBASH_AI_PERPLEXITY_API_KEY_FILE, QUEUEBASH_AI_PERPLEXITY_API_KEY, PERPLEXITY_API_KEY
+    QUEUEBASH_AI_PERPLEXITY_MODEL (default: sonar-pro)
+    QUEUEBASH_AI_PERPLEXITY_ENDPOINT (default: https://api.perplexity.ai/chat/completions)
 
   OpenAI-compatible endpoint configuration:
     QUEUEBASH_AI_OPENAI_COMPAT_ENDPOINT (default: http://127.0.0.1:8000/v1/chat/completions)
@@ -13695,7 +13706,7 @@ EOH
             echo "hint: export QUEUEBASH_AI_LIVE_ENABLED=1 or prefix the command with QUEUEBASH_AI_LIVE_ENABLED=1" >&2
             return 1
         fi
-        if [[ "$provider" != "ollama" && "$provider" != "gemini" && "$provider" != "openai" && "$provider" != "anthropic" && "$provider" != "watsonx" && "$provider" != "openai_compat" && "$provider" != "mistral" && "$provider" != "deepseek" && "$provider" != "groq" && "$provider" != "cerebras" ]]; then
+        if [[ "$provider" != "ollama" && "$provider" != "gemini" && "$provider" != "openai" && "$provider" != "anthropic" && "$provider" != "watsonx" && "$provider" != "openai_compat" && "$provider" != "mistral" && "$provider" != "deepseek" && "$provider" != "groq" && "$provider" != "cerebras" && "$provider" != "perplexity" ]]; then
             _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_provider_not_supported" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
             echo "queue ask: blocked by policy: live_provider_not_supported: $provider" >&2
             return 1
@@ -13746,6 +13757,11 @@ EOH
             helper_name="queue-ai-ask-cerebras"
             default_model="${QUEUEBASH_AI_CEREBRAS_MODEL:-gpt-oss-120b}"
             success_reason="live_cerebras_provider"
+        elif [[ "$provider" == "perplexity" ]]; then
+            helper="${QUEUEBASH_AI_PERPLEXITY_HELPER:-}"
+            helper_name="queue-ai-ask-perplexity"
+            default_model="${QUEUEBASH_AI_PERPLEXITY_MODEL:-sonar-pro}"
+            success_reason="live_perplexity_provider"
         else
             helper="${QUEUEBASH_AI_OPENAI_COMPAT_HELPER:-}"
             helper_name="queue-ai-ask-openai-compat"
@@ -19015,6 +19031,28 @@ _queue_remote_command() {
     python3 "$helper" "$@"
 }
 
+_queue_cloud_signals_helper_path() {
+    local helper="cloud_signals_provider.sh" here cand
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    for cand in \
+        "$here/providers.d/cloud_signals/$helper" \
+        "$here/../providers.d/cloud_signals/$helper" \
+        "/usr/local/share/bashqueues/providers.d/cloud_signals/$helper" \
+        "$HOME/.queuebash/providers.d/cloud_signals/$helper"; do
+        [[ -x "$cand" ]] && { printf '%s\n' "$cand"; return 0; }
+    done
+    return 1
+}
+
+_queue_cloud_signals_command() {
+    local helper
+    helper="$(_queue_cloud_signals_helper_path)" || {
+        echo "queue cloud-signals: helper not found: providers.d/cloud_signals/cloud_signals_provider.sh" >&2
+        return 1
+    }
+    "$helper" "$@"
+}
+
 _queue_remote_admin_helper_path() {
     local helper="remote_admin_policy.sh" here cand
     here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
@@ -19781,6 +19819,10 @@ queue() {
 
         remote-admin|remote_admin|remote-admin-policy)
             _queue_remote_admin_command "$@"
+            ;;
+
+        cloud-signals|cloud_signals|cloud-cost|cloud-availability)
+            _queue_cloud_signals_command "$@"
             ;;
 
         acl|access-control)
