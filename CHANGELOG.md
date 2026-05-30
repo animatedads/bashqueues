@@ -1,3 +1,18 @@
+# 0.18.73 - BOB_MERGER13 QBTEST installer complete merge
+
+- Preserve the accepted 0.18.71 grid/energy cost model platform base.
+- Merge Bob13 `queue dev test qbtest extract` and `queue dev test qbtest add` support.
+- Restore Bob13 function-level QBTEST coverage on top of the platform line.
+- Add portable `qbtest_installer.sh` so older external QBTEST bundles can be installed through the target tree's own queue-dev QBTEST add route.
+- Keep this delivery test/dev-tooling oriented: no provider, dispatch, provisioning, cloud, or live API behaviour change.
+
+# 0.18.72 - BOB_MERGER13 QBTEST add/extract and missing Bob13 coverage merge
+
+- Add `queue dev test qbtest extract --file FILE --function NAME [--json]`.
+- Add `queue dev test qbtest add --file FILE --function NAME [--name TEST-NAME] [--lang bash|python] [--code SNIPPET | --b64 B64] [--force]`.
+- Merge missing Bob13 wave9-wave11 embedded QBTEST function coverage onto the 0.18.71 grid/energy/cost platform base.
+- Keep the wave merge test-only: no provider, dispatch, provisioning, cloud, or live API posture changes.
+
 # 0.18.71 BOB_MERGER grid energy cost model contract merge
 
 Folded Bob11 grid energy cost model branch payload onto the accepted 0.18.70 cloud cost/service-availability base. Adds a fixture-first Grid FinOps / electrical-cost model for energy-aware scheduling through the new `grid_energy` asset/provider, energy-aware classes, docs, policy examples, fixtures, and tests. No live grid API calls, credentials, OT/ICS writes, provisioning, destruction, or queue dispatch refactor are introduced by default.

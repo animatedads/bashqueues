@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.71"
+QUEUEBASH_VERSION="0.18.73"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -24,6 +24,10 @@ QUEUEBASH_VERSION="0.18.71"
 _over_quote_cmd() {
     printf ' %q' "$@"
 }
+# QBTEST:BEGIN name=over-quote-cmd-basic function=_over_quote_cmd language=bash
+# QBTEST:B64
+# b3V0PSIkKF9vdmVyX3F1b3RlX2NtZCAiYWxwaGEgYmV0YSIgImdhbW1hIikiCltbICIkb3V0IiA9PSAqImFscGhhXCBiZXRhIiogXV0KW1sgIiRvdXQiID09ICoiZ2FtbWEiKiBdXQo=
+# QBTEST:END
 
 overdir() {
     local dryrun=0
@@ -277,6 +281,10 @@ _queue_resolve_bundled_source_dir() {
 
     return 1
 }
+# QBTEST:BEGIN name=resolve-bundled-source-dir function=_queue_resolve_bundled_source_dir language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiCm1rZGlyIC1wICIkdG1wL3NyYyIKb3V0PSIkKF9xdWV1ZV9yZXNvbHZlX2J1bmRsZWRfc291cmNlX2RpciAiJHRtcC9zcmMiIGRvZXMtbm90LW1hdHRlcikiCltbICIkb3V0IiA9PSAiJHRtcC9zcmMiIF1dCiEgX3F1ZXVlX3Jlc29sdmVfYnVuZGxlZF9zb3VyY2VfZGlyICIkdG1wL21pc3NpbmciIG5vd2hlcmUgPi9kZXYvbnVsbCAyPiYxCm1rZGlyIC1wICIkdG1wL2xvY2FsX3N1YiIKKAogIGNkICIkdG1wIgogIG91dDI9IiQoX3F1ZXVlX3Jlc29sdmVfYnVuZGxlZF9zb3VyY2VfZGlyICIiIGxvY2FsX3N1YikiCiAgW1sgIiRvdXQyIiA9PSAiLi9sb2NhbF9zdWIiIF1dCikKcm0gLXJmICIkdG1wIg==
+# QBTEST:END
 
 _queue_install_bundled_flat_files() {
     # _queue_install_bundled_flat_files SOURCE_DIR TARGET_DIR GLOB MODE
@@ -1276,6 +1284,10 @@ _queue_class_file() {
 
     printf '%s\n' "$exact"
 }
+# QBTEST:BEGIN name=class-file-case-insensitive function=_queue_class_file language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiClFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UPSIkdG1wL3Jvb3QiCm1rZGlyIC1wICIkUVVFVUVCQVNIX1NFTEVDVEVEX1JPT1QvY2xhc3NlcyIKcHJpbnRmICdDTEFTU19BTExPV19QQVJBTExFTD0xCicgPiAiJFFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UL2NsYXNzZXMvRXhhbXBsZS5lbnYiCm91dD0iJChfcXVldWVfY2xhc3NfZmlsZSBleGFtcGxlKSIKW1sgIiRvdXQiID09ICIkUVVFVUVCQVNIX1NFTEVDVEVEX1JPT1QvY2xhc3Nlcy9FeGFtcGxlLmVudiIgXV0KbWlzc2luZz0iJChfcXVldWVfY2xhc3NfZmlsZSBNSVNTSU5HKSIKW1sgIiRtaXNzaW5nIiA9PSAiJFFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UL2NsYXNzZXMvTUlTU0lORy5lbnYiIF1dCnJtIC1yZiAiJHRtcCIKdW5zZXQgUVVFVUVCQVNIX1NFTEVDVEVEX1JPT1Q=
+# QBTEST:END
 
 
 _queue_class_plugin_path() {
@@ -1662,6 +1674,10 @@ _queue_env_dir() { printf '%s/envs.d\n' "$(_queue_root)"; }
 # QBTEST:END
 _queue_env_file() { local name="${1:-}"; _queue_env_valid_name "$name" || return 2; printf '%s/%s.env\n' "$(_queue_env_dir)" "$name"; }
 
+# QBTEST:BEGIN name=env-file-valid-name-path function=_queue_env_file language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiClFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UPSIkdG1wL3Jvb3QiCm91dD0iJChfcXVldWVfZW52X2ZpbGUgREVWX0VOVikiCltbICIkb3V0IiA9PSAiJHRtcC9yb290L2VudnMuZC9ERVZfRU5WLmVudiIgXV0KaWYgX3F1ZXVlX2Vudl9maWxlICcuLi9iYWQnID4vZGV2L251bGwgMj4mMTsgdGhlbiBleGl0IDE7IGZpCnJtIC1yZiAiJHRtcCIKdW5zZXQgUVVFVUVCQVNIX1NFTEVDVEVEX1JPT1QK
+# QBTEST:END
 _queue_env_load() {
     local name="${1:-}" f
     f="$(_queue_env_file "$name")" || return 2
@@ -1674,6 +1690,10 @@ _queue_env_load() {
     [[ "$EXEC_ENV_NAME" == "$name" ]] || return 4
     return 0
 }
+# QBTEST:BEGIN name=env-load-validates-name function=_queue_env_load language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiClFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UPSIkdG1wL3Jvb3QiCm1rZGlyIC1wICIkUVVFVUVCQVNIX1NFTEVDVEVEX1JPT1QvZW52cy5kIgpjYXQgPiAiJFFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UL2VudnMuZC9ERVYuZW52IiA8PCdFT0YnCkVYRUNfRU5WX05BTUU9REVWCkVYRUNfRU5WX0xBQkVMPSJEZXZlbG9wZXIiCkVPRgpfcXVldWVfZW52X2xvYWQgREVWCltbICIke0VYRUNfRU5WX05BTUU6LX0iID09ICJERVYiIF1dCltbICIke0VYRUNfRU5WX0xBQkVMOi19IiA9PSAiRGV2ZWxvcGVyIiBdXQohIF9xdWV1ZV9lbnZfbG9hZCBNSVNTSU5HID4vZGV2L251bGwgMj4mMQpjYXQgPiAiJFFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UL2VudnMuZC9CQUQuZW52IiA8PCdFT0YnCkVYRUNfRU5WX05BTUU9T1RIRVIKRU9GCiEgX3F1ZXVlX2Vudl9sb2FkIEJBRCA+L2Rldi9udWxsIDI+JjEKcm0gLXJmICIkdG1wIgp1bnNldCBRVUVVRUJBU0hfU0VMRUNURURfUk9PVCBFWEVDX0VOVl9OQU1FIEVYRUNfRU5WX0xBQkVM
+# QBTEST:END
 
 _queue_env_validate_one() {
     local name="${1:-}" json="${2:-0}" f rc=0 reason="ok" valid=false
@@ -1691,6 +1711,10 @@ _queue_env_validate_one() {
     fi
     return "$rc"
 }
+# QBTEST:BEGIN name=env-validate-json-reasons function=_queue_env_validate_one language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiClFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UPSIkdG1wL3Jvb3QiCm1rZGlyIC1wICIkUVVFVUVCQVNIX1NFTEVDVEVEX1JPT1QvZW52cy5kIgpjYXQgPiAiJFFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UL2VudnMuZC9PSy5lbnYiIDw8J0VPRicKRVhFQ19FTlZfTkFNRT1PSwpFT0YKb3V0PSIkKF9xdWV1ZV9lbnZfdmFsaWRhdGVfb25lIE9LIDEpIgpbWyAiJG91dCIgPT0gKicidmFsaWQiOnRydWUnKiBdXQpbWyAiJG91dCIgPT0gKicicmVhc29uIjoib2siJyogXV0KaWYgX3F1ZXVlX2Vudl92YWxpZGF0ZV9vbmUgTUlTU0lORyAxID4vdG1wL3FiX2Vudl9taXNzaW5nLiQkIDI+L2Rldi9udWxsOyB0aGVuIGV4aXQgMTsgZmkKbWlzcz0iJChjYXQgL3RtcC9xYl9lbnZfbWlzc2luZy4kJCkiCltbICIkbWlzcyIgPT0gKicidmFsaWQiOmZhbHNlJyogXV0KW1sgIiRtaXNzIiA9PSAqJyJyZWFzb24iOiJub3RfZm91bmQiJyogXV0Kcm0gLWYgL3RtcC9xYl9lbnZfbWlzc2luZy4kJApybSAtcmYgIiR0bXAiCnVuc2V0IFFVRVVFQkFTSF9TRUxFQ1RFRF9ST09U
+# QBTEST:END
 
 _queue_env_list() {
     local json=0 root f first=1 name
@@ -2376,11 +2400,19 @@ _queue_asset_implied_preflight_one() {
 _queue_exception_dir() {
     printf '%s\n' "$(_queue_root)/exceptions"
 }
+# QBTEST:BEGIN name=exception-dir-root function=_queue_exception_dir language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiClFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UPSIkdG1wL3Jvb3QiCm91dD0iJChfcXVldWVfZXhjZXB0aW9uX2RpcikiCltbICIkb3V0IiA9PSAiJHRtcC9yb290L2V4Y2VwdGlvbnMiIF1dCnJtIC1yZiAiJHRtcCIKdW5zZXQgUVVFVUVCQVNIX1NFTEVDVEVEX1JPT1QK
+# QBTEST:END
 
 _queue_exception_file() {
     local id="$1"
     printf '%s/%s.env\n' "$(_queue_exception_dir)" "$id"
 }
+# QBTEST:BEGIN name=exception-file-path function=_queue_exception_file language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiClFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UPSIkdG1wL3Jvb3QiCm91dD0iJChfcXVldWVfZXhjZXB0aW9uX2ZpbGUgQUJDMTIzKSIKW1sgIiRvdXQiID09ICIkdG1wL3Jvb3QvZXhjZXB0aW9ucy9BQkMxMjMuZW52IiBdXQpybSAtcmYgIiR0bXAiCnVuc2V0IFFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UCg==
+# QBTEST:END
 
 _queue_exception_job_id_from_current_context() {
     if [[ -n "${JOB_ID:-}" ]]; then
@@ -2399,6 +2431,10 @@ _queue_exception_normalize_key() {
     key="${key//[^A-Za-z0-9_:-]/_}"
     printf '%s\n' "$key"
 }
+# QBTEST:BEGIN name=exception-normalize-key function=_queue_exception_normalize_key language=bash
+# QBTEST:B64
+# b3V0PSIkKF9xdWV1ZV9leGNlcHRpb25fbm9ybWFsaXplX2tleSAnYXNzZXQvbmV0IGFsbG93IT8nKSIKW1sgIiRvdXQiID09ICJhc3NldF9uZXRfYWxsb3dfXyIgXV0K
+# QBTEST:END
 
 _queue_exception_asset_matches() {
     local requested="$1"
@@ -2596,6 +2632,10 @@ _queue_security_guidance_shell_join() {
     done
     printf '%s\n' "$out"
 }
+# QBTEST:BEGIN name=security-guidance-shell-join function=_queue_security_guidance_shell_join language=bash
+# QBTEST:B64
+# b3V0PSIkKF9xdWV1ZV9zZWN1cml0eV9ndWlkYW5jZV9zaGVsbF9qb2luIGVjaG8gJ2hlbGxvIHdvcmxkJyAnJEhPTUUnKSIKW1sgIiRvdXQiID09ICoiaGVsbG9cIHdvcmxkIiogXV0KW1sgIiRvdXQiID09IConXCRIT01FJyogXV0K
+# QBTEST:END
 
 _queue_security_guidance_command_for_current_job() {
     if declare -p COMMAND >/dev/null 2>&1; then
@@ -2618,6 +2658,10 @@ _queue_security_guidance_extract_port() {
     fi
     [[ "$port" =~ ^[0-9]+$ ]] && printf '%s\n' "$port"
 }
+# QBTEST:BEGIN name=security-guidance-extract-port function=_queue_security_guidance_extract_port language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX3NlY3VyaXR5X2d1aWRhbmNlX2V4dHJhY3RfcG9ydCAnVENQIDEyNy4wLjAuMTo0NDMgTElTVEVOJykiID09ICI0NDMiIF1dCltbICIkKF9xdWV1ZV9zZWN1cml0eV9ndWlkYW5jZV9leHRyYWN0X3BvcnQgJ1VEUCAwLjAuMC4wOjUzNTMgb3BlbicpIiA9PSAiNTM1MyIgXV0KW1sgIiQoX3F1ZXVlX3NlY3VyaXR5X2d1aWRhbmNlX2V4dHJhY3RfcG9ydCAnY2xpZW50LT5ob3N0OjIyMjIgZXN0YWJsaXNoZWQnKSIgPT0gIjIyMjIiIF1dCltbIC16ICIkKF9xdWV1ZV9zZWN1cml0eV9ndWlkYW5jZV9leHRyYWN0X3BvcnQgJ25vIHBvcnQgaGVyZScpIiBdXQo=
+# QBTEST:END
 
 _queue_security_guidance_print_submit() {
     local flag1="${1:-}" value1="${2:-}" flag2="${3:-}" value2="${4:-}"
@@ -3151,6 +3195,10 @@ _queue_root_for_user() {
     [[ -n "$home" ]] || return 1
     printf '%s/.queuebash\n' "$home"
 }
+# QBTEST:BEGIN name=root-for-current-user function=_queue_root_for_user language=bash
+# QBTEST:B64
+# dT0iJChfcXVldWVfY3VycmVudF9zaGVsbF91c2VyX2Zvcl9kaXNwbGF5KSIKaD0iJChfcXVldWVfaG9tZV9mb3JfdXNlciAiJHUiKSIKW1sgLW4gIiRoIiBdXQpvdXQ9IiQoX3F1ZXVlX3Jvb3RfZm9yX3VzZXIgIiR1IikiCltbICIkb3V0IiA9PSAiJGgvLnF1ZXVlYmFzaCIgXV0K
+# QBTEST:END
 
 _queue_user_exists() {
     local user="${1:-}"
@@ -3215,6 +3263,10 @@ _queue_draft_file() {
     local id="$1"
     printf '%s/%s.env\n' "$(_queue_draft_dir)" "$id"
 }
+# QBTEST:BEGIN name=draft-file-path function=_queue_draft_file language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiClFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UPSIkdG1wL3Jvb3QiCm91dD0iJChfcXVldWVfZHJhZnRfZmlsZSBEUkFGVC0xMjMpIgpbWyAiJG91dCIgPT0gIiR0bXAvcm9vdC9kcmFmdHMvRFJBRlQtMTIzLmVudiIgXV0Kcm0gLXJmICIkdG1wIgp1bnNldCBRVUVVRUJBU0hfU0VMRUNURURfUk9PVAo=
+# QBTEST:END
 
 _queue_draft_init() {
     mkdir -p "$(_queue_draft_dir)" "$(_queue_draft_archive_dir)"
@@ -3701,10 +3753,18 @@ _queue_draft_command() {
 _queue_current_shell_user_for_display() {
     id -un 2>/dev/null || whoami 2>/dev/null || printf 'unknown\n'
 }
+# QBTEST:BEGIN name=current-shell-user-display function=_queue_current_shell_user_for_display language=bash
+# QBTEST:B64
+# b3V0PSIkKF9xdWV1ZV9jdXJyZW50X3NoZWxsX3VzZXJfZm9yX2Rpc3BsYXkpIgpbWyAtbiAiJG91dCIgXV0KW1sgIiRvdXQiICE9ICJ1bmtub3duIiB8fCAiJG91dCIgPT0gInVua25vd24iIF1dCg==
+# QBTEST:END
 
 _queue_has_selected_user_context() {
     [[ -n "${QUEUEBASH_SELECTED_USER:-}" ]]
 }
+# QBTEST:BEGIN name=selected-user-context function=_queue_has_selected_user_context language=bash
+# QBTEST:B64
+# dW5zZXQgUVVFVUVCQVNIX1NFTEVDVEVEX1VTRVIKaWYgX3F1ZXVlX2hhc19zZWxlY3RlZF91c2VyX2NvbnRleHQ7IHRoZW4gZXhpdCAxOyBmaQpRVUVVRUJBU0hfU0VMRUNURURfVVNFUj0iYWxpY2UiCl9xdWV1ZV9oYXNfc2VsZWN0ZWRfdXNlcl9jb250ZXh0CnVuc2V0IFFVRVVFQkFTSF9TRUxFQ1RFRF9VU0VSCg==
+# QBTEST:END
 
 _queue_print_selected_user_banner() {
     _queue_has_selected_user_context || return 0
@@ -3739,6 +3799,10 @@ _queue_path_owner_user() {
 
     stat -c '%U' "$path" 2>/dev/null || return 1
 }
+# QBTEST:BEGIN name=path-owner-user-existing function=_queue_path_owner_user language=bash
+# QBTEST:B64
+# dT0iJChfcXVldWVfY3VycmVudF9zaGVsbF91c2VyX2Zvcl9kaXNwbGF5KSIKb3V0PSIkKF9xdWV1ZV9wYXRoX293bmVyX3VzZXIgLikiCltbIC1uICIkb3V0IiBdXQojIEluIG1vc3QgdGVzdCBoYXJuZXNzZXMgdGhlIGN1cnJlbnQgZGlyZWN0b3J5IGlzIG93bmVkIGJ5IHRoZSBydW5uaW5nIHVzZXIuCltbICIkb3V0IiA9PSAiJHUiIHx8ICIkb3V0IiA9PSAicm9vdCIgXV0K
+# QBTEST:END
 
 _queue_root_owner_user() {
     _queue_path_owner_user "$(_queue_root)"
@@ -3747,6 +3811,10 @@ _queue_root_owner_user() {
 _queue_running_as_root() {
     [[ "$(id -u 2>/dev/null || echo 99999)" == "0" ]]
 }
+# QBTEST:BEGIN name=running-as-root-boolean function=_queue_running_as_root language=bash
+# QBTEST:B64
+# aWYgX3F1ZXVlX3J1bm5pbmdfYXNfcm9vdDsgdGhlbiA6OyBlbHNlIDo7IGZpCg==
+# QBTEST:END
 
 _queue_root_is_foreign_user_queue() {
     local owner
@@ -3854,14 +3922,32 @@ _queue_class_source_with_job_context() {
 _queue_global_root() {
     printf '%s\n' "${QUEUEBASH_GLOBAL_ROOT:-/var/lib/bashqueues/global}"
 }
+# QBTEST:BEGIN name=global-root-override-and-default function=_queue_global_root language=bash
+# QBTEST:B64
+# UVVFVUVCQVNIX0dMT0JBTF9ST09UPS90bXAvcWItZ2xvYmFsLXJvb3QKW1sgIiQoX3F1ZXVlX2ds
+# b2JhbF9yb290KSIgPT0gIi90bXAvcWItZ2xvYmFsLXJvb3QiIF1dCnVuc2V0IFFVRVVFQkFTSF9H
+# TE9CQUxfUk9PVApbWyAiJChfcXVldWVfZ2xvYmFsX3Jvb3QpIiA9PSAiL3Zhci9saWIvYmFzaHF1
+# ZXVlcy9nbG9iYWwiIF1dCg==
+# QBTEST:END
 
 _queue_global_claim_policy() {
     printf '%s\n' "${QUEUEBASH_GLOBAL_CLAIM_POLICY:-strict}"
 }
+# QBTEST:BEGIN name=global-claim-policy-override-and-default function=_queue_global_claim_policy language=bash
+# QBTEST:B64
+# UVVFVUVCQVNIX0dMT0JBTF9DTEFJTV9QT0xJQ1k9YWR2aXNvcnkKW1sgIiQoX3F1ZXVlX2dsb2Jh
+# bF9jbGFpbV9wb2xpY3kpIiA9PSAiYWR2aXNvcnkiIF1dCnVuc2V0IFFVRVVFQkFTSF9HTE9CQUxf
+# Q0xBSU1fUE9MSUNZCltbICIkKF9xdWV1ZV9nbG9iYWxfY2xhaW1fcG9saWN5KSIgPT0gInN0cmlj
+# dCIgXV0K
+# QBTEST:END
 
 _queue_global_enabled() {
     [[ "${QUEUEBASH_GLOBAL_CLAIMS:-1}" != "0" && "${QUEUEBASH_GLOBAL_CLAIMS:-1}" != "off" ]]
 }
+# QBTEST:BEGIN name=global-enabled-toggle function=_queue_global_enabled language=bash
+# QBTEST:B64
+# dW5zZXQgUVVFVUVCQVNIX0dMT0JBTF9DTEFJTVMKX3F1ZXVlX2dsb2JhbF9lbmFibGVkClFVRVVFQkFTSF9HTE9CQUxfQ0xBSU1TPTE7IF9xdWV1ZV9nbG9iYWxfZW5hYmxlZApRVUVVRUJBU0hfR0xPQkFMX0NMQUlNUz15ZXM7IF9xdWV1ZV9nbG9iYWxfZW5hYmxlZApRVUVVRUJBU0hfR0xPQkFMX0NMQUlNUz0wOyAhIF9xdWV1ZV9nbG9iYWxfZW5hYmxlZApRVUVVRUJBU0hfR0xPQkFMX0NMQUlNUz1vZmY7ICEgX3F1ZXVlX2dsb2JhbF9lbmFibGVkCnVuc2V0IFFVRVVFQkFTSF9HTE9CQUxfQ0xBSU1T
+# QBTEST:END
 
 _queue_global_hash() {
     local key="$1"
@@ -3873,6 +3959,10 @@ _queue_global_hash() {
         printf '%s' "$key" | cksum | awk '{print $1}'
     fi
 }
+# QBTEST:BEGIN name=global-hash-stable function=_queue_global_hash language=bash
+# QBTEST:B64
+# aDE9IiQoX3F1ZXVlX2dsb2JhbF9oYXNoICdhbHBoYScpIgpoMj0iJChfcXVldWVfZ2xvYmFsX2hhc2ggJ2FscGhhJykiCmgzPSIkKF9xdWV1ZV9nbG9iYWxfaGFzaCAnYmV0YScpIgpbWyAtbiAiJGgxIiBdXQpbWyAiJGgxIiA9PSAiJGgyIiBdXQpbWyAiJGgxIiAhPSAiJGgzIiBdXQo=
+# QBTEST:END
 
 _queue_global_init() {
     local root="$(_queue_global_root)"
@@ -3910,6 +4000,10 @@ _queue_global_json_event() {
         printf '}\n'
     } >> "$log" 2>/dev/null || true
 }
+# QBTEST:BEGIN name=global-json-event-writes-log function=_queue_global_json_event language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiClFVRVVFQkFTSF9HTE9CQUxfUk9PVD0iJHRtcC9nbG9iYWwiCl9xdWV1ZV9nbG9iYWxfanNvbl9ldmVudCBhY3F1aXJlIGNwdSBzaGFyZWQgUTEyMyBhbGljZSAiJHRtcC9xcm9vdCIgREVWIGpvYm5hbWUgZGV0YWlsLXRleHQKbG9nPSIkKF9xdWV1ZV9nbG9iYWxfZXZlbnRzX2xvZykiCltbIC1zICIkbG9nIiBdXQpsaW5lPSIkKGNhdCAiJGxvZyIpIgpbWyAiJGxpbmUiID09IConImV2ZW50IjoiYWNxdWlyZSInKiBdXQpbWyAiJGxpbmUiID09IConImNsYWltIjoiY3B1IicqIF1dCltbICIkbGluZSIgPT0gKiciZGV0YWlsIjoiZGV0YWlsLXRleHQiJyogXV0Kcm0gLXJmICIkdG1wIgp1bnNldCBRVUVVRUJBU0hfR0xPQkFMX1JPT1Q=
+# QBTEST:END
 
 _queue_global_slots_from_args() {
     local default_slots="$1" arg v
@@ -3925,6 +4019,10 @@ _queue_global_slots_from_args() {
         printf '1\n'
     fi
 }
+# QBTEST:BEGIN name=global-slots-args function=_queue_global_slots_from_args language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX2dsb2JhbF9zbG90c19mcm9tX2FyZ3MgMiBzbG90cz01IG90aGVyPXgpIiA9PSAiNSIgXV0KW1sgIiQoX3F1ZXVlX2dsb2JhbF9zbG90c19mcm9tX2FyZ3MgMyBvdGhlcj14KSIgPT0gIjMiIF1dCltbICIkKF9xdWV1ZV9nbG9iYWxfc2xvdHNfZnJvbV9hcmdzIGJhZCBvdGhlcj14KSIgPT0gIjEiIF1dCltbICIkKF9xdWV1ZV9nbG9iYWxfc2xvdHNfZnJvbV9hcmdzIDQgc2xvdHM9YWJjKSIgPT0gIjQiIF1dCg==
+# QBTEST:END
 
 _queue_global_spec_info() {
     local spec="$1" mode default_slots record_type claim family check target slots
@@ -3978,6 +4076,16 @@ _queue_global_claim_holder_state() {
     done
     printf 'missing\n'
 }
+# QBTEST:BEGIN name=global-claim-holder-state-detects-state function=_queue_global_claim_holder_state language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiCm1rZGlyIC1wICIkdG1wL3J1bm5pbmciICIkdG1wL2ZhaWxlZCIK
+# cHJpbnRmICd4XG4nID4gIiR0bXAvcnVubmluZy9qb2IxLmpvYiIKcHJpbnRmICd4XG4nID4gIiR0
+# bXAvZmFpbGVkL2pvYjIuam9iIgpbWyAiJChfcXVldWVfZ2xvYmFsX2NsYWltX2hvbGRlcl9zdGF0
+# ZSAiJHRtcCIgam9iMSkiID09ICJydW5uaW5nIiBdXQpbWyAiJChfcXVldWVfZ2xvYmFsX2NsYWlt
+# X2hvbGRlcl9zdGF0ZSAiJHRtcCIgam9iMikiID09ICJmYWlsZWQiIF1dCltbICIkKF9xdWV1ZV9n
+# bG9iYWxfY2xhaW1faG9sZGVyX3N0YXRlICIkdG1wIiBtaXNzaW5nKSIgPT0gIm1pc3NpbmciIF1d
+# CnJtIC1yZiAiJHRtcCIK
+# QBTEST:END
 
 _queue_global_claim_compact_file() {
     local file="$1" claim="$2" mode="$3" slots="$4" tmp now n=0 line qid qroot state
@@ -4011,6 +4119,13 @@ _queue_global_claim_holder_count() {
     n="$(grep -c '^HOLDER' "$file" 2>/dev/null)" || n=0
     printf '%s\n' "${n:-0}"
 }
+# QBTEST:BEGIN name=global-claim-holder-count-holder-lines function=_queue_global_claim_holder_count language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCkiCnByaW50ZiAnSEVBREVSXG5IT0xERVJcdGpvYjFcbkhPTERFUlx0am9i
+# MlxuT1RIRVJcbicgPiAiJHRtcCIKW1sgIiQoX3F1ZXVlX2dsb2JhbF9jbGFpbV9ob2xkZXJfY291
+# bnQgIiR0bXAiKSIgPT0gIjIiIF1dCnJtIC1mICIkdG1wIgpbWyAiJChfcXVldWVfZ2xvYmFsX2Ns
+# YWltX2hvbGRlcl9jb3VudCAvbm8vc3VjaC9maWxlKSIgPT0gIjAiIF1dCg==
+# QBTEST:END
 
 _queue_global_claim_holder_summary() {
     local claim="$1" file line qid queue_user qroot class job_name pid started state out=""
@@ -4037,6 +4152,14 @@ _queue_global_claim_has_holder() {
     local file="$1" qid="$2" qroot="$3"
     awk -F '\t' -v qid="$qid" -v qroot="$qroot" '$1 == "HOLDER" && $2 == qid && $4 == qroot { found=1 } END { exit found ? 0 : 1 }' "$file" 2>/dev/null
 }
+# QBTEST:BEGIN name=global-claim-has-holder-matches-qid-qroot function=_queue_global_claim_has_holder language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCkiCnByaW50ZiAnSE9MREVSXHRqb2IxXHR1c2VyXHQvcm9vdC9hXG5IT0xE
+# RVJcdGpvYjJcdHVzZXJcdC9yb290L2JcbicgPiAiJHRtcCIKX3F1ZXVlX2dsb2JhbF9jbGFpbV9o
+# YXNfaG9sZGVyICIkdG1wIiBqb2IxIC9yb290L2EKISBfcXVldWVfZ2xvYmFsX2NsYWltX2hhc19o
+# b2xkZXIgIiR0bXAiIGpvYjEgL3Jvb3QvYgohIF9xdWV1ZV9nbG9iYWxfY2xhaW1faGFzX2hvbGRl
+# ciAiJHRtcCIgbWlzc2luZyAvcm9vdC9hCnJtIC1mICIkdG1wIgo=
+# QBTEST:END
 
 _queue_global_claim_available_one() {
     local claim="$1" mode="$2" slots="$3" qid="${4:-}" qroot="${5:-}" lock file count rc=0
@@ -7187,6 +7310,11 @@ _queue_policy_words_merge_unique() {
     done
     printf '%s\n' "$out"
 }
+# QBTEST:BEGIN name=policy-words-merge-unique function=_queue_policy_words_merge_unique language=bash
+# QBTEST:B64
+# b3V0PSIkKF9xdWV1ZV9wb2xpY3lfd29yZHNfbWVyZ2VfdW5pcXVlICJhbHBoYSBiZXRhIiAiYmV0
+# YSBnYW1tYSBhbHBoYSIpIgpbWyAiJG91dCIgPT0gImFscGhhIGJldGEgZ2FtbWEiIF1dCg==
+# QBTEST:END
 
 _queue_policy_lines_merge_unique() {
     local current="${1:-}" incoming="${2:-}" line out=""
@@ -7283,6 +7411,14 @@ _queue_policy_source_file_var() {
         printf '%s\n' "${!var:-}"
     )
 }
+# QBTEST:BEGIN name=policy-source-file-var-reads-one-var function=_queue_policy_source_file_var language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCkiCnByaW50ZiAnUE9MSUNZX1ZBTFVFPSVxXG5PVEhFUl9WQUxVRT0lcVxu
+# JyAiYWxwaGEgYmV0YSIgIm5vcGUiID4gIiR0bXAiCm91dD0iJChfcXVldWVfcG9saWN5X3NvdXJj
+# ZV9maWxlX3ZhciAiJHRtcCIgUE9MSUNZX1ZBTFVFKSIKcm0gLWYgIiR0bXAiCltbICIkb3V0IiA9
+# PSAiYWxwaGEgYmV0YSIgXV0KW1sgLXogIiQoX3F1ZXVlX3BvbGljeV9zb3VyY2VfZmlsZV92YXIg
+# L25vL3N1Y2gvZmlsZSBQT0xJQ1lfVkFMVUUpIiBdXQo=
+# QBTEST:END
 
 _queue_security_policy_statement_source() {
     local requested="${1:-}" name file names seen=0
@@ -7393,6 +7529,10 @@ _queue_security_sandbox_rank() {
         *) echo 0 ;;
     esac
 }
+# QBTEST:BEGIN name=security-sandbox-rank-order function=_queue_security_sandbox_rank language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX3NlY3VyaXR5X3NhbmRib3hfcmFuayBvZmYpIiA9PSAwIF1dCltbICIkKF9xdWV1ZV9zZWN1cml0eV9zYW5kYm94X3Jhbmsgbm9uZSkiID09IDAgXV0KW1sgIiQoX3F1ZXVlX3NlY3VyaXR5X3NhbmRib3hfcmFuayByZXN0cmljdC1lZ3Jlc3MpIiA9PSAxIF1dCltbICIkKF9xdWV1ZV9zZWN1cml0eV9zYW5kYm94X3JhbmsgcXVldWUtZGVmYXVsdCkiID09IDEgXV0KW1sgIiQoX3F1ZXVlX3NlY3VyaXR5X3NhbmRib3hfcmFuayBuZXR3b3JrLW5vbmUpIiA9PSAyIF1dCltbICIkKF9xdWV1ZV9zZWN1cml0eV9zYW5kYm94X3Jhbmsgc3RyaWN0KSIgPT0gMyBdXQpbWyAiJChfcXVldWVfc2VjdXJpdHlfc2FuZGJveF9yYW5rIHVua25vd24pIiA9PSAwIF1d
+# QBTEST:END
 
 _queue_security_seccomp_rank() {
     case "${1,,}" in
@@ -7402,6 +7542,10 @@ _queue_security_seccomp_rank() {
         *) echo 0 ;;
     esac
 }
+# QBTEST:BEGIN name=security-seccomp-rank-order function=_queue_security_seccomp_rank language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX3NlY3VyaXR5X3NlY2NvbXBfcmFuayBvZmYpIiA9PSAwIF1dCltbICIkKF9xdWV1ZV9zZWN1cml0eV9zZWNjb21wX3Jhbmsgbm9uZSkiID09IDAgXV0KW1sgIiQoX3F1ZXVlX3NlY3VyaXR5X3NlY2NvbXBfcmFuayBkb2NrZXItZGVmYXVsdCkiID09IDEgXV0KW1sgIiQoX3F1ZXVlX3NlY3VyaXR5X3NlY2NvbXBfcmFuayBxdWV1ZS1kZWZhdWx0KSIgPT0gMSBdXQpbWyAiJChfcXVldWVfc2VjdXJpdHlfc2VjY29tcF9yYW5rIHN0cmljdCkiID09IDIgXV0KW1sgIiQoX3F1ZXVlX3NlY3VyaXR5X3NlY2NvbXBfcmFuayB1bmtub3duKSIgPT0gMCBdXQ==
+# QBTEST:END
 
 _queue_authorisation_normalise_code() {
     local c="${1:-}"
@@ -7434,6 +7578,10 @@ _queue_command_shell_words_from_args() {
     printf '%s
 ' "$raw"
 }
+# QBTEST:BEGIN name=command-shell-words-quotes function=_queue_command_shell_words_from_args language=bash
+# QBTEST:B64
+# b3V0PSIkKF9xdWV1ZV9jb21tYW5kX3NoZWxsX3dvcmRzX2Zyb21fYXJncyBlY2hvICdhbHBoYSBiZXRhJyAnJEhPTUUnKSIKW1sgIiRvdXQiID09IGVjaG8qIF1dCltbICIkb3V0IiA9PSAqYWxwaGFcIGJldGEqIF1dCltbICIkb3V0IiA9PSAqJ1wkSE9NRScqIF1dCmVtcHR5PSIkKF9xdWV1ZV9jb21tYW5kX3NoZWxsX3dvcmRzX2Zyb21fYXJncykiCltbIC16ICIkZW1wdHkiIF1d
+# QBTEST:END
 
 _queue_policy_hash_value_in_list() {
     local hash="${1:-}" list="${2:-}" item
@@ -8680,10 +8828,23 @@ _queue_policy_valid_kind() {
 _queue_policy_valid_name() {
     [[ "${1:-}" =~ ^[A-Za-z0-9_.@+-]+$ ]]
 }
+# QBTEST:BEGIN name=policy-valid-name-safe-chars function=_queue_policy_valid_name language=bash
+# QBTEST:B64
+# X3F1ZXVlX3BvbGljeV92YWxpZF9uYW1lICdBbHBoYV8xLjJAeCstJwohIF9xdWV1ZV9wb2xpY3lf
+# dmFsaWRfbmFtZSAnYmFkL25hbWUnCiEgX3F1ZXVlX3BvbGljeV92YWxpZF9uYW1lICdiYWQgbmFt
+# ZScKISBfcXVldWVfcG9saWN5X3ZhbGlkX25hbWUgJycK
+# QBTEST:END
 
 _queue_policy_shared_root() {
     printf '%s\n' "${QUEUEBASH_SHARED_POLICY_ROOT:-/etc/bashqueues/policies.d}"
 }
+# QBTEST:BEGIN name=policy-shared-root-override function=_queue_policy_shared_root language=bash
+# QBTEST:B64
+# UVVFVUVCQVNIX1NIQVJFRF9QT0xJQ1lfUk9PVD0vdG1wL3FiLXBvbGljeS1zaGFyZWQKW1sgIiQo
+# X3F1ZXVlX3BvbGljeV9zaGFyZWRfcm9vdCkiID09ICIvdG1wL3FiLXBvbGljeS1zaGFyZWQiIF1d
+# CnVuc2V0IFFVRVVFQkFTSF9TSEFSRURfUE9MSUNZX1JPT1QKW1sgIiQoX3F1ZXVlX3BvbGljeV9z
+# aGFyZWRfcm9vdCkiID09ICIvZXRjL2Jhc2hxdWV1ZXMvcG9saWNpZXMuZCIgXV0K
+# QBTEST:END
 
 _queue_policy_source_root() {
     local source_dir="${QUEUEBASH_POLICY_SOURCE_DIR:-}" script_dir
@@ -8694,6 +8855,13 @@ _queue_policy_source_root() {
     [[ -z "$source_dir" && -d "./policies.d" ]] && source_dir="./policies.d"
     printf '%s\n' "$source_dir"
 }
+# QBTEST:BEGIN name=policy-source-root-override function=_queue_policy_source_root language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiClFVRVVFQkFTSF9QT0xJQ1lfU09VUkNFX0RJUj0iJHRtcC9wb2xp
+# Y2llcy5kIgpta2RpciAtcCAiJFFVRVVFQkFTSF9QT0xJQ1lfU09VUkNFX0RJUiIKW1sgIiQoX3F1
+# ZXVlX3BvbGljeV9zb3VyY2Vfcm9vdCkiID09ICIkUVVFVUVCQVNIX1BPTElDWV9TT1VSQ0VfRElS
+# IiBdXQpybSAtcmYgIiR0bXAiCg==
+# QBTEST:END
 
 _queue_policy_file() {
     local kind="${1:-}" name="${2:-}" root source_root shared_root
@@ -8725,10 +8893,33 @@ _queue_policy_file() {
 
     return 1
 }
+# QBTEST:BEGIN name=policy-file-personal-precedence function=_queue_policy_file language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiCmV4cG9ydCBRVUVVRUJBU0hfUk9PVD0iJHRtcC9xcm9vdCIKZXhw
+# b3J0IFFVRVVFQkFTSF9TSEFSRURfUE9MSUNZX1JPT1Q9IiR0bXAvc2hhcmVkIgpta2RpciAtcCAi
+# JFFVRVVFQkFTSF9ST09UL3BvbGljaWVzLmQvc2FuZGJveCIgIiRRVUVVRUJBU0hfU0hBUkVEX1BP
+# TElDWV9ST09UL3NhbmRib3giCnByaW50ZiAnWD1wZXJzb25hbFxuJyA+ICIkUVVFVUVCQVNIX1JP
+# T1QvcG9saWNpZXMuZC9zYW5kYm94L2V4YW1wbGUuZW52IgpvdXQ9IiQoX3F1ZXVlX3BvbGljeV9m
+# aWxlIHNhbmRib3ggZXhhbXBsZSkiCltbICIkb3V0IiA9PSAiJFFVRVVFQkFTSF9ST09UL3BvbGlj
+# aWVzLmQvc2FuZGJveC9leGFtcGxlLmVudiIgXV0KcHJpbnRmICdYPXNoYXJlZFxuJyA+ICIkUVVF
+# VUVCQVNIX1NIQVJFRF9QT0xJQ1lfUk9PVC9zYW5kYm94L2V4YW1wbGUuZW52IgpvdXQ9IiQoX3F1
+# ZXVlX3BvbGljeV9maWxlIHNhbmRib3ggZXhhbXBsZSkiCltbICIkb3V0IiA9PSAiJFFVRVVFQkFT
+# SF9TSEFSRURfUE9MSUNZX1JPT1Qvc2FuZGJveC9leGFtcGxlLmVudiIgXV0Kcm0gLXJmICIkdG1w
+# Igo=
+# QBTEST:END
 
 _queue_policy_exists() {
     _queue_policy_file "${1:-}" "${2:-}" >/dev/null 2>&1
 }
+# QBTEST:BEGIN name=policy-exists-uses-policy-file function=_queue_policy_exists language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiCmV4cG9ydCBRVUVVRUJBU0hfUk9PVD0iJHRtcC9xcm9vdCIKZXhw
+# b3J0IFFVRVVFQkFTSF9TSEFSRURfUE9MSUNZX1JPT1Q9IiR0bXAvc2hhcmVkIgpta2RpciAtcCAi
+# JFFVRVVFQkFTSF9ST09UL3BvbGljaWVzLmQvc2VjY29tcCIKcHJpbnRmICdYPTFcbicgPiAiJFFV
+# RVVFQkFTSF9ST09UL3BvbGljaWVzLmQvc2VjY29tcC9taW5pbWFsLmVudiIKX3F1ZXVlX3BvbGlj
+# eV9leGlzdHMgc2VjY29tcCBtaW5pbWFsCiEgX3F1ZXVlX3BvbGljeV9leGlzdHMgc2VjY29tcCBt
+# aXNzaW5nCnJtIC1yZiAiJHRtcCIK
+# QBTEST:END
 
 _queue_policy_list() {
     local kind="${1:-}" root source_root shared_root f
@@ -8757,6 +8948,20 @@ _queue_policy_origin() {
         *) printf '%s\n' unknown ;;
     esac
 }
+# QBTEST:BEGIN name=policy-origin-classifies-paths function=_queue_policy_origin language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiCmV4cG9ydCBRVUVVRUJBU0hfUk9PVD0iJHRtcC9xcm9vdCIKZXhw
+# b3J0IFFVRVVFQkFTSF9TSEFSRURfUE9MSUNZX1JPT1Q9IiR0bXAvc2hhcmVkIgpleHBvcnQgUVVF
+# VUVCQVNIX1BPTElDWV9TT1VSQ0VfRElSPSIkdG1wL3NvdXJjZSIKbWtkaXIgLXAgIiRRVUVVRUJB
+# U0hfUk9PVC9wb2xpY2llcy5kIiAiJFFVRVVFQkFTSF9TSEFSRURfUE9MSUNZX1JPT1QiICIkUVVF
+# VUVCQVNIX1BPTElDWV9TT1VSQ0VfRElSIgpbWyAiJChfcXVldWVfcG9saWN5X29yaWdpbiAiJFFV
+# RVVFQkFTSF9TSEFSRURfUE9MSUNZX1JPT1Qvc2FuZGJveC94LmVudiIpIiA9PSAic2hhcmVkIiBd
+# XQpbWyAiJChfcXVldWVfcG9saWN5X29yaWdpbiAiJFFVRVVFQkFTSF9ST09UL3BvbGljaWVzLmQv
+# c2FuZGJveC94LmVudiIpIiA9PSAicGVyc29uYWwiIF1dCltbICIkKF9xdWV1ZV9wb2xpY3lfb3Jp
+# Z2luICIkUVVFVUVCQVNIX1BPTElDWV9TT1VSQ0VfRElSL3NhbmRib3gveC5lbnYiKSIgPT0gImJ1
+# bmRsZWQiIF1dCltbICIkKF9xdWV1ZV9wb2xpY3lfb3JpZ2luICIkdG1wL290aGVyL3guZW52Iiki
+# ID09ICJ1bmtub3duIiBdXQpybSAtcmYgIiR0bXAiCg==
+# QBTEST:END
 
 _queue_policy_edit_target_file() {
     # Prints the file path to edit/create for a policy.
@@ -8826,6 +9031,13 @@ _queue_policy_sha256() {
         wc -c < "$file" | awk '{print "size:"$1}'
     fi
 }
+# QBTEST:BEGIN name=policy-sha256-file-digest function=_queue_policy_sha256 language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCkiCnByaW50ZiAnYWJjJyA+ICIkdG1wIgpvdXQ9IiQoX3F1ZXVlX3BvbGlj
+# eV9zaGEyNTYgIiR0bXAiKSIKcm0gLWYgIiR0bXAiCltbICIkb3V0IiA9PSAiJChwcmludGYgJ2Fi
+# YycgfCBzaGEyNTZzdW0gfCBhd2sgJ3twcmludCAkMX0nKSIgfHwgIiRvdXQiID09ICJzaXplOjMi
+# IF1dCiEgX3F1ZXVlX3BvbGljeV9zaGEyNTYgL25vL3N1Y2gvZmlsZSA+L2Rldi9udWxsIDI+JjEK
+# QBTEST:END
 
 _queue_policy_explain_effective_class_statement() {
     local name file
@@ -8871,6 +9083,13 @@ _queue_policy_quote_array_assignment() {
     done
     printf ' )\n'
 }
+# QBTEST:BEGIN name=policy-quote-array-assignment function=_queue_policy_quote_array_assignment language=bash
+# QBTEST:B64
+# b3V0PSIkKF9xdWV1ZV9wb2xpY3lfcXVvdGVfYXJyYXlfYXNzaWdubWVudCBQT0xJQ1lfSVRFTVMg
+# ImFscGhhIGJldGEiICJnYW1tYSIpIgpbWyAiJG91dCIgPT0gUE9MSUNZX0lURU1TPVwoKiBdXQpb
+# WyAiJG91dCIgPT0gKiJhbHBoYVxcIGJldGEiKiBdXQpbWyAiJG91dCIgPT0gKiJnYW1tYSIqIF1d
+# Cg==
+# QBTEST:END
 
 _queue_policy_source_file() {
     local kind="${1:-}" name="${2:-}" file
@@ -12056,6 +12275,14 @@ _queue_restore_print_non_deleted_matches() {
 
 _queue_cron_spool_dir() { printf '%s\n' "${QUEUEBASH_CRON_SPOOL_DIR:-/var/spool/bashqueues_cron}"; }
 _queue_cron_system_dir() { printf '%s\n' "${QUEUEBASH_CRON_SYSTEM_DIR:-/etc/bashqueues_cron.d}"; }
+# QBTEST:BEGIN name=cron-spool-dir-env-default function=_queue_cron_spool_dir language=bash
+# QBTEST:BEGIN name=cron-system-dir-env-default function=_queue_cron_system_dir language=bash
+# QBTEST:B64
+# dW5zZXQgUVVFVUVCQVNIX0NST05fU1lTVEVNX0RJUgpbWyAiJChfcXVldWVfY3Jvbl9zeXN0ZW1fZGlyKSIgPT0gIi9ldGMvYmFzaHF1ZXVlc19jcm9uLmQiIF1dClFVRVVFQkFTSF9DUk9OX1NZU1RFTV9ESVI9L3RtcC9xYi1jcm9uLXN5c3RlbQpbWyAiJChfcXVldWVfY3Jvbl9zeXN0ZW1fZGlyKSIgPT0gIi90bXAvcWItY3Jvbi1zeXN0ZW0iIF1dCnVuc2V0IFFVRVVFQkFTSF9DUk9OX1NZU1RFTV9ESVI=
+# QBTEST:END
+# QBTEST:B64
+# dW5zZXQgUVVFVUVCQVNIX0NST05fU1BPT0xfRElSCltbICIkKF9xdWV1ZV9jcm9uX3Nwb29sX2RpcikiID09ICIvdmFyL3Nwb29sL2Jhc2hxdWV1ZXNfY3JvbiIgXV0KUVVFVUVCQVNIX0NST05fU1BPT0xfRElSPS90bXAvcWItY3Jvbi1zcG9vbApbWyAiJChfcXVldWVfY3Jvbl9zcG9vbF9kaXIpIiA9PSAiL3RtcC9xYi1jcm9uLXNwb29sIiBdXQp1bnNldCBRVUVVRUJBU0hfQ1JPTl9TUE9PTF9ESVI=
+# QBTEST:END
 _queue_cron_state_dir() { printf '%s\n' "${QUEUEBASH_CRON_STATE_DIR:-/var/lib/bashqueues/cron}"; }
 _queue_cron_ticker_path() {
     local here
@@ -12070,6 +12297,10 @@ _queue_cron_ticker_path() {
     done
     command -v bashqueues-cron-ticker.py 2>/dev/null || true
 }
+# QBTEST:BEGIN name=cron-state-dir-env-default function=_queue_cron_state_dir language=bash
+# QBTEST:B64
+# dW5zZXQgUVVFVUVCQVNIX0NST05fU1RBVEVfRElSCltbICIkKF9xdWV1ZV9jcm9uX3N0YXRlX2RpcikiID09ICIvdmFyL2xpYi9iYXNocXVldWVzL2Nyb24iIF1dClFVRVVFQkFTSF9DUk9OX1NUQVRFX0RJUj0vdG1wL3FiLWNyb24tc3RhdGUKW1sgIiQoX3F1ZXVlX2Nyb25fc3RhdGVfZGlyKSIgPT0gIi90bXAvcWItY3Jvbi1zdGF0ZSIgXV0KdW5zZXQgUVVFVUVCQVNIX0NST05fU1RBVEVfRElS
+# QBTEST:END
 _queue_cron_line_description() {
     local min="$1" hour="$2" dom="$3" mon="$4" dow="$5"
     local out=""
@@ -12090,6 +12321,10 @@ _queue_cron_line_description() {
     [[ "$dow" != "*" ]] && out="$out, weekday '$dow'"
     printf '%s\n' "$out"
 }
+# QBTEST:BEGIN name=cron-line-description-human-hint function=_queue_cron_line_description language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX2Nyb25fbGluZV9kZXNjcmlwdGlvbiAnKicgJyonICcqJyAnKicgJyonKSIgPT0gImV2ZXJ5IG1pbnV0ZSIgXV0KW1sgIiQoX3F1ZXVlX2Nyb25fbGluZV9kZXNjcmlwdGlvbiAnKi81JyAnKicgJyonICcqJyAnKicpIiA9PSAiZXZlcnkgNSBtaW51dGVzIiBdXQpvdXQ9IiQoX3F1ZXVlX2Nyb25fbGluZV9kZXNjcmlwdGlvbiAxNSAzIDEgMiAwKSIKW1sgIiRvdXQiID09ICoiYXQgbWludXRlIDE1IHBhc3QgaG91ciAzIiogXV0KW1sgIiRvdXQiID09ICoiZGF5LW9mLW1vbnRoICcxJyIqIF1dCltbICIkb3V0IiA9PSAqIm1vbnRoICcyJyIqIF1dCltbICIkb3V0IiA9PSAqIndlZWtkYXkgJzAnIiogXV0=
+# QBTEST:END
 
 _queue_cron_entry_hash() {
     local user="$1" command="$2"
@@ -12099,12 +12334,20 @@ _queue_cron_entry_hash() {
         printf '%s\0%s' "$user" "$command" | shasum -a 256 | awk '{print $1}'
     fi
 }
+# QBTEST:BEGIN name=cron-entry-hash-stable function=_queue_cron_entry_hash language=bash
+# QBTEST:B64
+# aDE9IiQoX3F1ZXVlX2Nyb25fZW50cnlfaGFzaCBhbGljZSAnZWNobyBoaScpIgpoMj0iJChfcXVldWVfY3Jvbl9lbnRyeV9oYXNoIGFsaWNlICdlY2hvIGhpJykiCmgzPSIkKF9xdWV1ZV9jcm9uX2VudHJ5X2hhc2ggYm9iICdlY2hvIGhpJykiCltbIC1uICIkaDEiIF1dCltbICIkaDEiID09ICIkaDIiIF1dCltbICIkaDEiICE9ICIkaDMiIF1d
+# QBTEST:END
 
 _queue_cron_stable_class() {
     local user="$1" command="$2" h
     h="$(_queue_cron_entry_hash "$user" "$command")"
     printf 'cron_%s\n' "${h:0:12}"
 }
+# QBTEST:BEGIN name=cron-stable-class-prefix function=_queue_cron_stable_class language=bash
+# QBTEST:B64
+# Yz0iJChfcXVldWVfY3Jvbl9zdGFibGVfY2xhc3MgYWxpY2UgJ2VjaG8gaGknKSIKW1sgIiRjIiA9fiBeY3Jvbl9bMC05YS1mXXsxMn0kIF1dCltbICIkYyIgPT0gIiQoX3F1ZXVlX2Nyb25fc3RhYmxlX2NsYXNzIGFsaWNlICdlY2hvIGhpJykiIF1dCltbICIkYyIgIT0gIiQoX3F1ZXVlX2Nyb25fc3RhYmxlX2NsYXNzIGJvYiAnZWNobyBoaScpIiBdXQ==
+# QBTEST:END
 
 _queue_cron_next_hint() {
     local spec="$1"
@@ -12125,6 +12368,10 @@ _queue_cron_trim() {
     s="${s%${s##*[![:space:]]}}"
     printf '%s\n' "$s"
 }
+# QBTEST:BEGIN name=cron-trim-whitespace function=_queue_cron_trim language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX2Nyb25fdHJpbSAnICBoZWxsbyAgJykiID09ICJoZWxsbyIgXV0KW1sgIiQoX3F1ZXVlX2Nyb25fdHJpbSAkJwl2YWx1ZQknKSIgPT0gInZhbHVlIiBdXQpbWyAiJChfcXVldWVfY3Jvbl90cmltICdhbHJlYWR5JykiID09ICJhbHJlYWR5IiBdXQ==
+# QBTEST:END
 
 _queue_cron_comment_directive_value() {
     local raw="$1" key="$2" body
@@ -12139,11 +12386,19 @@ _queue_cron_comment_directive_value() {
     esac
     return 1
 }
+# QBTEST:BEGIN name=cron-comment-directive-value-forms function=_queue_cron_comment_directive_value language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX2Nyb25fY29tbWVudF9kaXJlY3RpdmVfdmFsdWUgJyMgY2xhc3MgREVWJyBjbGFzcykiID09ICJERVYiIF1dCltbICIkKF9xdWV1ZV9jcm9uX2NvbW1lbnRfZGlyZWN0aXZlX3ZhbHVlICcjIGJhc2hxdWV1ZXMtY2xhc3MgQkFDS1VQJyBjbGFzcykiID09ICJCQUNLVVAiIF1dCltbICIkKF9xdWV1ZV9jcm9uX2NvbW1lbnRfZGlyZWN0aXZlX3ZhbHVlICcjIGJhc2hxdWV1ZXNfY2xhc3MgUkVQT1JUJyBjbGFzcykiID09ICJSRVBPUlQiIF1dCiEgX3F1ZXVlX2Nyb25fY29tbWVudF9kaXJlY3RpdmVfdmFsdWUgJ2NsYXNzIERFVicgY2xhc3MgPi9kZXYvbnVsbCAyPiYxCiEgX3F1ZXVlX2Nyb25fY29tbWVudF9kaXJlY3RpdmVfdmFsdWUgJyMgb3RoZXIgREVWJyBjbGFzcyA+L2Rldi9udWxsIDI+JjE=
+# QBTEST:END
 
 _queue_cron_is_assignment_line() {
     local line="$(_queue_cron_trim "$1")"
     [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]
 }
+# QBTEST:BEGIN name=cron-assignment-line-detects-env function=_queue_cron_is_assignment_line language=bash
+# QBTEST:B64
+# X3F1ZXVlX2Nyb25faXNfYXNzaWdubWVudF9saW5lICdQQVRIPS91c3IvYmluJwpfcXVldWVfY3Jvbl9pc19hc3NpZ25tZW50X2xpbmUgJyAgU0hFTEw9L2Jpbi9iYXNoICAnCiEgX3F1ZXVlX2Nyb25faXNfYXNzaWdubWVudF9saW5lICcxQkFEPXZhbHVlJyA+L2Rldi9udWxsIDI+JjEKISBfcXVldWVfY3Jvbl9pc19hc3NpZ25tZW50X2xpbmUgJyogKiAqICogKiBlY2hvIGhpJyA+L2Rldi9udWxsIDI+JjE=
+# QBTEST:END
 
 _queue_cron_is_entry_line() {
     local raw="$1" line macro rest a b c d e cmd
@@ -12162,6 +12417,10 @@ _queue_cron_is_entry_line() {
     read -r a b c d e cmd <<< "$line"
     [[ -n "${a:-}" && -n "${b:-}" && -n "${c:-}" && -n "${d:-}" && -n "${e:-}" && -n "${cmd:-}" ]]
 }
+# QBTEST:BEGIN name=cron-entry-line-detects-schedules function=_queue_cron_is_entry_line language=bash
+# QBTEST:B64
+# X3F1ZXVlX2Nyb25faXNfZW50cnlfbGluZSAnKiAqICogKiAqIGVjaG8gaGknCl9xdWV1ZV9jcm9uX2lzX2VudHJ5X2xpbmUgJ0ByZWJvb3QgZWNobyBoaScKISBfcXVldWVfY3Jvbl9pc19lbnRyeV9saW5lICcnID4vZGV2L251bGwgMj4mMQohIF9xdWV1ZV9jcm9uX2lzX2VudHJ5X2xpbmUgJyMgY29tbWVudCcgPi9kZXYvbnVsbCAyPiYxCiEgX3F1ZXVlX2Nyb25faXNfZW50cnlfbGluZSAnUEFUSD0vdXNyL2JpbicgPi9kZXYvbnVsbCAyPiYxCiEgX3F1ZXVlX2Nyb25faXNfZW50cnlfbGluZSAnKiAqICogKiAqJyA+L2Rldi9udWxsIDI+JjE=
+# QBTEST:END
 
 _queue_cron_class_for_entry() {
     local file="$1" wanted="$2" n=0 raw val active=""
@@ -14218,6 +14477,10 @@ _queue_array_contains() {
 _queue_module_valid_kind() {
     case "${1:-}" in class|classes|asset|assets|cap|caps|provider|providers) return 0 ;; *) return 1 ;; esac
 }
+# QBTEST:BEGIN name=module-valid-kind-aliases function=_queue_module_valid_kind language=bash
+# QBTEST:B64
+# X3F1ZXVlX21vZHVsZV92YWxpZF9raW5kIGNsYXNzCl9xdWV1ZV9tb2R1bGVfdmFsaWRfa2luZCBjbGFzc2VzCl9xdWV1ZV9tb2R1bGVfdmFsaWRfa2luZCBhc3NldApfcXVldWVfbW9kdWxlX3ZhbGlkX2tpbmQgYXNzZXRzCl9xdWV1ZV9tb2R1bGVfdmFsaWRfa2luZCBjYXAKX3F1ZXVlX21vZHVsZV92YWxpZF9raW5kIGNhcHMKX3F1ZXVlX21vZHVsZV92YWxpZF9raW5kIHByb3ZpZGVyCl9xdWV1ZV9tb2R1bGVfdmFsaWRfa2luZCBwcm92aWRlcnMKISBfcXVldWVfbW9kdWxlX3ZhbGlkX2tpbmQgdW5rbm93biA+L2Rldi9udWxsIDI+JjEKISBfcXVldWVfbW9kdWxlX3ZhbGlkX2tpbmQgJycgPi9kZXYvbnVsbCAyPiYx
+# QBTEST:END
 
 _queue_module_normal_kind() {
     case "${1:-}" in
@@ -14228,6 +14491,10 @@ _queue_module_normal_kind() {
         *) return 1 ;;
     esac
 }
+# QBTEST:BEGIN name=module-normal-kind-aliases function=_queue_module_normal_kind language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX21vZHVsZV9ub3JtYWxfa2luZCBjbGFzc2VzKSIgPT0gY2xhc3MgXV0KW1sgIiQoX3F1ZXVlX21vZHVsZV9ub3JtYWxfa2luZCBjbGFzcykiID09IGNsYXNzIF1dCltbICIkKF9xdWV1ZV9tb2R1bGVfbm9ybWFsX2tpbmQgYXNzZXRzKSIgPT0gYXNzZXQgXV0KW1sgIiQoX3F1ZXVlX21vZHVsZV9ub3JtYWxfa2luZCBjYXBzKSIgPT0gY2FwIF1dCltbICIkKF9xdWV1ZV9tb2R1bGVfbm9ybWFsX2tpbmQgcHJvdmlkZXJzKSIgPT0gcHJvdmlkZXIgXV0KISBfcXVldWVfbW9kdWxlX25vcm1hbF9raW5kIHVua25vd24gPi9kZXYvbnVsbCAyPiYx
+# QBTEST:END
 
 _queue_module_paths() {
     local kind="$1" name="$2" root="$(_queue_root)" active disabled
@@ -14240,6 +14507,10 @@ _queue_module_paths() {
     esac
     printf '%s\t%s\n' "$active" "$disabled"
 }
+# QBTEST:BEGIN name=module-paths-by-kind function=_queue_module_paths language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiClFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UPSIkdG1wL3Jvb3QiCm91dD0iJChfcXVldWVfbW9kdWxlX3BhdGhzIGNsYXNzIERFVikiCltbICIkb3V0IiA9PSAiJFFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UL2NsYXNzZXMvREVWLmVudiIkJwknIiRRVUVVRUJBU0hfU0VMRUNURURfUk9PVC9jbGFzc2VzLy5kaXNhYmxlZC9ERVYuZW52IiBdXQpvdXQ9IiQoX3F1ZXVlX21vZHVsZV9wYXRocyBhc3NldCBuZXQpIgpbWyAiJG91dCIgPT0gIiRRVUVVRUJBU0hfU0VMRUNURURfUk9PVC9hc3NldHMuZC9uZXQuc2giJCcJJyIkUVVFVUVCQVNIX1NFTEVDVEVEX1JPT1QvYXNzZXRzLmQvLmRpc2FibGVkL25ldC5zaCIgXV0KISBfcXVldWVfbW9kdWxlX3BhdGhzIHVua25vd24geCA+L2Rldi9udWxsIDI+JjEKcm0gLXJmICIkdG1wIgp1bnNldCBRVUVVRUJBU0hfU0VMRUNURURfUk9PVA==
+# QBTEST:END
 
 _queue_module_status() {
     local kind="$1" name="$2" paths active disabled
@@ -14249,6 +14520,10 @@ _queue_module_status() {
     if [[ -e "$disabled" ]]; then echo disabled; return 0; fi
     echo missing; return 1
 }
+# QBTEST:BEGIN name=module-status-enabled-disabled-missing function=_queue_module_status language=bash
+# QBTEST:B64
+# dG1wPSIkKG1rdGVtcCAtZCkiClFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UPSIkdG1wL3Jvb3QiCm1rZGlyIC1wICIkUVVFVUVCQVNIX1NFTEVDVEVEX1JPT1QvY2xhc3Nlcy8uZGlzYWJsZWQiCnRvdWNoICIkUVVFVUVCQVNIX1NFTEVDVEVEX1JPT1QvY2xhc3Nlcy9ERVYuZW52IgpbWyAiJChfcXVldWVfbW9kdWxlX3N0YXR1cyBjbGFzcyBERVYpIiA9PSBlbmFibGVkIF1dCnJtIC1mICIkUVVFVUVCQVNIX1NFTEVDVEVEX1JPT1QvY2xhc3Nlcy9ERVYuZW52Igp0b3VjaCAiJFFVRVVFQkFTSF9TRUxFQ1RFRF9ST09UL2NsYXNzZXMvLmRpc2FibGVkL0RFVi5lbnYiCltbICIkKF9xdWV1ZV9tb2R1bGVfc3RhdHVzIGNsYXNzIERFVikiID09IGRpc2FibGVkIF1dCnJtIC1mICIkUVVFVUVCQVNIX1NFTEVDVEVEX1JPT1QvY2xhc3Nlcy8uZGlzYWJsZWQvREVWLmVudiIKaWYgX3F1ZXVlX21vZHVsZV9zdGF0dXMgY2xhc3MgREVWID4vdG1wL3FiX21vZF9zdGF0dXMuJCQgMj4vZGV2L251bGw7IHRoZW4gZXhpdCAxOyBmaQpbWyAiJChjYXQgL3RtcC9xYl9tb2Rfc3RhdHVzLiQkKSIgPT0gbWlzc2luZyBdXQpybSAtZiAvdG1wL3FiX21vZF9zdGF0dXMuJCQKcm0gLXJmICIkdG1wIgp1bnNldCBRVUVVRUJBU0hfU0VMRUNURURfUk9PVA==
+# QBTEST:END
 
 _queue_module_disable() {
     local kind="$(_queue_module_normal_kind "${1:-}")" name="${2:-}" force="${3:-}" paths active disabled ddir used
@@ -17850,10 +18125,236 @@ sys.exit(0 if out['status']=='pass' else (3 if out['status']=='no_match' else 1)
 PYDEV_QBTEST
 }
 
+_queue_dev_test_qbtest_extract_command() {
+    local file="" function="" json=0
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --file|-f) file="${2:-}"; shift 2 ;;
+            --function) function="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h|--h)
+                cat <<'USAGE_QBTEST_EXTRACT'
+Usage:
+  queue dev test qbtest extract --file FILE --function NAME [--json]
+
+Extract the QBTEST block for the named function and print the decoded test code.
+With --json, prints a JSON object with schema, name, function, language, line, and code fields.
+Returns exit code 1 if no QBTEST block exists for the named function.
+USAGE_QBTEST_EXTRACT
+                return 0 ;;
+            --*) echo "queue dev test qbtest extract: unexpected argument: $1" >&2; return 2 ;;
+            *) echo "queue dev test qbtest extract: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$file" ]] || { echo "queue dev test qbtest extract: --file is required" >&2; return 2; }
+    [[ -f "$file" ]] || { echo "queue dev test qbtest extract: file not found: $file" >&2; return 1; }
+    [[ -n "$function" ]] || { echo "queue dev test qbtest extract: --function is required" >&2; return 2; }
+    python3 - "$file" "$function" "$json" <<'PYDEV_QBTEST_EXTRACT'
+import base64, json as jsonmod, pathlib, re, shlex, sys
+source = pathlib.Path(sys.argv[1]).resolve()
+filter_fn = sys.argv[2]
+json_mode = sys.argv[3] == '1'
+
+def strip_marker(line):
+    s = line.strip()
+    if s.startswith('#'): s = s[1:].strip()
+    elif s.startswith('//'): s = s[2:].strip()
+    return s
+
+def parse_meta(s):
+    meta = {}
+    try: parts = shlex.split(s)
+    except Exception: parts = s.split()
+    for p in parts:
+        if '=' in p:
+            k, v = p.split('=', 1)
+            meta[k.strip().lower().replace('-','_')] = v.strip()
+    return meta
+
+blocks = []
+cur = None; in_b64 = False
+for lineno, line in enumerate(source.read_text(encoding='utf-8').splitlines(), 1):
+    mark = strip_marker(line)
+    if mark.startswith('QBTEST:BEGIN'):
+        cur = {'line': lineno, 'meta': parse_meta(mark[len('QBTEST:BEGIN'):].strip()), 'b64_lines': []}
+        in_b64 = False; continue
+    if cur is None: continue
+    if mark.startswith('QBTEST:B64'): in_b64 = True; continue
+    if mark.startswith('QBTEST:END'): blocks.append(cur); cur = None; in_b64 = False; continue
+    if in_b64: cur['b64_lines'].append(mark)
+
+match = next((b for b in blocks if b['meta'].get('function') == filter_fn), None)
+if match is None:
+    print(f"queue dev test qbtest extract: no QBTEST block found for function={filter_fn}", file=sys.stderr)
+    sys.exit(1)
+
+raw = ''.join(match['b64_lines']).strip()
+try:
+    code = base64.b64decode(raw.encode(), validate=False).decode('utf-8')
+except Exception as exc:
+    print(f"queue dev test qbtest extract: invalid base64: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+if json_mode:
+    out = {
+        'schema': 'queuebash.dev_qbtest_block.v1',
+        'file': str(source),
+        'name': match['meta'].get('name', ''),
+        'function': match['meta'].get('function', filter_fn),
+        'language': match['meta'].get('language', 'bash'),
+        'line': match['line'],
+        'code': code,
+    }
+    print(jsonmod.dumps(out, sort_keys=True, separators=(',', ':')))
+else:
+    print(code, end='')
+PYDEV_QBTEST_EXTRACT
+}
+
+_queue_dev_test_qbtest_add_command() {
+    local file="" function="" name="" language="bash" code="" b64="" force=0
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --file|-f) file="${2:-}"; shift 2 ;;
+            --function) function="${2:-}"; shift 2 ;;
+            --name) name="${2:-}"; shift 2 ;;
+            --language|--lang) language="${2:-}"; shift 2 ;;
+            --code) code="${2:-}"; shift 2 ;;
+            --b64) b64="${2:-}"; shift 2 ;;
+            --force) force=1; shift ;;
+            --help|-h|--h)
+                cat <<'USAGE_QBTEST_ADD'
+Usage:
+  queue dev test qbtest add --file FILE --function NAME [--name TEST-NAME]
+                             [--lang bash|python] [--code SNIPPET | --b64 B64]
+                             [--force]
+
+Insert a QBTEST block for the named function immediately after its closing brace.
+Reads the test code from --code (raw snippet) or --b64 (pre-encoded base64).
+If neither is provided, reads the raw snippet from stdin.
+
+  --name        Test name (defaults to the function name with leading _ stripped)
+  --lang        Language: bash (default) or python
+  --code        Raw test snippet (will be base64-encoded automatically)
+  --b64         Pre-encoded base64 payload (used as-is)
+  --force       Overwrite an existing QBTEST block for this function
+
+Returns exit code 2 if a block already exists and --force is not set.
+Returns exit code 1 if the function cannot be located in the file.
+USAGE_QBTEST_ADD
+                return 0 ;;
+            --*) echo "queue dev test qbtest add: unexpected argument: $1" >&2; return 2 ;;
+            *) echo "queue dev test qbtest add: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$file" ]] || { echo "queue dev test qbtest add: --file is required" >&2; return 2; }
+    [[ -f "$file" ]] || { echo "queue dev test qbtest add: file not found: $file" >&2; return 1; }
+    [[ -n "$function" ]] || { echo "queue dev test qbtest add: --function is required" >&2; return 2; }
+    if [[ -z "$code" && -z "$b64" ]]; then
+        code="$(cat)"
+    fi
+    python3 - "$file" "$function" "$name" "$language" "$code" "$b64" "$force" <<'PYDEV_QBTEST_ADD'
+import base64, pathlib, re, sys
+
+source = pathlib.Path(sys.argv[1]).resolve()
+func_name = sys.argv[2]
+test_name = sys.argv[3] or re.sub(r'^_+', '', func_name).replace('_', '-')
+language = sys.argv[4] or 'bash'
+raw_code = sys.argv[5]
+raw_b64 = sys.argv[6]
+force = sys.argv[7] == '1'
+
+lines = source.read_text(encoding='utf-8').splitlines(keepends=True)
+
+# Check if a block already exists for this function
+existing_line = next(
+    (i for i, l in enumerate(lines)
+     if 'QBTEST:BEGIN' in l and f'function={func_name}' in l),
+    None
+)
+if existing_line is not None and not force:
+    print(f"queue dev test qbtest add: QBTEST block already exists for function={func_name} at line {existing_line+1}", file=sys.stderr)
+    print(f"queue dev test qbtest add: use --force to overwrite", file=sys.stderr)
+    sys.exit(2)
+
+if existing_line is not None and force:
+    # Remove existing block (BEGIN through END inclusive)
+    start = existing_line
+    end = start
+    for i in range(start, min(start + 20, len(lines))):
+        end = i
+        if 'QBTEST:END' in lines[i]:
+            break
+    del lines[start:end+1]
+
+# Encode the payload
+if raw_b64:
+    encoded = raw_b64.strip()
+    try:
+        base64.b64decode(encoded.encode(), validate=False)
+    except Exception as exc:
+        print(f"queue dev test qbtest add: invalid --b64 payload: {exc}", file=sys.stderr)
+        sys.exit(1)
+else:
+    encoded = base64.b64encode(raw_code.strip().encode()).decode()
+
+# Find the function end by bracket counting
+func_pat = re.compile(r'^' + re.escape(func_name) + r'\s*\(\s*\)')
+start_line = next(
+    (i for i, l in enumerate(lines) if func_pat.match(l.rstrip())),
+    None
+)
+if start_line is None:
+    # Also try without space before ()
+    func_pat2 = re.compile(r'^' + re.escape(func_name) + r'\s*\(')
+    start_line = next(
+        (i for i, l in enumerate(lines) if func_pat2.match(l.rstrip())),
+        None
+    )
+if start_line is None:
+    print(f"queue dev test qbtest add: function {func_name} not found in {source}", file=sys.stderr)
+    sys.exit(1)
+
+brace_count = 0
+end_line = None
+for i in range(start_line, min(start_line + 600, len(lines))):
+    brace_count += lines[i].count('{') - lines[i].count('}')
+    if brace_count == 0 and i > start_line:
+        end_line = i
+        break
+
+if end_line is None:
+    print(f"queue dev test qbtest add: could not find closing brace for {func_name}", file=sys.stderr)
+    sys.exit(1)
+
+block = (
+    f"# QBTEST:BEGIN name={test_name} function={func_name} language={language}\n"
+    f"# QBTEST:B64\n"
+    f"# {encoded}\n"
+    f"# QBTEST:END\n"
+)
+lines.insert(end_line + 1, block)
+source.write_text(''.join(lines), encoding='utf-8')
+print(f"queue dev test qbtest add: inserted test '{test_name}' for {func_name} after line {end_line+1}")
+PYDEV_QBTEST_ADD
+}
+
+
 _queue_dev_test_command() {
     local run=0 json=0 timeout_sec=120 name="" sub="${1:-}"
     if [[ "$sub" == "qbtest" || "$sub" == "embedded" ]]; then
         shift || true
+        local qbsub="${1:-}"
+        if [[ "$qbsub" == "extract" ]]; then
+            shift || true
+            _queue_dev_test_qbtest_extract_command "$@"
+            return "$?"
+        fi
+        if [[ "$qbsub" == "add" ]]; then
+            shift || true
+            _queue_dev_test_qbtest_add_command "$@"
+            return "$?"
+        fi
         _queue_dev_test_qbtest_command "$@"
         return "$?"
     fi
