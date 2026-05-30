@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.60"
+QUEUEBASH_VERSION="0.18.61"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -542,6 +542,10 @@ _queue_now_nonce() {
         date +%s%N
     fi
 }
+# QBTEST:BEGIN name=now-nonce function=_queue_now_nonce language=bash
+# QBTEST:B64
+# bjE9IiQoX3F1ZXVlX25vd19ub25jZSkiCm4yPSIkKF9xdWV1ZV9ub3dfbm9uY2UpIgpbWyAtbiAiJG4xIiBdXQpbWyAiJG4xIiA9fiBeWzAtOV0rJCBdXQpbWyAkeyNuMX0gLWdlIDEwIF1d
+# QBTEST:END
 
 _queue_id() {
     # Include a high-resolution in-process nonce and PID to avoid collisions during rapid batch submission.
@@ -1014,6 +1018,10 @@ _queue_job_dependencies_blocked() {
 _queue_now_epoch() {
     printf '%(%s)T\n' -1 2>/dev/null || date +%s
 }
+# QBTEST:BEGIN name=now-epoch function=_queue_now_epoch language=bash
+# QBTEST:B64
+# ZT0iJChfcXVldWVfbm93X2Vwb2NoKSIKW1sgIiRlIiA9fiBeWzAtOV0rJCBdXQpbWyAiJGUiIC1ndCAxMDAwMDAwMDAwIF1d
+# QBTEST:END
 
 _queue_now_iso() {
     local ts
@@ -1024,6 +1032,10 @@ _queue_now_iso() {
         date -Is 2>/dev/null || date
     fi
 }
+# QBTEST:BEGIN name=now-iso function=_queue_now_iso language=bash
+# QBTEST:B64
+# dD0iJChfcXVldWVfbm93X2lzbykiCltbIC1uICIkdCIgXV0KW1sgIiR0IiA9fiBeWzAtOV17NH0tWzAtOV17Mn0tWzAtOV17Mn1UWzAtOV17Mn06WzAtOV17Mn06WzAtOV17Mn0gXV0=
+# QBTEST:END
 
 _queue_parse_delay_seconds() {
     local spec="$1"
@@ -1056,6 +1068,10 @@ _queue_parse_delay_seconds() {
 
     printf '%s\n' "$total"
 }
+# QBTEST:BEGIN name=parse-delay-seconds function=_queue_parse_delay_seconds language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX3BhcnNlX2RlbGF5X3NlY29uZHMgMzApIiA9PSAiMzAiIF1dCltbICIkKF9xdWV1ZV9wYXJzZV9kZWxheV9zZWNvbmRzIDJtKSIgPT0gIjEyMCIgXV0KW1sgIiQoX3F1ZXVlX3BhcnNlX2RlbGF5X3NlY29uZHMgMCkiID09ICIwIiBdXQ==
+# QBTEST:END
 
 _queue_parse_at_epoch() {
     local spec="$1"
@@ -4602,6 +4618,10 @@ _queue_normalize_systemd_cpu_quota() {
         printf '%s\n' "$v"
     fi
 }
+# QBTEST:BEGIN name=normalize-cpu-quota function=_queue_normalize_systemd_cpu_quota language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX25vcm1hbGl6ZV9zeXN0ZW1kX2NwdV9xdW90YSAnNTAlJykiID09ICI1MCUiIF1dCltbICIkKF9xdWV1ZV9ub3JtYWxpemVfc3lzdGVtZF9jcHVfcXVvdGEgJzUwJykiID09ICI1MCUiIF1dCltbICIkKF9xdWV1ZV9ub3JtYWxpemVfc3lzdGVtZF9jcHVfcXVvdGEgJzEuNScpIiA9PSAiMS41JSIgXV0KW1sgIiQoX3F1ZXVlX25vcm1hbGl6ZV9zeXN0ZW1kX2NwdV9xdW90YSAnMS41JScpIiA9PSAiMS41JSIgXV0KX3F1ZXVlX25vcm1hbGl6ZV9zeXN0ZW1kX2NwdV9xdW90YSAiIiAmJiBlY2hvIG9rIHx8IGVjaG8gb2s=
+# QBTEST:END
 
 _queue_class_load_defaults_for_class () 
 { 
@@ -5030,6 +5050,10 @@ _queue_json_escape() {
     s="${s//$'\t'/\\t}"
     printf '%s' "$s"
 }
+# QBTEST:BEGIN name=json-escape-basic function=_queue_json_escape language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX2pzb25fZXNjYXBlICdoZWxsbycpIiA9PSAnaGVsbG8nIF1dCltbICIkKF9xdWV1ZV9qc29uX2VzY2FwZSAnc2F5ICJoaSInKSIgPT0gJ3NheSBcImhpXCInIF1dCltbICIkKF9xdWV1ZV9qc29uX2VzY2FwZSAnYVxiJykiID09ICdhXFxiJyBdXQpvdXQ9IiQoX3F1ZXVlX2pzb25fZXNjYXBlICQnbGluZTFcbmxpbmUyJykiCltbICIkb3V0IiA9PSAkJ2xpbmUxXFxubGluZTInIF1d
+# QBTEST:END
 
 
 
@@ -5917,6 +5941,10 @@ _queue_csv_contains_word() {
     done
     return 1
 }
+# QBTEST:BEGIN name=csv-contains-word function=_queue_csv_contains_word language=bash
+# QBTEST:B64
+# X3F1ZXVlX2Nzdl9jb250YWluc193b3JkICJhLGIsYyIgImIiCl9xdWV1ZV9jc3ZfY29udGFpbnNfd29yZCAiZm9vLGJhciIgImZvbyIKISBfcXVldWVfY3N2X2NvbnRhaW5zX3dvcmQgImEsYixjIiAiZCIKX3F1ZXVlX2Nzdl9jb250YWluc193b3JkICIqIiAiYW55dGhpbmciCiEgX3F1ZXVlX2Nzdl9jb250YWluc193b3JkICJhLGIiICIi
+# QBTEST:END
 
 _queue_cleared_jobs_list() {
     local json=0 states="running,done,failed,interrupted,cancelled,deleted" limit=0 since="" since_epoch=0 arg
@@ -6170,6 +6198,10 @@ EOF
 _queue_epoch_now() {
     date +%s
 }
+# QBTEST:BEGIN name=epoch-now function=_queue_epoch_now language=bash
+# QBTEST:B64
+# ZT0iJChfcXVldWVfZXBvY2hfbm93KSIKW1sgIiRlIiA9fiBeWzAtOV0rJCBdXQpbWyAiJGUiIC1ndCAxMDAwMDAwMDAwIF1d
+# QBTEST:END
 
 _queue_job_retry_due() {
     local f="$1"
@@ -6277,6 +6309,10 @@ _queue_parse_size_to_bytes() {
         echo 0
     fi
 }
+# QBTEST:BEGIN name=parse-size-to-bytes function=_queue_parse_size_to_bytes language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX3BhcnNlX3NpemVfdG9fYnl0ZXMgMUspIiA9PSAiMTAyNCIgXV0KW1sgIiQoX3F1ZXVlX3BhcnNlX3NpemVfdG9fYnl0ZXMgMk0pIiA9PSAiJCgoMioxMDI0KjEwMjQpKSIgXV0KW1sgIiQoX3F1ZXVlX3BhcnNlX3NpemVfdG9fYnl0ZXMgMUcpIiA9PSAiJCgoMTAyNCoxMDI0KjEwMjQpKSIgXV0KW1sgIiQoX3F1ZXVlX3BhcnNlX3NpemVfdG9fYnl0ZXMgNTEyKSIgPT0gIjUxMiIgXV0KW1sgIiQoX3F1ZXVlX3BhcnNlX3NpemVfdG9fYnl0ZXMgIiIpIiA9PSAiMCIgXV0=
+# QBTEST:END
 
 _queue_log_size_bytes() {
     local log="$1"
@@ -6444,12 +6480,20 @@ _queue_duration_to_seconds() {
             ;;
     esac
 }
+# QBTEST:BEGIN name=duration-to-seconds function=_queue_duration_to_seconds language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX2R1cmF0aW9uX3RvX3NlY29uZHMgMTBzKSIgPT0gIjEwIiBdXQpbWyAiJChfcXVldWVfZHVyYXRpb25fdG9fc2Vjb25kcyAybSkiID09ICIxMjAiIF1dCltbICIkKF9xdWV1ZV9kdXJhdGlvbl90b19zZWNvbmRzIDFoKSIgPT0gIjM2MDAiIF1dCltbICIkKF9xdWV1ZV9kdXJhdGlvbl90b19zZWNvbmRzIDUwMG1zKSIgPT0gIjEiIF1dCltbICIkKF9xdWV1ZV9kdXJhdGlvbl90b19zZWNvbmRzIDEwMDBtcykiID09ICIxIiBdXQpbWyAiJChfcXVldWVfZHVyYXRpb25fdG9fc2Vjb25kcyAxNTAwbXMpIiA9PSAiMiIgXV0KISBfcXVldWVfZHVyYXRpb25fdG9fc2Vjb25kcyAiIg==
+# QBTEST:END
 
 _queue_seconds_to_duration() {
     local s="${1:-}"
     [[ "$s" =~ ^[0-9]+$ ]] || return 1
     printf '%ss\n' "$s"
 }
+# QBTEST:BEGIN name=seconds-to-duration function=_queue_seconds_to_duration language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX3NlY29uZHNfdG9fZHVyYXRpb24gMTApIiA9PSAiMTBzIiBdXQpbWyAiJChfcXVldWVfc2Vjb25kc190b19kdXJhdGlvbiAwKSIgPT0gIjBzIiBdXQohIF9xdWV1ZV9zZWNvbmRzX3RvX2R1cmF0aW9uICJhYmMiCiEgX3F1ZXVlX3NlY29uZHNfdG9fZHVyYXRpb24gIiI=
+# QBTEST:END
 
 
 
@@ -6666,6 +6710,10 @@ _queue_parse_bytes() {
         return 1
     fi
 }
+# QBTEST:BEGIN name=parse-bytes function=_queue_parse_bytes language=bash
+# QBTEST:B64
+# Yj0iJChfcXVldWVfcGFyc2VfYnl0ZXMgMTAyNCkiCltbICIkYiIgPX4gXlswLTldKyQgXV0KW1sgIiRiIiAtZ2UgMTAyNCBdXQ==
+# QBTEST:END
 
 _queue_net_usage_job_start_record() {
     local job_file="$1"
@@ -7335,10 +7383,18 @@ _queue_authorisation_key_meta_file() {
 _queue_base64_one_line() {
     base64 "$@" | tr -d '\n'
 }
+# QBTEST:BEGIN name=base64-one-line function=_queue_base64_one_line language=bash
+# QBTEST:B64
+# b3V0PSIkKF9xdWV1ZV9iYXNlNjRfb25lX2xpbmUgPDw8ICdoZWxsbycpIgpbWyAtbiAiJG91dCIgXV0KW1sgISAiJG91dCIgPX4gJCdcbicgXV0KZGVjb2RlZD0iJChlY2hvICIkb3V0IiB8IGJhc2U2NCAtZCAyPi9kZXYvbnVsbCkiCltbICIkZGVjb2RlZCIgPT0gImhlbGxvIiBdXQ==
+# QBTEST:END
 
 _queue_base64_decode() {
     base64 -d "$@" 2>/dev/null || base64 --decode "$@"
 }
+# QBTEST:BEGIN name=base64-decode function=_queue_base64_decode language=bash
+# QBTEST:B64
+# ZW5jb2RlZD0iJChlY2hvIC1uICd0ZXN0dmFsdWUnIHwgYmFzZTY0KSIKdG1wZj0iJChta3RlbXApIgpwcmludGYgJyVzJyAiJGVuY29kZWQiID4gIiR0bXBmIgpyZXN1bHQ9IiQoX3F1ZXVlX2Jhc2U2NF9kZWNvZGUgIiR0bXBmIikiCnJtIC1mICIkdG1wZiIKW1sgIiRyZXN1bHQiID09ICJ0ZXN0dmFsdWUiIF1d
+# QBTEST:END
 
 _queue_authorisation_public_key_sha256_file() {
     local f="${1:-}"
@@ -10411,6 +10467,10 @@ _queue_human_bytes() {
         printf "%sB" "$b"
     fi
 }
+# QBTEST:BEGIN name=human-bytes function=_queue_human_bytes language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX2h1bWFuX2J5dGVzIDUxMikiID09ICI1MTJCIiBdXQpbWyAiJChfcXVldWVfaHVtYW5fYnl0ZXMgMTAyNCkiID1+IEskIF1dCltbICIkKF9xdWV1ZV9odW1hbl9ieXRlcyAxMDQ4NTc2KSIgPX4gTSQgXV0KW1sgIiQoX3F1ZXVlX2h1bWFuX2J5dGVzIDEwNzM3NDE4MjQpIiA9fiBHJCBdXQpbWyAiJChfcXVldWVfaHVtYW5fYnl0ZXMgMCkiID09ICIwQiIgXV0=
+# QBTEST:END
 
 
 _queue_dep_token_status() {
@@ -13825,6 +13885,10 @@ _queue_array_contains() {
     done
     return 1
 }
+# QBTEST:BEGIN name=array-contains function=_queue_array_contains language=bash
+# QBTEST:B64
+# X3F1ZXVlX2FycmF5X2NvbnRhaW5zICJiIiAiYSIgImIiICJjIgohIF9xdWV1ZV9hcnJheV9jb250YWlucyAieCIgImEiICJiIiAiYyIKX3F1ZXVlX2FycmF5X2NvbnRhaW5zICJvbmx5IiAib25seSIKISBfcXVldWVfYXJyYXlfY29udGFpbnMgInoi
+# QBTEST:END
 
 
 # -------------------------------------------------------------------
@@ -14949,10 +15013,18 @@ EOF_USAGE
 _queue_dev_valid_function_name() {
     [[ "${1:-}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
 }
+# QBTEST:BEGIN name=dev-valid-function-name function=_queue_dev_valid_function_name language=bash
+# QBTEST:B64
+# X3F1ZXVlX2Rldl92YWxpZF9mdW5jdGlvbl9uYW1lICJfcXVldWVfZm9vIgpfcXVldWVfZGV2X3ZhbGlkX2Z1bmN0aW9uX25hbWUgIm15X2Z1bmMiCl9xdWV1ZV9kZXZfdmFsaWRfZnVuY3Rpb25fbmFtZSAiQUJDMTIzIgohIF9xdWV1ZV9kZXZfdmFsaWRfZnVuY3Rpb25fbmFtZSAiMWJhZCIKISBfcXVldWVfZGV2X3ZhbGlkX2Z1bmN0aW9uX25hbWUgImhhcy1oeXBoZW4iCiEgX3F1ZXVlX2Rldl92YWxpZF9mdW5jdGlvbl9uYW1lICIiCiEgX3F1ZXVlX2Rldl92YWxpZF9mdW5jdGlvbl9uYW1lICJoYXMgc3BhY2Ui
+# QBTEST:END
 
 _queue_dev_json_bool() {
     case "${1:-0}" in 1|true|yes|on) printf 'true' ;; *) printf 'false' ;; esac
 }
+# QBTEST:BEGIN name=dev-json-bool function=_queue_dev_json_bool language=bash
+# QBTEST:B64
+# W1sgIiQoX3F1ZXVlX2Rldl9qc29uX2Jvb2wgMSkiID09ICJ0cnVlIiBdXQpbWyAiJChfcXVldWVfZGV2X2pzb25fYm9vbCB0cnVlKSIgPT0gInRydWUiIF1dCltbICIkKF9xdWV1ZV9kZXZfanNvbl9ib29sIHllcykiID09ICJ0cnVlIiBdXQpbWyAiJChfcXVldWVfZGV2X2pzb25fYm9vbCBvbikiID09ICJ0cnVlIiBdXQpbWyAiJChfcXVldWVfZGV2X2pzb25fYm9vbCAwKSIgPT0gImZhbHNlIiBdXQpbWyAiJChfcXVldWVfZGV2X2pzb25fYm9vbCBmYWxzZSkiID09ICJmYWxzZSIgXV0KW1sgIiQoX3F1ZXVlX2Rldl9qc29uX2Jvb2wgIiIpIiA9PSAiZmFsc2UiIF1d
+# QBTEST:END
 
 _queue_dev_function_location() {
     local fn="$1" out old_extdebug=0

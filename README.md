@@ -1,3 +1,7 @@
+# 0.18.61 BOB_MERGER QBTEST wave1 embedded coverage merge
+
+Merges Claude/Bob12 QBTEST wave1 embedded function tests onto the accepted 0.18.60 IBM/OCI cloud enablement base. Adds a substantial set of QBTEST:BEGIN/B64/END developer-only embedded tests to queuebash.sh for time/date helpers, parser helpers, JSON escaping, CSV matching, resource-size/duration conversion, and related low-level utility functions. No runtime command behaviour, cloud provider behaviour, dispatch, provisioning, or live API paths are changed.
+
 # 0.18.60 BOB_MERGER IBM/OCI cloud enablement provider contracts
 
 Merges the additive IBM cloud provider contract pack and OCI asset helper onto the accepted 0.18.59 patchset apply backup hardening base. Adds IBM provider docs, class criteria, explainability and legal/compliance notes, IBM policy examples, fixture-first IBM provider helper/tests, and an OCI asset helper. This remains contract/fixture-first: no live IBM or OCI API calls, no credentials required, no provisioning/destruction, and no queue dispatch refactor.

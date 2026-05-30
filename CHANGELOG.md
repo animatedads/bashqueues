@@ -1,3 +1,10 @@
+# 0.18.61 - BOB_MERGER QBTEST wave1 embedded coverage merge
+
+- Merge Claude/Bob12 QBTEST wave1 onto the accepted 0.18.60 IBM/OCI cloud enablement base.
+- Add 19 developer-only embedded QBTEST blocks to queuebash.sh.
+- Validate the new QBTEST suite with queue dev test qbtest --file queuebash.sh.
+- Preserve IBM/OCI fixture-first provider material, queue_dev command surface, dispatch behaviour, cloud/provider boundaries, and no-live/no-provisioning posture.
+
 # 0.18.60 - BOB_MERGER IBM/OCI cloud enablement provider contracts
 
 - Merge additive IBM provider contract pack and OCI asset helper onto the accepted 0.18.59 base.
