@@ -1,3 +1,7 @@
+# 0.18.62 BOB_MERGER remote-admin transaction plan/apply/rollback merge
+
+Merges Bob10 remote-admin transaction plan/apply/rollback functionality onto the accepted 0.18.61 QBTEST wave1 base. Adds typed, ACL-gated `queue remote-admin` plan creation/show, plan apply, rollback list/show/apply, per-operation ACL re-check during apply, and local rollback snapshots. Secrets remain excluded from plans; no generic editor, arbitrary shell, secret disclosure, queue dispatch refactor, or live remote mutation path is introduced.
+
 # 0.18.61 BOB_MERGER QBTEST wave1 embedded coverage merge
 
 Merges Claude/Bob12 QBTEST wave1 embedded function tests onto the accepted 0.18.60 IBM/OCI cloud enablement base. Adds a substantial set of QBTEST:BEGIN/B64/END developer-only embedded tests to queuebash.sh for time/date helpers, parser helpers, JSON escaping, CSV matching, resource-size/duration conversion, and related low-level utility functions. No runtime command behaviour, cloud provider behaviour, dispatch, provisioning, or live API paths are changed.

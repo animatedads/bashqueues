@@ -12,3 +12,8 @@ secret-admin@example.invalid	remote-admin.secret.rotate	*	allow	fixture secret r
 auditor@example.invalid	remote-admin.audit.read	*	allow	fixture audit read
 auditor@example.invalid	remote-admin.audit.verify	*	allow	fixture audit verify
 auditor@example.invalid	remote-admin.audit.append	*	allow	fixture audit append
+admin@example.invalid	remote-admin.plan.read	*	allow	fixture plan read
+admin@example.invalid	remote-admin.plan.write	*	allow	fixture plan write
+admin@example.invalid	remote-admin.plan.apply	*	allow	fixture plan apply
+admin@example.invalid	remote-admin.rollback.read	*	allow	fixture rollback read
+admin@example.invalid	remote-admin.rollback.apply	*	allow	fixture rollback apply

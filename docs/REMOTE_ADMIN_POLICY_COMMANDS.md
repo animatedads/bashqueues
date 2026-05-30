@@ -124,3 +124,39 @@ networked remote administration transport
 ```
 
 The command is a local, typed, ACL-gated policy administration helper. A future remote-management service may expose selected operations only through its own authentication, ACL, and audit layer.
+
+## 0.18.60 remote-admin plan/apply/rollback contract
+
+`queue remote-admin` now has a transaction-shaped administration path for policy changes.  This is still not a generic editor: plans contain typed operations only, and `apply` re-checks ACL authority before mutating any policy file.
+
+Supported transaction commands:
+
+```bash
+queue remote-admin --actor ACTOR plan create --out plan.json \
+  --config-set KEY=VALUE \
+  --client-add CLIENT_ID:key_id=KEY:subject=SUBJECT \
+  --acl-grant SUBJECT:OPERATION:RESOURCE[:REASON] \
+  --json
+
+queue remote-admin --actor ACTOR plan show plan.json --json
+queue remote-admin --actor ACTOR apply plan.json --json
+queue remote-admin --actor ACTOR rollback list --json
+queue remote-admin --actor ACTOR rollback show ROLLBACK_ID --json
+queue remote-admin --actor ACTOR rollback apply ROLLBACK_ID --json
+```
+
+ACL gates:
+
+```text
+remote-admin.plan.read
+remote-admin.plan.write
+remote-admin.plan.apply
+remote-admin.rollback.read
+remote-admin.rollback.apply
+```
+
+`apply` also checks the underlying operation authority for every item in the plan.  A plan containing `acl.grant`, `acl.deny`, or `acl.revoke` therefore requires both `remote-admin.plan.apply` and `remote-admin.acl.write`.  This preserves the crown-jewel rule: the authority that applies a transaction is not automatically the authority to edit the ACL.
+
+Rollback records are stored under the policy directory as local JSON snapshots of the managed policy files.  They are intended as operational recovery evidence for typed policy edits, not as a general backup system.
+
+Secrets remain outside transaction plans.  Secret set/rotate/verify continue to be stdin-only so secret material is not written into plan files, audit notes, shell history, or patch artifacts.

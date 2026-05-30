@@ -1,3 +1,11 @@
+# 0.18.62 - BOB_MERGER remote-admin transaction plan/apply/rollback merge
+
+- Merge Bob10 remote-admin plan/apply/rollback payload under the current merger version identity.
+- Add ACL gates for `remote-admin.plan.read`, `remote-admin.plan.write`, `remote-admin.plan.apply`, `remote-admin.rollback.read`, and `remote-admin.rollback.apply`.
+- Re-check underlying operation ACLs during plan apply, preserving `remote-admin.acl.write` as the crown-jewel ACL permission.
+- Keep secrets out of transaction plans and rollback records as local recovery evidence.
+- Preserve 0.18.61 QBTEST wave1 embedded coverage and source-first merger discipline.
+
 # 0.18.61 - BOB_MERGER QBTEST wave1 embedded coverage merge
 
 - Merge Claude/Bob12 QBTEST wave1 onto the accepted 0.18.60 IBM/OCI cloud enablement base.

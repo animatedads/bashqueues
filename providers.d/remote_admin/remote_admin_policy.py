@@ -38,6 +38,9 @@ READ_OPS = {
     ("audit", "tail"): "remote-admin.audit.read",
     ("audit", "show"): "remote-admin.audit.read",
     ("audit", "verify"): "remote-admin.audit.verify",
+    ("plan", "show"): "remote-admin.plan.read",
+    ("rollback", "list"): "remote-admin.rollback.read",
+    ("rollback", "show"): "remote-admin.rollback.read",
 }
 WRITE_OPS = {
     ("config", "set"): "remote-admin.config.write",
@@ -52,6 +55,9 @@ WRITE_OPS = {
     ("secret", "rotate"): "remote-admin.secret.rotate",
     ("secret", "revoke"): "remote-admin.secret.write",
     ("audit", "note"): "remote-admin.audit.append",
+    ("plan", "create"): "remote-admin.plan.write",
+    ("apply", ""): "remote-admin.plan.apply",
+    ("rollback", "apply"): "remote-admin.rollback.apply",
 }
 
 
@@ -513,6 +519,255 @@ def cmd_audit(paths: Paths, ns: argparse.Namespace, args: List[str]) -> int:
     return deny(f"unknown audit action: {action}", op, ns.actor, as_json=ns.json, code=2)
 
 
+
+def rollback_dir(paths: Paths) -> Path:
+    return paths.policy_dir / "rollback"
+
+
+def read_plan(path: Path) -> Dict[str, Any]:
+    obj = json.loads(path.read_text(encoding="utf-8"))
+    if obj.get("schema") != f"{SCHEMA_PREFIX}.plan.v1":
+        raise ValueError("unsupported remote-admin plan schema")
+    ops = obj.get("operations")
+    if not isinstance(ops, list):
+        raise ValueError("remote-admin plan operations must be a list")
+    return obj
+
+
+def rollback_id() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def snapshot_policy_files(paths: Paths) -> Dict[str, Any]:
+    files: Dict[str, Any] = {}
+    for name, path in (("remote-management.env", paths.env), ("clients.tsv", paths.clients), ("acl.tsv", paths.acl)):
+        files[name] = {"exists": path.exists(), "content": path.read_text(encoding="utf-8") if path.exists() else ""}
+    return files
+
+
+def write_rollback(paths: Paths, ns: argparse.Namespace, plan: Dict[str, Any], files: Dict[str, Any]) -> str:
+    rid = rollback_id()
+    obj = {
+        "schema": f"{SCHEMA_PREFIX}.rollback.v1",
+        "rollback_id": rid,
+        "created_at": now_iso(),
+        "actor": ns.actor,
+        "ticket": ns.ticket or "",
+        "reason": ns.reason or "",
+        "plan_id": plan.get("plan_id", ""),
+        "files": files,
+    }
+    target = rollback_dir(paths) / f"{rid}.json"
+    atomic_write(target, json.dumps(obj, sort_keys=True, indent=2) + "\n", 0o600, ns.dry_run)
+    return rid
+
+
+def parse_key_value(value: str, label: str) -> Tuple[str, str]:
+    if "=" not in value:
+        raise ValueError(f"{label} requires KEY=VALUE")
+    k, v = value.split("=", 1)
+    safe_token(k, "key")
+    return k, v
+
+
+def parse_client_spec(spec: str) -> Dict[str, str]:
+    parts = spec.split(":")
+    cid = safe_token(parts[0], "client_id")
+    row = {"client_id": cid, "key_id": "default", "subject": cid, "secret_file": "", "status": "active", "comment": "managed by queue remote-admin plan"}
+    for item in parts[1:]:
+        if not item:
+            continue
+        k, v = parse_key_value(item, "client option")
+        if k in clients_columns() and k != "client_id":
+            row[k] = v
+    return row
+
+
+def parse_acl_spec(spec: str, decision: str) -> Dict[str, str]:
+    parts = spec.split(":", 3)
+    if len(parts) < 3:
+        raise ValueError("ACL spec requires SUBJECT:OPERATION:RESOURCE[:REASON]")
+    return {"subject": parts[0], "operation": parts[1], "resource": parts[2], "decision": decision, "reason": parts[3] if len(parts) > 3 else "managed by remote-admin plan"}
+
+
+def plan_operation_acl(operation: Dict[str, Any]) -> Tuple[str, str]:
+    action = operation.get("action", "")
+    if action in ("config.set", "config.unset"):
+        return "remote-admin.config.write", operation.get("key", "*")
+    if action in ("client.add", "client.set", "client.disable"):
+        return "remote-admin.client.write", operation.get("client_id", "*")
+    if action in ("acl.grant", "acl.deny", "acl.revoke"):
+        return "remote-admin.acl.write", operation.get("resource", "*")
+    raise ValueError(f"unsupported plan action: {action}")
+
+
+def apply_plan_operation(paths: Paths, operation: Dict[str, Any], dry_run: bool) -> Dict[str, Any]:
+    action = operation.get("action", "")
+    if action == "config.set":
+        data = read_env(paths.env)
+        key = safe_token(str(operation.get("key", "")), "key")
+        data[key] = str(operation.get("value", ""))
+        mutated = write_env(paths.env, data, dry_run)
+        return {"action": action, "key": key, "mutated": mutated}
+    if action == "config.unset":
+        data = read_env(paths.env)
+        key = safe_token(str(operation.get("key", "")), "key")
+        data.pop(key, None)
+        mutated = write_env(paths.env, data, dry_run)
+        return {"action": action, "key": key, "mutated": mutated}
+    if action in ("client.add", "client.set", "client.disable"):
+        rows = read_tsv(paths.clients, clients_columns())
+        cid = safe_token(str(operation.get("client_id", "")), "client_id")
+        idx = next((i for i, r in enumerate(rows) if r.get("client_id") == cid), None)
+        if action == "client.add":
+            if idx is not None:
+                raise ValueError("client already exists")
+            row = {c: str(operation.get(c, "")) for c in clients_columns()}
+            row.setdefault("client_id", cid)
+            row["client_id"] = cid
+            if not row.get("secret_file"):
+                row["secret_file"] = str(secret_path(paths, cid))
+            rows.append(row)
+        elif action == "client.set":
+            if idx is None:
+                raise ValueError("client not found")
+            for c in clients_columns():
+                if c != "client_id" and c in operation:
+                    rows[idx][c] = str(operation[c])
+        else:
+            if idx is None:
+                raise ValueError("client not found")
+            rows[idx]["status"] = "disabled"
+        mutated = write_tsv(paths.clients, clients_columns(), rows, dry_run, "# client_id\tkey_id\tsubject\tsecret_file\tstatus\tcomment")
+        return {"action": action, "client_id": cid, "mutated": mutated}
+    if action in ("acl.grant", "acl.deny", "acl.revoke"):
+        rows = read_tsv(paths.acl, acl_columns())
+        subj = str(operation.get("subject", ""))
+        rule_op = str(operation.get("operation", ""))
+        resource = str(operation.get("resource", "*"))
+        if action in ("acl.grant", "acl.deny"):
+            decision = "allow" if action == "acl.grant" else "deny"
+            rows.append({"subject": subj, "operation": rule_op, "resource": resource, "decision": decision, "reason": str(operation.get("reason", "managed by remote-admin plan"))})
+        else:
+            rows = [r for r in rows if not (r.get("subject") == subj and r.get("operation") == rule_op and r.get("resource") == resource)]
+        mutated = write_tsv(paths.acl, acl_columns(), rows, dry_run, "# subject\toperation\tresource\tdecision\treason")
+        return {"action": action, "subject": subj, "operation": rule_op, "resource": resource, "mutated": mutated}
+    raise ValueError(f"unsupported plan action: {action}")
+
+
+def cmd_plan(paths: Paths, ns: argparse.Namespace, args: List[str]) -> int:
+    action = args[0] if args else "create"
+    op = required_operation("plan", action)
+    ok, info = require_acl(paths, ns, op)
+    if not ok:
+        return deny(info["reason"], op, ns.actor, as_json=ns.json)
+    if action == "show":
+        if len(args) < 2:
+            return deny("plan show requires PLAN_FILE", op, ns.actor, as_json=ns.json, code=2)
+        plan = read_plan(Path(args[1]))
+        audit(paths, ns, op, args[1], "allow", "ok", {"operations": len(plan.get("operations", []))})
+        return success(ns, f"{SCHEMA_PREFIX}.plan.v1", plan=plan, mutated=False)
+    if action != "create":
+        return deny(f"unknown plan action: {action}", op, ns.actor, as_json=ns.json, code=2)
+    out = ""
+    operations: List[Dict[str, Any]] = []
+    i = 1
+    while i < len(args):
+        a = args[i]
+        if a == "--out":
+            out = args[i+1]; i += 2
+        elif a == "--config-set":
+            k, v = parse_key_value(args[i+1], "--config-set")
+            operations.append({"action": "config.set", "key": k, "value": v}); i += 2
+        elif a == "--config-unset":
+            k = safe_token(args[i+1], "key")
+            operations.append({"action": "config.unset", "key": k}); i += 2
+        elif a == "--client-add":
+            row = parse_client_spec(args[i+1]); row["action"] = "client.add"; operations.append(row); i += 2
+        elif a == "--client-disable":
+            operations.append({"action": "client.disable", "client_id": safe_token(args[i+1], "client_id")}); i += 2
+        elif a == "--acl-grant":
+            row = parse_acl_spec(args[i+1], "allow"); row["action"] = "acl.grant"; operations.append(row); i += 2
+        elif a == "--acl-deny":
+            row = parse_acl_spec(args[i+1], "deny"); row["action"] = "acl.deny"; operations.append(row); i += 2
+        elif a == "--acl-revoke":
+            row = parse_acl_spec(args[i+1], "allow"); row["action"] = "acl.revoke"; operations.append(row); i += 2
+        else:
+            return deny(f"unknown plan option: {a}", op, ns.actor, as_json=ns.json, code=2)
+    if not operations:
+        return deny("plan create requires at least one operation", op, ns.actor, as_json=ns.json, code=2)
+    plan = {"schema": f"{SCHEMA_PREFIX}.plan.v1", "plan_id": hashlib.sha256(json.dumps(operations, sort_keys=True).encode()).hexdigest()[:16], "created_at": now_iso(), "actor": ns.actor, "ticket": ns.ticket or "", "reason": ns.reason or "", "operations": operations}
+    mutated = False
+    if out and not ns.dry_run:
+        atomic_write(Path(out), json.dumps(plan, sort_keys=True, indent=2) + "\n", 0o600, False)
+        mutated = True
+    audit(paths, ns, op, out or "stdout", "allow", "ok", {"operations": len(operations), "wrote_plan": mutated})
+    return success(ns, f"{SCHEMA_PREFIX}.plan_create.v1", plan=plan, out=out, mutated=mutated, dry_run=ns.dry_run)
+
+
+def cmd_apply(paths: Paths, ns: argparse.Namespace, args: List[str]) -> int:
+    op = required_operation("apply", "")
+    ok, info = require_acl(paths, ns, op)
+    if not ok:
+        return deny(info["reason"], op, ns.actor, as_json=ns.json)
+    if len(args) < 1:
+        return deny("apply requires PLAN_FILE", op, ns.actor, as_json=ns.json, code=2)
+    plan_file = Path(args[0])
+    plan = read_plan(plan_file)
+    checks = []
+    for operation in plan.get("operations", []):
+        needed, resource = plan_operation_acl(operation)
+        allowed, acl_info = require_acl(paths, ns, needed, resource)
+        checks.append({"operation": needed, "resource": resource, "allowed": allowed, "reason": acl_info.get("reason", "")})
+        if not allowed:
+            return deny(f"plan operation denied: {needed}: {acl_info.get('reason','')}", needed, ns.actor, resource, ns.json)
+    before = snapshot_policy_files(paths)
+    rid = write_rollback(paths, ns, plan, before) if not ns.dry_run else "dry-run"
+    results = [apply_plan_operation(paths, operation, ns.dry_run) for operation in plan.get("operations", [])]
+    audit(paths, ns, op, str(plan_file), "allow", "ok", {"rollback_id": rid, "operations": len(results), "dry_run": ns.dry_run})
+    return success(ns, f"{SCHEMA_PREFIX}.apply.v1", plan_id=plan.get("plan_id", ""), rollback_id=rid, checks=checks, results=results, mutated=not ns.dry_run, dry_run=ns.dry_run)
+
+
+def cmd_rollback(paths: Paths, ns: argparse.Namespace, args: List[str]) -> int:
+    action = args[0] if args else "list"
+    op = required_operation("rollback", action)
+    ok, info = require_acl(paths, ns, op)
+    if not ok:
+        return deny(info["reason"], op, ns.actor, as_json=ns.json)
+    rdir = rollback_dir(paths)
+    if action == "list":
+        items = sorted(p.stem for p in rdir.glob("*.json")) if rdir.exists() else []
+        audit(paths, ns, op, "rollback", "allow", "ok", {"count": len(items)})
+        return success(ns, f"{SCHEMA_PREFIX}.rollback_list.v1", rollback_ids=items, mutated=False)
+    if len(args) < 2:
+        return deny(f"rollback {action} requires ROLLBACK_ID", op, ns.actor, as_json=ns.json, code=2)
+    rid = safe_token(args[1], "rollback_id")
+    rfile = rdir / f"{rid}.json"
+    if not rfile.exists():
+        return deny("rollback id not found", op, ns.actor, rid, ns.json)
+    obj = json.loads(rfile.read_text(encoding="utf-8"))
+    if action == "show":
+        audit(paths, ns, op, rid, "allow", "ok", {"found": True})
+        safe_obj = {k: v for k, v in obj.items() if k != "files"}
+        safe_obj["files"] = sorted(obj.get("files", {}).keys())
+        return success(ns, f"{SCHEMA_PREFIX}.rollback_show.v1", rollback=safe_obj, mutated=False)
+    if action == "apply":
+        files = obj.get("files", {})
+        mapping = {"remote-management.env": paths.env, "clients.tsv": paths.clients, "acl.tsv": paths.acl}
+        restored = []
+        for name, meta in files.items():
+            path = mapping.get(name)
+            if not path:
+                continue
+            if meta.get("exists"):
+                atomic_write(path, str(meta.get("content", "")), 0o640, ns.dry_run)
+            elif not ns.dry_run and path.exists():
+                path.unlink()
+            restored.append(name)
+        audit(paths, ns, op, rid, "allow", "ok", {"restored": restored, "dry_run": ns.dry_run})
+        return success(ns, f"{SCHEMA_PREFIX}.rollback_apply.v1", rollback_id=rid, restored=restored, mutated=not ns.dry_run, dry_run=ns.dry_run)
+    return deny(f"unknown rollback action: {action}", op, ns.actor, as_json=ns.json, code=2)
+
 def usage() -> str:
     return """queue remote-admin --actor ACTOR [--root DIR] [--json] COMMAND ...
 
@@ -523,6 +778,10 @@ Commands:
   acl list|check SUBJECT OPERATION [RESOURCE]|grant SUBJECT OPERATION RESOURCE [REASON]|deny ...|revoke ...
   secret list|status ID|set ID|rotate ID|revoke ID|verify ID   # set/rotate/verify read secret from stdin
   audit tail|show|verify|note TEXT
+  plan create [--out FILE] [--config-set K=V] [--acl-grant SUBJECT:OP:RESOURCE[:REASON]]
+  plan show PLAN_FILE
+  apply PLAN_FILE
+  rollback list|show ID|apply ID
 """
 
 
@@ -542,6 +801,9 @@ def main(argv: List[str]) -> int:
         if area == "acl": return cmd_acl(paths, ns, args)
         if area == "secret": return cmd_secret(paths, ns, args)
         if area == "audit": return cmd_audit(paths, ns, args)
+        if area == "plan": return cmd_plan(paths, ns, args)
+        if area == "apply": return cmd_apply(paths, ns, args)
+        if area == "rollback": return cmd_rollback(paths, ns, args)
         return deny(f"unknown command: {area}", as_json=ns.json, code=2)
     except Exception as e:
         return emit({"schema": f"{SCHEMA_PREFIX}.error.v1", "status": "error", "error": str(e), "mutated": False, "exit_code": 1}, ns.json)
