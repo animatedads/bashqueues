@@ -1,9 +1,29 @@
-# 0.18.62 - BOB_MERGER remote-admin transaction plan/apply/rollback merge
+# 0.18.68 - BOB_MERGER remote-admin dual-control ACL plan approval merge
+
+- Added `queue remote-admin plan approve PLAN_FILE [--out FILE]` for transaction-plan approval.
+- Added `remote-admin.plan.approve` as the approval ACL gate.
+- Require distinct dual-control approval before applying plans containing `acl.grant`, `acl.deny`, or `acl.revoke`.
+- Preserve per-operation ACL re-checks during apply, including `remote-admin.acl.write` for ACL mutations.
+- Keep secrets excluded from transaction plans and avoid generic editing, arbitrary shell, dispatch changes, or secret disclosure.
+
+# 0.18.67 - BOB_MERGER provider parity report merge
+
+- Added offline `providers.d/cloud_resource/provider_parity_report.py` helper plus policy fixture, docs, and tests.
+- Preserved Perplexity provider integration, 105 embedded QBTEST blocks, remote-admin transaction plan/apply/rollback, and cleanup discipline.
+- No live cloud API calls, credentials, provisioning/destruction, generic editing, or queue dispatch refactor.
+
+# 0.18.66 - BOB_MERGER Perplexity Sonar ask-provider merge
+
+- Merged Bob11 Perplexity Sonar ask-provider support under the current merger-line identity.
+- Added `bin/queue-ai-ask-perplexity`, `providers.d/ask/perplexity.sh`, docs, policy/examples, and fixture-only tests.
+- Preserved 0.18.65 embedded QBTEST function coverage and developer validation behaviour.
 
 ## 0.18.65 - BOB_MERGER QBTEST wave3-wave8 function coverage
 
 - Added embedded QBTEST coverage from Bob13 wave3/wave5, wave6/wave7, and wave8 by transplanting QBTEST blocks onto current functions rather than applying stale whole-file queuebash snapshots.
 - Preserved 0.18.62 remote-admin transaction plan/apply/rollback functionality and the fake-QBTEST-removal rule.
+
+# 0.18.62 - BOB_MERGER remote-admin transaction plan/apply/rollback merge
 
 
 - Merge Bob10 remote-admin plan/apply/rollback payload under the current merger version identity.

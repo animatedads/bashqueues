@@ -93,3 +93,8 @@ The Groq provider is a live-capable, fixture-tested ask provider using an OpenAI
 ## Cerebras provider
 
 `cerebras` is a live-capable, fixture-tested provider descriptor using `queue-ai-ask-cerebras` and normalized `queuebash.ai_advisory.response.v1` output.
+
+
+## Perplexity Sonar provider
+
+The Perplexity provider is fixture-gated by default, uses the same advisory-only `queue ask` contract, and requires explicit live enablement plus a site-managed API key for live calls.

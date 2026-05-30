@@ -192,3 +192,8 @@ The Groq provider is a live-capable, fixture-tested ask provider using an OpenAI
 ## Cerebras audit note
 
 Cerebras live calls use the same queue ask audit path as other live providers. Audit records should capture provider `cerebras`, model, policy decision, status, and bounded metadata without API keys or raw secrets.
+
+
+## Perplexity Sonar provider
+
+The Perplexity provider is fixture-gated by default, uses the same advisory-only `queue ask` contract, and requires explicit live enablement plus a site-managed API key for live calls.

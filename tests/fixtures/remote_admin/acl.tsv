@@ -17,3 +17,6 @@ admin@example.invalid	remote-admin.plan.write	*	allow	fixture plan write
 admin@example.invalid	remote-admin.plan.apply	*	allow	fixture plan apply
 admin@example.invalid	remote-admin.rollback.read	*	allow	fixture rollback read
 admin@example.invalid	remote-admin.rollback.apply	*	allow	fixture rollback apply
+admin@example.invalid	remote-admin.plan.approve	*	allow	fixture plan approve self-denial test
+security-admin@example.invalid	remote-admin.plan.approve	*	allow	fixture plan approve
+security-admin@example.invalid	remote-admin.plan.apply	*	allow	fixture security plan apply

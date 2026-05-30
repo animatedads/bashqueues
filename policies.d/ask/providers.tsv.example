@@ -12,3 +12,4 @@ mistral	yes	yes	yes	65536	8192
 deepseek	yes	no	yes	120000	4096	DeepSeek live provider; live use requires explicit enablement and API key file/env.
 groq	yes	no	yes	65536	8192	Groq OpenAI-compatible chat completions provider; live use requires explicit enablement and credential policy.
 cerebras	yes	no	yes	65536	8192	Cerebras OpenAI-compatible chat completions provider; live use requires explicit enablement and credential policy.
+perplexity	yes	no	yes	65536	8192	Perplexity Sonar live provider; live use requires explicit enablement.

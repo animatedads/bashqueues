@@ -119,7 +119,6 @@ arbitrary file editing
 cloud provisioning
 queue dispatch changes
 secret disclosure
-dual-control approval workflow
 networked remote administration transport
 ```
 
@@ -160,3 +159,43 @@ remote-admin.rollback.apply
 Rollback records are stored under the policy directory as local JSON snapshots of the managed policy files.  They are intended as operational recovery evidence for typed policy edits, not as a general backup system.
 
 Secrets remain outside transaction plans.  Secret set/rotate/verify continue to be stdin-only so secret material is not written into plan files, audit notes, shell history, or patch artifacts.
+
+## 0.18.66 dual-control for ACL-write plans
+
+Plans that contain `acl.grant`, `acl.deny`, or `acl.revoke` are now treated as dual-control plans. They may be created by an operator with `remote-admin.plan.write`, but they cannot be applied until a distinct approver with `remote-admin.plan.approve` has approved the plan.
+
+Approval command:
+
+```bash
+queue remote-admin --actor security-admin@example.invalid plan approve plan.json \
+  --reason "approved ACL change under CHG-12349" \
+  --ticket CHG-12349 \
+  --json
+```
+
+The approval is written back to the plan file unless `--out FILE` is supplied:
+
+```bash
+queue remote-admin --actor security-admin@example.invalid plan approve plan.json \
+  --out approved-plan.json \
+  --json
+```
+
+Additional ACL gate:
+
+```text
+remote-admin.plan.approve
+```
+
+Rules:
+
+```text
+non-ACL plans do not require dual-control approval
+ACL-write plans require at least one approval by an actor distinct from the plan creator
+apply still re-checks remote-admin.plan.apply
+apply still re-checks remote-admin.acl.write for each ACL mutation
+remote-admin.acl.write remains the crown-jewel permission
+secret operations remain excluded from transaction plans
+```
+
+This is a file-backed approval evidence contract, not cryptographic signing. Production deployments should protect plan files through filesystem permissions and may later add command-bound signatures or external approval providers.

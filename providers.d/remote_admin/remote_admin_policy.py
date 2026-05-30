@@ -590,6 +590,58 @@ def parse_acl_spec(spec: str, decision: str) -> Dict[str, str]:
     return {"subject": parts[0], "operation": parts[1], "resource": parts[2], "decision": decision, "reason": parts[3] if len(parts) > 3 else "managed by remote-admin plan"}
 
 
+
+
+def plan_operations_hash(plan: Dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(plan.get("operations", []), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def plan_requires_dual_control(plan: Dict[str, Any]) -> bool:
+    return any(str(op.get("action", "")).startswith("acl.") for op in plan.get("operations", []))
+
+
+def plan_has_valid_dual_approval(plan: Dict[str, Any]) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+    if not plan_requires_dual_control(plan):
+        return True, "not_required", None
+    creator = str(plan.get("actor", ""))
+    expected_hash = plan_operations_hash(plan)
+    for approval in plan.get("approvals", []) or []:
+        approver = str(approval.get("approver", ""))
+        if not approver:
+            continue
+        if creator and approver == creator:
+            continue
+        if approval.get("operation") != "remote-admin.plan.approve":
+            continue
+        if approval.get("plan_hash") != expected_hash:
+            continue
+        return True, "approved", approval
+    return False, "acl_write_plan_requires_distinct_remote_admin_plan_approve", None
+
+
+def add_plan_approval(plan: Dict[str, Any], ns: argparse.Namespace, note: str = "") -> Dict[str, Any]:
+    if not ns.actor:
+        raise ValueError("plan approve requires --actor")
+    if plan_requires_dual_control(plan) and ns.actor == str(plan.get("actor", "")):
+        raise ValueError("ACL-write plan approval requires an approver distinct from the plan creator")
+    approval = {
+        "schema": f"{SCHEMA_PREFIX}.plan_approval.v1",
+        "approver": ns.actor,
+        "approved_at": now_iso(),
+        "operation": "remote-admin.plan.approve",
+        "plan_id": str(plan.get("plan_id", "")),
+        "plan_hash": plan_operations_hash(plan),
+        "ticket": ns.ticket or "",
+        "reason": ns.reason or note or "remote-admin plan approval",
+    }
+    approvals = list(plan.get("approvals", []) or [])
+    approvals = [a for a in approvals if a.get("approver") != ns.actor]
+    approvals.append(approval)
+    plan["approvals"] = approvals
+    plan["requires_dual_control"] = plan_requires_dual_control(plan)
+    return approval
+
+
 def plan_operation_acl(operation: Dict[str, Any]) -> Tuple[str, str]:
     action = operation.get("action", "")
     if action in ("config.set", "config.unset"):
@@ -665,8 +717,34 @@ def cmd_plan(paths: Paths, ns: argparse.Namespace, args: List[str]) -> int:
         if len(args) < 2:
             return deny("plan show requires PLAN_FILE", op, ns.actor, as_json=ns.json, code=2)
         plan = read_plan(Path(args[1]))
-        audit(paths, ns, op, args[1], "allow", "ok", {"operations": len(plan.get("operations", []))})
+        audit(paths, ns, op, args[1], "allow", "ok", {"operations": len(plan.get("operations", [])), "requires_dual_control": plan_requires_dual_control(plan)})
         return success(ns, f"{SCHEMA_PREFIX}.plan.v1", plan=plan, mutated=False)
+    if action == "approve":
+        if len(args) < 2:
+            return deny("plan approve requires PLAN_FILE", op, ns.actor, as_json=ns.json, code=2)
+        plan_file = Path(args[1])
+        out = ""
+        note = ""
+        i = 2
+        while i < len(args):
+            if args[i] == "--out":
+                out = args[i+1]; i += 2
+            elif args[i] == "--note":
+                note = args[i+1]; i += 2
+            else:
+                return deny(f"unknown plan approve option: {args[i]}", op, ns.actor, as_json=ns.json, code=2)
+        plan = read_plan(plan_file)
+        try:
+            approval = add_plan_approval(plan, ns, note)
+        except ValueError as e:
+            return deny(str(e), op, ns.actor, str(plan_file), ns.json)
+        target = Path(out) if out else plan_file
+        mutated = False
+        if not ns.dry_run:
+            atomic_write(target, json.dumps(plan, sort_keys=True, indent=2) + "\n", 0o600, False)
+            mutated = True
+        audit(paths, ns, op, str(target), "allow", "ok", {"plan_id": plan.get("plan_id", ""), "approver": ns.actor, "mutated": mutated})
+        return success(ns, f"{SCHEMA_PREFIX}.plan_approve.v1", plan=plan, approval=approval, out=str(target), mutated=mutated, dry_run=ns.dry_run)
     if action != "create":
         return deny(f"unknown plan action: {action}", op, ns.actor, as_json=ns.json, code=2)
     out = ""
@@ -696,7 +774,8 @@ def cmd_plan(paths: Paths, ns: argparse.Namespace, args: List[str]) -> int:
             return deny(f"unknown plan option: {a}", op, ns.actor, as_json=ns.json, code=2)
     if not operations:
         return deny("plan create requires at least one operation", op, ns.actor, as_json=ns.json, code=2)
-    plan = {"schema": f"{SCHEMA_PREFIX}.plan.v1", "plan_id": hashlib.sha256(json.dumps(operations, sort_keys=True).encode()).hexdigest()[:16], "created_at": now_iso(), "actor": ns.actor, "ticket": ns.ticket or "", "reason": ns.reason or "", "operations": operations}
+    requires_dual = any(str(op.get("action", "")).startswith("acl.") for op in operations)
+    plan = {"schema": f"{SCHEMA_PREFIX}.plan.v1", "plan_id": hashlib.sha256(json.dumps(operations, sort_keys=True).encode()).hexdigest()[:16], "created_at": now_iso(), "actor": ns.actor, "ticket": ns.ticket or "", "reason": ns.reason or "", "operations": operations, "approvals": [], "requires_dual_control": requires_dual}
     mutated = False
     if out and not ns.dry_run:
         atomic_write(Path(out), json.dumps(plan, sort_keys=True, indent=2) + "\n", 0o600, False)
@@ -714,7 +793,11 @@ def cmd_apply(paths: Paths, ns: argparse.Namespace, args: List[str]) -> int:
         return deny("apply requires PLAN_FILE", op, ns.actor, as_json=ns.json, code=2)
     plan_file = Path(args[0])
     plan = read_plan(plan_file)
-    checks = []
+    dual_ok, dual_reason, dual_approval = plan_has_valid_dual_approval(plan)
+    if not dual_ok:
+        audit(paths, ns, op, str(plan_file), "deny", "denied", {"dual_control_reason": dual_reason, "plan_id": plan.get("plan_id", "")})
+        return deny(dual_reason, op, ns.actor, str(plan_file), ns.json)
+    checks = [{"operation": "remote-admin.plan.dual-control", "resource": str(plan_file), "allowed": dual_ok, "reason": dual_reason, "approval": dual_approval}]
     for operation in plan.get("operations", []):
         needed, resource = plan_operation_acl(operation)
         allowed, acl_info = require_acl(paths, ns, needed, resource)
@@ -780,6 +863,7 @@ Commands:
   audit tail|show|verify|note TEXT
   plan create [--out FILE] [--config-set K=V] [--acl-grant SUBJECT:OP:RESOURCE[:REASON]]
   plan show PLAN_FILE
+  plan approve PLAN_FILE [--out FILE] [--note TEXT]
   apply PLAN_FILE
   rollback list|show ID|apply ID
 """

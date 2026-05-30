@@ -1,0 +1,23 @@
+{
+  "schema": "queuebash.provider_parity_report_policy.v1",
+  "purpose": "Offline provider-family parity reporting policy. This is inspection-only and must not call live cloud APIs, require credentials, provision resources, or change queue dispatch.",
+  "required_buckets": ["docs", "provider_dirs", "policies", "fixtures", "tests"],
+  "families": {
+    "aws": {"display_name":"AWS","status":"first_tier_contract_coverage","provider_dirs":["providers.d/aws"],"docs":["docs/AWS_PROVIDER_CONTRACTS.md"],"policies":["policies.d/aws/default.env.example"],"fixtures":["tests/fixtures/aws"],"tests":["tests/aws_provider_contracts_static.sh","tests/aws_provider_json_contract_static.py"]},
+    "azure": {"display_name":"Azure","status":"first_tier_contract_coverage","provider_dirs":["providers.d/azure"],"docs":["docs/AZURE_PROVIDER_CONTRACTS.md"],"policies":["policies.d/azure/default.env.example"],"fixtures":["tests/fixtures/azure"],"tests":["tests/azure_provider_contracts_static.sh","tests/azure_provider_json_contract_static.py"]},
+    "gcp": {"display_name":"GCP","status":"first_tier_contract_coverage","provider_dirs":["providers.d/gcp"],"docs":["docs/GCP_PROVIDER_CONTRACTS.md"],"policies":["policies.d/gcp/default.env.example"],"fixtures":["tests/fixtures/gcp"],"tests":["tests/gcp_provider_contracts_static.sh","tests/gcp_provider_json_contract_static.py"]},
+    "oci": {"display_name":"OCI","status":"high_standard_reference","provider_dirs":["providers.d/oci"],"docs":["docs/OCI_PROVIDER_CONTRACTS.md","docs/OCI_GOVERNANCE_PROVIDER.md"],"policies":["policies.d/oci/default.env.example"],"fixtures":["tests/fixtures/oci"],"tests":["tests/oci_provider_contracts_static.sh","tests/oci_provider_json_contract_static.py"]},
+    "ibm": {"display_name":"IBM","status":"high_standard_reference","provider_dirs":["providers.d/ibm"],"docs":["docs/IBM_PROVIDER_CONTRACTS.md"],"policies":["policies.d/ibm/identity.env","policies.d/ibm/regions.tsv","policies.d/finops/ibm.env.example"],"fixtures":["tests/fixtures/ibm"],"tests":["tests/ibm_provider_contracts_static.sh","tests/ibm_provider_json_contract_static.py"]},
+    "eu_sovereign": {"display_name":"EU sovereign","status":"fixture_first_mapped_pending_validation","provider_dirs":["providers.d/eu_sovereign"],"docs":["docs/EU_SOVEREIGN_PROVIDER_CONTRACTS.md"],"policies":["policies.d/eu-sovereign/default.env.example"],"fixtures":["tests/fixtures/eu_sovereign"],"tests":["tests/eu_sovereign_provider_contracts_static.sh","tests/eu_sovereign_provider_json_contract_static.py"]},
+    "apac_china": {"display_name":"APAC/China","status":"fixture_first_mapped_pending_validation","provider_dirs":["providers.d/apac_china"],"docs":["docs/APAC_CHINA_PROVIDER_CONTRACTS.md"],"policies":["policies.d/apac-china/default.env.example"],"fixtures":["tests/fixtures/apac_china"],"tests":["tests/apac_china_provider_contracts_static.sh","tests/apac_china_provider_json_contract_static.py"]},
+    "gpu_cloud": {"display_name":"GPU cloud","status":"fixture_first_mapped_pending_validation","provider_dirs":["providers.d/gpu_cloud"],"docs":["docs/GPU_CLOUD_PROVIDER_CONTRACTS.md"],"policies":["policies.d/gpu-cloud/default.env.example"],"fixtures":["tests/fixtures/gpu_cloud"],"tests":["tests/gpu_cloud_provider_contracts_static.sh","tests/gpu_cloud_provider_json_contract_static.py"]},
+    "edge_cloud": {"display_name":"Edge cloud","status":"fixture_first_mapped_pending_validation","provider_dirs":["providers.d/edge_cloud"],"docs":["docs/EDGE_CLOUD_PROVIDER_CONTRACTS.md"],"policies":["policies.d/edge-cloud/default.env.example"],"fixtures":["tests/fixtures/edge_cloud"],"tests":["tests/edge_cloud_provider_contracts_static.sh","tests/edge_cloud_provider_json_contract_static.py"]},
+    "hybrid_onprem": {"display_name":"Hybrid/on-prem","status":"fixture_first_mapped_pending_validation","provider_dirs":["providers.d/hybrid_onprem"],"docs":["docs/HYBRID_ONPREM_PROVIDER_CONTRACTS.md"],"policies":["policies.d/hybrid-onprem/default.env.example"],"fixtures":["tests/fixtures/hybrid_onprem"],"tests":["tests/hybrid_onprem_provider_contracts_static.sh","tests/hybrid_onprem_provider_json_contract_static.py"]}
+  },
+  "security_boundary": {
+    "live_api_calls": false,
+    "credentials_required": false,
+    "cloud_mutation": false,
+    "queue_dispatch_refactor": false
+  }
+}
