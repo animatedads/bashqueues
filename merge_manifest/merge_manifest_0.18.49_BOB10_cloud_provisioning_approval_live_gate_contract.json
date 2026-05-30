@@ -1,0 +1,30 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "version": "0.18.49",
+  "bob": "BOB10",
+  "title": "cloud provisioning approval live gate contract",
+  "base": "0.18.48 full delivery acceptance base",
+  "delivery_type": "patchset",
+  "summary": "Adds contract-only approval-request and live-gate checks for cloud provisioning without enabling live mutation or queue dispatch integration.",
+  "boundaries": [
+    "no live cloud API calls",
+    "no provisioning/destruction",
+    "no provider credentials as authority",
+    "no queue dispatch refactor",
+    "live gate is readiness/review contract only"
+  ],
+  "changed_files": [
+    "README.md",
+    "CHANGELOG.md",
+    "queuebash.sh",
+    "providers.d/cloud_provision/cloud_provision.sh",
+    "policies.d/cloud-provision/approval-policy.example.json",
+    "docs/CLOUD_PROVISIONING_APPROVAL_LIVE_GATES.md",
+    "tests/cloud_provision_approval_live_gate_static.sh",
+    "tests/cloud_provision_approval_live_gate_smoke.sh",
+    "tests/cloud_provision_approval_live_gate_json_contract_static.py",
+    ".queuebash/dev/scratchpad.json",
+    "validation_0.18.49_BOB10_cloud_provisioning_approval_live_gate_contract_final.log",
+    "cleanup_0.18.49_BOB10_cloud_provisioning_approval_live_gate_contract.log"
+  ]
+}

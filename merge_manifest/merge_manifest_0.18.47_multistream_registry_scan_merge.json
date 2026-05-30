@@ -1,0 +1,21 @@
+{
+  "base": "bashqueues_0.18.46_BOB2_primary_source_validation_BOB12_patchset_registry_merged.zip",
+  "changes": [
+    "merged Bob2 primary-source validation base with Bob10 registry handoff, Bob11 OpenAI/Anthropic ask providers, and Bob12 attempt/evidence linkage",
+    "added queue dev files scan",
+    "treated missing old MD5 as new/unbaselined changed state rather than unchanged",
+    "repaired patchset preconditions for new files",
+    "added new-file patchset smoke test and scan smoke test"
+  ],
+  "cleanup_log": "cleanup_0.18.47_multistream_registry_scan_merge.log",
+  "created_at": "2026-05-30T08:51:37.574730+00:00",
+  "inputs": [
+    "bashqueues_0.18.46_BOB10_registry_handoff_dev_registry_merge.patchset.zip",
+    "bashqueues_0.18.46_BOB11_ask_openai_anthropic_dev_registry_merge_patchset.zip",
+    "bashqueues_0.18.46_BOB11_ask_openai_anthropic_dev_registry_merge.zip",
+    "bashqueues_0.18.46_BOB12_attempt_evidence_linkage.zip"
+  ],
+  "package": "0.18.47_BOB12_multistream_registry_scan_merge",
+  "schema": "queuebash.merge_manifest.v1",
+  "validation_log": "validation_0.18.47_multistream_registry_scan_merge.log"
+}

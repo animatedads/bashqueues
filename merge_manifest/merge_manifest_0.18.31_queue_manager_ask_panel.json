@@ -1,0 +1,27 @@
+{
+  "schema": "queuebash.package_manifest.v1",
+  "package": "bashqueues_0.18.31_queue_manager_ask_panel",
+  "base": "bashqueues_0.18.31_aws_first_tier_cloud_platform_parity.zip",
+  "scope": "panel-only Queue Manager Ask panel add-on",
+  "queuebash_sh_changed": false,
+  "queuebash_version": "0.18.31",
+  "changed_files": [
+    "queuemgr_panel.py",
+    "docs/QUEUEMGR.md",
+    "README.md",
+    "CHANGELOG.md",
+    "tests/panel_ask_panel_static.sh",
+    ".queuebash/dev/scratchpad.json"
+  ],
+  "added_validation_logs": [
+    "validation_0.18.31_queue_manager_ask_panel_static.log",
+    "validation_0.18.31_queue_manager_ask_panel_provider_smoke.log",
+    "cleanup_0.18.31_queue_manager_ask_panel.log"
+  ],
+  "notes": [
+    "Ask panel calls existing queue ask command through qrun.",
+    "Provider discovery uses queue ask --help, bundled helper binaries, and examples/providers/ai/*.env.example.",
+    "Panel does not implement provider policy, audit, safety classification, live enablement, approval, override, submission, or execution logic.",
+    "queuebash.sh and QUEUEBASH_VERSION are intentionally unchanged to honour the panel-only sidestep."
+  ]
+}

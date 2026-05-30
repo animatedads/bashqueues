@@ -1,0 +1,15 @@
+{
+  "base": "bashqueues_0.18.56_BOB_MERGER_qbtest_example_timeout_helper_full_delivery.zip",
+  "merged_patchsets": [
+    "bashqueues_0.18.56_BOB11_ask_groq_live_provider_pack_patchset.zip",
+    "bashqueues_0.18.56_BOB2_scratchpad_status_enum_guard_patchset.zip"
+  ],
+  "notes": [
+    "ledger/version hits expected",
+    "fake QBTEST placeholder kept absent",
+    "queue-dev-timeout used for bounded validation where practical"
+  ],
+  "route": "patch tooling first; Bob2 applied directly; Groq patch tooling inspected/applied cleanly but queuebash was reconciled to preserve accepted QBTEST example escaping/removal",
+  "schema": "queuebash.bob_merger.full_delivery_manifest.v1",
+  "version": "0.18.56"
+}

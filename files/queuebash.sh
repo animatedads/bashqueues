@@ -1,0 +1,22817 @@
+#!/usr/bin/env bash
+# queuebash.sh - native Bash queue manager
+# Source this from ~/.bashrc or ~/.bash_profile.
+# priorities, hooks, exact-name grouping, bash completion, overdir/overfiles.
+
+# Keep normal interactive guard if this file is used as a full .bashrc.
+# Set QUEUEBASH_ALLOW_NONINTERACTIVE=1 before sourcing to use in scripts/tests.
+if [[ -z "${QUEUEBASH_ALLOW_NONINTERACTIVE:-}" ]]; then
+    case $- in
+        *i*) ;;
+        *) return 0 2>/dev/null || exit 0 ;;
+    esac
+fi
+
+# Preserve a simple default prompt if caller has none.
+: "${PS1:='\u@\h:\w> '}"
+
+QUEUEBASH_VERSION="0.18.59"
+
+# -------------------------------------------------------------------
+# overdir / overfiles
+# -------------------------------------------------------------------
+
+_over_quote_cmd() {
+    printf ' %q' "$@"
+}
+
+overdir() {
+    local dryrun=0
+
+    if [[ "$1" == "--help" || "$1" == "-h" || "$#" -eq 0 ]]; then
+        cat <<'EOF'
+Usage:
+  overdir [--dryrun] <directory|dirspec...> <command... using {1}>
+
+Runs the command once for each matching directory.
+
+Placeholder:
+  {1} = current directory path
+
+Examples:
+  overdir ~/Downloads ls -la "{1}"
+  overdir --dryrun "~/Downloads/import/*" python forensic_helper.py --ingest "{1}" --yaml tblisi.yaml
+
+Notes:
+  Quote globs/filespecs if you want overdir to expand them internally.
+  Quote "{1}" to preserve spaces in paths.
+EOF
+        return 0
+    fi
+
+    if [[ "$1" == "--dryrun" ]]; then
+        dryrun=1
+        shift
+    fi
+
+    if [[ "$#" -lt 2 ]]; then
+        echo "Usage: overdir [--dryrun] <directory|dirspec...> <command... using {1}>"
+        echo "Try: overdir --help"
+        return 2
+    fi
+
+    local targets=()
+    while [[ "$#" -gt 0 ]]; do
+        local a="${1/#\~/$HOME}"
+
+        if [[ -d "$a" ]]; then
+            targets+=( "$a" )
+            shift
+            continue
+        fi
+
+        local matches=()
+        local m
+        while IFS= read -r m; do
+            [[ -d "$m" ]] && matches+=( "$m" )
+        done < <(compgen -G "$a")
+
+        if [[ "${#matches[@]}" -gt 0 ]]; then
+            targets+=( "${matches[@]}" )
+            shift
+            continue
+        fi
+
+        break
+    done
+
+    if [[ "${#targets[@]}" -eq 0 ]]; then
+        echo "overdir: no directories matched" >&2
+        return 1
+    fi
+
+    if [[ "$#" -eq 0 ]]; then
+        echo "overdir: missing command" >&2
+        return 2
+    fi
+
+    local cmd=( "$@" )
+    local dir
+    for dir in "${targets[@]}"; do
+        echo "=== $dir ==="
+        local args=()
+        local x
+        for x in "${cmd[@]}"; do
+            args+=( "${x//\{1\}/$dir}" )
+        done
+
+        if [[ "$dryrun" -eq 1 ]]; then
+            printf 'DRYRUN:'
+            printf ' %q' "${args[@]}"
+            printf '\n'
+        else
+            "${args[@]}"
+        fi
+    done
+}
+
+overfiles() {
+    local dryrun=0
+
+    if [[ "$1" == "--help" || "$1" == "-h" || "$#" -eq 0 ]]; then
+        cat <<'EOF'
+Usage:
+  overfiles [--dryrun] <file|filespec|directory...> <command... using {1}>
+
+Runs the command once for each matching file.
+
+Placeholder:
+  {1} = current file path
+
+Examples:
+  overfiles "../*.zip" unzip "{1}"
+  overfiles --dryrun "../*.zip" unzip "{1}"
+  overfiles "../*.zip" bash -c 'mkdir -p "${1%.zip}" && unzip -o "$1" -d "${1%.zip}"' _ "{1}"
+
+Notes:
+  Quote globs/filespecs if you want overfiles to expand them internally.
+  Quote "{1}" to preserve spaces in paths.
+EOF
+        return 0
+    fi
+
+    if [[ "$1" == "--dryrun" ]]; then
+        dryrun=1
+        shift
+    fi
+
+    if [[ "$#" -lt 2 ]]; then
+        echo "Usage: overfiles [--dryrun] <file|filespec|directory...> <command... using {1}>"
+        echo "Try: overfiles --help"
+        return 2
+    fi
+
+    local targets=()
+    while [[ "$#" -gt 0 ]]; do
+        local a="${1/#\~/$HOME}"
+
+        if [[ -e "$a" ]]; then
+            targets+=( "$a" )
+            shift
+            continue
+        fi
+
+        local matches=()
+        local m
+        while IFS= read -r m; do
+            [[ -e "$m" ]] && matches+=( "$m" )
+        done < <(compgen -G "$a")
+
+        if [[ "${#matches[@]}" -gt 0 ]]; then
+            targets+=( "${matches[@]}" )
+            shift
+            continue
+        fi
+
+        break
+    done
+
+    if [[ "${#targets[@]}" -eq 0 ]]; then
+        echo "overfiles: no files/directories matched" >&2
+        return 1
+    fi
+
+    if [[ "$#" -eq 0 ]]; then
+        echo "overfiles: missing command" >&2
+        return 2
+    fi
+
+    local cmd=( "$@" )
+    local files=()
+    local t
+
+    for t in "${targets[@]}"; do
+        if [[ -d "$t" ]]; then
+            local f
+            while IFS= read -r -d '' f; do
+                files+=( "$f" )
+            done < <(find "$t" -mindepth 1 -maxdepth 1 -type f -print0)
+        elif [[ -f "$t" ]]; then
+            files+=( "$t" )
+        fi
+    done
+
+    if [[ "${#files[@]}" -eq 0 ]]; then
+        echo "overfiles: no files found" >&2
+        return 1
+    fi
+
+    local file
+    for file in "${files[@]}"; do
+        echo "=== $file ==="
+        local args=()
+        local x
+        for x in "${cmd[@]}"; do
+            args+=( "${x//\{1\}/$file}" )
+        done
+
+        if [[ "$dryrun" -eq 1 ]]; then
+            printf 'DRYRUN:'
+            printf ' %q' "${args[@]}"
+            printf '\n'
+        else
+            "${args[@]}"
+        fi
+    done
+}
+
+# -------------------------------------------------------------------
+# queue / queuemgr
+# -------------------------------------------------------------------
+
+_queue_root() {
+    echo "${QUEUEBASH_SELECTED_ROOT:-${QUEUEBASH_ROOT:-$HOME/.queuebash}}"
+}
+
+_queue_bundled_script_dir() {
+    local script_dir=""
+    if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+    fi
+    [[ -n "$script_dir" && -d "$script_dir" ]] || return 1
+    printf '%s\n' "$script_dir"
+}
+
+_queue_resolve_bundled_source_dir() {
+    # _queue_resolve_bundled_source_dir OVERRIDE SUBDIR
+    # Resolution order deliberately matches the old installer functions:
+    #   explicit env override -> checked-out tree beside queuebash.sh -> ./SUBDIR
+    local override="${1:-}"
+    local subdir="${2:-}"
+    local script_dir=""
+
+    if [[ -n "$override" ]]; then
+        [[ -d "$override" ]] || return 1
+        printf '%s\n' "$override"
+        return 0
+    fi
+
+    script_dir="$(_queue_bundled_script_dir 2>/dev/null || true)"
+    if [[ -n "$script_dir" && -d "$script_dir/$subdir" ]]; then
+        printf '%s\n' "$script_dir/$subdir"
+        return 0
+    fi
+
+    if [[ -d "./$subdir" ]]; then
+        printf '%s\n' "./$subdir"
+        return 0
+    fi
+
+    return 1
+}
+
+_queue_install_bundled_flat_files() {
+    # _queue_install_bundled_flat_files SOURCE_DIR TARGET_DIR GLOB MODE
+    # Copies bundled files without overwriting local/site-edited files and while
+    # respecting TARGET_DIR/.disabled/NAME. MODE may be "executable" or "plain".
+    local source_dir="${1:-}"
+    local target_dir="${2:-}"
+    local pattern="${3:-*}"
+    local mode="${4:-plain}"
+    local src dst base old_nullglob
+
+    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
+    [[ -n "$target_dir" ]] || return 0
+
+    mkdir -p "$target_dir"
+
+    old_nullglob="$(shopt -p nullglob || true)"
+    shopt -s nullglob
+    for src in "$source_dir"/$pattern; do
+        [[ -f "$src" ]] || continue
+        base="$(basename "$src")"
+        dst="$target_dir/$base"
+        if [[ ! -e "$dst" && ! -e "$target_dir/.disabled/$base" ]]; then
+            cp "$src" "$dst"
+            if [[ "$mode" == "executable" ]]; then
+                chmod +x "$dst" 2>/dev/null || true
+            fi
+        fi
+    done
+    eval "$old_nullglob" 2>/dev/null || true
+}
+
+_queue_install_bundled_classes() {
+    local root="$(_queue_root)"
+    local source_dir
+    source_dir="$(_queue_resolve_bundled_source_dir "${QUEUEBASH_CLASS_SOURCE_DIR:-}" "classes" 2>/dev/null || true)"
+    _queue_install_bundled_flat_files "$source_dir" "$root/classes" "*.env" plain
+}
+
+_queue_install_bundled_env_profiles() {
+    local root="$(_queue_root)"
+    local source_dir
+    source_dir="$(_queue_resolve_bundled_source_dir "${QUEUEBASH_ENV_SOURCE_DIR:-}" "envs.d" 2>/dev/null || true)"
+    _queue_install_bundled_flat_files "$source_dir" "$root/envs.d" "*.env" plain
+}
+
+
+_queue_obsolete_asset_plugins() {
+    # Asset-side net_usage was removed. Runtime net usage accounting now lives
+    # under caps.d/net_usage.sh. Keep this explicit rather than pruning arbitrary
+    # site-local asset plugins that are not bundled with queuebash.
+    printf '%s\n' net_usage
+}
+
+_queue_prune_obsolete_asset_plugins() {
+    local root="$( _queue_root )" name active disabled obsolete_dir ts target rc=0
+    obsolete_dir="$root/assets.d/.obsolete"
+    while IFS= read -r name; do
+        [[ -n "$name" ]] || continue
+        active="$root/assets.d/$name.sh"
+        disabled="$root/assets.d/.disabled/$name.sh"
+        if [[ -e "$active" || -e "$disabled" ]]; then
+            if ! mkdir -p "$obsolete_dir" 2>/dev/null; then
+                echo "queue assets: cannot create obsolete archive directory: $obsolete_dir" >&2
+                rc=1
+                continue
+            fi
+            ts="$(date +%Y%m%d_%H%M%S_%N)"
+            if [[ -e "$active" ]]; then
+                target="$obsolete_dir/${name}.${ts}.sh"
+                if mv "$active" "$target" 2>/dev/null; then
+                    echo "Archived obsolete asset plugin: $active -> $target" >&2
+                else
+                    echo "queue assets: cannot archive obsolete asset plugin: $active" >&2
+                    rc=1
+                fi
+            fi
+            if [[ -e "$disabled" ]]; then
+                target="$obsolete_dir/${name}.${ts}.disabled.sh"
+                if mv "$disabled" "$target" 2>/dev/null; then
+                    echo "Archived obsolete disabled asset plugin: $disabled -> $target" >&2
+                else
+                    echo "queue assets: cannot archive obsolete disabled asset plugin: $disabled" >&2
+                    rc=1
+                fi
+            fi
+        fi
+    done < <(_queue_obsolete_asset_plugins)
+    return "$rc"
+}
+
+_queue_install_bundled_asset_plugins() {
+    local root="$(_queue_root)"
+    local source_dir
+    source_dir="$(_queue_resolve_bundled_source_dir "${QUEUEBASH_PLUGIN_SOURCE_DIR:-}" "assets.d" 2>/dev/null || true)"
+    _queue_prune_obsolete_asset_plugins >/dev/null 2>&1 || true
+    _queue_install_bundled_flat_files "$source_dir" "$root/assets.d" "*.sh" executable
+}
+
+
+_queue_install_bundled_reporter_plugins() {
+    local root="$(_queue_root)"
+    local source_dir
+    source_dir="$(_queue_resolve_bundled_source_dir "${QUEUEBASH_REPORTER_PLUGIN_SOURCE_DIR:-}" "reporters.d" 2>/dev/null || true)"
+    _queue_install_bundled_flat_files "$source_dir" "$root/reporters.d" "*.sh" executable
+}
+
+_queue_install_bundled_cap_plugins() {
+    local root="$(_queue_root)"
+    local source_dir
+    source_dir="$(_queue_resolve_bundled_source_dir "${QUEUEBASH_CAP_PLUGIN_SOURCE_DIR:-}" "caps.d" 2>/dev/null || true)"
+    _queue_install_bundled_flat_files "$source_dir" "$root/caps.d" "*.sh" executable
+}
+
+_queue_install_bundled_tree_files() {
+    # _queue_install_bundled_tree_files SOURCE_ROOT TARGET_ROOT RELDIR PATTERN MODE
+    # Copy a single bundled policy/example family without flattening it.  This
+    # preserves the family directory under policies.d, avoids overwriting local
+    # files, and respects TARGET_ROOT/RELDIR/.disabled/NAME.  MODE is reserved
+    # for symmetry with _queue_install_bundled_flat_files and currently supports
+    # "plain" only for policy data files.
+    local source_root="${1:-}"
+    local target_root="${2:-}"
+    local reldir="${3:-}"
+    local pattern="${4:-*}"
+    local mode="${5:-plain}"
+    local source_dir target_dir src dst base old_nullglob
+
+    [[ -n "$source_root" && -d "$source_root" ]] || return 0
+    [[ -n "$target_root" ]] || return 0
+    [[ -n "$reldir" ]] || return 0
+
+    source_dir="$source_root/$reldir"
+    target_dir="$target_root/$reldir"
+    [[ -d "$source_dir" ]] || return 0
+
+    mkdir -p "$target_dir"
+    old_nullglob="$(shopt -p nullglob || true)"
+    shopt -s nullglob
+    for src in "$source_dir"/$pattern; do
+        [[ -f "$src" ]] || continue
+        base="$(basename "$src")"
+        dst="$target_dir/$base"
+        if [[ ! -e "$dst" && ! -e "$target_dir/.disabled/$base" ]]; then
+            cp "$src" "$dst"
+            if [[ "$mode" == "executable" ]]; then
+                chmod +x "$dst" 2>/dev/null || true
+            fi
+        fi
+    done
+    eval "$old_nullglob" 2>/dev/null || true
+}
+
+_queue_install_bundled_policy_family() {
+    # _queue_install_bundled_policy_family SOURCE_DIR ROOT FAMILY PATTERN
+    # Install a named bundled policy family under ROOT/policies.d/FAMILY.  This
+    # deliberately includes example files as examples; names are preserved and
+    # nothing is activated or renamed by the installer.
+    local source_dir="${1:-}"
+    local root="${2:-}"
+    local family="${3:-}"
+    local pattern="${4:-*}"
+    _queue_install_bundled_tree_files "$source_dir" "$root/policies.d" "$family" "$pattern" plain
+}
+
+_queue_install_bundled_policy_top_level() {
+    # Install deliberate top-level compatibility policy files only.  Do not use
+    # a broad recursive copy here: provider/governance policy families must be
+    # named explicitly below so install coverage remains auditable.
+    local source_dir="${1:-}"
+    local root="${2:-}"
+    local name src dst
+    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
+    mkdir -p "$root/policies.d"
+    for name in endpoint_jurisdiction.env legal_framework.env legal_registry.env; do
+        src="$source_dir/$name"
+        dst="$root/policies.d/$name"
+        [[ -f "$src" ]] || continue
+        if [[ ! -e "$dst" && ! -e "$root/policies.d/.disabled/$name" ]]; then
+            cp "$src" "$dst"
+        fi
+    done
+}
+
+_queue_install_bundled_policies() {
+    local root="$(_queue_root)"
+    local source_dir
+
+    source_dir="$(_queue_resolve_bundled_source_dir "${QUEUEBASH_POLICY_SOURCE_DIR:-}" "policies.d" 2>/dev/null || true)"
+    [[ -n "$source_dir" && -d "$source_dir" ]] || return 0
+
+    # Legacy policy families retained exactly, plus newer governance/provider
+    # examples added since 0.18.11.  Examples stay examples; this installer only
+    # copies bundled scaffolding when no local file or .disabled marker exists.
+    _queue_install_bundled_policy_family "$source_dir" "$root" sandbox "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" seccomp "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" class-statement "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" code-signing "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" endpoint-jurisdiction "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" legal-framework "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" reporting "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" security "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" snmp-map "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" sovereign "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" sovereign "*.env.example"
+    _queue_install_bundled_policy_family "$source_dir" "$root" finops "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" finops "*.env.example"
+    _queue_install_bundled_policy_family "$source_dir" "$root" acl "*.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" acl "*.example.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" key "*.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" key "*.example.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" profile-signatures "*.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" profile-signatures "*.example.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" legal-registry "*.env"
+    _queue_install_bundled_policy_family "$source_dir" "$root" legal-registry "*.tsv"
+    _queue_install_bundled_policy_family "$source_dir" "$root" legal-registry "*.example.tsv"
+    _queue_install_bundled_policy_top_level "$source_dir" "$root"
+}
+
+_queue_init() {
+    local root="$(_queue_root)"
+    local default_class="${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}"
+    local default_file="$root/classes/$default_class.env"
+
+    mkdir -p "$root"/{pending,running,paused,done,failed,pol_blocked,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,envs.d,assets.d,caps.d,reporters.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets,clearance,clearance/done,clearance/failed,clearance/pol_blocked,clearance/interrupted,clearance/cancelled,clearance/deleted,clearance/paused,clearance/running,clearance/logs}
+
+    if [[ ! -f "$default_file" ]]; then
+        cat > "$default_file" <<'EOF'
+# bashqueues default class
+# Every job has a class. Jobs submitted without --class use this one.
+CLASS_ALLOW_PARALLEL=1
+CLASS_MAX_CONCURRENT=0
+
+# Record-format assets only:
+#   queue_class_shared_asset family check "target" key=value
+#   queue_class_exclusive_asset family check "target" key=value
+#   queue_class_exclusive_claim "claim-token"
+#
+# Explicit cross-user/global resource claims:
+#   queue_class_global_exclusive_claim "github:publish"
+#   queue_class_global_shared_claim "gpu:cuda" slots=2
+#   queue_class_global_shared_asset net allowance "wwan0" slots=1 allowance_bytes=10G direction=rx_tx
+EOF
+    fi
+
+
+    _queue_install_bundled_classes
+    _queue_install_bundled_env_profiles
+    _queue_install_bundled_asset_plugins
+    _queue_install_bundled_cap_plugins
+    _queue_install_bundled_reporter_plugins
+    _queue_install_bundled_policies
+
+}
+
+_queue_now() {
+    # Bash builtin timestamp; avoids forking `date` in submit/worker hot paths.
+    printf '%(%Y%m%d_%H%M%S)T\n' -1 2>/dev/null || date +"%Y%m%d_%H%M%S"
+}
+# QBTEST:BEGIN name=queue-now-format function=_queue_now language=bash
+# QBTEST:B64
+# b3V0PSIkKF9xdWV1ZV9ub3cpIgpbWyAiJG91dCIgPX4gXlswLTldezh9X1swLTldezZ9JCBdXQo=
+# QBTEST:END
+
+_queue_now_nonce() {
+    # Prefer Bash's EPOCHREALTIME to avoid `date +%N` forks during batch submits.
+    local er="${EPOCHREALTIME:-}"
+    if [[ "$er" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+        printf '%s' "${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+    else
+        date +%s%N
+    fi
+}
+
+_queue_id() {
+    # Include a high-resolution in-process nonce and PID to avoid collisions during rapid batch submission.
+    printf "%s_%s_%06d_%d" "$(_queue_now)" "$(_queue_now_nonce)" "$RANDOM" "$$"
+}
+
+_queue_job_name() {
+    local f="$1"
+    grep '^JOB_NAME=' "$f" 2>/dev/null | cut -d= -f2- | xargs printf '%s' 2>/dev/null
+}
+
+_queue_job_pri() {
+    local f="$1"
+    local pri
+    pri="$(grep '^PRIORITY=' "$f" 2>/dev/null | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    pri="${pri:-10}"
+    pri="${pri//[^0-9-]/}"
+    [[ -z "$pri" ]] && pri=10
+    printf '%s\n' "$pri"
+}
+
+
+_queue_pending_bucket_key() {
+    # Higher numeric PRIORITY dispatches first. Invert into fixed-width key so
+    # shell glob order over pending/p*/ is priority order without worker-side sort.
+    local pri="${1:-10}"
+    [[ "$pri" =~ ^-?[0-9]+$ ]] || pri=10
+    printf 'p%010d\n' $((1000000000 - pri))
+}
+
+_queue_pending_path_for_priority() {
+    local id="$1"
+    local pri="${2:-10}"
+    local root="${3:-$(_queue_root)}"
+    printf '%s/pending/%s/%s.job\n' "$root" "$(_queue_pending_bucket_key "$pri")" "$id"
+}
+
+_queue_pending_job_files() {
+    local root="${1:-$(_queue_root)}"
+    local d f id pri dest
+
+    shopt -s nullglob
+
+    # Compatibility normalisation: older queuebash versions stored jobs as
+    # pending/<id>.job.  Move those legacy flat files into the same priority
+    # buckets used by new submissions before producing the ordered list.  This
+    # keeps legacy pending jobs in the correct priority order and prevents the
+    # root pending directory from becoming a permanent mixed-format area.
+    for f in "$root/pending"/*.job; do
+        [[ -f "$f" ]] || continue
+        id="$(basename "$f" .job)"
+        pri="$(_queue_job_field_fast "$f" PRIORITY 2>/dev/null || echo 10)"
+        [[ "$pri" =~ ^-?[0-9]+$ ]] || pri=10
+        dest="$(_queue_pending_path_for_priority "$id" "$pri" "$root")"
+        if [[ "$f" != "$dest" ]]; then
+            mkdir -p -- "$(dirname "$dest")"
+            mv -f -- "$f" "$dest" 2>/dev/null || true
+        fi
+    done
+
+    for d in "$root/pending"/p*/; do
+        [[ -d "$d" ]] || continue
+        for f in "$d"*.job; do
+            [[ -f "$f" ]] && printf '%s\n' "$f"
+        done
+        rmdir -- "$d" 2>/dev/null || true
+    done
+
+    shopt -u nullglob
+}
+
+_queue_job_pending_path_by_id() {
+    local id="$1"
+    local root="${2:-$(_queue_root)}"
+    local f
+    [[ -n "$id" ]] || return 1
+    if [[ -f "$root/pending/$id.job" ]]; then
+        printf '%s\n' "$root/pending/$id.job"
+        return 0
+    fi
+    shopt -s nullglob
+    for f in "$root/pending"/p*/"$id.job"; do
+        if [[ -f "$f" ]]; then
+            shopt -u nullglob
+            printf '%s\n' "$f"
+            return 0
+        fi
+    done
+    shopt -u nullglob
+    return 1
+}
+
+_queue_job_is_pending_path() {
+    local f="$1"
+    local root="${2:-$(_queue_root)}"
+    case "$f" in
+        "$root/pending/"*.job|"$root/pending/"p*/*.job) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_queue_state_for_job_path() {
+    local f="$1"
+    local root="${2:-$(_queue_root)}"
+    local d
+    case "$f" in
+        "$root/pending/"*.job|"$root/pending/"p*/*.job) printf 'pending\n' ;;
+        "$root/clearance/"*/*.job)
+            d="$(dirname "$f")"
+            basename "$d"
+            ;;
+        *) basename "$(dirname "$f")" ;;
+    esac
+}
+
+_queue_rebucket_pending_job() {
+    local f="$1"
+    local pri="${2:-10}"
+    local root="${3:-$(_queue_root)}"
+    local id dest olddir
+
+    [[ -f "$f" ]] || return 1
+    _queue_job_is_pending_path "$f" "$root" || return 0
+
+    id="$(basename "$f" .job)"
+    dest="$(_queue_pending_path_for_priority "$id" "$pri" "$root")"
+    mkdir -p -- "$(dirname "$dest")"
+
+    if [[ "$f" == "$dest" ]]; then
+        return 0
+    fi
+
+    olddir="$(dirname "$f")"
+    mv -f -- "$f" "$dest"
+
+    case "$olddir" in
+        "$root/pending"/p*) rmdir -- "$olddir" 2>/dev/null || true ;;
+    esac
+}
+
+_queue_move_to_pending_bucket() {
+    local src="$1"
+    local id="${2:-}"
+    local root="${3:-$(_queue_root)}"
+    local pri dest olddir
+
+    [[ -f "$src" ]] || return 1
+    [[ -n "$id" ]] || id="$(basename "$src" .job)"
+
+    pri="$(_queue_job_field_fast "$src" PRIORITY 2>/dev/null || echo 10)"
+    [[ "$pri" =~ ^-?[0-9]+$ ]] || pri=10
+
+    dest="$(_queue_pending_path_for_priority "$id" "$pri" "$root")"
+    mkdir -p -- "$(dirname "$dest")"
+
+    olddir="$(dirname "$src")"
+    mv -f -- "$src" "$dest"
+
+    case "$olddir" in
+        "$root/pending"/p*) rmdir -- "$olddir" 2>/dev/null || true ;;
+    esac
+}
+
+_queue_job_field_fast() {
+    local f="$1"
+    local key="$2"
+    local line val have=0
+    [[ -f "$f" ]] || return 1
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        case "$line" in
+            "$key="*) val="${line#*=}"; have=1 ;;
+        esac
+    done < "$f"
+    [[ "$have" -eq 1 ]] || return 1
+    val="${val%\'}"; val="${val#\'}"
+    val="${val%\"}"; val="${val#\"}"
+    printf '%s\n' "$val"
+}
+
+_queue_job_id_and_names_for_completion() {
+    local root="$(_queue_root)"
+    local state f id name
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ "$state" == "pending" ]]; then
+            while IFS= read -r f; do
+                [[ -e "$f" ]] || continue
+                id="$(basename "$f" .job)"
+                name="$(_queue_job_name "$f")"
+                printf '%s\n' "$id"
+                [[ -n "$name" ]] && printf '%s\n' "$name"
+            done < <(_queue_pending_job_files "$root")
+            continue
+        fi
+        for f in "$root/$state"/*.job; do
+            [[ -e "$f" ]] || continue
+            id="$(basename "$f" .job)"
+            name="$(_queue_job_name "$f")"
+            printf '%s\n' "$id"
+            [[ -n "$name" ]] && printf '%s\n' "$name"
+        done
+    done | sort -u
+}
+
+_queue_find_jobs() {
+    # Exact QID wins; exact job name next; QID prefix last.
+    # Searches live jobs, bucketed pending jobs, and clearance archives.
+    # No job-name prefix matching.
+    local needle="$1"
+    local root="$(_queue_root)"
+    local state f id name
+    local exact_qid=()
+    local exact_name=()
+    local qid_prefix=()
+
+    [[ -z "$needle" ]] && return 1
+
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ "$state" == "pending" ]]; then
+            while IFS= read -r f; do
+                [[ -e "$f" ]] || continue
+                id="$(basename "$f" .job)"
+                name="$(_queue_job_name "$f")"
+
+                if [[ "$id" == "$needle" ]]; then
+                    exact_qid+=( "$f" )
+                elif [[ "$name" == "$needle" ]]; then
+                    exact_name+=( "$f" )
+                elif [[ "$id" == "$needle"* ]]; then
+                    qid_prefix+=( "$f" )
+                fi
+            done < <(_queue_pending_job_files "$root")
+            continue
+        fi
+        for f in "$root/$state"/*.job; do
+            [[ -e "$f" ]] || continue
+            id="$(basename "$f" .job)"
+            name="$(_queue_job_name "$f")"
+
+            if [[ "$id" == "$needle" ]]; then
+                exact_qid+=( "$f" )
+            elif [[ "$name" == "$needle" ]]; then
+                exact_name+=( "$f" )
+            elif [[ "$id" == "$needle"* ]]; then
+                qid_prefix+=( "$f" )
+            fi
+        done
+    done
+
+    shopt -s nullglob
+    for f in "$root/clearance"/*/*.job; do
+        [[ -e "$f" ]] || continue
+        id="$(basename "$f" .job)"
+        name="$(_queue_job_name "$f")"
+
+        if [[ "$id" == "$needle" ]]; then
+            exact_qid+=( "$f" )
+        elif [[ "$name" == "$needle" ]]; then
+            exact_name+=( "$f" )
+        elif [[ "$id" == "$needle"* ]]; then
+            qid_prefix+=( "$f" )
+        fi
+    done
+    shopt -u nullglob
+
+    if [[ "${#exact_qid[@]}" -gt 0 ]]; then
+        printf '%s\n' "${exact_qid[@]}"
+    elif [[ "${#exact_name[@]}" -gt 0 ]]; then
+        printf '%s\n' "${exact_name[@]}"
+    elif [[ "${#qid_prefix[@]}" -gt 0 ]]; then
+        printf '%s\n' "${qid_prefix[@]}"
+    else
+        return 1
+    fi
+}
+_queue_print_matches() {
+    local root="$(_queue_root)"
+    local f id state name
+    for f in "$@"; do
+        [[ -e "$f" ]] || continue
+        id="$(basename "$f" .job)"
+        state="$(_queue_state_for_job_path "$f" "$root")"
+        name="$(_queue_job_name "$f")"
+        printf "  %-24s %-10s %s\n" "$id" "$state" "$name" >&2
+    done
+}
+
+_queue_exact_name_count() {
+    local target="$1"
+    shift
+    local f name count=0
+    for f in "$@"; do
+        name="$(_queue_job_name "$f")"
+        [[ "$name" == "$target" ]] && count=$((count + 1))
+    done
+    printf '%s\n' "$count"
+}
+
+_queue_job_array_summary() {
+    local file="$1"
+    local varname="$2"
+
+    [[ -f "$file" ]] || return 0
+
+    (
+        source "$file" 2>/dev/null || exit 0
+        local -n arr="$varname" 2>/dev/null || exit 0
+        local out=()
+        local item
+
+        for item in "${arr[@]}"; do
+            [[ -n "$item" ]] && out+=( "$item" )
+        done
+
+        if [[ "${#out[@]}" -gt 0 ]]; then
+            printf "%q" "${out[0]}"
+            local i
+            for ((i=1; i<${#out[@]}; i++)); do
+                printf " %q" "${out[$i]}"
+            done
+        fi
+    )
+}
+
+_queue_job_has_array() {
+    local file="$1"
+    local varname="$2"
+
+    [[ -f "$file" ]] || return 1
+
+    (
+        source "$file" 2>/dev/null || exit 1
+        local -n arr="$varname" 2>/dev/null || exit 1
+        local item
+
+        for item in "${arr[@]}"; do
+            [[ -n "$item" ]] && exit 0
+        done
+
+        exit 1
+    )
+}
+
+_queue_set_job_array() {
+    local file="$1"
+    local varname="$2"
+    shift 2
+
+    local tmp
+    tmp="$(mktemp)"
+
+    if grep -q "^${varname}=" "$file"; then
+        grep -v "^${varname}=" "$file" > "$tmp"
+    else
+        cat "$file" > "$tmp"
+    fi
+
+    {
+        printf '%s=(' "$varname"
+        printf ' %q' "$@"
+        printf ' )\n'
+    } >> "$tmp"
+
+    mv "$tmp" "$file"
+}
+
+_queue_dep_token_done() {
+    local token="$1"
+    local root="$(_queue_root)"
+    local f name id
+
+    [[ -z "$token" ]] && return 1
+
+    # Direct QID match.
+    if [[ -f "$root/done/$token.job" ]]; then
+        return 0
+    fi
+
+    # Exact job-name match in done/.
+    for f in "$root/done"/*.job; do
+        [[ -e "$f" ]] || continue
+        name="$(_queue_job_name "$f")"
+        [[ "$name" == "$token" ]] && return 0
+    done
+
+    return 1
+}
+
+_queue_dep_token_failed_or_cancelled() {
+    local token="$1"
+    local root="$(_queue_root)"
+    local state f name
+
+    for state in failed interrupted cancelled deleted; do
+        [[ -f "$root/$state/$token.job" ]] && return 0
+        for f in "$root/$state"/*.job; do
+            [[ -e "$f" ]] || continue
+            name="$(_queue_job_name "$f")"
+            [[ "$name" == "$token" ]] && return 0
+        done
+    done
+
+    return 1
+}
+
+_queue_job_dependency_tokens() {
+    local f="$1"
+    local value=""
+
+    # Preferred path: source the job file, because DEPENDS_AFTER_SUCCESS is now
+    # written as one shell-quoted string assignment.
+    value="$(
+        source "$f" 2>/dev/null
+        printf '%s' "${DEPENDS_AFTER_SUCCESS:-}"
+    )"
+
+    if [[ -n "$value" ]]; then
+        printf '%s\n' "$value"
+        return 0
+    fi
+
+    # Compatibility fallback for early 0.6.0 job files that may contain an
+    # unsafe unquoted line like: DEPENDS_AFTER_SUCCESS=foo bar
+    grep '^DEPENDS_AFTER_SUCCESS=' "$f" 2>/dev/null | tail -1 | sed 's/^DEPENDS_AFTER_SUCCESS=//'
+}
+
+_queue_job_dependencies_satisfied() {
+    local f="$1"
+    local deps dep
+    deps="$(_queue_job_dependency_tokens "$f" || true)"
+    [[ -z "$deps" ]] && return 0
+
+    for dep in $deps; do
+        _queue_dep_token_done "$dep" || return 1
+    done
+
+    return 0
+}
+
+_queue_job_dependencies_status() {
+    local f="$1"
+    local deps dep
+    deps="$(_queue_job_dependency_tokens "$f" || true)"
+    [[ -z "$deps" ]] && { echo "none"; return 0; }
+
+    for dep in $deps; do
+        if _queue_dep_token_done "$dep"; then
+            echo "$dep:done"
+        elif _queue_dep_token_failed_or_cancelled "$dep"; then
+            echo "$dep:blocked"
+        else
+            echo "$dep:waiting"
+        fi
+    done
+}
+
+_queue_job_dependencies_blocked() {
+    local f="$1"
+    local deps dep
+    deps="$(_queue_job_dependency_tokens "$f" || true)"
+    [[ -z "$deps" ]] && return 1
+
+    for dep in $deps; do
+        _queue_dep_token_done "$dep" && continue
+        _queue_dep_token_failed_or_cancelled "$dep" && return 0
+    done
+
+    return 1
+}
+
+_queue_now_epoch() {
+    printf '%(%s)T\n' -1 2>/dev/null || date +%s
+}
+
+_queue_now_iso() {
+    local ts
+    if printf -v ts '%(%Y-%m-%dT%H:%M:%S%z)T' -1 2>/dev/null; then
+        # Convert +0000 to +00:00 to stay close to `date -Is`.
+        printf '%s:%s\n' "${ts:0:${#ts}-2}" "${ts: -2}"
+    else
+        date -Is 2>/dev/null || date
+    fi
+}
+
+_queue_parse_delay_seconds() {
+    local spec="$1"
+    local n unit total=0 rest
+
+    [[ -z "$spec" ]] && return 1
+
+    if [[ "$spec" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$spec"
+        return 0
+    fi
+
+    rest="$spec"
+    while [[ -n "$rest" ]]; do
+        if [[ "$rest" =~ ^([0-9]+)([smhdw])(.*)$ ]]; then
+            n="${BASH_REMATCH[1]}"
+            unit="${BASH_REMATCH[2]}"
+            rest="${BASH_REMATCH[3]}"
+            case "$unit" in
+                s) total=$((total + n)) ;;
+                m) total=$((total + n * 60)) ;;
+                h) total=$((total + n * 3600)) ;;
+                d) total=$((total + n * 86400)) ;;
+                w) total=$((total + n * 604800)) ;;
+            esac
+        else
+            return 1
+        fi
+    done
+
+    printf '%s\n' "$total"
+}
+
+_queue_parse_at_epoch() {
+    local spec="$1"
+    local epoch today candidate
+
+    [[ -z "$spec" ]] && return 1
+
+    if [[ "$spec" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$spec"
+        return 0
+    fi
+
+    if [[ "$spec" =~ ^[0-9]{1,2}:[0-9]{2}(:[0-9]{2})?$ ]]; then
+        today="$(date +%Y-%m-%d)"
+        candidate="$(date -d "$today $spec" +%s 2>/dev/null)" || return 1
+        if (( candidate <= $(_queue_now_epoch) )); then
+            candidate="$(date -d "tomorrow $spec" +%s 2>/dev/null)" || return 1
+        fi
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+
+    epoch="$(date -d "$spec" +%s 2>/dev/null)" || return 1
+    printf '%s\n' "$epoch"
+}
+
+_queue_job_not_before_epoch() {
+    local f="$1"
+    local nb rb
+    nb="$(grep '^NOT_BEFORE_EPOCH=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    rb="$(grep '^RETRY_NOT_BEFORE_EPOCH=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    nb="${nb:-0}"
+    rb="${rb:-0}"
+    [[ "$nb" =~ ^[0-9]+$ ]] || nb=0
+    [[ "$rb" =~ ^[0-9]+$ ]] || rb=0
+    if (( rb > nb )); then
+        printf '%s\n' "$rb"
+    else
+        printf '%s\n' "$nb"
+    fi
+}
+
+_queue_job_schedule_due() {
+    local f="$1"
+    local due
+    due="$(_queue_job_not_before_epoch "$f")"
+    (( due <= $(_queue_now_epoch) ))
+}
+
+_queue_job_schedule_status() {
+    local f="$1"
+    local due now remain when
+    due="$(_queue_job_not_before_epoch "$f")"
+    now="$(_queue_now_epoch)"
+    when="$(date -d "@$due" -Is 2>/dev/null || echo "$due")"
+    if (( due <= now )); then
+        echo "due"
+    else
+        remain=$((due - now))
+        echo "waiting ${remain}s until $when"
+    fi
+}
+
+# -------------------------------------------------------------------
+# Queue classes and cooperative resource claims
+# -------------------------------------------------------------------
+
+_queue_class_name_for_job() {
+    local f="$1"
+    local class
+    class="$(grep '^JOB_CLASS=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    printf '%s\n' "${class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}"
+}
+
+_queue_class_safe_token() {
+    local x="$1"
+    x="${x//[^A-Za-z0-9_.:-]/_}"
+    printf '%s\n' "$x"
+}
+
+_queue_class_file() {
+    local class="$1"
+    local root="$(_queue_root)"
+    local exact="$root/classes/$class.env"
+    local f base
+
+    if [[ -f "$exact" ]]; then
+        printf '%s\n' "$exact"
+        return 0
+    fi
+
+    shopt -s nullglob
+    for f in "$root/classes"/*.env; do
+        base="$(basename "$f" .env)"
+        if [[ "${base,,}" == "${class,,}" ]]; then
+            printf '%s\n' "$f"
+            shopt -u nullglob
+            return 0
+        fi
+    done
+    shopt -u nullglob
+
+    printf '%s\n' "$exact"
+}
+
+
+_queue_class_plugin_path() {
+    local name="$1"
+    local root="$(_queue_root)"
+    if [[ -f "$name" ]]; then
+        printf '%s\n' "$name"
+    else
+        printf '%s/class.d/%s\n' "$root" "$name"
+    fi
+}
+
+
+_queue_asset_check_function_name() {
+    local family="$1"
+    local check="$2"
+    family="${family//[^A-Za-z0-9_]/_}"
+    check="${check//[^A-Za-z0-9_]/_}"
+    printf 'queue_asset_check_%s_%s\n' "$family" "$check"
+}
+
+
+_queue_asset_facility_valid_name() {
+    local facility="$1"
+    [[ "$facility" =~ ^[A-Za-z_][A-Za-z0-9_]*:[A-Za-z_][A-Za-z0-9_]*$ ]]
+}
+
+_queue_asset_contract_validate_loaded() {
+    local helper="$1"
+    local mode="${2:-strict}"
+    local line facility family check func
+    local rc=0
+    local any=0
+
+    if ! declare -F queue_asset_facilities >/dev/null 2>&1; then
+        echo "asset_contract_error: missing publisher queue_asset_facilities helper=$helper"
+        return 1
+    fi
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" ]] && continue
+        facility="${line%%[[:space:]]*}"
+        [[ -z "$facility" ]] && continue
+        any=1
+
+        if ! _queue_asset_facility_valid_name "$facility"; then
+            echo "asset_contract_error: invalid facility '$facility' helper=$helper"
+            rc=1
+            continue
+        fi
+
+        family="${facility%%:*}"
+        check="${facility#*:}"
+        func="$(_queue_asset_check_function_name "$family" "$check")"
+
+        if ! declare -F "$func" >/dev/null 2>&1; then
+            echo "asset_contract_error: facility '$facility' missing function $func helper=$helper"
+            rc=1
+            continue
+        fi
+
+        if [[ "$mode" != "quiet" ]]; then
+            echo "asset_contract_ok: $facility -> $func"
+        fi
+    done < <(queue_asset_facilities)
+
+    if [[ "$any" -eq 0 ]]; then
+        echo "asset_contract_error: publisher returned no facilities helper=$helper"
+        rc=1
+    fi
+
+    return "$rc"
+}
+
+_queue_asset_contract_validate_helper() {
+    local helper="$1"
+    local mode="${2:-strict}"
+
+    [[ -f "$helper" ]] || { echo "asset_contract_error: helper not found: $helper"; return 1; }
+
+    (
+        _queue_code_signature_check_file_for_execution "$helper" || { echo "asset_contract_error: signature failed helper=$helper"; exit 1; }
+        source "$helper" >/dev/null 2>&1 || { echo "asset_contract_error: source failed helper=$helper"; exit 1; }
+        _queue_asset_contract_validate_loaded "$helper" "$mode"
+    )
+}
+
+_queue_asset_helper_path() {
+    local family="$1"
+    local root="$(_queue_root)"
+    if [[ -f "$family" ]]; then
+        printf '%s\n' "$family"
+    else
+        printf '%s/assets.d/%s.sh\n' "$root" "$family"
+    fi
+}
+
+_queue_asset_facility_is_published() {
+    local family="$1"
+    local check="$2"
+    local facility="${family}:${check}"
+
+    if declare -F queue_asset_facilities >/dev/null 2>&1; then
+        queue_asset_facilities | awk '{print $1}' | grep -Fxq "$facility"
+        return "$?"
+    fi
+
+    return 1
+}
+
+
+_queue_asset_family_valid_name() {
+    local family="$1"
+    [[ "$family" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
+}
+
+
+
+_queue_class_archive_dir() { printf '%s\n' "$(_queue_root)/classes/.archive"; }
+_queue_class_backup_dir() { printf '%s\n' "$(_queue_root)/classes/.backup"; }
+_queue_class_valid_name() { local class="$1"; [[ "$class" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]; }
+
+_queue_class_list_names() {
+    local root="$(_queue_root)" f
+    shopt -s nullglob
+    for f in "$root/classes"/*.env; do [[ -f "$f" ]] && basename "$f" .env; done | sort
+    shopt -u nullglob
+}
+
+
+_queue_class_validate_no_legacy_assets() {
+    local src="$1"
+
+    if grep -Eq '^[[:space:]]*CLASS_(SHARED_ASSETS|EXCLUSIVE_ASSETS|ASSETS)[[:space:]]*=' "$src"; then
+        echo "queue classes: legacy CLASS_*_ASSETS format is not supported: $src" >&2
+        echo "queue classes: use queue_class_shared_asset / queue_class_exclusive_asset records" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+_queue_class_validate_file() {
+    local class="$1" src="$2" tmpdir tmp rc
+    _queue_class_valid_name "$class" || { echo "queue classes: invalid class name: $class" >&2; return 2; }
+    [[ -f "$src" ]] || { echo "queue classes: class file not found: $src" >&2; return 2; }
+    _queue_class_validate_no_legacy_assets "$src" || return 6
+    tmpdir="$(mktemp -d)"; tmp="$tmpdir/$class.env"; cp "$src" "$tmp" || { rm -rf "$tmpdir"; return 1; }
+    if ! bash -n "$tmp"; then echo "queue classes: syntax validation failed: $src" >&2; rm -rf "$tmpdir"; return 3; fi
+    (
+        CLASS_ALLOW_PARALLEL=1; CLASS_MAX_CONCURRENT=0; CLASS_SHARED_ASSETS=""; CLASS_EXCLUSIVE_ASSETS=""; CLASS_ASSETS=""
+        source "$tmp" >/dev/null 2>&1 || exit 4
+        [[ "${CLASS_MAX_CONCURRENT:-0}" =~ ^[0-9]+$ ]] || exit 5
+        exit 0
+    )
+    rc="$?"
+    case "$rc" in
+        0) ;;
+        4) echo "queue classes: source failed: $src" >&2 ;;
+        5) echo "queue classes: CLASS_MAX_CONCURRENT must be numeric: $src" >&2 ;;
+        *) echo "queue classes: validation failed rc=$rc: $src" >&2 ;;
+    esac
+    rm -rf "$tmpdir"; return "$rc"
+}
+
+_queue_class_replace() {
+    local class="$1" src="$2" force="${3:-0}" root dst backup_dir backup tmp meta ts
+    _queue_class_valid_name "$class" || { echo "queue classes replace: invalid class: $class" >&2; return 2; }
+    [[ -f "$src" ]] || { echo "queue classes replace: source not found: $src" >&2; return 2; }
+    if [[ "$force" != "1" ]]; then _queue_class_validate_file "$class" "$src" || return "$?"; else bash -n "$src" || return 3; fi
+    root="$(_queue_root)"; mkdir -p "$root/classes"; dst="$root/classes/$class.env"
+    backup_dir="$(_queue_class_backup_dir)"; mkdir -p "$backup_dir"
+    ts="$(date +%Y%m%d_%H%M%S_%N)"; backup="$backup_dir/${class}.${ts}.env"; meta="$backup_dir/${class}.${ts}.meta"; tmp="$root/classes/.${class}.new.$$"
+    if [[ -e "$dst" ]]; then
+        cp -p "$dst" "$backup" || return 1
+        { printf 'class=%q\n' "$class"; printf 'backup=%q\n' "$backup"; printf 'original=%q\n' "$dst"; printf 'replaced_at=%q\n' "$(_queue_now_iso)"; printf 'source=%q\n' "$src"; } > "$meta"
+    else
+        { printf 'class=%q\n' "$class"; printf 'backup=%q\n' ""; printf 'original=%q\n' "$dst"; printf 'replaced_at=%q\n' "$(_queue_now_iso)"; printf 'source=%q\n' "$src"; printf 'created_new=1\n'; } > "$meta"
+    fi
+    cp "$src" "$tmp" || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+    echo "Replaced queue class: $dst"; [[ -f "$backup" ]] && echo "Backup: $backup" || echo "Backup: none (new class)"
+    _queue_log_event "class_replaced" "$class" "$class" "classes" "path=$dst backup=$backup source=$src" 2>/dev/null || true
+}
+
+_queue_class_refresh_from_dir() {
+    local src_dir="$1" src class rc=0
+    [[ -n "$src_dir" && -d "$src_dir" ]] || { echo "queue classes refresh: directory not found: $src_dir" >&2; return 2; }
+    shopt -s nullglob
+    for src in "$src_dir"/*.env; do [[ -f "$src" ]] || continue; class="$(basename "$src" .env)"; echo "Refreshing class=$class source=$src"; _queue_class_replace "$class" "$src" 0 || rc=1; done
+    shopt -u nullglob; return "$rc"
+}
+
+_queue_class_latest_backup() { local class="$1" dir="$(_queue_class_backup_dir)"; ls -1t "$dir/${class}".*.env 2>/dev/null | head -1 || true; }
+
+_queue_class_rollback() {
+    local class="$1" backup="${2:-}" root dst tmp
+    _queue_class_valid_name "$class" || return 2
+    root="$(_queue_root)"; dst="$root/classes/$class.env"; [[ -n "$backup" ]] || backup="$(_queue_class_latest_backup "$class")"
+    [[ -n "$backup" && -f "$backup" ]] || { echo "queue classes rollback: no backup found for class: $class" >&2; return 1; }
+    _queue_class_validate_file "$class" "$backup" || return 4
+    tmp="$root/classes/.${class}.rollback.$$"; cp "$backup" "$tmp" || { rm -f "$tmp"; return 1; }; mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+    echo "Rolled back queue class: $dst"; echo "Restored from: $backup"
+}
+
+_queue_class_delete() {
+    local class="$1" root dst archive_dir archive meta ts ref
+    _queue_class_valid_name "$class" || return 2
+    root="$(_queue_root)"; dst="$(_queue_class_file "$class")"; [[ -f "$dst" ]] || { echo "queue classes delete: class not found: $class ($dst)" >&2; return 1; }
+    ref="$(grep -R -l -E "^JOB_CLASS=['\"]?${class}['\"]?$|^JOB_CLASS=${class}$" "$root/pending" "$root/running" "$root/paused" 2>/dev/null | head -1 || true)"
+    [[ -z "$ref" ]] || { echo "queue classes delete: refusing because pending/running/paused jobs reference class: $class" >&2; echo "$ref" >&2; return 3; }
+    archive_dir="$(_queue_class_archive_dir)"; mkdir -p "$archive_dir"; ts="$(date +%Y%m%d_%H%M%S_%N)"; archive="$archive_dir/${class}.${ts}.env"; meta="$archive_dir/${class}.${ts}.meta"
+    mv "$dst" "$archive" || return 1
+    { printf 'class=%q\n' "$class"; printf 'archive=%q\n' "$archive"; printf 'original=%q\n' "$dst"; printf 'archived_at=%q\n' "$(_queue_now_iso)"; } > "$meta"
+    echo "Archived queue class: $dst"; echo "Archive: $archive"
+}
+
+_queue_class_latest_archive() { local class="$1" dir="$(_queue_class_archive_dir)"; ls -1t "$dir/${class}".*.env 2>/dev/null | head -1 || true; }
+
+_queue_class_undelete() {
+    local class="$1" archive="${2:-}" root dst tmp
+    _queue_class_valid_name "$class" || return 2
+    root="$(_queue_root)"; dst="$root/classes/$class.env"; [[ -n "$archive" ]] || archive="$(_queue_class_latest_archive "$class")"
+    [[ -n "$archive" && -f "$archive" ]] || { echo "queue classes undelete: no archive found for class: $class" >&2; return 1; }
+    [[ ! -e "$dst" ]] || { echo "queue classes undelete: active class already exists: $dst" >&2; return 3; }
+    _queue_class_validate_file "$class" "$archive" || return 4
+    tmp="$root/classes/.${class}.undelete.$$"; cp "$archive" "$tmp" || { rm -f "$tmp"; return 1; }; mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+    echo "Restored archived queue class: $dst"; echo "Restored from: $archive"
+}
+
+_queue_class_backups() { local class="${1:-}" dir="$(_queue_class_backup_dir)"; mkdir -p "$dir"; if [[ -n "$class" ]]; then ls -1t "$dir/${class}".*.env 2>/dev/null || true; else ls -1t "$dir"/*.env 2>/dev/null || true; fi; }
+_queue_class_archives() { local class="${1:-}" dir="$(_queue_class_archive_dir)"; mkdir -p "$dir"; if [[ -n "$class" ]]; then ls -1t "$dir/${class}".*.env 2>/dev/null || true; else ls -1t "$dir"/*.env 2>/dev/null || true; fi; }
+
+
+_queue_class_name_from_file() {
+    local file="$1"
+    local base name
+
+    base="$(basename "$file")"
+    name="${base%.env}"
+
+    [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || return 1
+    printf '%s\n' "$name"
+}
+
+_queue_class_refresh_one() {
+    local src="$1"
+    local name dst backup_dir backup ts tmp meta created_new=0
+
+    [[ -f "$src" ]] || {
+        echo "queue classes refresh: not a file: $src" >&2
+        return 1
+    }
+
+    name="$(_queue_class_name_from_file "$src")" || {
+        echo "queue classes refresh: invalid class filename: $src" >&2
+        return 1
+    }
+
+    mkdir -p "$(_queue_root)/classes" "$(_queue_root)/classes/.backup"
+
+    dst="$(_queue_root)/classes/${name}.env"
+    backup_dir="$(_queue_root)/classes/.backup"
+
+    tmp="$(mktemp)"
+    cp "$src" "$tmp"
+
+    if ! bash -n "$tmp" >/dev/null 2>&1; then
+        echo "queue classes refresh: syntax check failed: $src" >&2
+        rm -f "$tmp"
+        return 1
+    fi
+
+    ts="$(date +%Y%m%d_%H%M%S_%N)"
+    meta="$backup_dir/${name}.${ts}.meta"
+
+    if [[ -f "$dst" ]]; then
+        backup="$backup_dir/${name}.${ts}.env"
+        cp "$dst" "$backup"
+    else
+        backup=""
+        created_new=1
+    fi
+
+    echo "Refreshing class definition name=$name source=$src"
+    cp "$tmp" "$dst"
+    rm -f "$tmp"
+
+    if ! _queue_class_validate "$name" >/dev/null 2>&1; then
+        echo "queue classes refresh: validation failed after install: $name" >&2
+        if [[ -n "$backup" && -f "$backup" ]]; then
+            cp "$backup" "$dst"
+            echo "Rolled back class definition: $dst" >&2
+        else
+            rm -f "$dst"
+            echo "Removed invalid new class definition: $dst" >&2
+        fi
+        return 1
+    fi
+
+    {
+        printf 'class=%q\n' "$name"
+        printf 'backup=%q\n' "$backup"
+        printf 'original=%q\n' "$dst"
+        printf 'replaced_at=%q\n' "$(_queue_now_iso)"
+        printf 'source=%q\n' "$src"
+        printf 'created_new=%q\n' "$created_new"
+    } > "$meta"
+
+    echo "Replaced class definition: $dst"
+    [[ -n "$backup" ]] && echo "Backup: $backup"
+    echo "Metadata: $meta"
+}
+
+
+# -----------------------------------------------------------------------------
+# Execution environment profiles (test/live/staging worlds)
+# -----------------------------------------------------------------------------
+_queue_env_valid_name() { [[ "${1:-}" =~ ^[A-Za-z0-9_.-]+$ ]]; }
+_queue_env_dir() { printf '%s/envs.d\n' "$(_queue_root)"; }
+_queue_env_file() { local name="${1:-}"; _queue_env_valid_name "$name" || return 2; printf '%s/%s.env\n' "$(_queue_env_dir)" "$name"; }
+
+_queue_env_load() {
+    local name="${1:-}" f
+    f="$(_queue_env_file "$name")" || return 2
+    [[ -f "$f" ]] || return 1
+    EXEC_ENV_NAME="" EXEC_ENV_LABEL="" EXEC_ENV_CHROOT_MODE="" EXEC_ENV_CHROOT_ROOT=""
+    EXEC_ENV_READONLY_ROOT="" EXEC_ENV_WRITABLE_PATHS="" EXEC_ENV_SECRET_SCOPE=""
+    EXEC_ENV_ENDPOINT_SCOPE="" EXEC_ENV_DATA_SCOPE="" EXEC_ENV_CONFIRMATION_REQUIRED=""
+    source "$f" >/dev/null 2>&1 || return 3
+    [[ -n "${EXEC_ENV_NAME:-}" ]] || EXEC_ENV_NAME="$name"
+    [[ "$EXEC_ENV_NAME" == "$name" ]] || return 4
+    return 0
+}
+
+_queue_env_validate_one() {
+    local name="${1:-}" json="${2:-0}" f rc=0 reason="ok" valid=false
+    f="$(_queue_env_file "$name" 2>/dev/null || true)"
+    if [[ -z "$f" ]]; then rc=2; reason="invalid_name"
+    elif [[ ! -f "$f" ]]; then rc=1; reason="not_found"
+    elif ! bash -n "$f" >/dev/null 2>&1; then rc=3; reason="syntax_error"
+    elif ! _queue_env_load "$name" >/dev/null 2>&1; then rc=4; reason="load_or_name_mismatch"
+    fi
+    [[ "$rc" -eq 0 ]] && valid=true
+    if [[ "$json" == "1" ]]; then
+        printf '{"name":"%s","valid":%s,"reason":"%s","file":"%s"}\n' "$(_queue_json_escape "$name")" "$valid" "$(_queue_json_escape "$reason")" "$(_queue_json_escape "$f")"
+    else
+        if [[ "$rc" -eq 0 ]]; then echo "env profile OK: $name"; echo "file: $f"; else echo "env profile invalid: $name reason=$reason file=$f" >&2; fi
+    fi
+    return "$rc"
+}
+
+_queue_env_list() {
+    local json=0 root f first=1 name
+    while [[ "$#" -gt 0 ]]; do case "$1" in --json|-j) json=1; shift ;; *) shift ;; esac; done
+    root="$(_queue_root)"; mkdir -p "$root/envs.d"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"queue_root":"%s","profiles":[' "$(_queue_json_escape "$root")"
+        shopt -s nullglob
+        for f in "$root/envs.d"/*.env; do [[ -f "$f" ]] || continue; name="$(basename "$f" .env)"; _queue_json_comma first; printf '{"name":"%s","file":"%s"}' "$(_queue_json_escape "$name")" "$(_queue_json_escape "$f")"; done
+        shopt -u nullglob
+        printf ']}\n'
+    else
+        printf '%-20s %s\n' "PROFILE" "FILE"
+        shopt -s nullglob
+        for f in "$root/envs.d"/*.env; do [[ -f "$f" ]] || continue; printf '%-20s %s\n' "$(basename "$f" .env)" "$f"; done
+        shopt -u nullglob
+    fi
+}
+
+_queue_env_show() {
+    local name="${1:-}" json=0 f
+    shift || true
+    while [[ "$#" -gt 0 ]]; do case "$1" in --json|-j) json=1; shift ;; *) shift ;; esac; done
+    [[ -n "$name" ]] || { echo "Usage: queue env show NAME [--json]" >&2; return 2; }
+    f="$(_queue_env_file "$name")" || { echo "queue env show: invalid profile name: $name" >&2; return 2; }
+    [[ -f "$f" ]] || { echo "queue env show: profile not found: $name" >&2; return 1; }
+    _queue_env_load "$name" || { echo "queue env show: profile failed validation: $name" >&2; return 3; }
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"name":"%s","file":"%s","label":"%s","chroot_mode":"%s","chroot_root":"%s","secret_scope":"%s","endpoint_scope":"%s","data_scope":"%s","confirmation_required":"%s"}\n' \
+          "$(_queue_json_escape "$EXEC_ENV_NAME")" "$(_queue_json_escape "$f")" "$(_queue_json_escape "${EXEC_ENV_LABEL:-}")" "$(_queue_json_escape "${EXEC_ENV_CHROOT_MODE:-off}")" "$(_queue_json_escape "${EXEC_ENV_CHROOT_ROOT:-}")" "$(_queue_json_escape "${EXEC_ENV_SECRET_SCOPE:-}")" "$(_queue_json_escape "${EXEC_ENV_ENDPOINT_SCOPE:-}")" "$(_queue_json_escape "${EXEC_ENV_DATA_SCOPE:-}")" "$(_queue_json_escape "${EXEC_ENV_CONFIRMATION_REQUIRED:-0}")"
+    else
+        echo "Execution environment: $EXEC_ENV_NAME"
+        echo "file:                  $f"
+        echo "label:                 ${EXEC_ENV_LABEL:-}"
+        echo "chroot mode:           ${EXEC_ENV_CHROOT_MODE:-off}"
+        echo "chroot root:           ${EXEC_ENV_CHROOT_ROOT:-}"
+        echo "readonly root:         ${EXEC_ENV_READONLY_ROOT:-0}"
+        echo "writable paths:        ${EXEC_ENV_WRITABLE_PATHS:-}"
+        echo "secret scope:          ${EXEC_ENV_SECRET_SCOPE:-}"
+        echo "endpoint scope:        ${EXEC_ENV_ENDPOINT_SCOPE:-}"
+        echo "data scope:            ${EXEC_ENV_DATA_SCOPE:-}"
+        echo "confirmation required: ${EXEC_ENV_CONFIRMATION_REQUIRED:-0}"
+    fi
+}
+
+_queue_env_command() {
+    case "${1:-list}" in
+        list|ls|"") shift || true; _queue_env_list "$@" ;;
+        show|explain) shift || true; _queue_env_show "$@" ;;
+        validate|check) shift || true; local name="${1:-}" json=0; shift || true; while [[ "$#" -gt 0 ]]; do case "$1" in --json|-j) json=1; shift ;; *) shift ;; esac; done; [[ -n "$name" ]] || { echo "Usage: queue env validate NAME [--json]" >&2; return 2; }; _queue_env_validate_one "$name" "$json" ;;
+        path) shift || true; local name="${1:-}"; [[ -n "$name" ]] || { echo "Usage: queue env path NAME" >&2; return 2; }; _queue_env_file "$name" ;;
+        *) echo "Usage: queue env list|show NAME|validate NAME|path NAME" >&2; return 2 ;;
+    esac
+}
+
+_queue_classes_refresh() {
+    local dir="${1:-}"
+    local src any=0 rc=0
+
+    if [[ -z "$dir" ]]; then
+        echo "Usage: queue classes refresh <directory>" >&2
+        return 2
+    fi
+
+    if [[ ! -d "$dir" ]]; then
+        echo "queue classes refresh: directory not found: $dir" >&2
+        return 1
+    fi
+
+    shopt -s nullglob
+    for src in "$dir"/*.env; do
+        any=1
+        _queue_class_refresh_one "$src" || rc=1
+    done
+    shopt -u nullglob
+
+    if [[ "$any" -eq 0 ]]; then
+        echo "queue classes refresh: no .env class files found in $dir" >&2
+        return 1
+    fi
+
+    return "$rc"
+}
+
+_queue_class_explain() {
+    local class="$1" f refs
+    [[ -n "$class" ]] || { echo "Usage: queue classes explain <class>" >&2; return 2; }
+    f="$(_queue_class_file "$class")"
+    echo "============================================================================="
+    echo "CLASS EXPLAIN: $class"
+    echo "============================================================================="
+    echo "class file:       $f"
+    if [[ -f "$f" ]]; then echo "exists:           yes"; echo; echo "Contents:"; sed 's/^/  /' "$f"; echo; echo "Validation:"; _queue_class_validate_file "$(basename "$f" .env)" "$f" && echo "  OK" || true; else echo "exists:           no"; fi
+    echo; echo "Jobs referencing this class:"
+    refs="$(grep -R -l -E "^JOB_CLASS=['\"]?${class}['\"]?$|^JOB_CLASS=${class}$" "$(_queue_root)"/{pending,running,paused,done,failed,pol_blocked,policy_blocked,interrupted,cancelled,deleted} 2>/dev/null || true)"
+    [[ -n "$refs" ]] && echo "$refs" || echo "  none"
+    echo
+    echo "Class defaults:"
+    _queue_class_defaults_show "$class"
+
+}
+
+
+# -----------------------------------------------------------------------------
+# Class asset record format
+# -----------------------------------------------------------------------------
+# Legacy format remains supported:
+#   CLASS_SHARED_ASSETS="path:exists:/tmp git:repo_exists:/repo"
+#
+# New record format is delimiter-safe. The class file calls functions; Bash keeps
+# each argument separate, so targets/params may contain as many ':' or ',' chars
+# as needed:
+#   queue_class_shared_asset net http_status "https://github.com" timeout=5 accept_status="200,201,302,403"
+#   queue_class_shared_asset net tcp_endpoint "db.internal:5432" timeout=3
+#   queue_class_exclusive_asset "github_publish:slot"
+
+_queue_class_asset_reset() {
+    QUEUE_CLASS_SHARED_ASSET_SPECS=()
+    QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS=()
+    QUEUE_CLASS_GLOBAL_CLAIM_SPECS=()
+}
+
+_queue_class_asset_pack() {
+    local arg q out=""
+    for arg in "$@"; do
+        printf -v q '%q' "$arg"
+        out+="$q "
+    done
+    printf '%s' "$out"
+}
+
+queue_class_shared_asset() {
+    QUEUE_CLASS_SHARED_ASSET_SPECS+=("$(_queue_class_asset_pack "$@")")
+}
+
+queue_class_exclusive_asset() {
+    QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS+=("$(_queue_class_asset_pack "$@")")
+}
+
+_queue_class_global_pack() {
+    local mode="$1" slots="$2" record_type="$3"
+    shift 3 || true
+    _queue_class_asset_pack "$mode" "$slots" "$record_type" "$@"
+}
+
+# Explicit cross-user/global coordination records. These do not change legacy
+# per-queue class/assets behaviour; operators opt in by using global records.
+queue_class_global_exclusive_claim() {
+    local claim="${1:-}"
+    [[ -n "$claim" ]] || return 0
+    shift || true
+    QUEUE_CLASS_GLOBAL_CLAIM_SPECS+=("$(_queue_class_global_pack exclusive 1 claim "$claim" "$@")")
+}
+
+queue_class_global_shared_claim() {
+    local claim="${1:-}"
+    [[ -n "$claim" ]] || return 0
+    shift || true
+    QUEUE_CLASS_GLOBAL_CLAIM_SPECS+=("$(_queue_class_global_pack shared 0 claim "$claim" "$@")")
+}
+
+queue_class_global_exclusive_asset() {
+    [[ "$#" -ge 3 ]] || return 0
+    QUEUE_CLASS_GLOBAL_CLAIM_SPECS+=("$(_queue_class_global_pack exclusive 1 asset "$@")")
+}
+
+queue_class_global_shared_asset() {
+    [[ "$#" -ge 3 ]] || return 0
+    QUEUE_CLASS_GLOBAL_CLAIM_SPECS+=("$(_queue_class_global_pack shared 0 asset "$@")")
+}
+
+# Friendly spellings for operators creating classes by hand.
+queue_class_global_exclusive_resource() { queue_class_global_exclusive_claim "$@"; }
+queue_class_global_shared_resource() { queue_class_global_shared_claim "$@"; }
+
+# Friendly aliases for claim-only assets.
+queue_class_shared_claim() { queue_class_shared_asset "$@"; }
+queue_class_exclusive_claim() { queue_class_exclusive_asset "$@"; }
+
+_queue_class_asset_claim_token_from_spec() {
+    local spec="$1"
+    eval "set -- $spec"
+    case "$#" in
+        0) return 0 ;;
+        1) printf '%s\n' "$1" ;;
+        2) printf '%s:%s\n' "$1" "$2" ;;
+        *) printf '%s:%s:%s\n' "$1" "$2" "$3" ;;
+    esac
+}
+
+
+_queue_asset_check_uses_legacy_token_target_contract() {
+    local func="$1"
+    local body
+
+    body="$(declare -f "$func" 2>/dev/null || true)"
+
+    # Older bundled helpers used token as $1 and target as $2.
+    grep -Eq 'local[[:space:]]+token="\$1"|local[[:space:]][^;]*token="\$1"' <<< "$body" &&
+        grep -Eq 'shift[[:space:]]+2|\$2' <<< "$body"
+}
+
+_queue_asset_implied_preflight_args() {
+    local token="$1" family="$2" check="$3" target="$4"
+    shift 4 || true
+    local helper func
+
+    [[ -n "$family" && -n "$check" && -n "$target" ]] || return 0
+
+    helper="$(_queue_asset_helper_path "$family")"
+    func="$(_queue_asset_check_function_name "$family" "$check")"
+
+    # No helper means claim-only token.
+    [[ -f "$helper" ]] || return 0
+
+    (
+        _queue_code_signature_check_file_for_execution "$helper" || exit 44
+        source "$helper" || exit 40
+        _queue_asset_contract_validate_loaded "$helper" quiet >/dev/null || exit 43
+        _queue_asset_facility_is_published "$family" "$check" || exit 41
+        declare -F "$func" >/dev/null 2>&1 || exit 42
+        if _queue_asset_check_uses_legacy_token_target_contract "$func"; then
+            "$func" "$token" "$target" "$@"
+        else
+            "$func" "$target" "$@"
+        fi
+    )
+}
+
+_queue_asset_implied_preflight_spec() {
+    local spec="$1" token
+    eval "set -- $spec"
+    (($# >= 3)) || return 0
+    token="$(_queue_class_asset_claim_token_from_spec "$spec")"
+    _queue_asset_implied_preflight_args "$token" "$@"
+}
+
+_queue_asset_archive_dir() { printf '%s\n' "$(_queue_root)/assets.d/.archive"; }
+
+_queue_asset_family_is_used_by_classes() {
+    local family="$1"
+    local root="$(_queue_root)"
+    local classfile rec rec_family
+    shopt -s nullglob
+    for classfile in "$root/classes"/*.env; do
+        [[ -f "$classfile" ]] || continue
+        (
+            _queue_class_record_reset 2>/dev/null || true
+            source "$classfile" >/dev/null 2>&1 || exit 0
+
+            for rec in "${QUEUE_CLASS_SHARED_ASSET_RECORDS[@]:-}" "${QUEUE_CLASS_EXCLUSIVE_ASSET_RECORDS[@]:-}"; do
+                rec_family="${rec%%"$'\t'"*}"
+                if [[ "$rec_family" == "$family" ]]; then
+                    echo "$classfile:$rec"
+                fi
+            done
+        )
+    done
+    shopt -u nullglob
+}
+
+_queue_asset_refresh_from_dir() {
+    local src_dir="$1" plugin family rc=0
+    [[ -n "$src_dir" && -d "$src_dir" ]] || { echo "queue assets refresh: directory not found: $src_dir" >&2; return 2; }
+    shopt -s nullglob
+    for plugin in "$src_dir"/*.sh; do
+        [[ -f "$plugin" ]] || continue
+        family="$(basename "$plugin" .sh)"
+        echo "Refreshing asset plugin family=$family source=$plugin"
+        _queue_asset_replace_plugin "$family" "$plugin" 0 || rc=1
+    done
+    shopt -u nullglob
+    return "$rc"
+}
+
+_queue_asset_delete_plugin() {
+    local family="$1" root dst archive_dir ts archive meta used
+    _queue_asset_family_valid_name "$family" || { echo "queue assets delete: invalid family: $family" >&2; return 2; }
+    used="$(_queue_asset_family_is_used_by_classes "$family")"
+    if [[ -n "$used" ]]; then
+        echo "queue assets delete: refusing to archive plugin because family is used by classes:" >&2
+        echo "$used" >&2
+        echo "Remove or change those class assets first." >&2
+        return 3
+    fi
+    root="$(_queue_root)"; dst="$root/assets.d/$family.sh"
+    [[ -f "$dst" ]] || { echo "queue assets delete: plugin not found: $dst" >&2; return 1; }
+    archive_dir="$(_queue_asset_archive_dir)"; mkdir -p "$archive_dir"
+    ts="$(date +%Y%m%d_%H%M%S_%N)"
+    archive="$archive_dir/${family}.${ts}.sh"; meta="$archive_dir/${family}.${ts}.meta"
+    mv "$dst" "$archive" || return 1
+    { printf 'family=%q\n' "$family"; printf 'archive=%q\n' "$archive"; printf 'original=%q\n' "$dst"; printf 'archived_at=%q\n' "$(_queue_now_iso)"; } > "$meta"
+    echo "Archived asset plugin: $dst"
+    echo "Archive: $archive"
+    _queue_log_event "asset_plugin_archived" "$family" "$family" "assets" "path=$dst archive=$archive" 2>/dev/null || true
+}
+
+_queue_asset_latest_archive_for_family() {
+    local family="$1" archive_dir="$(_queue_asset_archive_dir)"
+    ls -1t "$archive_dir/${family}".*.sh 2>/dev/null | head -1 || true
+}
+
+_queue_asset_undelete_plugin() {
+    local family="$1" archive="${2:-}" root dst tmp
+    _queue_asset_family_valid_name "$family" || { echo "queue assets undelete: invalid family: $family" >&2; return 2; }
+    root="$(_queue_root)"; dst="$root/assets.d/$family.sh"
+    [[ -n "$archive" ]] || archive="$(_queue_asset_latest_archive_for_family "$family")"
+    [[ -n "$archive" && -f "$archive" ]] || { echo "queue assets undelete: no archived plugin found for family: $family" >&2; return 1; }
+    [[ ! -e "$dst" ]] || { echo "queue assets undelete: active plugin already exists: $dst" >&2; return 3; }
+    _queue_asset_replace_validate_source "$family" "$archive" || return 4
+    tmp="$root/assets.d/.${family}.undelete.$$"
+    cp "$archive" "$tmp" || { rm -f "$tmp"; return 1; }
+    chmod +x "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+    echo "Restored archived asset plugin: $dst"
+    echo "Restored from: $archive"
+    _queue_log_event "asset_plugin_undeleted" "$family" "$family" "assets" "path=$dst archive=$archive" 2>/dev/null || true
+}
+
+_queue_asset_list_archives() {
+    local family="${1:-}" archive_dir="$(_queue_asset_archive_dir)"
+    mkdir -p "$archive_dir"
+    if [[ -n "$family" ]]; then ls -1t "$archive_dir/${family}".*.sh 2>/dev/null || true; else ls -1t "$archive_dir"/*.sh 2>/dev/null || true; fi
+}
+
+_queue_asset_explain() {
+    local subject="$1" family check helper func used dupes archived backups
+    [[ -n "$subject" ]] || { echo "Usage: queue assets explain <family|family:check>" >&2; return 2; }
+    if [[ "$subject" == *:* ]]; then family="${subject%%:*}"; check="${subject#*:}"; else family="$subject"; check=""; fi
+    _queue_asset_family_valid_name "$family" || { echo "queue assets explain: invalid family: $family" >&2; return 2; }
+    helper="$(_queue_asset_helper_path "$family")"
+    echo "============================================================================="
+    echo "ASSET EXPLAIN: $subject"
+    echo "============================================================================="
+    echo "family:              $family"
+    [[ -n "$check" ]] && echo "facility:            $family:$check"
+    echo "active helper:       $helper"
+    if [[ -f "$helper" ]]; then
+        echo "active helper exists: yes"; echo; echo "Published facilities:"
+        ( source "$helper" >/dev/null 2>&1 && declare -F queue_asset_facilities >/dev/null 2>&1 && queue_asset_facilities ) || echo "  none"
+        echo; echo "Contract:"; _queue_asset_contract_validate_helper "$helper" strict || true
+    else
+        echo "active helper exists: no"
+    fi
+    if [[ -n "$check" ]]; then func="$(_queue_asset_check_function_name "$family" "$check")"; echo; echo "Resolved check function:"; echo "  $func"; fi
+    echo; echo "Class usage:"; used="$(_queue_asset_family_is_used_by_classes "$family" || true)"; [[ -n "$used" ]] && echo "$used" || echo "  none"
+    echo; echo "Duplicate publishers:"; dupes="$(_queue_asset_scan_duplicate_publishers | awk -v fam="$family" -F '\t' '$1 ~ "^" fam ":" {print}' || true)"; [[ -n "$dupes" ]] && echo "$dupes" || echo "  none"
+    echo; echo "Backups:"; backups="$(_queue_asset_list_backups "$family" || true)"; [[ -n "$backups" ]] && echo "$backups" || echo "  none"
+    echo; echo "Archives:"; archived="$(_queue_asset_list_archives "$family" || true)"; [[ -n "$archived" ]] && echo "$archived" || echo "  none"
+    return 0
+}
+
+_queue_asset_replace_backup_dir() {
+    printf '%s\n' "$(_queue_root)/assets.d/.backup"
+}
+
+_queue_asset_replace_validate_source() {
+    local family="$1"
+    local src="$2"
+    local tmpdir tmp helper_rc
+
+    _queue_asset_family_valid_name "$family" || { echo "queue assets replace: invalid family: $family" >&2; return 2; }
+    [[ -f "$src" ]] || { echo "queue assets replace: source plugin not found: $src" >&2; return 2; }
+
+    tmpdir="$(mktemp -d)"
+    tmp="$tmpdir/$family.sh"
+    cp "$src" "$tmp" || { rm -rf "$tmpdir"; return 1; }
+
+    # Syntax validation first.
+    if ! bash -n "$tmp"; then
+        echo "queue assets replace: syntax validation failed: $src" >&2
+        rm -rf "$tmpdir"
+        return 3
+    fi
+
+    # Contract validation against the temporary helper.
+    _queue_asset_contract_validate_helper "$tmp" quiet >/dev/null
+    helper_rc="$?"
+    if [[ "$helper_rc" -ne 0 ]]; then
+        echo "queue assets replace: contract validation failed: $src" >&2
+        _queue_asset_contract_validate_helper "$tmp" strict >&2 || true
+        rm -rf "$tmpdir"
+        return 4
+    fi
+
+    # Require at least one facility for this family to prevent accidentally
+    # installing a sys plugin as net.sh, etc.
+    (
+        source "$tmp" >/dev/null 2>&1 || exit 1
+        queue_asset_facilities | awk '{print $1}' | grep -Eq "^${family}:"
+    )
+    helper_rc="$?"
+    if [[ "$helper_rc" -ne 0 ]]; then
+        echo "queue assets replace: plugin does not publish any ${family}: facilities: $src" >&2
+        rm -rf "$tmpdir"
+        return 5
+    fi
+
+    rm -rf "$tmpdir"
+    return 0
+}
+
+_queue_asset_replace_plugin() {
+    local family="$1"
+    local src="$2"
+    local force="${3:-0}"
+    local root dst backup_dir ts backup tmp meta
+
+    _queue_asset_family_valid_name "$family" || { echo "queue assets replace: invalid family: $family" >&2; return 2; }
+    [[ -f "$src" ]] || { echo "queue assets replace: source plugin not found: $src" >&2; return 2; }
+
+    if [[ "$force" != "1" ]]; then
+        _queue_asset_replace_validate_source "$family" "$src" || return "$?"
+    else
+        bash -n "$src" || return 3
+        echo "queue assets replace: WARNING force mode skipped contract validation" >&2
+    fi
+
+    root="$(_queue_root)"
+    mkdir -p "$root/assets.d"
+    backup_dir="$(_queue_asset_replace_backup_dir)"
+    mkdir -p "$backup_dir"
+
+    dst="$root/assets.d/$family.sh"
+    ts="$(date +%Y%m%d_%H%M%S_%N)"
+    backup="$backup_dir/${family}.${ts}.sh"
+    tmp="$root/assets.d/.${family}.new.$$"
+    meta="$backup_dir/${family}.${ts}.meta"
+
+    if [[ -e "$dst" ]]; then
+        cp -p "$dst" "$backup" || return 1
+        {
+            printf 'family=%q\n' "$family"
+            printf 'backup=%q\n' "$backup"
+            printf 'original=%q\n' "$dst"
+            printf 'replaced_at=%q\n' "$(_queue_now_iso)"
+            printf 'source=%q\n' "$src"
+        } > "$meta"
+    else
+        {
+            printf 'family=%q\n' "$family"
+            printf 'backup=%q\n' ""
+            printf 'original=%q\n' "$dst"
+            printf 'replaced_at=%q\n' "$(_queue_now_iso)"
+            printf 'source=%q\n' "$src"
+            printf 'created_new=1\n'
+        } > "$meta"
+    fi
+
+    cp "$src" "$tmp" || { rm -f "$tmp"; return 1; }
+    chmod +x "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+
+    echo "Replaced asset plugin: $dst"
+    if [[ -f "$backup" ]]; then
+        echo "Backup: $backup"
+    else
+        echo "Backup: none (new plugin)"
+    fi
+
+    _queue_log_event "asset_plugin_replaced" "$family" "$family" "assets" "path=$dst backup=$backup source=$src" 2>/dev/null || true
+}
+
+_queue_asset_latest_backup_for_family() {
+    local family="$1"
+    local backup_dir="$(_queue_asset_replace_backup_dir)"
+    ls -1t "$backup_dir/${family}".*.sh 2>/dev/null | head -1
+}
+
+_queue_asset_rollback_plugin() {
+    local family="$1"
+    local backup="${2:-}"
+    local root dst tmp
+
+    _queue_asset_family_valid_name "$family" || { echo "queue assets rollback: invalid family: $family" >&2; return 2; }
+
+    root="$(_queue_root)"
+    dst="$root/assets.d/$family.sh"
+
+    if [[ -z "$backup" ]]; then
+        backup="$(_queue_asset_latest_backup_for_family "$family")"
+    fi
+
+    [[ -n "$backup" && -f "$backup" ]] || { echo "queue assets rollback: no backup found for family: $family" >&2; return 1; }
+
+    # Validate backup before restoring it. A broken backup is worse than no rollback.
+    _queue_asset_replace_validate_source "$family" "$backup" || {
+        echo "queue assets rollback: backup failed validation, not restoring: $backup" >&2
+        return 4
+    }
+
+    tmp="$root/assets.d/.${family}.rollback.$$"
+    cp "$backup" "$tmp" || { rm -f "$tmp"; return 1; }
+    chmod +x "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+
+    echo "Rolled back asset plugin: $dst"
+    echo "Restored from: $backup"
+
+    _queue_log_event "asset_plugin_rolled_back" "$family" "$family" "assets" "path=$dst backup=$backup" 2>/dev/null || true
+}
+
+_queue_asset_list_backups() {
+    local family="${1:-}"
+    local backup_dir="$(_queue_asset_replace_backup_dir)"
+    mkdir -p "$backup_dir"
+
+    if [[ -n "$family" ]]; then
+        ls -1t "$backup_dir/${family}".*.sh 2>/dev/null || true
+    else
+        ls -1t "$backup_dir"/*.sh 2>/dev/null || true
+    fi
+}
+
+_queue_asset_scan_duplicate_publishers() {
+    local root="$(_queue_root)"
+    local plugin facility
+    local tmp
+    tmp="$(mktemp)"
+    shopt -s nullglob
+    for plugin in "$root/assets.d"/*.sh; do
+        [[ -f "$plugin" ]] || continue
+        _queue_asset_plugin_looks_like_plugin "$plugin" || continue
+        (
+            exec </dev/null
+            export QUEUEBASH_ASSET_DISCOVERY=1
+            source "$plugin" >/dev/null 2>&1 || exit 0
+            declare -F queue_asset_facilities >/dev/null 2>&1 || exit 0
+            queue_asset_facilities | awk -v helper="$(basename "$plugin")" '{print $1 "\t" helper}'
+        ) >> "$tmp"
+    done
+    shopt -u nullglob
+
+    awk -F '\t' '
+        {
+            count[$1]++
+            helpers[$1] = helpers[$1] ? helpers[$1] "," $2 : $2
+        }
+        END {
+            for (facility in count) {
+                if (count[facility] > 1) {
+                    print facility "\t" helpers[facility]
+                }
+            }
+        }
+    ' "$tmp" | sort
+    rm -f "$tmp"
+}
+
+_queue_asset_plugin_looks_like_plugin() {
+    local plugin="${1:-}"
+    [[ -f "$plugin" ]] || return 1
+
+    # Asset listing/discovery must be metadata-only and noninteractive.  In a
+    # broken or hand-edited root it is possible for assets.d to contain helper
+    # scripts or symlinks to a project root.  Do not source arbitrary shell just
+    # to find out that it is not an asset plugin: helpers such as
+    # publish_to_github.sh may perform SSH/Git work at source time or prompt.
+    grep -Eq '^[[:space:]]*(function[[:space:]]+)?queue_asset_facilities[[:space:]]*(\(\))?[[:space:]]*\{' "$plugin" 2>/dev/null || return 1
+    grep -Eq '^[[:space:]]*(function[[:space:]]+)?queue_asset_check_[A-Za-z0-9_]+_[A-Za-z0-9_]+[[:space:]]*(\(\))?[[:space:]]*\{' "$plugin" 2>/dev/null || return 1
+    return 0
+}
+
+_queue_asset_scan_facilities() {
+    local root="$(_queue_root)"
+    local plugin base
+    shopt -s nullglob
+    for plugin in "$root/assets.d"/*.sh; do
+        [[ -f "$plugin" ]] || continue
+        base="$(basename "$plugin")"
+
+        if ! _queue_asset_plugin_looks_like_plugin "$plugin"; then
+            echo "INVALID helper=$base not_asset_plugin"
+            continue
+        fi
+
+        (
+            # Hard noninteractive guard for discovery.  Facility publishers must
+            # not need stdin; if a plugin ignores this and prompts anyway, it
+            # sees EOF rather than the operator terminal.
+            exec </dev/null
+            export QUEUEBASH_ASSET_DISCOVERY=1
+            _queue_code_signature_check_file_for_execution "$plugin" || { echo "INVALID helper=$base signature_failed"; exit 0; }
+            source "$plugin" >/dev/null 2>&1 || { echo "INVALID helper=$base source_failed"; exit 0; }
+
+            if ! _queue_asset_contract_validate_loaded "$plugin" quiet >/dev/null; then
+                echo "INVALID helper=$base contract_failed"
+                exit 0
+            fi
+
+            queue_asset_facilities
+        )
+    done | awk '
+        /^INVALID / {
+            if (!seen_invalid[$0]++) print
+            next
+        }
+        {
+            facility=$1
+            if (facility == "") next
+            if (!seen_facility[facility]++) print
+        }
+    '
+    shopt -u nullglob
+}
+
+_queue_asset_implied_preflight_one() {
+    local token="$1"
+    local family check rest target seg cur_param
+    local -a raw params target_parts
+
+    [[ "$token" == *:*:* ]] || return 0
+
+    family="${token%%:*}"
+    rest="${token#*:}"
+    check="${rest%%:*}"
+    rest="${rest#*:}"
+
+    [[ -n "$family" && -n "$check" && -n "$rest" ]] || return 0
+
+    IFS=':' read -r -a raw <<< "$rest"
+
+    params=()
+    target_parts=()
+    cur_param=""
+
+    for seg in "${raw[@]}"; do
+        if [[ -z "$cur_param" && "$seg" == *=* ]]; then
+            cur_param="$seg"
+        elif [[ -n "$cur_param" && "$seg" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            params+=("$cur_param")
+            cur_param="$seg"
+        elif [[ -n "$cur_param" ]]; then
+            cur_param="${cur_param}:$seg"
+        else
+            target_parts+=("$seg")
+        fi
+    done
+    [[ -n "$cur_param" ]] && params+=("$cur_param")
+
+    target=""
+    if ((${#target_parts[@]} > 0)); then
+        local IFS=':'
+        target="${target_parts[*]}"
+    fi
+
+    _queue_asset_implied_preflight_args "$token" "$family" "$check" "$target" "${params[@]}"
+}
+
+
+_queue_exception_dir() {
+    printf '%s\n' "$(_queue_root)/exceptions"
+}
+
+_queue_exception_file() {
+    local id="$1"
+    printf '%s/%s.env\n' "$(_queue_exception_dir)" "$id"
+}
+
+_queue_exception_job_id_from_current_context() {
+    if [[ -n "${JOB_ID:-}" ]]; then
+        printf '%s\n' "$JOB_ID"
+        return 0
+    fi
+    if [[ -n "${QUEUEBASH_CLASS_JOB_ID:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_CLASS_JOB_ID"
+        return 0
+    fi
+    return 1
+}
+
+_queue_exception_normalize_key() {
+    local key="${1:-}"
+    key="${key//[^A-Za-z0-9_:-]/_}"
+    printf '%s\n' "$key"
+}
+
+_queue_exception_asset_matches() {
+    local requested="$1"
+    local asset="$2"
+    local family="${asset%%:*}"
+    local rest="${asset#*:}"
+    local facility
+
+    facility="$family:${rest%%:*}"
+
+    [[ "$requested" == "$asset" ]] && return 0
+    [[ "$requested" == "$facility" ]] && return 0
+    [[ "$requested" == "$family" ]] && return 0
+
+    return 1
+}
+
+_queue_exception_is_allowed_for_asset() {
+    local id asset f line key reason created_at created_by expires_at
+
+    id="$(_queue_exception_job_id_from_current_context 2>/dev/null || true)"
+    [[ -n "$id" ]] || return 1
+
+    asset="$1"
+    f="$(_queue_exception_file "$id")"
+    [[ -f "$f" ]] || return 1
+
+    while IFS=$'	' read -r key reason created_at created_by expires_at; do
+        [[ -n "$key" ]] || continue
+        [[ "$key" == \#* ]] && continue
+        expires_at="${expires_at:-never}"
+        if _queue_exception_asset_matches "$key" "$asset"; then
+            if _queue_expiry_is_expired "$expires_at"; then
+                printf 'asset_exception_expired: job=%s asset=%s exception=%s expired_at=%s
+' "$id" "$asset" "$key" "$expires_at"
+                continue
+            fi
+            QUEUEBASH_EXCEPTION_MATCH_KEY="$key"
+            QUEUEBASH_EXCEPTION_MATCH_REASON="${reason:-not-recorded}"
+            QUEUEBASH_EXCEPTION_MATCH_BY="${created_by:-unknown}"
+            QUEUEBASH_EXCEPTION_MATCH_AT="${created_at:-unknown}"
+            QUEUEBASH_EXCEPTION_MATCH_EXPIRES_AT="$expires_at"
+            export QUEUEBASH_EXCEPTION_MATCH_KEY QUEUEBASH_EXCEPTION_MATCH_REASON QUEUEBASH_EXCEPTION_MATCH_BY QUEUEBASH_EXCEPTION_MATCH_AT QUEUEBASH_EXCEPTION_MATCH_EXPIRES_AT
+            printf 'asset_exception_applied: job=%s asset=%s exception=%s reason=%s by=%s at=%s expires=%s
+'                 "$id" "$asset" "$QUEUEBASH_EXCEPTION_MATCH_KEY" "$QUEUEBASH_EXCEPTION_MATCH_REASON" "$QUEUEBASH_EXCEPTION_MATCH_BY" "$QUEUEBASH_EXCEPTION_MATCH_AT" "$QUEUEBASH_EXCEPTION_MATCH_EXPIRES_AT"
+            return 0
+        fi
+    done < "$f"
+
+    return 1
+}
+_queue_exception_add() {
+    local id="${1:-}"
+    local key="${2:-}"
+    shift 2 || true
+    local reason="" expires="never" user created f norm arg
+
+    while (($#)); do
+        case "$1" in
+            --reason)
+                [[ $# -ge 2 ]] || { echo "queue exception add: --reason needs text" >&2; return 2; }
+                reason="$2"
+                shift 2
+                ;;
+            --reason=*)
+                reason="${1#*=}"
+                shift
+                ;;
+            --expires|--expires-at)
+                [[ $# -ge 2 ]] || { echo "queue exception add: $1 needs a value" >&2; return 2; }
+                expires="$2"
+                shift 2
+                ;;
+            --expires=*|--expires-at=*)
+                expires="${1#*=}"
+                shift
+                ;;
+            *)
+                if [[ -z "$reason" ]]; then
+                    reason="$1"
+                    shift
+                else
+                    echo "queue exception add: unexpected argument: $1" >&2
+                    return 2
+                fi
+                ;;
+        esac
+    done
+
+    [[ -n "$id" && -n "$key" ]] || {
+        echo "Usage: queue exception add <qid> <family|facility|asset> --reason <text> [--expires never|+30m|+2h|YYYY-MM-DD]" >&2
+        return 2
+    }
+    [[ -n "$reason" ]] || {
+        echo "queue exception add: reason is required" >&2
+        return 2
+    }
+    if [[ "$expires" != "never" && -z "$(_queue_expiry_to_epoch "$expires" 2>/dev/null || true)" ]]; then
+        echo "queue exception add: unsupported --expires value: $expires" >&2
+        return 2
+    fi
+
+    norm="$(_queue_exception_normalize_key "$key")"
+    mkdir -p "$(_queue_exception_dir)"
+    f="$(_queue_exception_file "$id")"
+    created="$(_queue_now_iso)"
+    user="${USER:-unknown}"
+
+    if [[ -f "$f" ]] && awk -F '	' -v k="$norm" '$1 == k { found=1 } END { exit !found }' "$f"; then
+        echo "queue exception add: exception already exists for $id: $norm" >&2
+        return 1
+    fi
+
+    printf '%s	%s	%s	%s	%s
+' "$norm" "$reason" "$created" "$user" "$expires" >> "$f"
+    _queue_log_event "exception_added" "$id" "$norm" "exceptions" "reason=$reason by=$user expires=$expires"
+    echo "Added exception overlay: job=$id asset=$norm expires=$expires"
+}
+_queue_exception_list() {
+    local id="${1:-}"
+    local f
+
+    [[ -n "$id" ]] || { echo "Usage: queue exception list <qid>" >&2; return 2; }
+    f="$(_queue_exception_file "$id")"
+
+    echo "=============================================================================="
+    echo "QUEUEBASH EXCEPTIONS: $id"
+    echo "=============================================================================="
+
+    if [[ ! -f "$f" ]]; then
+        echo "none"
+        return 0
+    fi
+
+    awk -F '	' '
+        BEGIN {
+            printf "%-32s  %-20s  %-12s  %-20s  %s\n", "ASSET/FACILITY", "CREATED", "BY", "EXPIRES", "REASON"
+        }
+        NF {
+            expires=$5; if (expires == "") expires="never";
+            printf "%-32s  %-20s  %-12s  %-20s  %s\n", $1, $3, $4, expires, $2
+        }
+    ' "$f"
+}
+_queue_exception_clear() {
+    local id="${1:-}"
+    local key="${2:-}"
+    local f tmp norm user
+
+    [[ -n "$id" && -n "$key" ]] || {
+        echo "Usage: queue exception clear <qid> <family|facility|asset>" >&2
+        return 2
+    }
+
+    f="$(_queue_exception_file "$id")"
+    [[ -f "$f" ]] || { echo "queue exception clear: no exceptions for $id" >&2; return 1; }
+
+    norm="$(_queue_exception_normalize_key "$key")"
+    tmp="$(mktemp)"
+    awk -F '\t' -v k="$norm" '$1 != k' "$f" > "$tmp"
+
+    if cmp -s "$f" "$tmp"; then
+        rm -f "$tmp"
+        echo "queue exception clear: exception not found: $norm" >&2
+        return 1
+    fi
+
+    mv "$tmp" "$f"
+    user="${USER:-unknown}"
+    _queue_log_event "exception_cleared" "$id" "$norm" "exceptions" "by=$user"
+    echo "Cleared exception overlay: job=$id asset=$norm"
+}
+
+_queue_exception_clear_all() {
+    local id="${1:-}"
+    local f user
+
+    [[ -n "$id" ]] || { echo "Usage: queue exception clear-all <qid>" >&2; return 2; }
+    f="$(_queue_exception_file "$id")"
+    [[ -f "$f" ]] || { echo "queue exception clear-all: no exceptions for $id" >&2; return 1; }
+
+    rm -f "$f"
+    user="${USER:-unknown}"
+    _queue_log_event "exception_cleared_all" "$id" "$id" "exceptions" "by=$user"
+    echo "Cleared all exception overlays for job=$id"
+}
+
+
+
+_queue_security_guidance_shell_join() {
+    local out="" item
+    for item in "$@"; do
+        printf -v item '%q' "$item"
+        out="${out:+$out }$item"
+    done
+    printf '%s\n' "$out"
+}
+
+_queue_security_guidance_command_for_current_job() {
+    if declare -p COMMAND >/dev/null 2>&1; then
+        _queue_security_guidance_shell_join "${COMMAND[@]}"
+    else
+        printf '%s\n' "${COMMAND_LINE:-}"
+    fi
+}
+
+_queue_security_guidance_extract_port() {
+    local text="${1:-}" port=""
+    if [[ "$text" =~ -\>([^[:space:]]*):([0-9]+) ]]; then
+        port="${BASH_REMATCH[2]}"
+    elif [[ "$text" =~ TCP[^:[:space:]]*:([0-9]+) ]]; then
+        port="${BASH_REMATCH[1]}"
+    elif [[ "$text" =~ UDP[^:[:space:]]*:([0-9]+) ]]; then
+        port="${BASH_REMATCH[1]}"
+    elif [[ "$text" =~ :([0-9]+)(\ |$|-) ]]; then
+        port="${BASH_REMATCH[1]}"
+    fi
+    [[ "$port" =~ ^[0-9]+$ ]] && printf '%s\n' "$port"
+}
+
+_queue_security_guidance_print_submit() {
+    local flag1="${1:-}" value1="${2:-}" flag2="${3:-}" value2="${4:-}"
+    local name="${JOB_NAME:-job}" class="${JOB_CLASS:-${QUEUE_CLASS_NAME:-DEFAULT}}" cmd
+    cmd="$(_queue_security_guidance_command_for_current_job)"
+    printf '    queue submit %q --class %q' "$name" "$class"
+    if [[ -n "$flag1" ]]; then
+        if [[ -n "$value1" ]]; then printf ' %s %q' "$flag1" "$value1"; else printf ' %s' "$flag1"; fi
+    fi
+    if [[ -n "$flag2" ]]; then
+        if [[ -n "$value2" ]]; then printf ' %s %q' "$flag2" "$value2"; else printf ' %s' "$flag2"; fi
+    fi
+    if [[ -n "$cmd" ]]; then
+        printf ' -- %s\n' "$cmd"
+    else
+        printf ' -- <original-command>\n'
+    fi
+}
+
+_queue_security_guidance_probe_preflight_for_current_job() {
+    # Explain-time probe only.  The existing class/asset preflight is already
+    # the source of truth; this captures its first blocking line so explain can
+    # show the exact job-level exception operator command.
+    local output line asset=""
+    output="$(_queue_asset_implied_preflight_for_class 2>&1 || true)"
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        case "$line" in
+            asset_exception_applied:*) continue ;;
+        esac
+        if [[ "$line" == *asset=* ]]; then
+            asset="${line#*asset=}"
+            asset="${asset%% *}"
+        elif [[ "$line" == asset_check_blocked:* ]]; then
+            asset="${line#asset_check_blocked: }"
+            asset="${asset%% *}"
+        fi
+        if [[ -n "$asset" ]]; then
+            printf '%s\t%s\n' "$asset" "$line"
+            return 0
+        fi
+    done <<< "$output"
+    return 1
+}
+
+_queue_security_exception_guidance_for_job() {
+    local id="${1:-}" jobf="${2:-}" log_file="${3:-}"
+    [[ -n "$id" && -n "$jobf" && -f "$jobf" ]] || return 0
+
+    (
+        JOB_ID="$id"
+        COMMAND=()
+        JOB_NAME=""
+        JOB_CLASS=""
+        SANDBOX_LEVEL=""
+        SECCOMP_PROFILE=""
+        SECCOMP_ALLOW=""
+        RUNTIME_CAPS=""
+        RUNTIME_CAP_PORTS=""
+        EXCEPTION_SANDBOX_OVERRIDE=""
+        EXCEPTION_SECCOMP_ALLOW=""
+        EXCEPTION_DROP_CAP=""
+        EXCEPTION_ADD_PORT=""
+        RUNTIME_CAP_VIOLATED=""
+        RUNTIME_CAP_VIOLATION=""
+        EXIT_CODE=""
+        source "$jobf" >/dev/null 2>&1 || exit 0
+
+        local any=0 violation="${RUNTIME_CAP_VIOLATION:-}" cmd log_tail port probe_asset probe_line sandbox_reason=""
+        cmd="$(_queue_security_guidance_command_for_current_job)"
+        [[ -n "$log_file" && -f "$log_file" ]] && log_tail="$(_queue_log_tail_text "$log_file" 80 2>/dev/null || true)"
+
+        echo
+        echo "Security exception guidance"
+
+        case "$violation" in
+            no-spawn-shell*)
+                echo "  runtime cap blocked a child shell. Smallest explicit exception:"
+                echo "    --drop-cap no-spawn-shell"
+                _queue_security_guidance_print_submit --drop-cap no-spawn-shell
+                any=1
+                ;;
+            no-network-tools*)
+                echo "  runtime cap blocked a network client/tool. Smallest explicit exception:"
+                echo "    --drop-cap no-network-tools"
+                _queue_security_guidance_print_submit --drop-cap no-network-tools
+                any=1
+                ;;
+            no-network-sockets*)
+                echo "  runtime cap blocked socket creation. Smallest explicit exception:"
+                echo "    --drop-cap no-network-sockets"
+                _queue_security_guidance_print_submit --drop-cap no-network-sockets
+                any=1
+                ;;
+            only-local-sockets*)
+                echo "  runtime cap blocked a non-local socket. Smallest explicit exception:"
+                echo "    --drop-cap only-local-sockets"
+                _queue_security_guidance_print_submit --drop-cap only-local-sockets
+                any=1
+                ;;
+            only-port*)
+                port="$(_queue_security_guidance_extract_port "$violation" 2>/dev/null || true)"
+                [[ -z "$port" ]] && port="$(_queue_security_guidance_extract_port "$log_tail" 2>/dev/null || true)"
+                echo "  runtime cap blocked a socket outside the allowed port list. Smallest explicit exception:"
+                if [[ -n "$port" ]]; then
+                    echo "    --add-port $port"
+                    _queue_security_guidance_print_submit --add-port "$port"
+                else
+                    echo "    --add-port <required-port>"
+                    _queue_security_guidance_print_submit --add-port "<required-port>"
+                fi
+                any=1
+                ;;
+        esac
+
+        if [[ "$any" -eq 0 ]]; then
+            if [[ " ${SANDBOX_LEVEL:-} " =~ [[:space:]](network-none|strict)[[:space:]] ]] && \
+               { [[ "$cmd" =~ (^|[[:space:]])(curl|wget|nc|ncat|netcat|socat|telnet|ssh|scp|sftp|rsync)([[:space:]]|$) ]] || \
+                 grep -Eiq 'network is unreachable|temporary failure in name resolution|could not resolve host|name or service not known|no route to host|private.?network|dns' <<< "$log_tail"; }; then
+                sandbox_reason="${SANDBOX_LEVEL:-strict} blocks external networking"
+                echo "  sandbox likely blocked network access ($sandbox_reason). Smallest explicit exception:"
+                echo "    --sandbox-override off"
+                _queue_security_guidance_print_submit --sandbox-override off
+                any=1
+            fi
+        fi
+
+        if [[ "$any" -eq 0 && " ${SECCOMP_PROFILE:-} " =~ [[:space:]]strict[[:space:]] ]]; then
+            if grep -Eiq 'operation not permitted|system call|seccomp|strace|ptrace|keyctl|mount|unshare|clone3' <<< "$log_tail"; then
+                echo "  seccomp may have blocked a syscall. Start with the narrow systemd syscall group required by the tool."
+                echo "  Common debug exception:"
+                echo "    --seccomp-allow @debug"
+                _queue_security_guidance_print_submit --seccomp-allow @debug
+                any=1
+            fi
+        fi
+
+        if [[ "$any" -eq 0 && "$(_queue_job_state_for_file "$jobf" 2>/dev/null || true)" == "pending" ]]; then
+            if _queue_class_load_for_job "$jobf" >/dev/null 2>&1; then
+                IFS=$'\t' read -r probe_asset probe_line < <(_queue_security_guidance_probe_preflight_for_current_job || true)
+                if [[ -n "$probe_asset" ]]; then
+                    echo "  class/asset preflight is currently blocking this job:"
+                    echo "    $probe_line"
+                    echo "  Exact job-local exception overlay:"
+                    printf '    queue exception add %q %q --reason %q\n' "$id" "$probe_asset" "approved one-off exception for this job"
+                    any=1
+                fi
+            fi
+        fi
+
+        if [[ "$any" -eq 0 ]]; then
+            echo "  none inferred"
+            echo "  No specific security exception could be inferred from the job record/log yet."
+        else
+            echo "  note: prefer the narrowest exception; avoid editing class defaults unless this should become policy."
+        fi
+    )
+}
+
+_queue_exception_explain_for_job() {
+    local id="${1:-}"
+    local f jobf
+    local now_epoch created_epoch age
+
+    [[ -n "$id" ]] || return 0
+    f="$(_queue_exception_file "$id")"
+    jobf="$(_queue_job_file_by_id_any_state "$id" 2>/dev/null || true)"
+
+    echo
+    echo "Exception overlays"
+
+    local any_job_exception=0
+    local sandbox_override seccomp_allow drop_cap add_port
+    local sandbox_from seccomp_profile caps_from ports_from
+    local exemption_type exemption_detail exemption_code exemption_action
+
+    if [[ -n "$jobf" && -f "$jobf" ]]; then
+        sandbox_override="$(_queue_job_var_value "$jobf" EXCEPTION_SANDBOX_OVERRIDE 2>/dev/null || true)"
+        seccomp_allow="$(_queue_job_var_value "$jobf" EXCEPTION_SECCOMP_ALLOW 2>/dev/null || true)"
+        drop_cap="$(_queue_job_var_value "$jobf" EXCEPTION_DROP_CAP 2>/dev/null || true)"
+        add_port="$(_queue_job_var_value "$jobf" EXCEPTION_ADD_PORT 2>/dev/null || true)"
+        sandbox_from="$(_queue_job_var_value "$jobf" SANDBOX_POLICY_NAME 2>/dev/null || true)"
+        seccomp_profile="$(_queue_job_var_value "$jobf" SECCOMP_POLICY_NAME 2>/dev/null || true)"
+        caps_from="$(_queue_job_var_value "$jobf" RUNTIME_CAPS 2>/dev/null || true)"
+        ports_from="$(_queue_job_var_value "$jobf" RUNTIME_CAP_PORTS 2>/dev/null || true)"
+        exemption_type="$(_queue_job_var_value "$jobf" SECURITY_EXEMPTION_TYPE 2>/dev/null || true)"
+        exemption_detail="$(_queue_job_var_value "$jobf" SECURITY_EXEMPTION_DETAIL 2>/dev/null || true)"
+        exemption_code="$(_queue_job_var_value "$jobf" SECURITY_AUTHORISATION_CODE 2>/dev/null || true)"
+        exemption_action="$(_queue_job_var_value "$jobf" SECURITY_EXEMPTION_ACTION 2>/dev/null || true)"
+    else
+        # Fallback for callers that deliberately source a job before calling this helper.
+        sandbox_override="${EXCEPTION_SANDBOX_OVERRIDE:-}"
+        seccomp_allow="${EXCEPTION_SECCOMP_ALLOW:-}"
+        drop_cap="${EXCEPTION_DROP_CAP:-}"
+        add_port="${EXCEPTION_ADD_PORT:-}"
+        sandbox_from="${SANDBOX_POLICY_NAME:-}"
+        seccomp_profile="${SECCOMP_POLICY_NAME:-}"
+        caps_from="${RUNTIME_CAPS:-}"
+        ports_from="${RUNTIME_CAP_PORTS:-}"
+        exemption_type="${SECURITY_EXEMPTION_TYPE:-}"
+        exemption_detail="${SECURITY_EXEMPTION_DETAIL:-}"
+        exemption_code="${SECURITY_AUTHORISATION_CODE:-}"
+        exemption_action="${SECURITY_EXEMPTION_ACTION:-}"
+    fi
+
+    if [[ -n "$sandbox_override" ]]; then
+        echo "  sandbox:           OVERRIDE ${sandbox_from:-class-default} -> $sandbox_override via job flag"
+        any_job_exception=1
+    fi
+    if [[ -n "$seccomp_allow" ]]; then
+        echo "  seccomp:           HOLE PUNCHED allowing '$seccomp_allow'${seccomp_profile:+ on $seccomp_profile}"
+        any_job_exception=1
+    fi
+    if [[ -n "$drop_cap" ]]; then
+        echo "  runtime caps:      REMOVED '$drop_cap'${caps_from:+ from $caps_from}"
+        any_job_exception=1
+    fi
+    if [[ -n "$add_port" ]]; then
+        echo "  runtime ports:     ADDED '$add_port'${ports_from:+ to $ports_from}"
+        any_job_exception=1
+    fi
+    if [[ -n "$exemption_type" ]]; then
+        echo "  exemption:         $exemption_type"
+        [[ -n "$exemption_action" ]] && echo "    action:          $exemption_action"
+        [[ -n "$exemption_detail" ]] && echo "    detail:          $exemption_detail"
+        [[ -n "$exemption_code" ]] && echo "    authorisation:   $exemption_code"
+        any_job_exception=1
+    fi
+
+    if [[ ! -f "$f" ]]; then
+        [[ "$any_job_exception" -eq 0 ]] && echo "  none"
+        return 0
+    fi
+
+    while IFS=$'\t' read -r key reason created_at created_by expires_at; do
+        [[ -n "$key" ]] || continue
+        [[ "$key" == \#* ]] && continue
+
+        age=""
+        if [[ -n "$created_at" ]]; then
+            now_epoch="$(_queue_now_epoch 2>/dev/null || echo 0)"
+            created_epoch="$(date -d "$created_at" +%s 2>/dev/null || echo 0)"
+            if [[ "$now_epoch" =~ ^[0-9]+$ && "$created_epoch" =~ ^[0-9]+$ && "$created_epoch" -gt 0 && "$now_epoch" -ge "$created_epoch" ]]; then
+                age="$((now_epoch - created_epoch))s"
+            fi
+        fi
+
+        echo "  ignore:            $key"
+        echo "    reason:          ${reason:-not-recorded}"
+        echo "    by:              ${created_by:-unknown}"
+        echo "    created:         ${created_at:-unknown}${age:+ (age $age)}"
+        echo "    expires:         ${expires_at:-never}"
+    done < "$f"
+}
+
+_queue_exception_list_all() {
+    local dir f id count first
+    dir="$(_queue_exception_dir)"
+
+    [[ -d "$dir" ]] || return 0
+
+    for f in "$dir"/*.env; do
+        [[ -f "$f" ]] || continue
+        id="${f##*/}"
+        id="${id%.env}"
+        count="$(awk 'NF { n++ } END { print n+0 }' "$f" 2>/dev/null)"
+        first="$(awk -F '\t' 'NF { print $1 ": " $2; exit }' "$f" 2>/dev/null)"
+        printf '%s	%s	%s
+' "$id" "${count:-0}" "$first"
+    done
+}
+
+_queue_exception_command() {
+    local sub="${1:-list}"
+    shift || true
+
+    case "$sub" in
+        add) _queue_exception_add "$@" ;;
+        list|show) _queue_exception_list "$@" ;;
+        list-all|all|jobs) _queue_exception_list_all "$@" ;;
+        clear|remove|rm) _queue_exception_clear "$@" ;;
+        clear-all|remove-all) _queue_exception_clear_all "$@" ;;
+        *)
+            echo "Usage: queue exception add|list|list-all|clear|clear-all ..." >&2
+            return 2
+            ;;
+    esac
+}
+
+_queue_asset_implied_preflight_for_class() {
+    local asset rc
+
+    for asset in $CLASS_EXCLUSIVE_ASSETS $CLASS_SHARED_ASSETS; do
+        [[ -z "$asset" ]] && continue
+        if _queue_exception_is_allowed_for_asset "$asset"; then
+            _queue_log_event "exception_applied" "$(_queue_exception_job_id_from_current_context 2>/dev/null || echo unknown)" "$asset" "pending" "asset=$asset exception=${QUEUEBASH_EXCEPTION_MATCH_KEY:-} reason=${QUEUEBASH_EXCEPTION_MATCH_REASON:-} by=${QUEUEBASH_EXCEPTION_MATCH_BY:-} at=${QUEUEBASH_EXCEPTION_MATCH_AT:-}"
+            continue
+        fi
+        _queue_asset_implied_preflight_one "$asset"
+        rc="$?"
+        case "$rc" in
+            0) ;;
+            41)
+                echo "asset_preflight_blocked: unpublished_facility asset=$asset"
+                return "$rc"
+                ;;
+            42)
+                echo "asset_preflight_blocked: missing_check_function asset=$asset"
+                return "$rc"
+                ;;
+            43)
+                echo "asset_preflight_blocked: helper_contract_failed asset=$asset"
+                return "$rc"
+                ;;
+            *)
+                echo "asset_preflight_blocked: asset=$asset rc=$rc"
+                return "$rc"
+                ;;
+        esac
+    done
+
+    local spec spec_asset
+    for spec in "${QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS[@]}" "${QUEUE_CLASS_SHARED_ASSET_SPECS[@]}"; do
+        [[ -z "$spec" ]] && continue
+        spec_asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+        if _queue_exception_is_allowed_for_asset "$spec_asset"; then
+            _queue_log_event "exception_applied" "$(_queue_exception_job_id_from_current_context 2>/dev/null || echo unknown)" "$spec_asset" "pending" "asset=$spec_asset exception=${QUEUEBASH_EXCEPTION_MATCH_KEY:-} reason=${QUEUEBASH_EXCEPTION_MATCH_REASON:-} by=${QUEUEBASH_EXCEPTION_MATCH_BY:-} at=${QUEUEBASH_EXCEPTION_MATCH_AT:-}"
+            continue
+        fi
+        _queue_asset_implied_preflight_spec "$spec"
+        rc="$?"
+        case "$rc" in
+            0) ;;
+            41)
+                echo "asset_preflight_blocked: unpublished_facility asset=$spec_asset"
+                return "$rc"
+                ;;
+            42)
+                echo "asset_preflight_blocked: missing_check_function asset=$spec_asset"
+                return "$rc"
+                ;;
+            43)
+                echo "asset_preflight_blocked: helper_contract_failed asset=$spec_asset"
+                return "$rc"
+                ;;
+            *)
+                echo "asset_preflight_blocked: asset=$spec_asset rc=$rc"
+                return "$rc"
+                ;;
+        esac
+    done
+
+    local policy_line policy_spec policy_asset
+    if _queue_security_policy_statement_source >/dev/null 2>&1 && [[ -n "${CLASS_POLICY_MANDATORY_ASSETS:-${CLASS_POLICY_MANDATORY_ASSET_SPECS:-}}" ]]; then
+        while IFS= read -r policy_line; do
+            [[ -n "$policy_line" ]] || continue
+            case "$policy_line" in \#*) continue ;; esac
+            policy_spec="$(_queue_policy_mandatory_asset_line_to_spec "$policy_line" || true)"
+            [[ -n "$policy_spec" ]] || continue
+            policy_asset="$(_queue_class_asset_claim_token_from_spec "$policy_spec")"
+
+            # Mandatory policy assets are deliberately evaluated outside the normal
+            # class asset loop and are never subject to queue exception overlays.
+            _queue_asset_implied_preflight_spec "$policy_spec"
+            rc="$?"
+            case "$rc" in
+                0) ;;
+                41)
+                    echo "mandatory_policy_asset_blocked: unpublished_facility asset=$policy_asset"
+                    return "$rc"
+                    ;;
+                42)
+                    echo "mandatory_policy_asset_blocked: missing_check_function asset=$policy_asset"
+                    return "$rc"
+                    ;;
+                43)
+                    echo "mandatory_policy_asset_blocked: helper_contract_failed asset=$policy_asset"
+                    return "$rc"
+                    ;;
+                *)
+                    echo "mandatory_policy_asset_blocked: asset=$policy_asset rc=$rc"
+                    return "$rc"
+                    ;;
+            esac
+        done <<< "${CLASS_POLICY_MANDATORY_ASSETS:-${CLASS_POLICY_MANDATORY_ASSET_SPECS:-}}"
+    fi
+
+    return 0
+}
+
+_queue_class_dynamic_preflight() {
+    local f="$1"
+    local cmd func plugin plugin_path rc
+
+    for plugin in ${CLASS_PREFLIGHT_PLUGINS:-}; do
+        plugin_path="$(_queue_class_plugin_path "$plugin")"
+        if [[ ! -f "$plugin_path" ]]; then
+            echo "class_preflight_blocked: plugin_not_found plugin=$plugin path=$plugin_path"
+            return 41
+        fi
+        source "$plugin_path"
+    done
+
+    for func in ${CLASS_PREFLIGHT_FUNC:-} ${CLASS_PREFLIGHT_FUNCS:-}; do
+        [[ -z "$func" ]] && continue
+        if ! declare -F "$func" >/dev/null 2>&1; then
+            echo "class_preflight_blocked: func_not_found func=$func"
+            return 42
+        fi
+        "$func"
+        rc="$?"
+        if [[ "$rc" -ne 0 ]]; then
+            echo "class_preflight_blocked: func_failed func=$func rc=$rc"
+            return "$rc"
+        fi
+    done
+
+    for cmd in ${CLASS_PREFLIGHT_CMD:-} ${CLASS_PREFLIGHT_CMDS:-}; do
+        [[ -z "$cmd" ]] && continue
+        if [[ "$cmd" == */* ]]; then
+            [[ -x "$cmd" ]] || { echo "class_preflight_blocked: cmd_not_executable cmd=$cmd"; return 43; }
+            "$cmd"
+        else
+            command -v "$cmd" >/dev/null 2>&1 || { echo "class_preflight_blocked: cmd_not_found cmd=$cmd"; return 44; }
+            "$cmd"
+        fi
+        rc="$?"
+        if [[ "$rc" -ne 0 ]]; then
+            echo "class_preflight_blocked: cmd_failed cmd=$cmd rc=$rc"
+            return "$rc"
+        fi
+    done
+
+    return 0
+}
+
+_queue_claim_lock_acquire() {
+    local root="$(_queue_root)" lock i
+    lock="$root/claims/.lock"
+    mkdir -p "$root/claims"
+    for i in $(seq 1 100); do
+        if mkdir "$lock" 2>/dev/null; then
+            printf '%s\n' "$$" > "$lock/pid" 2>/dev/null || true
+            date -Is > "$lock/at" 2>/dev/null || true
+            return 0
+        fi
+        sleep 0.02
+    done
+    return 1
+}
+
+_queue_claim_lock_release() {
+    rm -rf "$(_queue_root)/claims/.lock" 2>/dev/null || true
+}
+
+_queue_class_claim_count() {
+    local class="$1" root safe
+    root="$(_queue_root)"
+    safe="$(_queue_class_safe_token "$class")"
+    find "$root/claims/classes" -maxdepth 1 -type d -name "$safe.*.claim" 2>/dev/null | wc -l | tr -d ' '
+}
+
+_queue_asset_has_any_claim() {
+    local asset="$1" root safe
+    root="$(_queue_root)"
+    safe="$(_queue_class_safe_token "$asset")"
+    find "$root/claims/assets" -maxdepth 1 -type d -name "$safe.*.claim" 2>/dev/null | grep -q .
+}
+
+_queue_asset_has_exclusive_claim() {
+    local asset="$1" root safe
+    root="$(_queue_root)"
+    safe="$(_queue_class_safe_token "$asset")"
+    find "$root/claims/assets" -maxdepth 1 -type d -name "$safe.exclusive.*.claim" 2>/dev/null | grep -q .
+}
+
+
+_queue_class_export_job_context() {
+    local f="$1"
+    local workdir idx val abs job_id job_name
+
+    [[ -f "$f" ]] || return 0
+
+    (
+        JOB_ID=""
+        JOB_NAME=""
+        PWD_AT_SUBMIT=""
+        COMMAND=()
+        source "$f" >/dev/null 2>&1 || exit 0
+
+        job_id="${JOB_ID:-$(basename "$f" .job)}"
+        job_name="${JOB_NAME:-}"
+        workdir="${PWD_AT_SUBMIT:-$PWD}"
+
+        printf 'QUEUEBASH_CLASS_JOB_ID=%q\n' "$job_id"
+        printf 'QUEUEBASH_CLASS_JOB_NAME=%q\n' "$job_name"
+        printf 'QUEUEBASH_JOB_WORKDIR=%q\n' "$workdir"
+        printf 'QUEUEBASH_COMMAND_COUNT=%q\n' "${#COMMAND[@]}"
+
+        for idx in "${!COMMAND[@]}"; do
+            val="${COMMAND[$idx]}"
+            printf 'QUEUEBASH_COMMAND_%s=%q\n' "$idx" "$val"
+
+            if (( idx > 0 )); then
+                printf 'QUEUEBASH_COMMAND_ARG_%s=%q\n' "$idx" "$val"
+                case "$val" in
+                    /*) abs="$val" ;;
+                    *)  abs="$workdir/$val" ;;
+                esac
+                printf 'QUEUEBASH_COMMAND_ARG_%s_ABSPATH=%q\n' "$idx" "$abs"
+            fi
+        done
+    )
+}
+
+
+
+# -----------------------------------------------------------------------------
+# User queue selection
+# -----------------------------------------------------------------------------
+_queue_home_for_user() {
+    local user="${1:-}"
+    [[ -n "$user" ]] || return 1
+    getent passwd "$user" 2>/dev/null | awk -F: '{print $6; exit}'
+}
+
+_queue_root_for_user() {
+    local user="${1:-}"
+    local home
+    home="$(_queue_home_for_user "$user")" || return 1
+    [[ -n "$home" ]] || return 1
+    printf '%s/.queuebash\n' "$home"
+}
+
+_queue_user_exists() {
+    local user="${1:-}"
+    [[ -n "$user" ]] || return 1
+    getent passwd "$user" >/dev/null 2>&1
+}
+
+_queue_select_user_queue() {
+    local user="${1:-}"
+    local user_home selected_root
+
+    _queue_user_exists "$user" || {
+        echo "queue user: no such user: $user" >&2
+        return 2
+    }
+
+    user_home="$(_queue_home_for_user "$user")" || {
+        echo "queue user: cannot determine home for user: $user" >&2
+        return 2
+    }
+    [[ -n "$user_home" ]] || {
+        echo "queue user: empty home for user: $user" >&2
+        return 2
+    }
+
+    selected_root="${user_home}/.queuebash"
+    export QUEUEBASH_SELECTED_USER="$user"
+    export QUEUEBASH_SELECTED_ROOT="$selected_root"
+    export QUEUEBASH_ROOT="$selected_root"
+    return 0
+}
+
+_queue_selected_user_for_display() {
+    if [[ -n "${QUEUEBASH_SELECTED_USER:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_SELECTED_USER"
+        return 0
+    fi
+
+    if declare -F _queue_root_owner_user >/dev/null 2>&1; then
+        _queue_root_owner_user 2>/dev/null && return 0
+    fi
+
+    id -un 2>/dev/null || printf 'unknown\n'
+}
+
+# -----------------------------------------------------------------------------
+# Draft jobs
+# -----------------------------------------------------------------------------
+_queue_draft_dir() {
+    printf '%s/drafts\n' "$(_queue_root)"
+}
+
+_queue_draft_archive_dir() {
+    printf '%s/drafts/.archive\n' "$(_queue_root)"
+}
+
+_queue_draft_id() {
+    printf 'DRAFT-%s-%06d\n' "$(date +%Y%m%d_%H%M%S 2>/dev/null || date +%s)" "$(( RANDOM % 1000000 ))"
+}
+
+_queue_draft_file() {
+    local id="$1"
+    printf '%s/%s.env\n' "$(_queue_draft_dir)" "$id"
+}
+
+_queue_draft_init() {
+    mkdir -p "$(_queue_draft_dir)" "$(_queue_draft_archive_dir)"
+}
+
+_queue_job_file_for_id_any_state() {
+    local id="$1"
+    local state f
+    for state in pending running done failed pol_blocked policy_blocked cancelled deleted interrupted; do
+        f="$(_queue_root)/$state/$id.job"
+        [[ -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
+    done
+    return 1
+}
+
+_queue_draft_shell_quote_array_from_command_line() {
+    local command_line="$1"
+    # Best-effort fallback for explain-only command strings.
+    # shellcheck disable=SC2206
+    local parts=( $command_line )
+    printf 'COMMAND=('
+    local p
+    for p in "${parts[@]}"; do
+        printf ' %q' "$p"
+    done
+    printf ' )\n'
+}
+
+
+_queue_draft_create() {
+    local name="${1:-}"
+    local priority=10
+    local job_class=""
+    local submit_user=""
+    local pwd_at_submit=""
+    local not_before_text=""
+    local not_before_epoch=0
+    local schedule_label=""
+    local retries_max=0
+    local retry_backoff=0
+    local runner=""
+    local sandbox_level=""
+    local cpu_limit=""
+    local mem_limit=""
+    local max_log_size_bytes=""
+    local depends_after_success=()
+    local inherit_env_from=()
+    local on_success=()
+    local on_failure=()
+    local on_retry_failure=()
+    local draft_id draft_file now delay_seconds
+
+    [[ -n "$name" ]] || { echo "Usage: queue draft create <name> [options] -- <command...>" >&2; return 2; }
+    shift || true
+
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --priority|-p)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --priority needs a value" >&2; return 2; }
+                priority="$2"
+                shift 2
+                ;;
+            --class|--queue-class)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: $1 needs a class name" >&2; return 2; }
+                job_class="$2"
+                shift 2
+                ;;
+            --submit-user|--user)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: $1 needs a user" >&2; return 2; }
+                submit_user="$2"
+                shift 2
+                ;;
+            --cwd|--pwd|--execution-dir)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: $1 needs a directory" >&2; return 2; }
+                pwd_at_submit="$2"
+                shift 2
+                ;;
+            --not-before)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --not-before needs a value" >&2; return 2; }
+                not_before_text="$2"
+                schedule_label="$2"
+                if [[ "$not_before_text" == @* ]]; then
+                    not_before_epoch="${not_before_text#@}"
+                elif [[ "$not_before_text" == +* ]]; then
+                    delay_seconds="$(_queue_parse_delay_seconds "${not_before_text#+}")" || {
+                        echo "queue draft create: invalid --not-before delay: $not_before_text" >&2
+                        return 2
+                    }
+                    not_before_epoch="$(( $(_queue_now_epoch) + delay_seconds ))"
+                else
+                    not_before_epoch="$(_queue_parse_at_epoch "$not_before_text")" || {
+                        echo "queue draft create: invalid --not-before: $not_before_text" >&2
+                        return 2
+                    }
+                fi
+                shift 2
+                ;;
+            --retries)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --retries needs a value" >&2; return 2; }
+                retries_max="$2"
+                shift 2
+                ;;
+            --backoff|--retry-delay)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --backoff needs a value" >&2; return 2; }
+                retry_backoff="$2"
+                shift 2
+                ;;
+            --runner)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --runner needs a value" >&2; return 2; }
+                runner="$2"
+                shift 2
+                ;;
+            --sandbox)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --sandbox needs a value" >&2; return 2; }
+                case "$2" in off|none) sandbox_level="off" ;;
+                            network-none|restrict-egress|strict) sandbox_level="$2" ;; *) echo "queue draft create: invalid --sandbox: $2" >&2; return 2 ;; esac
+                shift 2
+                ;;
+            --cpu)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --cpu needs a value" >&2; return 2; }
+                cpu_limit="$2"
+                shift 2
+                ;;
+            --mem|--memory)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --mem needs a value" >&2; return 2; }
+                mem_limit="$2"
+                shift 2
+                ;;
+            --max-log-size)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: --max-log-size needs a value" >&2; return 2; }
+                max_log_size_bytes="$(_queue_parse_size_to_bytes "$2")"
+                [[ "$max_log_size_bytes" -gt 0 ]] || { echo "queue draft create: invalid --max-log-size: $2" >&2; return 2; }
+                shift 2
+                ;;
+            --after-success|--after|--depends-on)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: $1 needs a QID or exact job name" >&2; return 2; }
+                depends_after_success+=( "$2" )
+                shift 2
+                ;;
+            --inherit-env-from|--inherit-env)
+                [[ -n "${2:-}" ]] || { echo "queue draft create: $1 needs a source job QID/name" >&2; return 2; }
+                inherit_env_from+=( "$2" )
+                if ! _queue_array_contains "$2" "${depends_after_success[@]}"; then
+                    depends_after_success+=( "$2" )
+                fi
+                shift 2
+                ;;
+            --on-success)
+                shift
+                on_success=()
+                while [[ "$#" -gt 0 && "$1" != "--on-failure" && "$1" != "--on-retry-failure" && "$1" != "--on-attempt-failure" && "$1" != "--priority" && "$1" != "-p" && "$1" != "--" ]]; do
+                    on_success+=( "$1" )
+                    shift
+                done
+                ;;
+            --on-retry-failure|--on-attempt-failure)
+                shift
+                on_retry_failure=()
+                while [[ "$#" -gt 0 && "$1" != "--on-success" && "$1" != "--on-failure" && "$1" != "--on-retry-failure" && "$1" != "--on-attempt-failure" && "$1" != "--priority" && "$1" != "-p" && "$1" != "--" ]]; do
+                    on_retry_failure+=( "$1" )
+                    shift
+                done
+                ;;
+            --on-failure)
+                shift
+                on_failure=()
+                while [[ "$#" -gt 0 && "$1" != "--on-success" && "$1" != "--on-retry-failure" && "$1" != "--on-attempt-failure" && "$1" != "--priority" && "$1" != "-p" && "$1" != "--" ]]; do
+                    on_failure+=( "$1" )
+                    shift
+                done
+                ;;
+            --)
+                shift
+                break
+                ;;
+            *)
+                echo "queue draft create: unexpected argument before -- : $1" >&2
+                echo "Usage: queue draft create <name> [--priority N] [--class CLASS] [--submit-user USER] [--cwd DIR] [--not-before WHEN] [--retries N] [--backoff SEC] [--runner auto|direct|systemd] [--cpu PCT] [--mem SIZE] [--max-log-size SIZE] [--after-success QID] [--inherit-env-from QID] [--on-success <cmd...>] [--on-retry-failure <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
+                return 2
+                ;;
+        esac
+    done
+
+    [[ "$#" -gt 0 ]] || { echo "queue draft create: missing command after --" >&2; return 2; }
+    [[ "$priority" =~ ^-?[0-9]+$ ]] || priority=10
+    [[ "$retries_max" =~ ^[0-9]+$ ]] || retries_max=0
+    [[ "$retry_backoff" =~ ^[0-9]+$ ]] || retry_backoff=0
+
+    _queue_draft_init
+    draft_id="$(_queue_draft_id)"
+    draft_file="$(_queue_draft_file "$draft_id")"
+    now="$(_queue_now_iso)"
+
+    {
+        printf '# queuebash draft: %q\n' "$draft_id"
+        printf 'DRAFT_ID=%q\n' "$draft_id"
+        printf 'DRAFT_STATE=%q\n' "draft"
+        printf 'DRAFT_NAME=%q\n' "$name"
+        printf 'DRAFT_CREATED_AT=%q\n' "$now"
+        printf 'DRAFT_UPDATED_AT=%q\n' "$now"
+        printf 'DRAFT_SOURCE=%q\n' "panel-task-creator"
+        printf 'DRAFT_SOURCE_QUEUE_USER=%q\n' "${QUEUEBASH_SELECTED_USER:-}"
+        printf '\n'
+        printf 'JOB_NAME=%q\n' "$name"
+        printf 'PRIORITY=%q\n' "$priority"
+        printf 'JOB_CLASS=%q\n' "$job_class"
+        printf 'SUBMIT_USER=%q\n' "$submit_user"
+        printf 'PWD_AT_SUBMIT=%q\n' "$pwd_at_submit"
+        printf 'NOT_BEFORE_EPOCH=%q\n' "$not_before_epoch"
+        [[ -n "$not_before_text" ]] && printf 'NOT_BEFORE_TEXT=%q\n' "$not_before_text"
+        [[ -n "$schedule_label" ]] && printf 'SCHEDULE_LABEL=%q\n' "$schedule_label"
+        printf 'RETRIES_MAX=%q\n' "$retries_max"
+        printf 'RETRY_BACKOFF=%q\n' "$retry_backoff"
+        printf 'RUNNER=%q\n' "$runner"
+        printf 'SANDBOX_LEVEL=%q\n' "$sandbox_level"
+        printf 'CPU_LIMIT=%q\n' "$cpu_limit"
+        printf 'MEM_LIMIT=%q\n' "$mem_limit"
+        printf 'MAX_LOG_SIZE_BYTES=%q\n' "$max_log_size_bytes"
+        printf 'DEPENDS_AFTER_SUCCESS=('
+        local dep
+        for dep in "${depends_after_success[@]}"; do
+            printf ' %q' "$dep"
+        done
+        printf ' )\n'
+        printf 'INHERIT_ENV_FROM=('
+        for dep in "${inherit_env_from[@]}"; do
+            printf ' %q' "$dep"
+        done
+        printf ' )\n'
+        printf 'ON_SUCCESS=('
+        local hook_part
+        for hook_part in "${on_success[@]}"; do
+            printf ' %q' "$hook_part"
+        done
+        printf ' )\n'
+        printf 'ON_FAILURE=('
+        for hook_part in "${on_failure[@]}"; do
+            printf ' %q' "$hook_part"
+        done
+        printf ' )\n'
+        printf 'ON_RETRY_FAILURE=('
+        for hook_part in "${on_retry_failure[@]}"; do
+            printf ' %q' "$hook_part"
+        done
+        printf ' )\n'
+        printf 'COMMAND=('
+        local part
+        for part in "$@"; do
+            printf ' %q' "$part"
+        done
+        printf ' )\n'
+    } > "$draft_file"
+
+    echo "Created draft $draft_id"
+    echo "$draft_file"
+}
+
+_queue_draft_create_from_job() {
+    local id="${1:-}"
+    local draft_id source_file draft_file now
+    [[ -n "$id" ]] || { echo "Usage: queue draft create-from-job <qid>" >&2; return 2; }
+
+    source_file="$(_queue_job_file_for_id_any_state "$id")" || {
+        echo "queue draft create-from-job: job not found: $id" >&2
+        return 1
+    }
+
+    _queue_draft_init
+    draft_id="$(_queue_draft_id)"
+    draft_file="$(_queue_draft_file "$draft_id")"
+    now="$(_queue_now_iso)"
+
+    {
+        echo "# queuebash draft: $draft_id"
+        echo "DRAFT_ID=$(printf '%q' "$draft_id")"
+        echo "DRAFT_STATE=draft"
+        echo "DRAFT_NAME=$(printf '%q' "Copy of $id")"
+        echo "DRAFT_CREATED_AT=$(printf '%q' "$now")"
+        echo "DRAFT_UPDATED_AT=$(printf '%q' "$now")"
+        echo "DRAFT_SOURCE_JOB_ID=$(printf '%q' "$id")"
+        echo "DRAFT_SOURCE_QUEUE_USER=$(printf '%q' "${QUEUEBASH_SELECTED_USER:-}")"
+        echo
+
+        awk '
+            /^JOB_ID=/ { next }
+            /^RUN_PID=/ { next }
+            /^RUN_PGID=/ { next }
+            /^RUN_STARTED_AT=/ { next }
+            /^RUN_FINISHED_AT=/ { next }
+            /^STARTED_AT=/ { next }
+            /^FINISHED_AT=/ { next }
+            /^EXIT_CODE=/ { next }
+            /^RUNNER_USED=/ { next }
+            /^SYSTEMD_UNIT=/ { next }
+            /^JOB_CLASS_CLAIMED=/ { next }
+            /^JOB_CLASS_CLAIMED_AT=/ { next }
+            /^CLASS_DEFAULTS_APPLIED_AT=/ { next }
+            /^CLASS_DEFAULTS_SOURCE=/ { print; next }
+            { print }
+        ' "$source_file"
+    } > "$draft_file"
+
+    echo "Created draft $draft_id from job $id"
+    echo "$draft_file"
+}
+
+_queue_draft_list() {
+    _queue_draft_init
+    printf '%-34s %-10s %-22s %-20s %s\n' "DRAFT_ID" "STATE" "UPDATED" "JOB_NAME" "COMMAND"
+    local f
+    for f in "$(_queue_draft_dir)"/*.env; do
+        [[ -f "$f" ]] || continue
+        (
+            DRAFT_ID=""
+            DRAFT_STATE=""
+            DRAFT_UPDATED_AT=""
+            JOB_NAME=""
+            COMMAND=()
+            # shellcheck disable=SC1090
+            source "$f" 2>/dev/null || true
+            printf '%-34s %-10s %-22s %-20s %s\n' \
+                "${DRAFT_ID:-$(basename "$f" .env)}" \
+                "${DRAFT_STATE:-draft}" \
+                "${DRAFT_UPDATED_AT:-}" \
+                "${JOB_NAME:-}" \
+                "$(_queue_shell_join "${COMMAND[@]}")"
+        )
+    done | sort
+}
+
+_queue_draft_show() {
+    local id="${1:-}"
+    local f
+    [[ -n "$id" ]] || { echo "Usage: queue draft show <draft_id>" >&2; return 2; }
+    f="$(_queue_draft_file "$id")"
+    [[ -f "$f" ]] || { echo "queue draft show: not found: $id" >&2; return 1; }
+    echo "=============================================================================="
+    echo "QUEUEBASH DRAFT: $id"
+    echo "=============================================================================="
+    sed -n '1,220p' "$f"
+}
+
+_queue_draft_set_state() {
+    local id="${1:-}"
+    local state="${2:-}"
+    local f tmp now
+    [[ -n "$id" && -n "$state" ]] || { echo "Usage: queue draft state <draft_id> <draft|ready|submitted|abandoned>" >&2; return 2; }
+    case "$state" in draft|ready|submitted|abandoned) ;; *) echo "queue draft state: invalid state: $state" >&2; return 2 ;; esac
+    f="$(_queue_draft_file "$id")"
+    [[ -f "$f" ]] || { echo "queue draft state: not found: $id" >&2; return 1; }
+    tmp="${f}.tmp.$$"
+    now="$(_queue_now_iso)"
+    awk -v st="$state" -v now="$now" '
+        BEGIN { saw_state=0; saw_updated=0 }
+        /^DRAFT_STATE=/ { print "DRAFT_STATE=" st; saw_state=1; next }
+        /^DRAFT_UPDATED_AT=/ { printf "DRAFT_UPDATED_AT=%q\n", now; saw_updated=1; next }
+        { print }
+        END {
+            if (!saw_state) print "DRAFT_STATE=" st
+            if (!saw_updated) printf "DRAFT_UPDATED_AT=%q\n", now
+        }
+    ' "$f" > "$tmp"
+    mv "$tmp" "$f"
+    echo "Draft $id state=$state"
+}
+
+_queue_draft_submit() {
+    local id="${1:-}"
+    local f job_name pri cls not_before retries backoff runner cpu mem maxlog submit_user pwd_at
+    [[ -n "$id" ]] || { echo "Usage: queue draft submit <draft_id>" >&2; return 2; }
+    f="$(_queue_draft_file "$id")"
+    [[ -f "$f" ]] || { echo "queue draft submit: not found: $id" >&2; return 1; }
+
+    (
+        DRAFT_ID=""
+        DRAFT_STATE="draft"
+        JOB_NAME=""
+        PRIORITY=10
+        JOB_CLASS=""
+        NOT_BEFORE_EPOCH=0
+        NOT_BEFORE_TEXT=""
+        RETRIES_MAX=0
+        RETRY_BACKOFF=0
+        RUNNER=""
+        SANDBOX_LEVEL=""
+        CPU_LIMIT=""
+        MEM_LIMIT=""
+        MAX_LOG_SIZE_BYTES=""
+        SUBMIT_USER=""
+        PWD_AT_SUBMIT=""
+        DEPENDS_AFTER_SUCCESS=()
+        INHERIT_ENV_FROM=()
+        ON_SUCCESS=()
+        ON_FAILURE=()
+        ON_RETRY_FAILURE=()
+        COMMAND=()
+
+        # shellcheck disable=SC1090
+        source "$f"
+
+        if [[ "${#COMMAND[@]}" -eq 0 ]]; then
+            echo "queue draft submit: draft has no COMMAND array" >&2
+            exit 2
+        fi
+
+        job_name="${JOB_NAME:-${DRAFT_NAME:-draft_job}}"
+        job_name="${job_name// /_}"
+
+        args=(submit "$job_name" --priority "${PRIORITY:-10}")
+        [[ -n "${JOB_CLASS:-}" ]] && args+=(--class "$JOB_CLASS")
+        [[ -n "${RUNNER:-}" ]] && args+=(--runner "$RUNNER")
+        [[ -n "${SANDBOX_LEVEL:-}" ]] && args+=(--sandbox "$SANDBOX_LEVEL")
+        [[ -n "${CPU_LIMIT:-}" ]] && args+=(--cpu "$CPU_LIMIT")
+        [[ -n "${MEM_LIMIT:-}" ]] && args+=(--mem "$MEM_LIMIT")
+        [[ -n "${MAX_LOG_SIZE_BYTES:-}" ]] && args+=(--max-log-size "$MAX_LOG_SIZE_BYTES")
+        [[ -n "${RETRIES_MAX:-}" && "${RETRIES_MAX:-0}" != "0" ]] && args+=(--retries "$RETRIES_MAX")
+        [[ -n "${RETRY_BACKOFF:-}" && "${RETRY_BACKOFF:-0}" != "0" ]] && args+=(--backoff "$RETRY_BACKOFF")
+        if [[ -n "${NOT_BEFORE_TEXT:-}" ]]; then
+            args+=(--not-before "$NOT_BEFORE_TEXT")
+        elif [[ -n "${NOT_BEFORE_EPOCH:-}" && "${NOT_BEFORE_EPOCH:-0}" != "0" ]]; then
+            args+=(--not-before "@$NOT_BEFORE_EPOCH")
+        fi
+        local dep
+        for dep in "${DEPENDS_AFTER_SUCCESS[@]}"; do
+            [[ -n "$dep" ]] && args+=(--after-success "$dep")
+        done
+        for dep in "${INHERIT_ENV_FROM[@]}"; do
+            [[ -n "$dep" ]] && args+=(--inherit-env-from "$dep")
+        done
+        if [[ "${#ON_RETRY_FAILURE[@]}" -gt 0 ]]; then
+            args+=(--on-retry-failure "${ON_RETRY_FAILURE[@]}")
+        fi
+        if [[ "${#ON_SUCCESS[@]}" -gt 0 ]]; then
+            args+=(--on-success "${ON_SUCCESS[@]}")
+        fi
+        if [[ "${#ON_FAILURE[@]}" -gt 0 ]]; then
+            args+=(--on-failure "${ON_FAILURE[@]}")
+        fi
+        args+=(-- "${COMMAND[@]}")
+
+        if [[ -n "${PWD_AT_SUBMIT:-}" ]]; then
+            cd "$PWD_AT_SUBMIT" || {
+                echo "queue draft submit: cannot cd to PWD_AT_SUBMIT=$PWD_AT_SUBMIT" >&2
+                exit 98
+            }
+        fi
+
+        if [[ -n "${SUBMIT_USER:-}" && "${SUBMIT_USER:-}" != "current" && "$(id -u 2>/dev/null || echo 99999)" == "0" ]]; then
+            exec runuser -u "$SUBMIT_USER" -- bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue' "$(_queue_root)" "${BASH_SOURCE[0]}")$(printf ' %q' "${args[@]}")"
+        fi
+
+        queue "${args[@]}"
+    )
+    local rc=$?
+    if [[ "$rc" -eq 0 ]]; then
+        _queue_draft_set_state "$id" submitted >/dev/null || true
+    fi
+    return "$rc"
+}
+
+_queue_draft_abandon() {
+    local id="${1:-}"
+    [[ -n "$id" ]] || { echo "Usage: queue draft abandon <draft_id>" >&2; return 2; }
+    _queue_draft_set_state "$id" abandoned
+}
+
+_queue_draft_command() {
+    local sub="${1:-list}"
+    shift || true
+    case "$sub" in
+        list|ls) _queue_draft_list "$@" ;;
+        show|cat|explain) _queue_draft_show "$@" ;;
+        create|new|save) _queue_draft_create "$@" ;;
+        create-from-job|copy-from-job) _queue_draft_create_from_job "$@" ;;
+        submit) _queue_draft_submit "$@" ;;
+        state) _queue_draft_set_state "$@" ;;
+        ready) _queue_draft_set_state "${1:-}" ready ;;
+        abandon) _queue_draft_abandon "$@" ;;
+        *) echo "Usage: queue draft list|show <id>|create <name> [options] -- <command...>|create-from-job <qid>|submit <id>|ready <id>|abandon <id>|state <id> <state>" >&2; return 2 ;;
+    esac
+}
+
+
+_queue_current_shell_user_for_display() {
+    id -un 2>/dev/null || whoami 2>/dev/null || printf 'unknown\n'
+}
+
+_queue_has_selected_user_context() {
+    [[ -n "${QUEUEBASH_SELECTED_USER:-}" ]]
+}
+
+_queue_print_selected_user_banner() {
+    _queue_has_selected_user_context || return 0
+
+    local selected_user selected_root shell_user
+    selected_user="$(_queue_selected_user_for_display)"
+    selected_root="$(_queue_root)"
+    shell_user="$(_queue_current_shell_user_for_display)"
+
+    if [[ "$selected_user" == "$shell_user" ]]; then
+        printf 'QUEUE USER: %s  root=%s\n' "$selected_user" "$selected_root"
+    else
+        printf 'QUEUE USER: %s  shell-user=%s  root=%s\n' "$selected_user" "$shell_user" "$selected_root"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# Root / user-queue safety
+# -----------------------------------------------------------------------------
+# Root may administer another user's queue files, but must not evaluate
+# user-owned queue-local code in the root process.  Queue-local class files and
+# asset helpers are executable shell code; if QUEUEBASH_ROOT belongs to another
+# user, commands that source/evaluate that code are delegated to that owner.
+
+_queue_path_owner_user() {
+    local path="${1:-}"
+    [[ -n "$path" ]] || return 1
+
+    while [[ ! -e "$path" && "$path" != "/" ]]; do
+        path="$(dirname "$path")"
+    done
+
+    stat -c '%U' "$path" 2>/dev/null || return 1
+}
+
+_queue_root_owner_user() {
+    _queue_path_owner_user "$(_queue_root)"
+}
+
+_queue_running_as_root() {
+    [[ "$(id -u 2>/dev/null || echo 99999)" == "0" ]]
+}
+
+_queue_root_is_foreign_user_queue() {
+    local owner
+    _queue_running_as_root || return 1
+    owner="$(_queue_root_owner_user 2>/dev/null || true)"
+    [[ -n "$owner" && "$owner" != "root" ]]
+}
+
+_queue_delegate_command_to_owner() {
+    local owner="$1"
+    shift
+
+    [[ -n "$owner" ]] || {
+        echo "queue user-queue safety: queue owner could not be determined" >&2
+        return 126
+    }
+
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u "$owner" -- bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_USER_QUEUE_DELEGATED=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue' "$(_queue_root)" "${BASH_SOURCE[0]}")$(printf ' %q' "$@")"
+        return "$?"
+    fi
+
+    if command -v sudo >/dev/null 2>&1; then
+        sudo -u "$owner" bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_USER_QUEUE_DELEGATED=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue' "$(_queue_root)" "${BASH_SOURCE[0]}")$(printf ' %q' "$@")"
+        return "$?"
+    fi
+
+    echo "queue user-queue safety: cannot delegate to owner=$owner; runuser/sudo not found" >&2
+    return 126
+}
+
+_queue_command_may_evaluate_queue_code() {
+    local cmd="${1:-}"
+    local sub="${2:-}"
+
+    case "$cmd" in
+        run|worker|workers|start|daemon|submit|explain)
+            return 0
+            ;;
+
+        class|classes)
+            case "$sub" in
+                explain|validate|refresh|replace|rollback|edit|create|class-create)
+                    return 0 ;;
+            esac
+            ;;
+        asset|assets)
+            case "$sub" in
+                explain|validate|refresh|replace|rollback|expand)
+                    return 0 ;;
+            esac
+            ;;
+        # The panel manager itself must remain in the operator/root shell.
+        # Panel actions that actually evaluate queue-local code invoke queue
+        # commands separately and are guarded at that point.
+    esac
+
+    return 1
+}
+
+_queue_guard_foreign_user_queue_eval() {
+    local cmd="${1:-}"
+    local sub="${2:-}"
+    local owner
+    shift 2 || true
+
+    [[ "${QUEUEBASH_USER_QUEUE_DELEGATED:-0}" == "1" ]] && return 0
+    [[ "${QUEUEBASH_ALLOW_ROOT_USER_QUEUE_EVAL:-0}" == "1" ]] && return 0
+
+    _queue_command_may_evaluate_queue_code "$cmd" "$sub" || return 0
+    _queue_root_is_foreign_user_queue || return 0
+
+    owner="$(_queue_root_owner_user 2>/dev/null || true)"
+
+    if [[ "${QUEUEBASH_ROOT_USER_QUEUE_MODE:-delegate}" == "refuse" ]]; then
+        echo "queue user-queue safety: refusing to evaluate queue-local code as root" >&2
+        echo "queue user-queue safety: QUEUEBASH_ROOT=$(_queue_root) owner=$owner command=$cmd ${sub:-}" >&2
+        echo "queue user-queue safety: rerun as $owner or set QUEUEBASH_ROOT_USER_QUEUE_MODE=delegate" >&2
+        return 126
+    fi
+
+    _queue_delegate_command_to_owner "$owner" "$@"
+}
+
+_queue_class_source_with_job_context() {
+    local class_file="$1"
+    local job_file="$2"
+    local line
+
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        export "$line"
+    done < <(_queue_class_export_job_context "$job_file")
+
+    source "$class_file"
+}
+
+
+# -----------------------------------------------------------------------------
+# Global cross-user resource claims
+# -----------------------------------------------------------------------------
+# Phase 1 implementation: data-only claim state under a root/admin-owned global
+# root. Existing per-queue-root class/assets semantics are unchanged.
+
+_queue_global_root() {
+    printf '%s\n' "${QUEUEBASH_GLOBAL_ROOT:-/var/lib/bashqueues/global}"
+}
+
+_queue_global_claim_policy() {
+    printf '%s\n' "${QUEUEBASH_GLOBAL_CLAIM_POLICY:-strict}"
+}
+
+_queue_global_enabled() {
+    [[ "${QUEUEBASH_GLOBAL_CLAIMS:-1}" != "0" && "${QUEUEBASH_GLOBAL_CLAIMS:-1}" != "off" ]]
+}
+
+_queue_global_hash() {
+    local key="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s' "$key" | sha256sum | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        printf '%s' "$key" | shasum -a 256 | awk '{print $1}'
+    else
+        printf '%s' "$key" | cksum | awk '{print $1}'
+    fi
+}
+
+_queue_global_init() {
+    local root="$(_queue_global_root)"
+    mkdir -p "$root/claims" "$root/slots" "$root/.lock" 2>/dev/null || return 1
+}
+
+_queue_global_lock_file() {
+    local claim="$1" hash
+    hash="$(_queue_global_hash "$claim")"
+    printf '%s/.lock/%s.lock\n' "$(_queue_global_root)" "$hash"
+}
+
+_queue_global_claim_file() {
+    local claim="$1" hash
+    hash="$(_queue_global_hash "$claim")"
+    printf '%s/claims/%s.env\n' "$(_queue_global_root)" "$hash"
+}
+
+_queue_global_events_log() {
+    printf '%s/events.jsonl\n' "$(_queue_global_root)"
+}
+
+_queue_global_json_event() {
+    local event="$1" claim="$2" mode="$3" qid="$4" queue_user="$5" queue_root="$6" class="$7" job_name="$8" detail="${9:-}"
+    local ts log
+    _queue_global_init >/dev/null 2>&1 || return 0
+    ts="$(_queue_now_iso)"
+    log="$(_queue_global_events_log)"
+    {
+        printf '{"ts":"%s","event":"%s","claim":"%s","mode":"%s","qid":"%s","queue_user":"%s","queue_root":"%s","class":"%s","job_name":"%s","by_user":"%s"' \
+            "$(_queue_json_escape "$ts")" "$(_queue_json_escape "$event")" "$(_queue_json_escape "$claim")" "$(_queue_json_escape "$mode")" \
+            "$(_queue_json_escape "$qid")" "$(_queue_json_escape "$queue_user")" "$(_queue_json_escape "$queue_root")" \
+            "$(_queue_json_escape "$class")" "$(_queue_json_escape "$job_name")" "$(_queue_json_escape "$(id -un 2>/dev/null || echo unknown)")"
+        [[ -n "$detail" ]] && printf ',"detail":"%s"' "$(_queue_json_escape "$detail")"
+        printf '}\n'
+    } >> "$log" 2>/dev/null || true
+}
+
+_queue_global_slots_from_args() {
+    local default_slots="$1" arg v
+    shift || true
+    for arg in "$@"; do
+        case "$arg" in
+            slots=*) v="${arg#slots=}"; [[ "$v" =~ ^[0-9]+$ ]] && { printf '%s\n' "$v"; return 0; } ;;
+        esac
+    done
+    if [[ "$default_slots" =~ ^[0-9]+$ && "$default_slots" -gt 0 ]]; then
+        printf '%s\n' "$default_slots"
+    else
+        printf '1\n'
+    fi
+}
+
+_queue_global_spec_info() {
+    local spec="$1" mode default_slots record_type claim family check target slots
+    eval "set -- $spec"
+    [[ "$#" -ge 4 ]] || return 1
+    mode="$1"; default_slots="$2"; record_type="$3"; shift 3
+    case "$record_type" in
+        claim)
+            claim="${1:-}"
+            shift || true
+            slots="$(_queue_global_slots_from_args "$default_slots" "$@")"
+            printf '%s\t%s\t%s\t%s\t%s\n' "$mode" "$slots" "$record_type" "$claim" "$(_queue_class_asset_pack "$claim" "$@")"
+            ;;
+        asset)
+            [[ "$#" -ge 3 ]] || return 1
+            family="$1"; check="$2"; target="$3"
+            claim="${family}:${check}:${target}"
+            slots="$(_queue_global_slots_from_args "$default_slots" "$@")"
+            printf '%s\t%s\t%s\t%s\t%s\n' "$mode" "$slots" "$record_type" "$claim" "$(_queue_class_asset_pack "$@")"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+_queue_global_preflight_for_spec() {
+    local spec="$1" mode slots record_type claim packed
+    IFS=$'\t' read -r mode slots record_type claim packed < <(_queue_global_spec_info "$spec") || return 1
+    if [[ "$record_type" == "asset" ]]; then
+        eval "set -- $packed"
+        [[ "$#" -ge 3 ]] || return 1
+        local family="$1" check="$2" target="$3"
+        _queue_asset_implied_preflight_args "$claim" "$@"
+    fi
+}
+
+_queue_global_claim_exception_allows() {
+    local claim="$1"
+    if _queue_exception_is_allowed_for_asset "global:claim:$claim" >/dev/null 2>&1; then
+        return 0
+    fi
+    if _queue_exception_is_allowed_for_asset "global:claim" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
+_queue_global_claim_holder_state() {
+    local qroot="$1" qid="$2" st
+    for st in running pending paused done failed interrupted cancelled deleted; do
+        [[ -f "$qroot/$st/$qid.job" ]] && { printf '%s\n' "$st"; return 0; }
+    done
+    printf 'missing\n'
+}
+
+_queue_global_claim_compact_file() {
+    local file="$1" claim="$2" mode="$3" slots="$4" tmp now n=0 line qid qroot state
+    [[ -f "$file" ]] || return 0
+    tmp="$(mktemp)"
+    now="$(_queue_now_iso)"
+    {
+        printf 'CLAIM_KEY=%q\n' "$claim"
+        printf 'CLAIM_HASH=%q\n' "$(_queue_global_hash "$claim")"
+        printf 'CLAIM_MODE=%q\n' "$mode"
+        printf 'CLAIM_SLOTS_TOTAL=%q\n' "$slots"
+        printf 'CLAIM_UPDATED_AT=%q\n' "$now"
+    } > "$tmp"
+    while IFS= read -r line; do
+        [[ "$line" == HOLDER$'\t'* ]] || continue
+        qid="$(printf '%s\n' "$line" | cut -f2)"
+        qroot="$(printf '%s\n' "$line" | cut -f4)"
+        state="$(_queue_global_claim_holder_state "$qroot" "$qid")"
+        if [[ "$state" == "running" ]]; then
+            n=$((n + 1))
+            printf '%s\n' "$line" >> "$tmp"
+        else
+            _queue_global_json_event "global_claim_stale_removed" "$claim" "$mode" "$qid" "$(printf '%s\n' "$line" | cut -f3)" "$qroot" "$(printf '%s\n' "$line" | cut -f5)" "$(printf '%s\n' "$line" | cut -f6)" "state=$state"
+        fi
+    done < <(grep '^HOLDER' "$file" 2>/dev/null || true)
+    mv "$tmp" "$file"
+}
+
+_queue_global_claim_holder_count() {
+    local file="$1" n
+    n="$(grep -c '^HOLDER' "$file" 2>/dev/null)" || n=0
+    printf '%s\n' "${n:-0}"
+}
+
+_queue_global_claim_holder_summary() {
+    local claim="$1" file line qid queue_user qroot class job_name pid started state out=""
+    file="$(_queue_global_claim_file "$claim")"
+    [[ -f "$file" ]] || return 0
+    while IFS= read -r line; do
+        [[ "$line" == HOLDER$'\t'* ]] || continue
+        qid="$(printf '%s\n' "$line" | cut -f2)"
+        queue_user="$(printf '%s\n' "$line" | cut -f3)"
+        qroot="$(printf '%s\n' "$line" | cut -f4)"
+        class="$(printf '%s\n' "$line" | cut -f5)"
+        job_name="$(printf '%s\n' "$line" | cut -f6)"
+        pid="$(printf '%s\n' "$line" | cut -f7)"
+        started="$(printf '%s\n' "$line" | cut -f8)"
+        state="$(_queue_global_claim_holder_state "$qroot" "$qid" 2>/dev/null || printf unknown)"
+        [[ -n "$out" ]] && out+="; "
+        out+="holder=${queue_user}:${qid}:${job_name:-?}:state=${state}:class=${class:-?}:pid=${pid:-?}:since=${started:-?}"
+    done < <(grep '^HOLDER' "$file" 2>/dev/null || true)
+    printf '%s\n' "$out"
+}
+
+
+_queue_global_claim_has_holder() {
+    local file="$1" qid="$2" qroot="$3"
+    awk -F '\t' -v qid="$qid" -v qroot="$qroot" '$1 == "HOLDER" && $2 == qid && $4 == qroot { found=1 } END { exit found ? 0 : 1 }' "$file" 2>/dev/null
+}
+
+_queue_global_claim_available_one() {
+    local claim="$1" mode="$2" slots="$3" qid="${4:-}" qroot="${5:-}" lock file count rc=0
+    _queue_global_enabled || return 0
+    _queue_global_init || {
+        [[ "$(_queue_global_claim_policy)" == "warn" || "$(_queue_global_claim_policy)" == "off" ]] && return 0
+        return 1
+    }
+    lock="$(_queue_global_lock_file "$claim")"
+    file="$(_queue_global_claim_file "$claim")"
+    (
+        flock -x 9 || exit 1
+        [[ -f "$file" ]] || : > "$file"
+        _queue_global_claim_compact_file "$file" "$claim" "$mode" "$slots"
+        if [[ -n "$qid" && -n "$qroot" ]] && _queue_global_claim_has_holder "$file" "$qid" "$qroot"; then
+            exit 0
+        fi
+        count="$(_queue_global_claim_holder_count "$file")"
+        if [[ "$mode" == "exclusive" ]]; then
+            (( count == 0 )) || exit 2
+        else
+            (( count < slots )) || exit 3
+        fi
+        exit 0
+    ) 9>"$lock"
+    rc="$?"
+    return "$rc"
+}
+
+_queue_global_claims_available_for_job() {
+    local f="$1" id name class spec mode slots record_type claim packed rc any=0
+    id="$(basename "$f" .job)"
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
+    class="${QUEUE_CLASS_NAME:-$(_queue_class_name_for_job "$f")}" 
+    for spec in "${QUEUE_CLASS_GLOBAL_CLAIM_SPECS[@]}"; do
+        any=1
+        IFS=$'\t' read -r mode slots record_type claim packed < <(_queue_global_spec_info "$spec") || return 1
+        if _queue_global_claim_exception_allows "$claim"; then
+            _queue_log_event "exception_applied" "$id" "$claim" "pending" "asset=global:claim:$claim reason=${QUEUEBASH_EXCEPTION_MATCH_REASON:-} by=${QUEUEBASH_EXCEPTION_MATCH_BY:-}"
+            continue
+        fi
+        _queue_global_preflight_for_spec "$spec" || return 2
+        if ! _queue_global_claim_available_one "$claim" "$mode" "$slots" "$id" "$(_queue_root)"; then
+            local holders
+            holders="$(_queue_global_claim_holder_summary "$claim")"
+            _queue_log_event "global_claim_blocked" "$id" "$name" "pending" "claim=$claim mode=$mode slots=$slots${holders:+ $holders}"
+            _queue_global_json_event "global_claim_blocked" "$claim" "$mode" "$id" "$(_queue_selected_user_for_display 2>/dev/null || id -un)" "$(_queue_root)" "$class" "$name" "slots=$slots${holders:+ $holders}"
+            return 3
+        fi
+    done
+    return 0
+}
+
+_queue_global_claim_acquire_one() {
+    local claim="$1" mode="$2" slots="$3" qid="$4" qroot="$5" class="$6" job_name="$7" pid="${8:-}" lock file now count tmp
+    _queue_global_enabled || return 0
+    _queue_global_init || {
+        [[ "$(_queue_global_claim_policy)" == "warn" || "$(_queue_global_claim_policy)" == "off" ]] && return 0
+        return 1
+    }
+    lock="$(_queue_global_lock_file "$claim")"
+    file="$(_queue_global_claim_file "$claim")"
+    now="$(_queue_now_iso)"
+    (
+        flock -x 9 || exit 1
+        [[ -f "$file" ]] || : > "$file"
+        _queue_global_claim_compact_file "$file" "$claim" "$mode" "$slots"
+        if _queue_global_claim_has_holder "$file" "$qid" "$qroot"; then
+            exit 0
+        fi
+        count="$(_queue_global_claim_holder_count "$file")"
+        if [[ "$mode" == "exclusive" ]]; then
+            (( count == 0 )) || exit 2
+        else
+            (( count < slots )) || exit 3
+        fi
+        tmp="$(mktemp)"
+        {
+            printf 'CLAIM_KEY=%q\n' "$claim"
+            printf 'CLAIM_HASH=%q\n' "$(_queue_global_hash "$claim")"
+            printf 'CLAIM_MODE=%q\n' "$mode"
+            printf 'CLAIM_SLOTS_TOTAL=%q\n' "$slots"
+            printf 'CLAIM_CREATED_AT=%q\n' "$now"
+            printf 'CLAIM_UPDATED_AT=%q\n' "$now"
+            grep '^HOLDER' "$file" 2>/dev/null || true
+            printf 'HOLDER\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$qid" "$(_queue_selected_user_for_display 2>/dev/null || id -un)" "$qroot" "$class" "$job_name" "${pid:-$$}" "$now"
+        } > "$tmp"
+        mv "$tmp" "$file"
+        exit 0
+    ) 9>"$lock"
+}
+
+_queue_global_claims_acquire_for_job() {
+    local f="$1" id="$2" class name spec mode slots record_type claim packed acquired=()
+    class="${QUEUE_CLASS_NAME:-$(_queue_class_name_for_job "$f")}" 
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
+    for spec in "${QUEUE_CLASS_GLOBAL_CLAIM_SPECS[@]}"; do
+        IFS=$'\t' read -r mode slots record_type claim packed < <(_queue_global_spec_info "$spec") || return 1
+        if _queue_global_claim_exception_allows "$claim"; then
+            _queue_log_event "exception_applied" "$id" "$claim" "running" "asset=global:claim:$claim reason=${QUEUEBASH_EXCEPTION_MATCH_REASON:-} by=${QUEUEBASH_EXCEPTION_MATCH_BY:-}"
+            continue
+        fi
+        _queue_global_preflight_for_spec "$spec" || return 2
+        if _queue_global_claim_acquire_one "$claim" "$mode" "$slots" "$id" "$(_queue_root)" "$class" "$name" "${RUN_PID:-$$}"; then
+            acquired+=("$claim")
+            _queue_log_event "global_claim_acquired" "$id" "$name" "running" "claim=$claim mode=$mode slots=$slots"
+            _queue_global_json_event "global_claim_acquired" "$claim" "$mode" "$id" "$(_queue_selected_user_for_display 2>/dev/null || id -un)" "$(_queue_root)" "$class" "$name" "slots=$slots"
+        else
+            _queue_log_event "global_claim_blocked" "$id" "$name" "pending" "claim=$claim mode=$mode slots=$slots acquire_failed=1"
+            _queue_global_json_event "global_claim_blocked" "$claim" "$mode" "$id" "$(_queue_selected_user_for_display 2>/dev/null || id -un)" "$(_queue_root)" "$class" "$name" "slots=$slots acquire_failed=1"
+            _queue_global_release_job_claims "$id" "$(_queue_root)"
+            return 3
+        fi
+    done
+    return 0
+}
+
+_queue_global_release_job_claims() {
+    local qid="$1" qroot="${2:-$(_queue_root)}" root file lock claim mode slots tmp line changed queue_user class job_name
+    [[ -n "$qid" ]] || return 0
+    root="$(_queue_global_root)"
+    [[ -d "$root/claims" ]] || return 0
+    shopt -s nullglob
+    for file in "$root/claims"/*.env; do
+        [[ -f "$file" ]] || continue
+        claim="$(grep '^CLAIM_KEY=' "$file" 2>/dev/null | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+        mode="$(grep '^CLAIM_MODE=' "$file" 2>/dev/null | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+        slots="$(grep '^CLAIM_SLOTS_TOTAL=' "$file" 2>/dev/null | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+        [[ -n "$claim" ]] || claim="$(basename "$file" .env)"
+        [[ -n "$mode" ]] || mode="shared"
+        [[ -n "$slots" ]] || slots=1
+        lock="$root/.lock/$(basename "$file" .env).lock"
+        (
+            flock -x 9 || exit 0
+            tmp="$(mktemp)"
+            changed=0
+            grep -v '^HOLDER' "$file" > "$tmp" 2>/dev/null || true
+            while IFS= read -r line; do
+                [[ "$line" == HOLDER$'\t'* ]] || continue
+                if [[ "$(printf '%s\n' "$line" | cut -f2)" == "$qid" && "$(printf '%s\n' "$line" | cut -f4)" == "$qroot" ]]; then
+                    changed=1
+                    queue_user="$(printf '%s\n' "$line" | cut -f3)"
+                    class="$(printf '%s\n' "$line" | cut -f5)"
+                    job_name="$(printf '%s\n' "$line" | cut -f6)"
+                else
+                    printf '%s\n' "$line" >> "$tmp"
+                fi
+            done < <(grep '^HOLDER' "$file" 2>/dev/null || true)
+            if [[ "$changed" -eq 1 ]]; then
+                mv "$tmp" "$file"
+                _queue_global_json_event "global_claim_released" "$claim" "$mode" "$qid" "${queue_user:-}" "$qroot" "${class:-}" "${job_name:-}" ""
+            else
+                rm -f "$tmp"
+            fi
+            if ! grep -q '^HOLDER' "$file" 2>/dev/null; then
+                rm -f "$file" 2>/dev/null || true
+            fi
+        ) 9>"$lock"
+    done
+    shopt -u nullglob
+}
+
+_queue_global_claims_print() {
+    local root="$(_queue_global_root)" file claim mode slots count line
+    if [[ ! -d "$root/claims" ]]; then
+        echo "No global claim root found: $root"
+        return 0
+    fi
+    printf '%-32s %-10s %-9s %s\n' "CLAIM" "MODE" "USED/TOTAL" "HOLDERS"
+    shopt -s nullglob
+    for file in "$root/claims"/*.env; do
+        [[ -f "$file" ]] || continue
+        claim="$(grep '^CLAIM_KEY=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+        mode="$(grep '^CLAIM_MODE=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+        slots="$(grep '^CLAIM_SLOTS_TOTAL=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+        count="$(_queue_global_claim_holder_count "$file")"
+        printf '%-32s %-10s %s/%s\n' "${claim:-$(basename "$file" .env)}" "${mode:-?}" "$count" "${slots:-?}"
+        while IFS= read -r line; do
+            [[ "$line" == HOLDER$'\t'* ]] || continue
+            printf '  %-12s %-36s %-16s %s\n' "$(printf '%s\n' "$line" | cut -f3)" "$(printf '%s\n' "$line" | cut -f2)" "$(printf '%s\n' "$line" | cut -f5)" "$(printf '%s\n' "$line" | cut -f6)"
+        done < <(grep '^HOLDER' "$file" 2>/dev/null || true)
+    done
+    shopt -u nullglob
+}
+
+_queue_global_claim_explain() {
+    local claim="$1" file line
+    [[ -n "$claim" ]] || { echo "Usage: queue global claim CLAIM" >&2; return 2; }
+    file="$(_queue_global_claim_file "$claim")"
+    echo "GLOBAL CLAIM: $claim"
+    echo "global root:  $(_queue_global_root)"
+    echo "file:         $file"
+    if [[ ! -f "$file" ]]; then
+        echo "status:       no active holders"
+        return 0
+    fi
+    echo
+    sed 's/^/  /' "$file" | grep -v '^  HOLDER' || true
+    echo
+    echo "holders:"
+    while IFS= read -r line; do
+        [[ "$line" == HOLDER$'\t'* ]] || continue
+        printf '  qid=%s user=%s root=%s class=%s job=%s pid=%s since=%s\n' \
+            "$(printf '%s\n' "$line" | cut -f2)" "$(printf '%s\n' "$line" | cut -f3)" "$(printf '%s\n' "$line" | cut -f4)" \
+            "$(printf '%s\n' "$line" | cut -f5)" "$(printf '%s\n' "$line" | cut -f6)" "$(printf '%s\n' "$line" | cut -f7)" "$(printf '%s\n' "$line" | cut -f8)"
+    done < <(grep '^HOLDER' "$file" 2>/dev/null || true)
+}
+
+_queue_global_cleanup() {
+    local dryrun=0 root file claim mode slots before after
+    [[ "${1:-}" == "--dryrun" ]] && dryrun=1
+    root="$(_queue_global_root)"
+    [[ -d "$root/claims" ]] || { echo "No global claims root: $root"; return 0; }
+    shopt -s nullglob
+    for file in "$root/claims"/*.env; do
+        [[ -f "$file" ]] || continue
+        claim="$(grep '^CLAIM_KEY=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || basename "$file" .env)"
+        mode="$(grep '^CLAIM_MODE=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || echo shared)"
+        slots="$(grep '^CLAIM_SLOTS_TOTAL=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || echo 1)"
+        before="$(_queue_global_claim_holder_count "$file")"
+        if [[ "$dryrun" -eq 1 ]]; then
+            echo "DRYRUN global cleanup would compact: $claim holders=$before"
+        else
+            _queue_global_claim_compact_file "$file" "$claim" "$mode" "$slots"
+            after="$(_queue_global_claim_holder_count "$file")"
+            echo "global cleanup: $claim holders $before -> $after"
+        fi
+    done
+    shopt -u nullglob
+}
+
+_queue_global_force_release() {
+    local claim="$1" qid="$2" file line qroot
+    [[ -n "$claim" && -n "$qid" ]] || { echo "Usage: queue global release CLAIM QID --force" >&2; return 2; }
+    [[ "${3:-}" == "--force" ]] || { echo "queue global release requires --force" >&2; return 2; }
+    file="$(_queue_global_claim_file "$claim")"
+    [[ -f "$file" ]] || { echo "queue global release: claim not active: $claim" >&2; return 1; }
+    qroot="$(awk -F '\t' -v qid="$qid" '$1 == "HOLDER" && $2 == qid {print $4; exit}' "$file")"
+    [[ -n "$qroot" ]] || { echo "queue global release: qid not holder: $qid" >&2; return 1; }
+    _queue_global_release_job_claims "$qid" "$qroot"
+}
+
+_queue_global_health() {
+    local root="$(_queue_global_root)" rc=0
+    echo "global root: $root"
+    if [[ ! -d "$root" ]]; then
+        echo "MISSING root directory"
+        return 1
+    fi
+    for d in claims slots .lock; do
+        if [[ -d "$root/$d" ]]; then
+            echo "OK $d"
+        else
+            echo "MISSING $d"; rc=1
+        fi
+    done
+    [[ -w "$root/claims" ]] && echo "claims writable: yes" || echo "claims writable: no"
+    return "$rc"
+}
+
+_queue_global_command() {
+    local sub="${1:-claims}"
+    shift || true
+    case "$sub" in
+        root) _queue_global_root ;;
+        claims|list) _queue_global_claims_print ;;
+        claim|explain) _queue_global_claim_explain "${1:-}" ;;
+        cleanup) _queue_global_cleanup "$@" ;;
+        release) _queue_global_force_release "$@" ;;
+        health) _queue_global_health ;;
+        *) echo "Usage: queue global root|claims|claim CLAIM|cleanup [--dryrun]|release CLAIM QID --force|health" >&2; return 2 ;;
+    esac
+}
+
+_queue_global_explain_for_job() {
+    local f="$1" id="$2" root="$(_queue_global_root)" file line found=0 claim mode slots qid qroot
+    local spec record_type packed status count holders
+    echo "Global resource claims"
+    [[ -d "$root/claims" ]] || { echo "  none"; return 0; }
+
+    # First show any claims already held by this job.
+    shopt -s nullglob
+    for file in "$root/claims"/*.env; do
+        [[ -f "$file" ]] || continue
+        claim="$(grep '^CLAIM_KEY=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || basename "$file" .env)"
+        mode="$(grep '^CLAIM_MODE=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || echo shared)"
+        slots="$(grep '^CLAIM_SLOTS_TOTAL=' "$file" | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || echo 1)"
+        while IFS= read -r line; do
+            [[ "$line" == HOLDER$'\t'* ]] || continue
+            qid="$(printf '%s\n' "$line" | cut -f2)"
+            qroot="$(printf '%s\n' "$line" | cut -f4)"
+            if [[ "$qid" == "$id" && "$qroot" == "$(_queue_root)" ]]; then
+                found=1
+                echo "  $claim"
+                echo "    mode:        $mode"
+                echo "    status:      acquired"
+                echo "    slots:       $slots"
+                echo "    global root: $root"
+            fi
+        done < <(grep '^HOLDER' "$file" 2>/dev/null || true)
+    done
+    shopt -u nullglob
+
+    # Then show global claims required by the class even when this job is pending
+    # and blocked before it ever acquired a holder record.
+    if _queue_class_load_for_job "$f" >/dev/null 2>&1; then
+        for spec in "${QUEUE_CLASS_GLOBAL_CLAIM_SPECS[@]}"; do
+            IFS=$'\t' read -r mode slots record_type claim packed < <(_queue_global_spec_info "$spec") || continue
+            [[ -n "$claim" ]] || continue
+            if _queue_global_claim_exception_allows "$claim"; then
+                status="bypassed by exception"
+            elif _queue_global_claim_available_one "$claim" "$mode" "$slots" "$id" "$(_queue_root)"; then
+                status="available / waiting to acquire"
+            else
+                status="blocked: global resource slot unavailable"
+            fi
+            count="$(_queue_global_claim_holder_count "$(_queue_global_claim_file "$claim")")"
+            holders="$(_queue_global_claim_holder_summary "$claim")"
+            echo "  $claim"
+            echo "    mode:        $mode"
+            echo "    status:      $status"
+            echo "    slots used:  ${count:-0}/${slots:-1}"
+            echo "    global root: $root"
+            if [[ -n "$holders" ]]; then
+                echo "    holders:     $holders"
+            fi
+            found=1
+        done
+    fi
+
+    [[ "$found" -eq 0 ]] && echo "  none"
+}
+
+_queue_class_load_for_job() {
+    local f="$1" class file root default_file
+    root="$(_queue_root)"
+    class="$(_queue_class_name_for_job "$f")"
+
+    QUEUE_CLASS_NAME="${class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}"
+    QUEUE_CLASS_FILE="$(_queue_class_file "$QUEUE_CLASS_NAME")"
+
+    CLASS_ALLOW_PARALLEL=1
+    CLASS_EXCLUSIVE=0
+    CLASS_MAX_CONCURRENT=0
+    CLASS_PREFLIGHT_FUNC=""
+    CLASS_PREFLIGHT_FUNCS=""
+    CLASS_PREFLIGHT_CMD=""
+    CLASS_PREFLIGHT_CMDS=""
+    CLASS_PREFLIGHT_PLUGINS=""
+    _queue_class_asset_reset
+
+    if [[ ! -f "$QUEUE_CLASS_FILE" && "$QUEUE_CLASS_NAME" == "${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}" ]]; then
+        default_file="$root/classes/${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}.env"
+        mkdir -p "$root/classes" "$root/class.d"
+        cat > "$default_file" <<'EOF'
+# bashqueues default class
+CLASS_ALLOW_PARALLEL=1
+CLASS_MAX_CONCURRENT=0
+EOF
+    fi
+
+    if [[ -f "$QUEUE_CLASS_FILE" ]]; then
+        _queue_class_source_with_job_context "$QUEUE_CLASS_FILE" "$f"
+    unset CLASS_SHARED_ASSETS CLASS_EXCLUSIVE_ASSETS CLASS_ASSETS
+    else
+        echo "queue class: class file not found: $QUEUE_CLASS_FILE" >&2
+        return 2
+    fi
+
+    CLASS_SHARED_ASSETS="${CLASS_SHARED_ASSETS:-${CLASS_ASSETS:-}}"
+    CLASS_ALLOW_PARALLEL="${CLASS_ALLOW_PARALLEL:-1}"
+    CLASS_EXCLUSIVE="${CLASS_EXCLUSIVE:-0}"
+    CLASS_MAX_CONCURRENT="${CLASS_MAX_CONCURRENT:-0}"
+    CLASS_EXCLUSIVE_ASSETS="${CLASS_EXCLUSIVE_ASSETS:-}"
+    return 0
+}
+
+_queue_class_available() {
+    local f="$1"
+    local class count max asset rc id name
+
+    class="$(_queue_class_name_for_job "$f")"
+    id="$(basename "$f" .job)"
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
+
+    (
+        _queue_class_load_for_job "$f" >/dev/null 2>&1 || exit 1
+        count="$(_queue_class_claim_count "$QUEUE_CLASS_NAME")"
+        max="${CLASS_MAX_CONCURRENT:-0}"
+        [[ "$max" =~ ^[0-9]+$ ]] || max=0
+
+        if [[ "${CLASS_EXCLUSIVE:-0}" == "1" || "${CLASS_ALLOW_PARALLEL:-1}" == "0" ]]; then
+            (( count == 0 )) || exit 10
+        fi
+        if (( max > 0 && count >= max )); then
+            exit 11
+        fi
+
+        for asset in $CLASS_EXCLUSIVE_ASSETS; do
+            _queue_asset_has_any_claim "$asset" && exit 12
+        done
+        for spec in "${QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS[@]}"; do
+            asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+            [[ -n "$asset" ]] && _queue_asset_has_any_claim "$asset" && exit 12
+        done
+        for asset in $CLASS_SHARED_ASSETS; do
+            _queue_asset_has_exclusive_claim "$asset" && exit 13
+        done
+        for spec in "${QUEUE_CLASS_SHARED_ASSET_SPECS[@]}"; do
+            asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+            [[ -n "$asset" ]] && _queue_asset_has_exclusive_claim "$asset" && exit 13
+        done
+
+        _queue_asset_implied_preflight_for_class || exit 23
+        _queue_class_dynamic_preflight "$f" || exit 24
+        _queue_global_claims_available_for_job "$f" || exit 25
+        exit 0
+    )
+    rc="$?"
+    if [[ "$rc" -ne 0 ]]; then
+        case "$rc" in
+            23) _queue_log_event "resource_blocked" "$id" "$name" "pending" "class=$class reason=asset_preflight" ;;
+            24) _queue_log_event "resource_blocked" "$id" "$name" "pending" "class=$class reason=preflight" ;;
+            25) : ;; # global claim helper already logged the claim key and holder summary
+            10|11|12|13) _queue_log_event "class_blocked" "$id" "$name" "pending" "class=$class rc=$rc" ;;
+            *) _queue_log_event "class_blocked" "$id" "$name" "pending" "class=$class rc=$rc" ;;
+        esac
+        return 1
+    fi
+    return 0
+}
+
+_queue_class_claim_job() {
+    local f="$1" id="$2" root class rc
+    root="$(_queue_root)"
+    class="$(_queue_class_name_for_job "$f")"
+
+    _queue_claim_lock_acquire || return 1
+    (
+        local count max asset safe asafe claim
+        _queue_class_load_for_job "$f" >/dev/null || exit 10
+
+        count="$(_queue_class_claim_count "$QUEUE_CLASS_NAME")"
+        max="${CLASS_MAX_CONCURRENT:-0}"
+        [[ "$max" =~ ^[0-9]+$ ]] || max=0
+
+        if [[ "${CLASS_EXCLUSIVE:-0}" == "1" || "${CLASS_ALLOW_PARALLEL:-1}" == "0" ]]; then
+            (( count == 0 )) || exit 20
+        fi
+        if (( max > 0 && count >= max )); then
+            exit 21
+        fi
+
+        for asset in $CLASS_EXCLUSIVE_ASSETS; do
+            _queue_asset_has_any_claim "$asset" && exit 22
+        done
+        for spec in "${QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS[@]}"; do
+            asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+            [[ -n "$asset" ]] && _queue_asset_has_any_claim "$asset" && exit 22
+        done
+        for asset in $CLASS_SHARED_ASSETS; do
+            _queue_asset_has_exclusive_claim "$asset" && exit 23
+        done
+        for spec in "${QUEUE_CLASS_SHARED_ASSET_SPECS[@]}"; do
+            asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+            [[ -n "$asset" ]] && _queue_asset_has_exclusive_claim "$asset" && exit 23
+        done
+
+        safe="$(_queue_class_safe_token "$QUEUE_CLASS_NAME")"
+        claim="$root/claims/classes/$safe.$id.claim"
+        mkdir -p "$claim"
+        printf '%s\n' "$id" > "$claim/job_id"
+        printf '%s\n' "$QUEUE_CLASS_NAME" > "$claim/class"
+        printf '%s\n' "$QUEUE_CLASS_FILE" > "$claim/class_file"
+        date -Is > "$claim/claimed_at"
+
+        for asset in $CLASS_EXCLUSIVE_ASSETS; do
+            asafe="$(_queue_class_safe_token "$asset")"
+            claim="$root/claims/assets/$asafe.exclusive.$id.claim"
+            mkdir -p "$claim"
+            printf '%s\n' "$id" > "$claim/job_id"
+            printf '%s\n' "$asset" > "$claim/asset"
+            printf '%s\n' "exclusive" > "$claim/mode"
+            date -Is > "$claim/claimed_at"
+        done
+        for spec in "${QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS[@]}"; do
+            asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+            [[ -z "$asset" ]] && continue
+            asafe="$(_queue_class_safe_token "$asset")"
+            claim="$root/claims/assets/$asafe.exclusive.$id.claim"
+            mkdir -p "$claim"
+            printf '%s\n' "$id" > "$claim/job_id"
+            printf '%s\n' "$asset" > "$claim/asset"
+            printf '%s\n' "exclusive" > "$claim/mode"
+            date -Is > "$claim/claimed_at"
+        done
+        for asset in $CLASS_SHARED_ASSETS; do
+            asafe="$(_queue_class_safe_token "$asset")"
+            claim="$root/claims/assets/$asafe.shared.$id.claim"
+            mkdir -p "$claim"
+            printf '%s\n' "$id" > "$claim/job_id"
+            printf '%s\n' "$asset" > "$claim/asset"
+            printf '%s\n' "shared" > "$claim/mode"
+            date -Is > "$claim/claimed_at"
+        done
+        for spec in "${QUEUE_CLASS_SHARED_ASSET_SPECS[@]}"; do
+            asset="$(_queue_class_asset_claim_token_from_spec "$spec")"
+            [[ -z "$asset" ]] && continue
+            asafe="$(_queue_class_safe_token "$asset")"
+            claim="$root/claims/assets/$asafe.shared.$id.claim"
+            mkdir -p "$claim"
+            printf '%s\n' "$id" > "$claim/job_id"
+            printf '%s\n' "$asset" > "$claim/asset"
+            printf '%s\n' "shared" > "$claim/mode"
+            date -Is > "$claim/claimed_at"
+        done
+    )
+    rc="$?"
+    _queue_claim_lock_release
+
+    if [[ "$rc" -eq 0 ]]; then
+        {
+            printf 'JOB_CLASS_CLAIMED=%q\n' "$class"
+            printf 'JOB_CLASS_CLAIMED_AT=%q\n' "$(_queue_now_iso)"
+        } >> "$f" 2>/dev/null || true
+        _queue_log_event "class_claimed" "$id" "$(_queue_job_name "$f")" "running" "class=$class"
+        return 0
+    fi
+    _queue_class_release_claims "$id" 2>/dev/null || true
+    _queue_global_release_job_claims "$id" "$root" 2>/dev/null || true
+    return 1
+}
+
+_queue_class_release_claims() {
+    local id="$1" root
+    root="$(_queue_root)"
+    [[ -z "$id" ]] && return 0
+    rm -rf "$root/claims/classes/"*".$id.claim" "$root/claims/assets/"*".$id.claim" 2>/dev/null || true
+    _queue_global_release_job_claims "$id" "$root" 2>/dev/null || true
+}
+
+_queue_cleanup_stale_claims() {
+    local root="$(_queue_root)" claim id
+    for claim in "$root/claims/classes"/*.claim "$root/claims/assets"/*.claim; do
+        [[ -d "$claim" ]] || continue
+        id="$(cat "$claim/job_id" 2>/dev/null || true)"
+        if [[ -z "$id" || ! -f "$root/running/$id.job" ]]; then
+            rm -rf "$claim" 2>/dev/null || true
+            echo "FIX removed stale class/resource claim: $claim"
+        fi
+    done
+}
+
+
+
+_queue_dispatch_trace_enabled() {
+    [[ "${QUEUEBASH_TRACE_DISPATCH:-0}" == "1" || "${QUEUEBASH_TRACE_DISPATCH:-0}" == "true" ]]
+}
+
+_queue_dispatch_trace_log() {
+    local worker="${1:-?}"
+    local msg="${2:-}"
+    local root="$(_queue_root)"
+    local ts
+
+    _queue_dispatch_trace_enabled || return 0
+
+    ts="$(_queue_now_iso)"
+    mkdir -p "$root/workers"
+    printf '%s worker=%s %s\n' "$ts" "$worker" "$msg" >> "$root/workers/dispatch.trace"
+    printf '[worker %s trace] %s\n' "$worker" "$msg" >&2
+}
+
+_queue_dispatch_trace_show() {
+    local root="$(_queue_root)"
+    local n="${1:-120}"
+    local f="$root/workers/dispatch.trace"
+
+    if [[ ! -f "$f" ]]; then
+        echo "No dispatch trace found: $f"
+        echo "Enable with: QUEUEBASH_TRACE_DISPATCH=1 queue run"
+        return 0
+    fi
+
+    tail -n "$n" "$f"
+}
+
+_queue_pending_candidate_summary() {
+    local root="$(_queue_root)"
+    local f
+    shopt -s nullglob
+    while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        printf '%s %s class=%s\n' "$(basename "$f" .job)" "$(_queue_job_name "$f" 2>/dev/null || true)" "$(_queue_class_for_job_file "$f" 2>/dev/null || echo DEFAULT)"
+    done < <(_queue_pending_job_files "$root")
+    shopt -u nullglob
+}
+
+_queue_claims_summary_for_explain() {
+    local root="$(_queue_root)"
+    local dir f
+
+    for dir in "$root/claims" "$root/locks" "$root/resources" "$root/class_claims"; do
+        [[ -d "$dir" ]] || continue
+        echo "  claim dir:         $dir"
+        shopt -s nullglob
+        for f in "$dir"/*; do
+            [[ -e "$f" ]] || continue
+            echo "    $(basename "$f")"
+        done
+        shopt -u nullglob
+    done
+}
+
+
+_queue_move_failure_diagnose() {
+    local src="$1"
+    local dst="$2"
+    local id="${3:-}"
+    local root="$(_queue_root)"
+
+    echo "move_failure: id=$id"
+    echo "move_failure: src=$src"
+    echo "move_failure: dst=$dst"
+
+    [[ -e "$src" ]] && echo "move_failure: src_exists=1" || echo "move_failure: src_exists=0"
+
+    if [[ -e "$dst" ]]; then
+        echo "move_failure: dst_exists=1"
+        if [[ -f "$dst" ]]; then
+            echo "move_failure: dst_type=file"
+        elif [[ -d "$dst" ]]; then
+            echo "move_failure: dst_type=directory"
+        else
+            echo "move_failure: dst_type=other"
+        fi
+    else
+        echo "move_failure: dst_exists=0"
+    fi
+
+    [[ -d "$root/running" ]] && echo "move_failure: running_dir_exists=1" || echo "move_failure: running_dir_exists=0"
+    [[ -w "$root/running" ]] && echo "move_failure: running_dir_writable=1" || echo "move_failure: running_dir_writable=0"
+    [[ -d "$root/pending" ]] && echo "move_failure: pending_dir_exists=1" || echo "move_failure: pending_dir_exists=0"
+    [[ -w "$root/pending" ]] && echo "move_failure: pending_dir_writable=1" || echo "move_failure: pending_dir_writable=0"
+
+    local state f count=0
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        f="$root/$state/$id.job"
+        if [[ -e "$f" ]]; then
+            echo "move_failure: duplicate_record=$state/$id.job"
+            count=$((count + 1))
+        fi
+    done
+    echo "move_failure: duplicate_record_count=$count"
+}
+
+_queue_move_pending_to_running() {
+    local job="$1"
+    local running="$2"
+    local id="$3"
+    local worker="${4:-?}"
+    local err rc line
+
+    _queue_dispatch_trace_log "$worker" "move pending->running start $id src=$job dst=$running"
+    err="$(mktemp)"
+    mv "$job" "$running" 2>"$err"
+    rc="$?"
+
+    if [[ "$rc" -eq 0 ]]; then
+        rm -f "$err"
+        _queue_dispatch_trace_log "$worker" "move pending->running ok $id"
+        return 0
+    fi
+
+    # Normal multi-worker race: another worker claimed this visible candidate
+    # between scan and mv.  Do not run the expensive failure diagnosis path.
+    if [[ ! -e "$job" && -e "$running" ]]; then
+        rm -f "$err"
+        _queue_dispatch_trace_log "$worker" "move pending->running lost-race $id"
+        return "$rc"
+    fi
+
+    _queue_dispatch_trace_log "$worker" "move pending->running failed $id rc=$rc"
+    if [[ -s "$err" ]]; then
+        while IFS= read -r line; do
+            _queue_dispatch_trace_log "$worker" "move stderr $id: $line"
+        done < "$err"
+    fi
+
+    while IFS= read -r line; do
+        _queue_dispatch_trace_log "$worker" "$line"
+    done < <(_queue_move_failure_diagnose "$job" "$running" "$id")
+
+    rm -f "$err"
+    return "$rc"
+}
+
+_queue_duplicate_qids_report() {
+    local root="$(_queue_root)"
+    local state f id tmp
+    tmp="$(mktemp)"
+
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        shopt -s nullglob
+        for f in "$root/$state"/*.job; do
+            [[ -f "$f" ]] || continue
+            id="$(basename "$f" .job)"
+            printf '%s\t%s\t%s\n' "$id" "$state" "$f" >> "$tmp"
+        done
+        shopt -u nullglob
+    done
+
+    if [[ -s "$tmp" ]]; then
+        cut -f1 "$tmp" | sort | uniq -d | while IFS= read -r id; do
+            echo "duplicate qid: $id"
+            awk -F '\t' -v id="$id" '$1 == id { printf "  %-12s %s\n", $2, $3 }' "$tmp"
+        done
+    fi
+
+    rm -f "$tmp"
+}
+
+
+
+_queue_script_dir() {
+    local src="${BASH_SOURCE[0]:-$0}"
+    cd "$(dirname "$src")" 2>/dev/null && pwd -P
+}
+
+_queue_manager_panel_entry() {
+    local dir panel python
+    dir="$(_queue_script_dir)"
+    panel="$dir/queuemgr_panel.py"
+
+    if [[ ! -f "$panel" ]]; then
+        echo "queue manager: missing panel manager: $panel" >&2
+        return 1
+    fi
+
+    python="${QUEUEBASH_PYTHON:-python3}"
+    "$python" "$panel" "$@"
+}
+
+_queue_manager_entry() {
+    local sub="${1:-panel}"
+    case "$sub" in
+        panel|"")
+            [[ "$#" -gt 0 ]] && shift || true
+            _queue_manager_panel_entry "$@"
+            ;;
+        help|--help|-h)
+            echo "QueueManager is panel-only. Use: queue mgr"
+            ;;
+        *)
+            echo "queue manager: legacy manager subcommand removed: $sub" >&2
+            echo "Use: queue mgr" >&2
+            return 2
+            ;;
+    esac
+}
+
+_queue_normalize_systemd_cpu_quota() {
+    local v="$1"
+
+    # Accept either "50" or "50%"; systemd wants a single literal percent.
+    # Never double percent-escape because this is used as an argv element, not
+    # inside a printf format string.
+    [[ -z "$v" ]] && return 0
+
+    if [[ "$v" =~ ^[0-9]+([.][0-9]+)?%$ ]]; then
+        printf '%s\n' "$v"
+    elif [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+        printf '%s%%\n' "$v"
+    else
+        printf '%s\n' "$v"
+    fi
+}
+
+_queue_class_load_defaults_for_class () 
+{ 
+    local class="${1:-DEFAULT}";
+    local class_file;
+    class_file="$(_queue_class_file "$class")";
+    [[ -f "$class_file" ]] || return 0;
+    ( CLASS_DEFAULT_RUNNER="";
+    CLASS_DEFAULT_CPU_LIMIT="";
+    CLASS_DEFAULT_MEM_LIMIT="";
+    CLASS_DEFAULT_MAX_LOG_SIZE_BYTES="";
+    CLASS_DEFAULT_LOG_OVERFLOW_POLICY="";
+    CLASS_DEFAULT_ALLOW_LARGE_LOG="";
+    CLASS_DEFAULT_TIMEOUT="";
+    CLASS_DEFAULT_KILL_AFTER="";
+    CLASS_DEFAULT_LOG_TAG="";
+    CLASS_DEFAULT_OUTPUT_DIR="";
+    CLASS_DEFAULT_ENV_PREFIX="";
+    CLASS_DEFAULT_WORKING_DIR="";
+    CLASS_DEFAULT_RUN_USER="";
+    CLASS_DEFAULT_SUBMIT_USER="";
+    CLASS_DEFAULT_SANDBOX_LEVEL="";
+    CLASS_DEFAULT_RUNTIME_CAPS="";
+    CLASS_DEFAULT_RUNTIME_CAP_INTERVAL="";
+    CLASS_DEFAULT_RUNTIME_CAP_PORTS="";
+    CLASS_DEFAULT_SECCOMP_PROFILE="";
+    CLASS_DEFAULT_SECCOMP_ALLOW="";
+    CLASS_DEFAULT_SECCOMP_PROFILED_NAME="";
+    CLASS_DEFAULT_SECCOMP_PROFILE_ALLOW_SELF_SIGNED="";
+    CLASS_DEFAULT_SECCOMP_PROFILE_REQUIRED_SIGNER="";
+    CLASS_DEFAULT_SECCOMP_PROFILE_ROOT="";
+    CLASS_DEFAULT_SECCOMP_PROFILED_ENFORCE="";
+    CLASS_EXEC_ENV="";
+    CLASS_DEFAULT_EXEC_ENV="";
+    CLASS_DEFAULT_CPU_SECONDS="";
+    CLASS_DEFAULT_WALL_SECONDS="";
+    CLASS_DEFAULT_BILLING_CYCLES="";
+    CLASS_DEFAULT_BILLING_UNIT_SECONDS="";
+    CLASS_DEFAULT_BILLING_GRACE_SECONDS="";
+    CLASS_DEFAULT_BILLING_POLICY="";
+    CLASS_DEFAULT_NET_USAGE_INTERFACE="";
+    CLASS_DEFAULT_NET_USAGE_DIRECTION="";
+    CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES="";
+    CLASS_DEFAULT_NET_USAGE_ALLOWANCE_BYTES="";
+    CLASS_DEFAULT_NET_USAGE_COUNTER_FILE="";
+    CLASS_DEFAULT_NET_USAGE_POLICY="";
+    source "$class_file" > /dev/null 2>&1 || exit 0;
+    [[ -n "${CLASS_DEFAULT_RUNNER:-}" ]] && printf 'RUNNER\t%s\n' "$CLASS_DEFAULT_RUNNER";
+    [[ -n "${CLASS_DEFAULT_CPU_LIMIT:-}" ]] && printf 'CPU_LIMIT\t%s\n' "$CLASS_DEFAULT_CPU_LIMIT";
+    [[ -n "${CLASS_DEFAULT_MEM_LIMIT:-}" ]] && printf 'MEM_LIMIT\t%s\n' "$CLASS_DEFAULT_MEM_LIMIT";
+    [[ -n "${CLASS_DEFAULT_MAX_LOG_SIZE_BYTES:-}" ]] && printf 'MAX_LOG_SIZE_BYTES\t%s\n' "$CLASS_DEFAULT_MAX_LOG_SIZE_BYTES";
+    [[ -n "${CLASS_DEFAULT_LOG_OVERFLOW_POLICY:-}" ]] && printf 'LOG_OVERFLOW_POLICY\t%s\n' "$CLASS_DEFAULT_LOG_OVERFLOW_POLICY";
+    [[ -n "${CLASS_DEFAULT_ALLOW_LARGE_LOG:-}" ]] && printf 'ALLOW_LARGE_LOG\t%s\n' "$CLASS_DEFAULT_ALLOW_LARGE_LOG";
+    [[ -n "${CLASS_DEFAULT_TIMEOUT:-}" ]] && printf 'TIMEOUT\t%s\n' "$CLASS_DEFAULT_TIMEOUT";
+    [[ -n "${CLASS_DEFAULT_KILL_AFTER:-}" ]] && printf 'KILL_AFTER\t%s\n' "$CLASS_DEFAULT_KILL_AFTER";
+    [[ -n "${CLASS_DEFAULT_LOG_TAG:-}" ]] && printf 'LOG_TAG\t%s\n' "$CLASS_DEFAULT_LOG_TAG";
+    [[ -n "${CLASS_DEFAULT_OUTPUT_DIR:-}" ]] && printf 'OUTPUT_DIR\t%s\n' "$CLASS_DEFAULT_OUTPUT_DIR";
+    [[ -n "${CLASS_DEFAULT_ENV_PREFIX:-}" ]] && printf 'ENV_PREFIX\t%s\n' "$CLASS_DEFAULT_ENV_PREFIX";
+    [[ -n "${CLASS_DEFAULT_WORKING_DIR:-}" ]] && printf 'PWD_AT_SUBMIT\t%s\n' "$CLASS_DEFAULT_WORKING_DIR";
+    [[ -n "${CLASS_DEFAULT_RUN_USER:-}" ]] && printf 'RUN_USER\t%s\n' "$CLASS_DEFAULT_RUN_USER";
+    [[ -n "${CLASS_DEFAULT_SUBMIT_USER:-}" ]] && printf 'SUBMIT_USER\t%s\n' "$CLASS_DEFAULT_SUBMIT_USER";
+    [[ -n "${CLASS_DEFAULT_SANDBOX_LEVEL:-}" ]] && printf 'SANDBOX_LEVEL\t%s\n' "$CLASS_DEFAULT_SANDBOX_LEVEL";
+    [[ -n "${CLASS_DEFAULT_RUNTIME_CAPS:-}" ]] && printf 'RUNTIME_CAPS\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAPS";
+    [[ -n "${CLASS_DEFAULT_RUNTIME_CAP_INTERVAL:-}" ]] && printf 'RUNTIME_CAP_INTERVAL\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAP_INTERVAL";
+    [[ -n "${CLASS_DEFAULT_RUNTIME_CAP_PORTS:-}" ]] && printf 'RUNTIME_CAP_PORTS\t%s\n' "$CLASS_DEFAULT_RUNTIME_CAP_PORTS";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILE:-}" ]] && printf 'SECCOMP_PROFILE\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILE";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_ALLOW:-}" ]] && printf 'SECCOMP_ALLOW\t%s\n' "$CLASS_DEFAULT_SECCOMP_ALLOW";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILED_NAME:-}" ]] && printf 'SECCOMP_PROFILED_NAME\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILED_NAME";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILE_ALLOW_SELF_SIGNED:-}" ]] && printf 'SECCOMP_PROFILE_ALLOW_SELF_SIGNED\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILE_ALLOW_SELF_SIGNED";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILE_REQUIRED_SIGNER:-}" ]] && printf 'SECCOMP_PROFILE_REQUIRED_SIGNER\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILE_REQUIRED_SIGNER";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILE_ROOT:-}" ]] && printf 'SECCOMP_PROFILE_ROOT\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILE_ROOT";
+    [[ -n "${CLASS_DEFAULT_SECCOMP_PROFILED_ENFORCE:-}" ]] && printf 'SECCOMP_PROFILED_ENFORCE\t%s\n' "$CLASS_DEFAULT_SECCOMP_PROFILED_ENFORCE";
+    [[ -n "${CLASS_DEFAULT_EXEC_ENV:-${CLASS_EXEC_ENV:-}}" ]] && printf 'EXEC_ENV\t%s\n' "${CLASS_DEFAULT_EXEC_ENV:-${CLASS_EXEC_ENV:-}}";
+    [[ -n "${CLASS_DEFAULT_CPU_SECONDS:-}" ]] && printf 'CPU_SECONDS\t%s\n' "$CLASS_DEFAULT_CPU_SECONDS";
+    [[ -n "${CLASS_DEFAULT_WALL_SECONDS:-}" ]] && printf 'WALL_SECONDS\t%s\n' "$CLASS_DEFAULT_WALL_SECONDS";
+    [[ -n "${CLASS_DEFAULT_BILLING_CYCLES:-}" ]] && printf 'BILLING_CYCLES\t%s\n' "$CLASS_DEFAULT_BILLING_CYCLES";
+    [[ -n "${CLASS_DEFAULT_BILLING_UNIT_SECONDS:-}" ]] && printf 'BILLING_UNIT_SECONDS\t%s\n' "$CLASS_DEFAULT_BILLING_UNIT_SECONDS";
+    [[ -n "${CLASS_DEFAULT_BILLING_GRACE_SECONDS:-}" ]] && printf 'BILLING_GRACE_SECONDS\t%s\n' "$CLASS_DEFAULT_BILLING_GRACE_SECONDS";
+    [[ -n "${CLASS_DEFAULT_BILLING_POLICY:-}" ]] && printf 'BILLING_POLICY\t%s\n' "$CLASS_DEFAULT_BILLING_POLICY";
+    [[ -n "${CLASS_DEFAULT_NET_USAGE_INTERFACE:-}" ]] && printf 'NET_USAGE_INTERFACE\t%s\n' "$CLASS_DEFAULT_NET_USAGE_INTERFACE";
+    [[ -n "${CLASS_DEFAULT_NET_USAGE_DIRECTION:-}" ]] && printf 'NET_USAGE_DIRECTION\t%s\n' "$CLASS_DEFAULT_NET_USAGE_DIRECTION";
+    [[ -n "${CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES:-}" ]] && printf 'NET_USAGE_LIMIT_BYTES\t%s\n' "$CLASS_DEFAULT_NET_USAGE_LIMIT_BYTES";
+    [[ -n "${CLASS_DEFAULT_NET_USAGE_ALLOWANCE_BYTES:-}" ]] && printf 'NET_USAGE_ALLOWANCE_BYTES\t%s\n' "$CLASS_DEFAULT_NET_USAGE_ALLOWANCE_BYTES";
+    [[ -n "${CLASS_DEFAULT_NET_USAGE_COUNTER_FILE:-}" ]] && printf 'NET_USAGE_COUNTER_FILE\t%s\n' "$CLASS_DEFAULT_NET_USAGE_COUNTER_FILE";
+    [[ -n "${CLASS_DEFAULT_NET_USAGE_POLICY:-}" ]] && printf 'NET_USAGE_POLICY\t%s\n' "$CLASS_DEFAULT_NET_USAGE_POLICY" )
+}
+
+_queue_expand_job_template() {
+    local template="$1"
+    local id="$2"
+    local name="$3"
+    local root="$(_queue_root)"
+    local out="$template"
+
+    out="${out//\$\{JOB_ID\}/$id}"
+    out="${out//\$\{JOB_NAME\}/$name}"
+    out="${out//\$\{QUEUEBASH_ROOT\}/$root}"
+    out="${out//\$\{QUEUE_ROOT\}/$root}"
+
+    printf '%s\n' "$out"
+}
+
+_queue_append_class_defaults_to_job_file() {
+    local job_file="$1"
+    local class="${2:-DEFAULT}"
+    local id="${3:-}"
+    local name="${4:-}"
+    local key value expanded
+    local applied=0
+
+    [[ -f "$job_file" ]] || return 0
+    [[ -z "$id" ]] && id="$(basename "$job_file" .job)"
+    [[ -z "$name" ]] && name="$(_queue_job_name "$job_file" 2>/dev/null || true)"
+
+    # Append defaults after submit has written its built-in values. The last
+    # assignment wins when the job file is sourced, which makes class defaults
+    # visible/auditable while still keeping the original submitted baseline.
+    while IFS=$'\t' read -r key value; do
+        [[ -n "$key" ]] || continue
+
+        case "$key" in
+            OUTPUT_DIR|ENV_PREFIX|LOG_TAG|PWD_AT_SUBMIT)
+                expanded="$(_queue_expand_job_template "$value" "$id" "$name")"
+                ;;
+            *)
+                expanded="$value"
+                ;;
+        esac
+
+        printf '%s=%q\n' "$key" "$expanded" >> "$job_file"
+        applied=$((applied + 1))
+    done < <(_queue_class_load_defaults_for_class "$class")
+
+    if [[ "$applied" -gt 0 ]]; then
+        printf 'CLASS_DEFAULTS_APPLIED_AT=%q\n' "$(_queue_now_iso)" >> "$job_file"
+        printf 'CLASS_DEFAULTS_SOURCE=%q\n' "$class" >> "$job_file"
+    fi
+}
+
+_queue_class_defaults_show() {
+    local class="${1:-DEFAULT}"
+    local any=0
+
+    while IFS=$'\t' read -r key value; do
+        [[ -n "$key" ]] || continue
+        any=1
+        printf '  %-32s %s\n' "$key" "$value"
+    done < <(_queue_class_load_defaults_for_class "$class")
+
+    [[ "$any" -eq 0 ]] && echo "  none"
+}
+
+_queue_next_job() {
+    # stdout MUST contain only selected pending job path, or nothing.
+    # Pending is already priority-bucketed at submit/priority-change time, so
+    # worker selection is a cheap ordered tree walk.  Expensive class/resource
+    # preflight is deliberately left until after atomic claim move so rival
+    # workers do not all preflight the same top candidate.
+    local now_epoch="${1:-$(_queue_epoch_now)}"
+    local root="$(_queue_root)"
+    local f id retry_at not_before deps dep depfile
+    local seen=0
+
+    _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "entered _queue_next_job bucketed now=$now_epoch"
+
+    while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        seen=$((seen + 1))
+        id="$(basename "$f" .job)"
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "candidate $id path=$f"
+
+        retry_at="$(_queue_job_field_fast "$f" RETRY_NOT_BEFORE_EPOCH 2>/dev/null || echo 0)"
+        retry_at="${retry_at:-0}"
+        [[ "$retry_at" =~ ^[0-9]+$ ]] || retry_at=0
+        if (( retry_at > now_epoch )); then
+            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id retry-not-due until=$retry_at"
+            continue
+        fi
+
+        not_before="$(_queue_job_field_fast "$f" NOT_BEFORE_EPOCH 2>/dev/null || echo 0)"
+        not_before="${not_before:-0}"
+        [[ "$not_before" =~ ^[0-9]+$ ]] || not_before=0
+        if (( not_before > now_epoch )); then
+            _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id schedule-not-due until=$not_before"
+            continue
+        fi
+
+        deps="$(_queue_job_field_fast "$f" DEPENDS_AFTER_SUCCESS 2>/dev/null || true)"
+        if [[ -n "$deps" ]]; then
+            for dep in $deps; do
+                # Dependencies may be expressed as an exact QID or a one-shot
+                # installer/job name.  queue submit accepts either form, so the
+                # dispatcher must use the same resolver rather than checking
+                # only $root/done/$dep.job.  This keeps dogfood installer chains
+                # such as system-install-core -> system-install-cron draining
+                # correctly in an isolated queue.
+                _queue_dep_token_done "$dep" && continue
+                depfile="$(_queue_job_pending_path_by_id "$dep" "$root" 2>/dev/null || true)"
+                [[ -z "$depfile" && -f "$root/running/$dep.job" ]] && depfile="$root/running/$dep.job"
+                [[ -z "$depfile" && -f "$root/paused/$dep.job" ]] && depfile="$root/paused/$dep.job"
+                _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "skip $id dependency-waiting dep=$dep"
+                continue 2
+            done
+        fi
+
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "selected $id path=$f"
+        printf '%s\n' "$f"
+        return 0
+    done < <(_queue_pending_job_files "$root")
+
+    if [[ "$seen" -eq 0 ]]; then
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "no pending candidates found"
+    else
+        _queue_dispatch_trace_log "${QUEUEBASH_WORKER_ID:-?}" "no due candidate selected seen=$seen"
+    fi
+    return 1
+}
+
+_queue_extract_dryrun() {
+    # Usage:
+    #   local dryrun=0
+    #   _queue_extract_dryrun "$@"  # prints cleaned args, returns dryrun via global QUEUE_DRYRUN
+    # This is intentionally simple: callers use it through explicit loops below.
+    :
+}
+
+_queue_dryrun_print() {
+    printf 'DRYRUN:'
+    printf ' %q' "$@"
+    printf '\n'
+}
+
+
+_queue_strip_resubmit_runtime_fields() {
+    local f="$1"
+    local tmp
+
+    [[ -f "$f" ]] || return 0
+    tmp="$(mktemp)"
+
+    awk '
+        /^RUNNER_USED=/ { next }
+        /^RUN_PID=/ { next }
+        /^RUN_PGID=/ { next }
+        /^RUN_STARTED_AT=/ { next }
+        /^EXEC_FINISHED_AT=/ { next }
+        /^EXIT_CODE=/ { next }
+        /^DURATION_SECONDS=/ { next }
+        /^SYSTEMD_UNIT=/ { next }
+        /^SYSTEMD_UNIT_RAW=/ { next }
+        /^SYSTEMD_MAIN_PID=/ { next }
+        /^PAYLOAD_PID=/ { next }
+        /^LOG_BYTES=/ { next }
+        /^LOG_COMPRESSED=/ { next }
+        /^LOG_COMPRESSED_AT=/ { next }
+        /^LOG_PATH=/ { next }
+        /^JOB_CLASS_CLAIMED=/ { next }
+        /^JOB_CLASS_CLAIMED_AT=/ { next }
+        /^QUEUEBASH_INHERITED_ENV_FROM=/ { next }
+        /^QUEUEBASH_INHERITED_ENV_KEYS=/ { next }
+
+        /^CLASS_DEFAULTS_APPLIED_AT=/ { next }
+        /^CLASS_DEFAULTS_SOURCE=/ { next }
+        /^TIMEOUT=/ { next }
+        /^KILL_AFTER=/ { next }
+        /^LOG_TAG=/ { next }
+        /^OUTPUT_DIR=/ { next }
+        /^ENV_PREFIX=/ { next }
+        /^CPU_SECONDS=/ { next }
+        /^WALL_SECONDS=/ { next }
+        /^BILLING_CYCLES=/ { next }
+        /^BILLING_UNIT_SECONDS=/ { next }
+        /^BILLING_GRACE_SECONDS=/ { next }
+        /^BILLING_POLICY=/ { next }
+
+        /^RUNNER=/ { next }
+        /^CPU_LIMIT=/ { next }
+        /^MEM_LIMIT=/ { next }
+        /^MAX_LOG_SIZE_BYTES=/ { next }
+        /^ALLOW_LARGE_LOG=/ { next }
+        /^LOG_OVERFLOW_POLICY=/ { next }
+        /^RUN_USER=/ { next }
+        /^SUBMIT_USER=/ { next }
+
+        { print }
+    ' "$f" > "$tmp"
+
+    mv "$tmp" "$f"
+}
+
+_queue_resubmit_apply_current_class_defaults() {
+    local job_file="$1"
+    local id="${2:-}"
+    local class name
+
+    [[ -f "$job_file" ]] || return 0
+    [[ -z "$id" ]] && id="$(basename "$job_file" .job)"
+    name="$(_queue_job_name "$job_file" 2>/dev/null || true)"
+    class="$(_queue_class_for_job_file "$job_file" 2>/dev/null || echo DEFAULT)"
+
+    _queue_strip_resubmit_runtime_fields "$job_file"
+    _queue_append_class_defaults_to_job_file "$job_file" "$class" "$id" "$name"
+}
+
+_queue_clone_job_to_pending() {
+    local src_job="$1"
+    local new_id="$2"
+    local note="$3"
+    local root="$(_queue_root)"
+    local dest
+    dest="$(_queue_pending_path_for_priority "$new_id" "$(_queue_job_pri "$src_job" 2>/dev/null || echo 10)" "$root")"
+
+    mkdir -p -- "$(dirname "$dest")"
+
+    (
+        source "$src_job" 2>/dev/null || exit 1
+
+        {
+            printf 'JOB_ID=%q\n' "$new_id"
+            printf 'JOB_NAME=%q\n' "$JOB_NAME"
+            printf 'PRIORITY=%q\n' "${PRIORITY:-10}"
+            printf 'RETRIES_MAX=%q\n' "${RETRIES_MAX:-0}"
+            printf 'RETRIES_DONE=%q\n' "0"
+            printf 'RETRY_BACKOFF=%q\n' "${RETRY_BACKOFF:-0}"
+            printf 'RETRY_NOT_BEFORE_EPOCH=%q\n' "0"
+            printf 'NOT_BEFORE_EPOCH=%q\n' "0"
+
+            printf 'CPU_LIMIT=%q\n' ""
+            printf 'MEM_LIMIT=%q\n' ""
+            printf 'MAX_LOG_SIZE_BYTES=%q\n' "${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}"
+            printf 'ALLOW_LARGE_LOG=%q\n' "0"
+            printf 'LOG_OVERFLOW_POLICY=%q\n' "${QUEUEBASH_LOG_OVERFLOW_POLICY:-stderr-only}"
+            printf 'RUNNER=%q\n' "${QUEUEBASH_RUNNER:-auto}"
+
+            [[ -n "${JOB_CLASS:-}" ]] && printf 'JOB_CLASS=%q\n' "$JOB_CLASS"
+            [[ -n "${SECURITY_AUTHORISATION_CODE:-}" ]] && printf 'SECURITY_AUTHORISATION_CODE=%q\n' "$SECURITY_AUTHORISATION_CODE"
+            [[ -n "${SECURITY_EXCEPTION_REASON:-}" ]] && printf 'SECURITY_EXCEPTION_REASON=%q\n' "$SECURITY_EXCEPTION_REASON"
+            [[ -n "${SECURITY_EXEMPTION_TYPE:-}" ]] && printf 'SECURITY_EXEMPTION_TYPE=%q\n' "$SECURITY_EXEMPTION_TYPE"
+            [[ -n "${SECURITY_EXEMPTION_DETAIL:-}" ]] && printf 'SECURITY_EXEMPTION_DETAIL=%q\n' "$SECURITY_EXEMPTION_DETAIL"
+            [[ -n "${DEPENDS_AFTER_SUCCESS:-}" ]] && printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$DEPENDS_AFTER_SUCCESS"
+            [[ -n "${INHERIT_ENV_FROM:-}" ]] && printf 'INHERIT_ENV_FROM=%q\n' "$INHERIT_ENV_FROM"
+            printf 'SUBMITTED_AT=%q\n' "$(_queue_now_iso)"
+            printf 'PWD_AT_SUBMIT=%q\n' "$PWD_AT_SUBMIT"
+            printf 'RESUBMITTED_FROM=%q\n' "$JOB_ID"
+            printf 'RESUBMITTED_AT=%q\n' "$(_queue_now_iso)"
+            [[ -n "$note" ]] && printf 'RESUBMIT_NOTE=%q\n' "$note"
+
+            printf 'COMMAND=('
+            printf ' %q' "${COMMAND[@]}"
+            printf ' )\n'
+
+            printf 'ON_SUCCESS=('
+            printf ' %q' "${ON_SUCCESS[@]}"
+            printf ' )\n'
+
+            printf 'ON_FAILURE=('
+            printf ' %q' "${ON_FAILURE[@]}"
+            printf ' )\n'
+
+            printf 'ON_RETRY_FAILURE=('
+            printf ' %q' "${ON_RETRY_FAILURE[@]}"
+            printf ' )\n'
+        } > "$dest"
+    ) || return 1
+
+    _queue_resubmit_apply_current_class_defaults "$dest" "$new_id"
+}
+
+_queue_child_pids_recursive() {
+    local parent="$1"
+    local child
+
+    [[ -z "$parent" ]] && return 0
+
+    for child in $(pgrep -P "$parent" 2>/dev/null); do
+        printf '%s\n' "$child"
+        _queue_child_pids_recursive "$child"
+    done
+}
+
+_queue_pid_report_for_job() {
+    local job="$1"
+
+    [[ -f "$job" ]] || return 1
+
+    (
+        source "$job" 2>/dev/null || exit 1
+
+        echo "Job: ${JOB_ID:-$(basename "$job" .job)}"
+        echo "Name: ${JOB_NAME:-}"
+        echo "Recorded RUN_PID: ${RUN_PID:-}"
+        echo "Recorded RUN_PGID: ${RUN_PGID:-}"
+        echo "Run started: ${RUN_STARTED_AT:-}"
+
+        if [[ -n "${RUN_PID:-}" ]]; then
+            if kill -0 "$RUN_PID" 2>/dev/null; then
+                echo
+                echo "Live process tree:"
+                ps -o pid,ppid,pgid,stat,etime,pcpu,pmem,comm,args -p "$RUN_PID" 2>/dev/null || true
+
+                local kids
+                kids="$(_queue_child_pids_recursive "$RUN_PID" | xargs echo)"
+                if [[ -n "$kids" ]]; then
+                    echo
+                    echo "Live child processes:"
+                    # shellcheck disable=SC2086
+                    ps -o pid,ppid,pgid,stat,etime,pcpu,pmem,comm,args -p $kids 2>/dev/null || true
+                else
+                    echo
+                    echo "Live child processes: none found"
+                fi
+            else
+                echo
+                echo "RUN_PID is not currently live."
+            fi
+        fi
+    )
+}
+
+_queue_json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+
+
+
+# -------------------------------------------------------------------
+# Code/plugin signature helpers
+# -------------------------------------------------------------------
+
+_queue_code_signing_policy_candidates() {
+    local root script_dir
+    root="$(_queue_root 2>/dev/null || printf '%s' "${QUEUEBASH_ROOT:-$HOME/.queuebash}")"
+    if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+    fi
+    if [[ -n "${script_dir:-}" ]]; then
+        printf '%s\n' "$script_dir/policies.d/code-signing/default.env"
+    fi
+    printf '%s\n' \
+        "/etc/bashqueues/code-signing.env" \
+        "/etc/bashqueues/policies.d/code-signing/default.env" \
+        "$root/policies.d/code-signing/default.env" \
+        "$root/code-signing.env"
+}
+
+_queue_code_signing_source_config() {
+    local f
+    while IFS= read -r f; do
+        [[ -r "$f" ]] || continue
+        # Trusted admin policy.  This controls signature mode and trusted key hashes.
+        # shellcheck disable=SC1090
+        source "$f"
+    done < <(_queue_code_signing_policy_candidates)
+}
+
+_queue_code_signature_mode() {
+    _queue_code_signing_source_config 2>/dev/null || true
+    printf '%s\n' "${QUEUEBASH_PLUGIN_SIGNATURE_MODE:-${QUEUEBASH_CODE_SIGNATURE_MODE:-warn}}"
+}
+
+_queue_code_signature_enabled() {
+    case "$(_queue_code_signature_mode)" in off|disabled|none|0|false|no) return 1 ;; *) return 0 ;; esac
+}
+
+_queue_code_tree_default() {
+    local script_dir
+    if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+        [[ -n "$script_dir" ]] && { printf '%s\n' "$script_dir"; return 0; }
+    fi
+    pwd -P
+}
+
+_queue_code_relpath() {
+    local tree="$1" file="$2"
+    if command -v realpath >/dev/null 2>&1; then
+        realpath --relative-to="$tree" "$file" 2>/dev/null && return 0
+    fi
+    tree="$(cd "$tree" 2>/dev/null && pwd -P)" || return 1
+    file="$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)/$(basename "$file")" || return 1
+    case "$file" in
+        "$tree"/*) printf '%s
+' "${file#"$tree"/}" ;;
+        *) printf '%s
+' "$file" ;;
+    esac
+}
+
+_queue_code_sig_dir() { printf '%s/.queuebash-signatures\n' "$1"; }
+
+_queue_code_sig_file_for_rel() {
+    local tree="$1" rel="$2" digest
+    digest="$(printf '%s' "$rel" | sha256sum | awk '{print $1}')"
+    printf '%s/%s.sig.env\n' "$(_queue_code_sig_dir "$tree")" "$digest"
+}
+
+_queue_code_signature_targets() {
+    local tree="${1:-$(_queue_code_tree_default)}" f rel
+    [[ -d "$tree" ]] || return 1
+    find "$tree" \
+        \( -path "$tree/.queuebash-signatures" -o -path "$tree/.queuebash-signatures/*" -o -path "$tree/.git" -o -path "$tree/.git/*" -o -path "$tree/__pycache__" -o -path "$tree/__pycache__/*" \) -prune -o \
+        -type f \( \
+            -name 'queuebash.sh' -o -name 'install-system.sh' -o -name 'queuemgr_panel.py' -o -name 'queuemgr.sh' -o -name 'publish_to_github.sh' -o \
+            -path "$tree/assets.d/*.sh" -o -path "$tree/caps.d/*.sh" -o -path "$tree/reporters.d/*.sh" -o -path "$tree/bin/*.sh" -o -path "$tree/bin/*.py" -o \
+            -path "$tree/classes/*.env" -o -path "$tree/policies.d/*.env" -o -path "$tree/policies.d/*/*.env" -o -path "$tree/systemd/*" \
+        \) -print 2>/dev/null | while IFS= read -r f; do
+            rel="$(_queue_code_relpath "$tree" "$f")"
+            case "$rel" in *.bak.*|*.dev.lock|*.sig.env|tests/*|docs/*) continue ;; esac
+            printf '%s\n' "$f"
+        done | sort
+}
+
+_queue_code_signing_data_file() {
+    local out="$1" rel="$2" sha="$3" signer="$4"
+    {
+        printf 'QUEUEBASH-CODE-SIGNATURE-V1\n'
+        printf 'path=%s\n' "$rel"
+        printf 'sha256=%s\n' "$sha"
+        printf 'signer=%s\n' "$signer"
+    } > "$out"
+}
+
+_queue_code_key_private() {
+    local key="$1" signer_root="${2:-}"
+    if [[ -n "$signer_root" ]]; then
+        printf '%s/keys/private/%s.ed25519.pem\n' "$signer_root" "$key"
+    else
+        _queue_authorisation_private_key_file "$key"
+    fi
+}
+
+_queue_code_key_public() {
+    local key="$1" signer_root="${2:-}"
+    if [[ -n "$signer_root" ]]; then
+        printf '%s/keys/public/%s.ed25519.pub.pem\n' "$signer_root" "$key"
+    else
+        _queue_authorisation_public_key_file "$key"
+    fi
+}
+
+_queue_code_public_key_sha() {
+    local pub="$1"
+    [[ -s "$pub" ]] || return 1
+    sha256sum "$pub" | awk '{print $1}'
+}
+
+_queue_code_trusted_sha_list() {
+    _queue_code_signing_source_config 2>/dev/null || true
+    printf '%s %s\n' "${QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S:-}" "${QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256:-}"
+}
+
+_queue_code_sha_is_trusted() {
+    local sha="$1" item
+    for item in $(_queue_code_trusted_sha_list); do
+        item="${item//,/ }"
+        for part in $item; do
+            [[ "$part" == "$sha" ]] && return 0
+        done
+    done
+    return 1
+}
+
+_queue_code_sign_one() {
+    local tree="$1" file="$2" key="$3" signer_root="$4" rel sha priv pub pub_sha pub_b64 sigfile sigbin databuf sig_b64 signed_at
+    command -v openssl >/dev/null 2>&1 || { echo "queue code sign: openssl is required" >&2; return 3; }
+    rel="$(_queue_code_relpath "$tree" "$file")"
+    sha="$(sha256sum "$file" | awk '{print $1}')"
+    priv="$(_queue_code_key_private "$key" "$signer_root")"
+    pub="$(_queue_code_key_public "$key" "$signer_root")"
+    [[ -s "$priv" ]] || { echo "queue code sign: private key not found: $priv" >&2; return 1; }
+    [[ -s "$pub" ]] || { echo "queue code sign: public key not found: $pub" >&2; return 1; }
+    pub_sha="$(_queue_code_public_key_sha "$pub")" || return 1
+    pub_b64="$(base64 -w0 "$pub" 2>/dev/null || base64 "$pub" | tr -d '\n')"
+    mkdir -p "$(_queue_code_sig_dir "$tree")" || return 1
+    sigfile="$(_queue_code_sig_file_for_rel "$tree" "$rel")"
+    sigbin="${sigfile}.bin.$$"
+    databuf="${sigfile}.data.$$"
+    _queue_code_signing_data_file "$databuf" "$rel" "$sha" "$key"
+    if ! openssl pkeyutl -sign -rawin -inkey "$priv" -in "$databuf" -out "$sigbin" >/dev/null 2>&1; then
+        rm -f -- "$sigbin" "$databuf"
+        echo "queue code sign: openssl signing failed for $rel" >&2
+        return 1
+    fi
+    sig_b64="$(base64 -w0 "$sigbin" 2>/dev/null || base64 "$sigbin" | tr -d '\n')"
+    signed_at="$(TZ=Europe/London date +'%Y-%m-%dT%H:%M:%S%z')"
+    {
+        printf 'QUEUEBASH_CODE_SIGNATURE_VERSION=%q\n' "1"
+        printf 'SIGNED_PATH=%q\n' "$rel"
+        printf 'SIGNED_SHA256=%q\n' "$sha"
+        printf 'SIGNER=%q\n' "$key"
+        printf 'PUBLIC_KEY_SHA256=%q\n' "$pub_sha"
+        printf 'PUBLIC_KEY_PEM_B64=%q\n' "$pub_b64"
+        printf 'SIGNATURE_B64=%q\n' "$sig_b64"
+        printf 'SIGNED_AT=%q\n' "$signed_at"
+    } > "$sigfile"
+    rm -f -- "$sigbin" "$databuf"
+    printf '%s\n' "$sigfile"
+}
+
+_queue_code_verify_one() {
+    local tree="$1" file="$2" mode="${3:-$(_queue_code_signature_mode)}" rel sigfile current_sha data sigbin pubfile status="ok" reason="" tmpdir
+    rel="$(_queue_code_relpath "$tree" "$file")"
+    sigfile="$(_queue_code_sig_file_for_rel "$tree" "$rel")"
+    if [[ "$mode" == "off" || "$mode" == "disabled" || "$mode" == "none" || "$mode" == "0" ]]; then
+        printf 'ok\toff\t%s\t%s\n' "$rel" "$sigfile"
+        return 0
+    fi
+    if [[ ! -s "$sigfile" ]]; then
+        printf 'fail\tmissing_signature\t%s\t%s\n' "$rel" "$sigfile"
+        [[ "$mode" == "enforce" || "$mode" == "required" ]] && return 1 || return 0
+    fi
+    (
+        SIGNED_PATH="" SIGNED_SHA256="" SIGNER="" PUBLIC_KEY_SHA256="" PUBLIC_KEY_PEM_B64="" SIGNATURE_B64=""
+        source "$sigfile" >/dev/null 2>&1 || exit 10
+        [[ "$SIGNED_PATH" == "$rel" ]] || exit 11
+        current_sha="$(sha256sum "$file" | awk '{print $1}')"
+        [[ "$SIGNED_SHA256" == "$current_sha" ]] || exit 12
+        _queue_code_sha_is_trusted "$PUBLIC_KEY_SHA256" || exit 13
+        command -v openssl >/dev/null 2>&1 || exit 14
+        tmpdir="$(mktemp -d)" || exit 15
+        trap 'rm -rf "$tmpdir"' EXIT
+        printf '%s' "$PUBLIC_KEY_PEM_B64" | base64 -d > "$tmpdir/pub.pem" 2>/dev/null || exit 16
+        printf '%s' "$SIGNATURE_B64" | base64 -d > "$tmpdir/sig.bin" 2>/dev/null || exit 17
+        _queue_code_signing_data_file "$tmpdir/data" "$rel" "$SIGNED_SHA256" "$SIGNER"
+        openssl pkeyutl -verify -rawin -pubin -inkey "$tmpdir/pub.pem" -in "$tmpdir/data" -sigfile "$tmpdir/sig.bin" >/dev/null 2>&1 || exit 18
+    )
+    case "$?" in
+        0) printf 'ok\tvalid\t%s\t%s\n' "$rel" "$sigfile"; return 0 ;;
+        10) reason="signature_source_failed" ;;
+        11) reason="path_mismatch" ;;
+        12) reason="sha_mismatch" ;;
+        13) reason="untrusted_key" ;;
+        14) reason="tool_missing_openssl" ;;
+        15) reason="tmpdir_failed" ;;
+        16) reason="public_key_decode_failed" ;;
+        17) reason="signature_decode_failed" ;;
+        18) reason="crypto_verify_failed" ;;
+        *) reason="verify_error" ;;
+    esac
+    printf 'fail\t%s\t%s\t%s\n' "$reason" "$rel" "$sigfile"
+    [[ "$mode" == "enforce" || "$mode" == "required" ]] && return 1 || return 0
+}
+
+_queue_code_signature_tree_for_file() {
+    local file="$1" root script_dir
+    if [[ -n "${QUEUEBASH_CODE_SIGNATURE_TREE:-}" ]]; then
+        printf '%s
+' "$QUEUEBASH_CODE_SIGNATURE_TREE"; return 0
+    fi
+    root="$(_queue_root 2>/dev/null || printf '%s' "${QUEUEBASH_ROOT:-$HOME/.queuebash}")"
+    if [[ "$file" == "$root"/* ]]; then
+        printf '%s
+' "$root"; return 0
+    fi
+    script_dir="$(_queue_code_tree_default)"
+    if [[ "$file" == "$script_dir"/* || "$file" == "$script_dir" ]]; then
+        printf '%s
+' "$script_dir"; return 0
+    fi
+    dirname "$file"
+}
+
+_queue_code_signature_check_file_for_execution() {
+    local file="$1" mode tree result status reason rel sig
+    mode="$(_queue_code_signature_mode)"
+    case "$mode" in off|disabled|none|0|false|no) return 0 ;; esac
+    if [[ "$mode" == "warn" && "${QUEUEBASH_CODE_SIGNATURE_VERBOSE:-0}" != "1" ]]; then
+        return 0
+    fi
+    tree="$(_queue_code_signature_tree_for_file "$file")"
+    result="$(_queue_code_verify_one "$tree" "$file" "$mode" 2>/dev/null || true)"
+    IFS=$'\t' read -r status reason rel sig <<< "$result"
+    if [[ "$status" == "ok" ]]; then
+        return 0
+    fi
+    if [[ "$mode" == "enforce" || "$mode" == "required" ]]; then
+        echo "code_signature_failed: file=$file reason=${reason:-unknown}" >&2
+        return 1
+    fi
+    [[ "${QUEUEBASH_CODE_SIGNATURE_VERBOSE:-0}" == "1" ]] && echo "code_signature_warning: file=$file reason=${reason:-unknown}" >&2
+    return 0
+}
+
+_queue_code_sign_command() {
+    local tree="$(_queue_code_tree_default)" key="root" signer_root="" json=0 file all=0 count=0 rc=0 sig
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --tree) tree="${2:-}"; shift 2 ;;
+            --key|--signer) key="${2:-}"; shift 2 ;;
+            --signer-root) signer_root="${2:-}"; shift 2 ;;
+            --all) all=1; shift ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) echo "Usage: queue code sign --all [--tree DIR] [--key NAME] [--signer-root DIR] [--json]"; return 0 ;;
+            *) echo "queue code sign: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -d "$tree" ]] || { echo "queue code sign: tree not found: $tree" >&2; return 1; }
+    if [[ "$json" -eq 1 ]]; then printf '{"tree":"%s","signed":[' "$(_queue_json_escape "$tree")"; fi
+    local first=0
+    while IFS= read -r file; do
+        [[ -f "$file" ]] || continue
+        sig="$(_queue_code_sign_one "$tree" "$file" "$key" "$signer_root")" || { rc=1; continue; }
+        count=$((count+1))
+        if [[ "$json" -eq 1 ]]; then _queue_json_comma first; printf '{"file":"%s","signature":"%s"}' "$(_queue_json_escape "$file")" "$(_queue_json_escape "$sig")"; else echo "signed: $file"; fi
+    done < <(_queue_code_signature_targets "$tree")
+    if [[ "$json" -eq 1 ]]; then printf '],"count":%s}\n' "$count"; else echo "signed_count: $count"; fi
+    return "$rc"
+}
+
+_queue_code_verify_command() {
+    local tree="$(_queue_code_tree_default)" mode="" json=0 file result status reason rel sig ok=0 fail=0 rc=0 first=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --tree) tree="${2:-}"; shift 2 ;;
+            --mode|--require) mode="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) echo "Usage: queue code verify [--tree DIR] [--mode off|warn|enforce] [--json]"; return 0 ;;
+            *) echo "queue code verify: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$mode" ]] || mode="$(_queue_code_signature_mode)"
+    [[ -d "$tree" ]] || { echo "queue code verify: tree not found: $tree" >&2; return 1; }
+    if [[ "$json" -eq 1 ]]; then printf '{"tree":"%s","mode":"%s","files":[' "$(_queue_json_escape "$tree")" "$(_queue_json_escape "$mode")"; fi
+    while IFS= read -r file; do
+        result="$(_queue_code_verify_one "$tree" "$file" "$mode")" || rc=1
+        IFS=$'\t' read -r status reason rel sig <<< "$result"
+        [[ "$status" == "ok" ]] && ok=$((ok+1)) || fail=$((fail+1))
+        if [[ "$json" -eq 1 ]]; then
+            _queue_json_comma first
+            printf '{"status":"%s","reason":"%s","path":"%s","signature":"%s"}' "$(_queue_json_escape "$status")" "$(_queue_json_escape "$reason")" "$(_queue_json_escape "$rel")" "$(_queue_json_escape "$sig")"
+        else
+            printf '%-4s %-24s %s\n' "$status" "$reason" "$rel"
+        fi
+    done < <(_queue_code_signature_targets "$tree")
+    if [[ "$json" -eq 1 ]]; then printf '],"ok":%s,"fail":%s}\n' "$ok" "$fail"; else echo "ok=$ok fail=$fail mode=$mode"; fi
+    return "$rc"
+}
+
+
+_queue_code_audit_command() {
+    local tree="$(_queue_code_tree_default)" mode="" json=0 file result status reason rel sig ok=0 fail=0 first=0 rc=0
+    local signed_path signed_sha signer public_key_sha signed_at current_sha category
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --tree) tree="${2:-}"; shift 2 ;;
+            --mode|--require) mode="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) echo "Usage: queue code audit [--tree DIR] [--mode off|warn|enforce] [--json]"; return 0 ;;
+            *) echo "queue code audit: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$mode" ]] || mode="$(_queue_code_signature_mode)"
+    [[ -d "$tree" ]] || { echo "queue code audit: tree not found: $tree" >&2; return 1; }
+
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"tree":"%s","mode":"%s","components":[' "$(_queue_json_escape "$tree")" "$(_queue_json_escape "$mode")"
+    else
+        echo "queue code audit"
+        echo "tree=$tree"
+        echo "mode=$mode"
+        printf '%-5s %-22s %-12s %-56s %s\n' "stat" "reason" "component" "key_sha" "path"
+    fi
+
+    while IFS= read -r file; do
+        result="$(_queue_code_verify_one "$tree" "$file" "$mode")" || rc=1
+        IFS=$'\t' read -r status reason rel sig <<< "$result"
+        [[ "$status" == "ok" ]] && ok=$((ok+1)) || fail=$((fail+1))
+        category="core"
+        case "$rel" in
+            assets.d/*) category="asset" ;;
+            caps.d/*) category="cap" ;;
+            reporters.d/*) category="reporter" ;;
+            classes/*) category="class" ;;
+            policies.d/*) category="policy" ;;
+            bin/*) category="bin" ;;
+            systemd/*) category="systemd" ;;
+            *.py) category="python" ;;
+        esac
+        signed_path=""; signed_sha=""; signer=""; public_key_sha=""; signed_at=""; current_sha=""
+        if [[ -s "$sig" ]]; then
+            local sig_meta
+            sig_meta="$((
+                SIGNED_PATH="" SIGNED_SHA256="" SIGNER="" PUBLIC_KEY_SHA256="" SIGNED_AT=""
+                # shellcheck disable=SC1090
+                source "$sig" >/dev/null 2>&1 || exit 0
+                printf '%s\t%s\t%s\t%s\t%s\n' "$SIGNED_PATH" "$SIGNED_SHA256" "$SIGNER" "$PUBLIC_KEY_SHA256" "$SIGNED_AT"
+            ) 2>/dev/null || true)"
+            IFS=$'\t' read -r signed_path signed_sha signer public_key_sha signed_at <<< "$sig_meta"
+            current_sha="$(sha256sum "$file" 2>/dev/null | awk '{print $1}')"
+            if [[ "$json" -eq 1 ]]; then
+                _queue_json_comma first
+                printf '{"status":"%s","reason":"%s","category":"%s","path":"%s","signature":"%s","signer":"%s","public_key_sha256":"%s","signed_at":"%s","signed_sha256":"%s","current_sha256":"%s"}' \
+                    "$(_queue_json_escape "$status")" "$(_queue_json_escape "$reason")" "$(_queue_json_escape "$category")" "$(_queue_json_escape "$rel")" "$(_queue_json_escape "$sig")" \
+                    "$(_queue_json_escape "$signer")" "$(_queue_json_escape "$public_key_sha")" "$(_queue_json_escape "$signed_at")" "$(_queue_json_escape "$signed_sha")" "$(_queue_json_escape "$current_sha")"
+            else
+                printf '%-5s %-22s %-12s %-56s %s\n' "$status" "$reason" "$category" "${public_key_sha:-}" "$rel"
+            fi
+        else
+            current_sha="$(sha256sum "$file" 2>/dev/null | awk '{print $1}')"
+            if [[ "$json" -eq 1 ]]; then
+                _queue_json_comma first
+                printf '{"status":"%s","reason":"%s","category":"%s","path":"%s","signature":"%s","signer":"","public_key_sha256":"","signed_at":"","signed_sha256":"","current_sha256":"%s"}' \
+                    "$(_queue_json_escape "$status")" "$(_queue_json_escape "$reason")" "$(_queue_json_escape "$category")" "$(_queue_json_escape "$rel")" "$(_queue_json_escape "$sig")" "$(_queue_json_escape "$current_sha")"
+            else
+                printf '%-5s %-22s %-12s %-56s %s\n' "$status" "$reason" "$category" "" "$rel"
+            fi
+        fi
+    done < <(_queue_code_signature_targets "$tree")
+    if [[ "$json" -eq 1 ]]; then
+        printf '],"ok":%s,"fail":%s}\n' "$ok" "$fail"
+    else
+        echo "ok=$ok fail=$fail mode=$mode"
+    fi
+    return "$rc"
+}
+
+_queue_code_trust_command() {
+    local pub="" shared=0 policy root sha cur
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --public-key) pub="${2:-}"; shift 2 ;;
+            --shared|--system) shared=1; shift ;;
+            --personal) shared=0; shift ;;
+            --help|-h) echo "Usage: queue code trust --public-key FILE [--shared|--personal]"; return 0 ;;
+            *) [[ -z "$pub" ]] && { pub="$1"; shift; } || { echo "queue code trust: unexpected argument: $1" >&2; return 2; } ;;
+        esac
+    done
+    [[ -s "$pub" ]] || { echo "queue code trust: public key not found: $pub" >&2; return 1; }
+    sha="$(_queue_code_public_key_sha "$pub")" || return 1
+    if [[ "$shared" -eq 1 ]]; then
+        policy="/etc/bashqueues/policies.d/code-signing/default.env"
+    else
+        root="$(_queue_root)"; policy="$root/policies.d/code-signing/default.env"
+    fi
+    mkdir -p "$(dirname "$policy")"
+    touch "$policy"
+    cur="$(grep '^QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S=' "$policy" 2>/dev/null | tail -1 | sed 's/^QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S=//' | tr -d '"\047')"
+    case " $cur " in *" $sha "*) ;; *) printf '\nQUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S="%s %s"\n' "$cur" "$sha" >> "$policy" ;; esac
+    echo "trusted code signing key: $sha"
+    echo "policy: $policy"
+}
+
+_queue_code_command() {
+    local sub="${1:-verify}"
+    shift || true
+    case "$sub" in
+        sign) _queue_code_sign_command "$@" ;;
+        verify|check) _queue_code_verify_command "$@" ;;
+        audit|components|inventory) _queue_code_audit_command "$@" ;;
+        trust) _queue_code_trust_command "$@" ;;
+        policy) _queue_code_signing_source_config; echo "mode=$(_queue_code_signature_mode)"; echo "trusted_sha=$(_queue_code_trusted_sha_list)" ;;
+        help|--help|-h|"") echo "Usage: queue code sign|verify|audit|trust|policy" ;;
+        *) echo "queue code: unknown subcommand: $sub" >&2; return 2 ;;
+    esac
+}
+
+_queue_reporting_policy_candidates() {
+    local root script_dir
+    root="$(_queue_root)"
+    if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+    fi
+    printf '%s\n' \
+        "/etc/bashqueues/reporting.env" \
+        "/etc/bashqueues/policies.d/reporting/default.env" \
+        "$root/policies.d/reporting/default.env" \
+        "$root/reporting.env"
+    if [[ -n "${script_dir:-}" ]]; then
+        printf '%s\n' "$script_dir/policies.d/reporting/default.env"
+    fi
+}
+
+_queue_reporting_source_config() {
+    local f
+    while IFS= read -r f; do
+        [[ -r "$f" ]] || continue
+        # Reporting policy files are trusted local env-style policy/config files.
+        # They define destinations and enablement flags, not shell supplied by jobs.
+        # shellcheck disable=SC1090
+        source "$f"
+    done < <(_queue_reporting_policy_candidates)
+}
+
+_queue_reporter_plugin_looks_like_plugin() {
+    local plugin="$1"
+    [[ -f "$plugin" ]] || return 1
+    grep -Eq '^[[:space:]]*(function[[:space:]]+)?queue_reporter_handle_event[[:space:]]*(\(\))?[[:space:]]*\{' "$plugin" 2>/dev/null || return 1
+    return 0
+}
+
+_queue_reporter_scan() {
+    local root="$(_queue_root)" plugin base
+    shopt -s nullglob
+    for plugin in "$root/reporters.d"/*.sh; do
+        [[ -f "$plugin" ]] || continue
+        base="$(basename "$plugin")"
+        if ! _queue_reporter_plugin_looks_like_plugin "$plugin"; then
+            echo "INVALID helper=$base not_reporter_plugin"
+            continue
+        fi
+        (
+            exec </dev/null
+            export QUEUEBASH_REPORTER_DISCOVERY=1
+            _queue_code_signature_check_file_for_execution "$plugin" || { echo "INVALID helper=$base signature_failed"; exit 0; }
+            source "$plugin" >/dev/null 2>&1 || { echo "INVALID helper=$base source_failed"; exit 0; }
+            if declare -F queue_reporter_facilities >/dev/null 2>&1; then
+                queue_reporter_facilities | awk -v helper="$base" 'NF {print $0 "\t" helper}'
+            else
+                printf 'reporter:%s\tEvent reporter plugin\t%s\n' "${base%.sh}" "$base"
+            fi
+        )
+    done | awk '
+        /^INVALID / { if (!seen_invalid[$0]++) print; next }
+        { key=$1; if (key == "") next; if (!seen[key]++) print }
+    '
+    shopt -u nullglob
+}
+
+_queue_reporters_list_json() {
+    local first=0 line facility rest helper
+    printf '{"queue_root":"%s","reporters":[' "$(_queue_json_escape "$(_queue_root)")"
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        _queue_json_comma first
+        if [[ "$line" == INVALID* ]]; then
+            printf '{"valid":false,"raw":"%s"}' "$(_queue_json_escape "$line")"
+            continue
+        fi
+        facility="${line%%[[:space:]]*}"
+        rest="${line#${facility}}"; rest="${rest# }"
+        helper="${line##*$'\t'}"
+        printf '{"valid":true,"facility":"%s","detail":"%s","helper":"%s"}' \
+            "$(_queue_json_escape "$facility")" "$(_queue_json_escape "$rest")" "$(_queue_json_escape "$helper")"
+    done < <(_queue_reporter_scan | sort)
+    printf ']}\n'
+}
+
+
+_queue_reporter_csv_has() {
+    local list="${1:-}" needle="${2:-}" item
+    list="${list// /}"
+    IFS=',' read -r -a _qb_reporter_csv_items <<< "$list"
+    for item in "${_qb_reporter_csv_items[@]}"; do
+        [[ "$item" == "$needle" || "$item" == "*" ]] && return 0
+    done
+    return 1
+}
+
+_queue_report_event() {
+    local event="$1" job_id="${2:-}" job_name="${3:-}" state="${4:-}" extra="${5:-}" ts="${6:-}"
+    local root plugin base rc=0 sync enabled short
+
+    root="$(_queue_root)"
+    _queue_reporting_source_config
+
+    [[ "${QUEUEBASH_REPORTING_DISABLE:-0}" == "1" ]] && return 0
+    enabled="${QUEUEBASH_REPORTERS:-${QUEUEBASH_REPORTER_PLUGINS:-}}"
+    [[ -n "$enabled" ]] || return 0
+    mkdir -p "$root/logs"
+    sync="${QUEUEBASH_REPORTING_SYNC:-0}"
+
+    shopt -s nullglob
+    for plugin in "$root/reporters.d"/*.sh; do
+        [[ -f "$plugin" ]] || continue
+        base="$(basename "$plugin")"
+        short="${base%.sh}"
+        _queue_reporter_csv_has "$enabled" "$short" || _queue_reporter_csv_has "$enabled" "$base" || continue
+        _queue_reporter_plugin_looks_like_plugin "$plugin" || continue
+
+        if [[ "$sync" == "1" ]]; then
+            (
+                exec </dev/null
+                export QUEUEBASH_EVENT_TS="$ts" QUEUEBASH_EVENT_NAME="$event" QUEUEBASH_EVENT_JOB_ID="$job_id" \
+                    QUEUEBASH_EVENT_JOB_NAME="$job_name" QUEUEBASH_EVENT_STATE="$state" QUEUEBASH_EVENT_DETAIL="$extra"
+                _queue_code_signature_check_file_for_execution "$plugin" || exit 0
+                source "$plugin" >/dev/null 2>&1 || exit 0
+                queue_reporter_handle_event "$event" "$job_id" "$job_name" "$state" "$extra" "$ts"
+            ) 2>>"$root/logs/reporters.err" || rc=1
+        else
+            (
+                exec </dev/null >/dev/null 2>>"$root/logs/reporters.err"
+                export QUEUEBASH_EVENT_TS="$ts" QUEUEBASH_EVENT_NAME="$event" QUEUEBASH_EVENT_JOB_ID="$job_id" \
+                    QUEUEBASH_EVENT_JOB_NAME="$job_name" QUEUEBASH_EVENT_STATE="$state" QUEUEBASH_EVENT_DETAIL="$extra"
+                _queue_code_signature_check_file_for_execution "$plugin" || exit 0
+                source "$plugin" >/dev/null 2>&1 || exit 0
+                queue_reporter_handle_event "$event" "$job_id" "$job_name" "$state" "$extra" "$ts"
+            ) &
+        fi
+    done
+    shopt -u nullglob
+    return "$rc"
+}
+
+_queue_itsm_log_path() {
+    printf '%s\n' "${QUEUEBASH_ITSM_EVENT_LOG:-$(_queue_root)/logs/itsm-events.jsonl}"
+}
+
+_queue_itsm_enabled() {
+    [[ "${QUEUEBASH_ITSM_ENABLED:-0}" == "1" ]] || return 1
+    return 0
+}
+
+_queue_itsm_csv_has() {
+    local list="${1:-}" needle="${2:-}" item
+    list="${list// /}"
+    [[ -n "$needle" ]] || return 1
+    IFS=',' read -r -a _qb_itsm_csv_items <<< "$list"
+    for item in "${_qb_itsm_csv_items[@]}"; do
+        [[ "$item" == "$needle" || "$item" == "*" ]] && return 0
+    done
+    return 1
+}
+
+_queue_itsm_event_allowed() {
+    local event="${1:-}"
+    local events="${QUEUEBASH_ITSM_EVENTS:-failed,policy_blocked,integrity_violation,ai_safety_alert,ai_policy_bypass_attempt,ai_self_harm_or_distress_alert,ai_coercion_alert,ai_abuse_alert,finops_anomaly,legal_event}"
+    _queue_itsm_csv_has "$events" "$event"
+}
+
+_queue_itsm_correlation_key() {
+    local material="${1:-}"
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf 'sha256:%s\n' "$(printf '%s' "$material" | sha256sum | awk '{print $1}')"
+    else
+        printf 'sha256:unavailable\n'
+    fi
+}
+
+_queue_itsm_emit_contract_event() {
+    local event="$1" severity="${2:-medium}" source="${3:-queue}" subject="${4:-}" job_id="${5:-}" class_name="${6:-}" correlation_key="${7:-}" summary="${8:-}" detail_redacted="${9:-true}"
+    local log_path log_dir ts backends priority detail_bool
+
+    _queue_itsm_enabled || return 0
+    _queue_itsm_event_allowed "$event" || return 0
+
+    log_path="$(_queue_itsm_log_path)"
+    log_dir="$(dirname "$log_path")"
+    mkdir -p "$log_dir" 2>/dev/null || true
+    ts="$(_queue_now_iso 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+    subject="${subject:-${QUEUEBASH_SUBMITTER:-$(id -un 2>/dev/null || echo unknown)}}"
+    backends="${QUEUEBASH_ITSM_BACKENDS:-}"
+    priority="${QUEUEBASH_ITSM_DEFAULT_PRIORITY:-medium}"
+    [[ -n "$correlation_key" ]] || correlation_key="$(_queue_itsm_correlation_key "source=${source};event=${event};subject=${subject};job=${job_id};class=${class_name};summary=${summary}")"
+    case "$detail_redacted" in true|1|yes) detail_bool=true ;; false|0|no) detail_bool=false ;; *) detail_bool=true ;; esac
+
+    {
+        printf '{'
+        printf '"schema":"queuebash.reporter.itsm_event.v1"'
+        printf ',"timestamp":"%s"' "$(_queue_json_escape "$ts")"
+        printf ',"event":"%s"' "$(_queue_json_escape "$event")"
+        printf ',"severity":"%s"' "$(_queue_json_escape "$severity")"
+        printf ',"source":"%s"' "$(_queue_json_escape "$source")"
+        printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+        printf ',"job_id":"%s"' "$(_queue_json_escape "$job_id")"
+        printf ',"class":"%s"' "$(_queue_json_escape "$class_name")"
+        printf ',"correlation_key":"%s"' "$(_queue_json_escape "$correlation_key")"
+        printf ',"summary":"%s"' "$(_queue_json_escape "$summary")"
+        printf ',"detail_redacted":%s' "$detail_bool"
+        printf ',"backends":"%s"' "$(_queue_json_escape "$backends")"
+        printf ',"priority":"%s"' "$(_queue_json_escape "$priority")"
+        printf ',"ticket_requested":false'
+        printf ',"ticket_created":false'
+        printf ',"contract_only":true'
+        printf '}\n'
+    } >> "$log_path"
+
+    if [[ "${QUEUEBASH_ITSM_BRIDGE_REPORTERS:-0}" == "1" ]]; then
+        _queue_report_event "$event" "$job_id" "$summary" "$event" "itsm_contract_event=1 correlation_key=$correlation_key" "$ts" || true
+    fi
+    return 0
+}
+
+_queue_itsm_command() {
+    local action="${1:-status}"
+    shift || true
+    case "$action" in
+        status|show|"")
+            if [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]]; then
+                printf '{'
+                printf '"schema":"queuebash.itsm_status.v1"'
+                printf ',"enabled":%s' "$([[ "${QUEUEBASH_ITSM_ENABLED:-0}" == "1" ]] && echo true || echo false)"
+                printf ',"event_log":"%s"' "$(_queue_json_escape "$(_queue_itsm_log_path)")"
+                printf ',"backends":"%s"' "$(_queue_json_escape "${QUEUEBASH_ITSM_BACKENDS:-}")"
+                printf ',"events":"%s"' "$(_queue_json_escape "${QUEUEBASH_ITSM_EVENTS:-failed,policy_blocked,integrity_violation,ai_safety_alert,ai_policy_bypass_attempt,ai_self_harm_or_distress_alert,ai_coercion_alert,ai_abuse_alert,finops_anomaly,legal_event}")"
+                printf ',"contract_only":true'
+                printf '}\n'
+            else
+                echo "ITSM reporter contract"
+                echo "  enabled:       ${QUEUEBASH_ITSM_ENABLED:-0}"
+                echo "  event log:     $(_queue_itsm_log_path)"
+                echo "  backends:      ${QUEUEBASH_ITSM_BACKENDS:-}"
+                echo "  events:        ${QUEUEBASH_ITSM_EVENTS:-failed,policy_blocked,integrity_violation,ai_safety_alert,ai_policy_bypass_attempt,ai_self_harm_or_distress_alert,ai_coercion_alert,ai_abuse_alert,finops_anomaly,legal_event}"
+                echo "  contract only: true"
+            fi
+            ;;
+        emit)
+            local event="" severity="medium" source="queue.manual" subject="" job_id="" class_name="" summary="" correlation_key="" detail_redacted="true"
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --event) event="${2:-}"; shift 2 ;;
+                    --severity) severity="${2:-medium}"; shift 2 ;;
+                    --source) source="${2:-queue.manual}"; shift 2 ;;
+                    --subject) subject="${2:-}"; shift 2 ;;
+                    --job-id) job_id="${2:-}"; shift 2 ;;
+                    --class) class_name="${2:-}"; shift 2 ;;
+                    --summary) summary="${2:-}"; shift 2 ;;
+                    --correlation-key) correlation_key="${2:-}"; shift 2 ;;
+                    --detail-redacted) detail_redacted="${2:-true}"; shift 2 ;;
+                    *) echo "queue itsm emit: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+            [[ -n "$event" ]] || { echo "Usage: queue itsm emit --event EVENT --summary TEXT [--severity LEVEL] [--source SOURCE]" >&2; return 2; }
+            [[ -n "$summary" ]] || summary="$event"
+            _queue_itsm_emit_contract_event "$event" "$severity" "$source" "$subject" "$job_id" "$class_name" "$correlation_key" "$summary" "$detail_redacted"
+            echo "ITSM contract event emitted: $event"
+            ;;
+        events|tail)
+            local log_path n="${1:-20}"
+            log_path="$(_queue_itsm_log_path)"
+            [[ -f "$log_path" ]] || { echo "No ITSM contract events recorded: $log_path"; return 0; }
+            tail -n "$n" "$log_path"
+            ;;
+        *)
+            echo "Usage: queue itsm status [--json] | emit --event EVENT --summary TEXT | events [N]" >&2
+            return 2
+            ;;
+    esac
+}
+
+
+_queue_log_event() {
+    local event="$1"
+    local job_id="${2:-}"
+    local job_name="${3:-}"
+    local state="${4:-}"
+    local extra="${5:-}"
+    local root="$(_queue_root)"
+    local ts
+
+    mkdir -p "$root"
+    ts="$(_queue_now_iso)"
+
+    {
+        printf '{"ts":"%s","event":"%s","job_id":"%s","job_name":"%s","state":"%s"' \
+            "$(_queue_json_escape "$ts")" \
+            "$(_queue_json_escape "$event")" \
+            "$(_queue_json_escape "$job_id")" \
+            "$(_queue_json_escape "$job_name")" \
+            "$(_queue_json_escape "$state")"
+        if [[ -n "$extra" ]]; then
+            printf ',"detail":"%s"' "$(_queue_json_escape "$extra")"
+        fi
+        printf '}\n'
+    } >> "$root/events.jsonl"
+
+    _queue_report_event "$event" "$job_id" "$job_name" "$state" "$extra" "$ts" 2>/dev/null || true
+}
+
+_queue_job_file_state() {
+    local f="$1"
+    _queue_state_for_job_path "$f" "$(_queue_root)"
+}
+
+_queue_tail_log_for_job() {
+    local f="$1"
+    local id="$2"
+    local lines="${3:-${QUEUEBASH_TAIL_LINES:-40}}"
+    local follow="${4:-1}"
+    local from_start="${5:-0}"
+    local state log
+
+    [[ "$lines" =~ ^[0-9]+$ ]] || lines=40
+
+    state="$(_queue_state_for_job_path "$f" "$root")"
+    log="$(_queue_log_existing_path "$id")"
+
+    if [[ ! -f "$log" ]]; then
+        echo "queue tail: no log yet for $id ($f)" >&2
+        return 1
+    fi
+
+    if [[ "$from_start" -eq 1 ]]; then
+        if [[ "$state" == "running" && "$log" != *.gz && "$follow" -eq 1 ]]; then
+            echo "=== tailing live from start: $log ==="
+            tail -n +1 -f "$log"
+        else
+            echo "=== log from start: $log ==="
+            _queue_log_cat "$log"
+        fi
+        return 0
+    fi
+
+    if [[ "$state" == "running" && "$log" != *.gz ]]; then
+        if [[ "$follow" -eq 1 ]]; then
+            echo "=== tailing live: $log (last $lines lines; Ctrl+C to stop) ==="
+            tail -n "$lines" -f "$log"
+        else
+            echo "=== live log tail: $log (last $lines lines; no follow) ==="
+            tail -n "$lines" -- "$log"
+        fi
+    else
+        echo "=== completed/compressed log tail: $log (last $lines lines) ==="
+        _queue_log_tail "$log" "$lines"
+    fi
+}
+
+
+
+
+_queue_job_mark_cleared() {
+    local job_file="$1" id="$2" worker="${3:-}" class="${4:-}"
+    [[ -f "$job_file" ]] || return 0
+    local ts policy sandbox seccomp caps exemption_type exemption_action exemption_code exemption_detail jurisdiction classification
+    ts="$(_queue_now_iso)"
+    policy="${QUEUEBASH_CLASS_POLICY_STATEMENT:-default}"
+    sandbox="$(_queue_job_var_value "$job_file" SANDBOX_POLICY_NAME 2>/dev/null || true)"
+    seccomp="$(_queue_job_var_value "$job_file" SECCOMP_POLICY_NAME 2>/dev/null || true)"
+    caps="$(_queue_job_var_value "$job_file" RUNTIME_CAPS 2>/dev/null || true)"
+    exemption_type="$(_queue_job_var_value "$job_file" SECURITY_EXEMPTION_TYPE 2>/dev/null || true)"
+    exemption_action="$(_queue_job_var_value "$job_file" SECURITY_EXEMPTION_ACTION 2>/dev/null || true)"
+    exemption_code="$(_queue_job_var_value "$job_file" SECURITY_AUTHORISATION_CODE 2>/dev/null || true)"
+    exemption_detail="$(_queue_job_var_value "$job_file" SECURITY_EXEMPTION_DETAIL 2>/dev/null || true)"
+    jurisdiction="$(_queue_job_var_value "$job_file" QUEUEBASH_JURISDICTION 2>/dev/null || true)"
+    classification="$(_queue_job_var_value "$job_file" QUEUEBASH_CLASSIFICATION 2>/dev/null || true)"
+    {
+        printf '\n# Cleared for dispatch at %q\n' "$ts"
+        printf 'JOB_CLEARED=1\n'
+        printf 'JOB_CLEARED_AT=%q\n' "$ts"
+        printf 'JOB_CLEARED_BY=%q\n' "$worker"
+        printf 'JOB_CLEARED_CLASS=%q\n' "${class:-$(_queue_class_for_job_file "$job_file" 2>/dev/null || echo DEFAULT)}"
+        printf 'JOB_CLEARED_POLICY_STATEMENT=%q\n' "$policy"
+        printf 'JOB_CLEARED_STAGE=%q\n' "execution_policy,class_assets,mandatory_policy_assets,dynamic_preflight,global_claims"
+        [[ -n "$sandbox" ]] && printf 'JOB_CLEARED_SANDBOX_POLICY=%q\n' "$sandbox"
+        [[ -n "$seccomp" ]] && printf 'JOB_CLEARED_SECCOMP_POLICY=%q\n' "$seccomp"
+        [[ -n "$caps" ]] && printf 'JOB_CLEARED_RUNTIME_CAPS=%q\n' "$caps"
+        [[ -n "$exemption_type" ]] && printf 'JOB_CLEARED_SECURITY_EXEMPTION_TYPE=%q\n' "$exemption_type"
+        [[ -n "$exemption_action" ]] && printf 'JOB_CLEARED_SECURITY_EXEMPTION_ACTION=%q\n' "$exemption_action"
+        [[ -n "$exemption_code" ]] && printf 'JOB_CLEARED_SECURITY_AUTHORISATION_CODE=%q\n' "$exemption_code"
+        [[ -n "$exemption_detail" ]] && printf 'JOB_CLEARED_SECURITY_EXEMPTION_DETAIL=%q\n' "$exemption_detail"
+        [[ -n "$jurisdiction" ]] && printf 'JOB_CLEARED_JURISDICTION=%q\n' "$jurisdiction"
+        [[ -n "$classification" ]] && printf 'JOB_CLEARED_CLASSIFICATION=%q\n' "$classification"
+    } >> "$job_file" 2>/dev/null || true
+    _queue_log_event "cleared" "$id" "$(_queue_job_name "$job_file" 2>/dev/null || echo -)" "running" "worker=$worker class=${class:-$(_queue_class_for_job_file "$job_file" 2>/dev/null || echo DEFAULT)} policy=$policy"
+}
+
+
+_queue_clearance_archive_root() {
+    printf '%s/clearance\n' "$(_queue_root)"
+}
+
+_queue_clearance_archive_job_file() {
+    local f="$1" state="$2" root="${3:-$(_queue_root)}"
+    local id dest_dir dest ts
+    [[ -f "$f" ]] || return 0
+    [[ -n "$state" ]] || state="$(_queue_state_for_job_path "$f" "$root" 2>/dev/null || echo unknown)"
+    id="$(basename "$f" .job)"
+    dest_dir="$root/clearance/$state"
+    mkdir -p -- "$dest_dir"
+    dest="$dest_dir/$id.job"
+    if [[ -e "$dest" ]]; then
+        ts="$(date +%Y%m%d_%H%M%S_%N 2>/dev/null || date +%s)"
+        dest="$dest_dir/${id}.${ts}.job"
+    fi
+    {
+        printf '\n# Archived by queue clear at %q\n' "$(_queue_now_iso)"
+        printf 'QUEUE_CLEARED_ARCHIVED=1\n'
+        printf 'QUEUE_CLEARED_ARCHIVED_AT=%q\n' "$(_queue_now_iso)"
+        printf 'QUEUE_CLEARED_ARCHIVED_FROM=%q\n' "$state"
+    } >> "$f" 2>/dev/null || true
+    mv -- "$f" "$dest"
+}
+
+_queue_clearance_archive_log_file() {
+    local f="$1" root="${2:-$(_queue_root)}" dest_dir dest base ts
+    [[ -f "$f" ]] || return 0
+    dest_dir="$root/clearance/logs"
+    mkdir -p -- "$dest_dir"
+    base="$(basename "$f")"
+    dest="$dest_dir/$base"
+    if [[ -e "$dest" ]]; then
+        ts="$(date +%Y%m%d_%H%M%S_%N 2>/dev/null || date +%s)"
+        dest="$dest_dir/${base}.${ts}"
+    fi
+    mv -- "$f" "$dest"
+}
+
+_queue_cleared_candidate_files_for_state() {
+    local root="$1" state="$2" f
+    shopt -s nullglob
+    for f in "$root/$state"/*.job; do
+        [[ -f "$f" ]] && printf '%s\n' "$f"
+    done
+    for f in "$root/clearance/$state"/*.job; do
+        [[ -f "$f" ]] && printf '%s\n' "$f"
+    done
+    shopt -u nullglob
+}
+
+_queue_csv_contains_word() {
+    local list="${1:-}" needle="${2:-}" item
+    [[ -n "$needle" ]] || return 1
+    list="${list// /}"
+    IFS=',' read -r -a _queue_csv_items <<< "$list"
+    for item in "${_queue_csv_items[@]}"; do
+        [[ "$item" == "$needle" || "$item" == "*" ]] && return 0
+    done
+    return 1
+}
+
+_queue_cleared_jobs_list() {
+    local json=0 states="running,done,failed,interrupted,cancelled,deleted" limit=0 since="" since_epoch=0 arg
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            --state|--states) states="${2:-}"; shift 2 ;;
+            --all-states|--all) states="pending,running,done,failed,interrupted,cancelled,deleted,pol_blocked,paused"; shift ;;
+            --limit|-n) limit="${2:-0}"; shift 2 ;;
+            --since) since="${2:-}"; shift 2 ;;
+            --help|-h)
+                cat <<'EOF'
+Usage:
+  queue cleared [--json] [--state csv] [--limit N] [--since DATE]
+  queue clearance list [--json] [--state csv] [--limit N] [--since DATE]
+  queue audit cleared [--json] [--state csv] [--limit N] [--since DATE]
+
+Lists jobs cleared for dispatch and jobs archived by `queue clear`.
+
+clear_source values:
+  execution  job was stamped JOB_CLEARED before payload launch
+  archive    job record was archived by queue clear
+EOF
+                return 0 ;;
+            list) shift ;;
+            *) echo "queue cleared: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ "$limit" =~ ^[0-9]+$ ]] || { echo "queue cleared: --limit requires a numeric value" >&2; return 2; }
+    if [[ -n "$since" ]]; then
+        since_epoch="$(date -d "$since" +%s 2>/dev/null || echo 0)"
+        [[ "$since_epoch" =~ ^[0-9]+$ && "$since_epoch" -gt 0 ]] || { echo "queue cleared: cannot parse --since '$since'" >&2; return 2; }
+    fi
+
+    local root="$(_queue_root)" state f cleared_at archived_at cleared_epoch count=0 tmp source sort_at
+    tmp="$(mktemp)"
+    for state in pending running done failed interrupted cancelled deleted pol_blocked paused; do
+        _queue_csv_contains_word "$states" "$state" || continue
+        while IFS= read -r f; do
+            [[ -f "$f" ]] || continue
+            if [[ "$(_queue_job_var_value "$f" JOB_CLEARED 2>/dev/null || true)" == "1" ]]; then
+                source="execution"
+            elif [[ "$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED 2>/dev/null || true)" == "1" ]]; then
+                source="archive"
+            else
+                continue
+            fi
+            cleared_at="$(_queue_job_var_first_value "$f" JOB_CLEARED_AT QUEUE_CLEARED_ARCHIVED_AT 2>/dev/null || true)"
+            archived_at="$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED_AT 2>/dev/null || true)"
+            sort_at="${cleared_at:-${archived_at:-0000}}"
+            cleared_epoch="$(date -d "$sort_at" +%s 2>/dev/null || echo 0)"
+            if [[ "$since_epoch" -gt 0 && ( ! "$cleared_epoch" =~ ^[0-9]+$ || "$cleared_epoch" -lt "$since_epoch" ) ]]; then
+                continue
+            fi
+            printf '%s\t%s\t%s\n' "${sort_at:-0000}" "$source" "$f" >> "$tmp"
+        done < <(_queue_cleared_candidate_files_for_state "$root" "$state")
+    done
+
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"cleared":['
+        local first=1 id name class policy sandbox seccomp caps cmd submitted started finished rc worker stage ex_type ex_action ex_code jurisdiction classification archive_from job_cleared
+        while IFS=$'\t' read -r cleared_at source f; do
+            [[ -f "$f" ]] || continue
+            if [[ "$limit" -gt 0 && "$count" -ge "$limit" ]]; then break; fi
+            state="$(_queue_state_for_job_path "$f" "$root")"
+            id="$(basename "$f" .job)"
+            name="$(_queue_job_name "$f" 2>/dev/null || true)"
+            class="$(_queue_job_var_first_value "$f" JOB_CLEARED_CLASS JOB_CLASS CLASS 2>/dev/null || echo DEFAULT)"
+            [[ -n "$class" ]] || class="DEFAULT"
+            policy="$(_queue_job_var_first_value "$f" JOB_CLEARED_POLICY_STATEMENT SECURITY_POLICY_STATEMENT 2>/dev/null || true)"
+            sandbox="$(_queue_job_var_first_value "$f" JOB_CLEARED_SANDBOX_POLICY SANDBOX_POLICY_NAME 2>/dev/null || true)"
+            seccomp="$(_queue_job_var_first_value "$f" JOB_CLEARED_SECCOMP_POLICY SECCOMP_POLICY_NAME 2>/dev/null || true)"
+            caps="$(_queue_job_var_first_value "$f" JOB_CLEARED_RUNTIME_CAPS RUNTIME_CAPS 2>/dev/null || true)"
+            cmd="$(_queue_job_command "$f" 2>/dev/null || true)"
+            submitted="$(_queue_job_var_value "$f" SUBMITTED_AT 2>/dev/null || true)"
+            started="$(_queue_job_var_value "$f" RUN_STARTED_AT 2>/dev/null || true)"
+            finished="$(_queue_job_var_first_value "$f" EXEC_FINISHED_AT FINISHED_AT 2>/dev/null || true)"
+            rc="$(_queue_job_var_value "$f" EXIT_CODE 2>/dev/null || true)"
+            worker="$(_queue_job_var_value "$f" JOB_CLEARED_BY 2>/dev/null || true)"
+            stage="$(_queue_job_var_value "$f" JOB_CLEARED_STAGE 2>/dev/null || true)"
+            ex_type="$(_queue_job_var_value "$f" JOB_CLEARED_SECURITY_EXEMPTION_TYPE 2>/dev/null || true)"
+            ex_action="$(_queue_job_var_value "$f" JOB_CLEARED_SECURITY_EXEMPTION_ACTION 2>/dev/null || true)"
+            ex_code="$(_queue_job_var_value "$f" JOB_CLEARED_SECURITY_AUTHORISATION_CODE 2>/dev/null || true)"
+            jurisdiction="$(_queue_job_var_value "$f" JOB_CLEARED_JURISDICTION 2>/dev/null || true)"
+            classification="$(_queue_job_var_value "$f" JOB_CLEARED_CLASSIFICATION 2>/dev/null || true)"
+            archived_at="$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED_AT 2>/dev/null || true)"
+            archive_from="$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED_FROM 2>/dev/null || true)"
+            job_cleared="$(_queue_job_var_value "$f" JOB_CLEARED 2>/dev/null || true)"
+            [[ "$first" -eq 0 ]] && printf ','
+            first=0
+            printf '{'
+            printf '"qid":"%s"' "$(_queue_json_escape "$id")"
+            printf ',"name":"%s","state":"%s","class":"%s"' "$(_queue_json_escape "$name")" "$(_queue_json_escape "$state")" "$(_queue_json_escape "$class")"
+            printf ',"clear_source":"%s","cleared_at":"%s","archived_at":"%s","archive_from":"%s","execution_cleared":%s' \
+                "$(_queue_json_escape "$source")" "$(_queue_json_escape "$cleared_at")" "$(_queue_json_escape "$archived_at")" "$(_queue_json_escape "$archive_from")" "$([[ "$job_cleared" == "1" ]] && echo true || echo false)"
+            printf ',"cleared_by":"%s","policy_statement":"%s","stage":"%s"' "$(_queue_json_escape "$worker")" "$(_queue_json_escape "$policy")" "$(_queue_json_escape "$stage")"
+            printf ',"security":{"sandbox":"%s","seccomp":"%s","runtime_caps":"%s","exemption_type":"%s","exemption_action":"%s","authorisation_code":"%s"}' \
+                "$(_queue_json_escape "$sandbox")" "$(_queue_json_escape "$seccomp")" "$(_queue_json_escape "$caps")" "$(_queue_json_escape "$ex_type")" "$(_queue_json_escape "$ex_action")" "$(_queue_json_escape "$ex_code")"
+            printf ',"governance":{"jurisdiction":"%s","classification":"%s"}' "$(_queue_json_escape "$jurisdiction")" "$(_queue_json_escape "$classification")"
+            printf ',"times":{"submitted_at":"%s","run_started_at":"%s","finished_at":"%s"}' "$(_queue_json_escape "$submitted")" "$(_queue_json_escape "$started")" "$(_queue_json_escape "$finished")"
+            printf ',"rc":"%s","command_line":"%s","job_file":"%s"' "$(_queue_json_escape "$rc")" "$(_queue_json_escape "$cmd")" "$(_queue_json_escape "$f")"
+            printf '}'
+            count=$((count + 1))
+        done < <(sort -r "$tmp")
+        printf '],"count":%s,"states":"%s"}\n' "$count" "$(_queue_json_escape "$states")"
+        rm -f "$tmp"
+        return 0
+    fi
+
+    printf '%-36s %-11s %-10s %-25s %-16s %-16s %s\n' "qid" "state" "source" "cleared_or_archived_at" "class" "policy" "name"
+    while IFS=$'\t' read -r cleared_at source f; do
+        [[ -f "$f" ]] || continue
+        if [[ "$limit" -gt 0 && "$count" -ge "$limit" ]]; then break; fi
+        state="$(_queue_state_for_job_path "$f" "$root")"
+        local id name class policy display_at
+        id="$(basename "$f" .job)"
+        name="$(_queue_job_name "$f" 2>/dev/null || true)"
+        class="$(_queue_job_var_first_value "$f" JOB_CLEARED_CLASS JOB_CLASS CLASS 2>/dev/null || echo DEFAULT)"
+        [[ -n "$class" ]] || class="DEFAULT"
+        policy="$(_queue_job_var_first_value "$f" JOB_CLEARED_POLICY_STATEMENT SECURITY_POLICY_STATEMENT 2>/dev/null || true)"
+        [[ -n "$policy" ]] || policy="-"
+        display_at="${cleared_at:-$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED_AT 2>/dev/null || true)}"
+        [[ -n "$display_at" ]] || display_at="unknown"
+        printf '%-36s %-11s %-10s %-25s %-16s %-16s %s\n' "$id" "$state" "$source" "$display_at" "${class:-DEFAULT}" "$policy" "$name"
+        count=$((count + 1))
+    done < <(sort -r "$tmp")
+    rm -f "$tmp"
+    printf 'cleared=%s states=%s\n' "$count" "$states"
+}
+_queue_status_job() {
+    local target="${1:-}" json=0 tail_lines=20 arg
+    shift || true
+
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            --tail|-n)
+                [[ -n "${2:-}" ]] || { echo "queue status: --tail requires a line count" >&2; return 2; }
+                tail_lines="$2"; shift 2 ;;
+            job)
+                shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage:
+  queue status <qid-or-exact-job-name> [--json] [--tail N]
+  queue status job <qid-or-exact-job-name> [--json] [--tail N]
+
+Compact machine/operator summary. Use `queue explain` for the full forensic rundown.
+EOF
+                return 0 ;;
+            *)
+                if [[ -z "$target" ]]; then target="$1"; shift; else echo "queue status: unexpected argument: $1" >&2; return 2; fi ;;
+        esac
+    done
+
+    [[ -n "$target" ]] || { echo "Usage: queue status <qid-or-exact-job-name> [--json] [--tail N]" >&2; return 2; }
+    [[ "$tail_lines" =~ ^[0-9]+$ ]] || { echo "queue status: --tail requires a numeric line count" >&2; return 2; }
+
+    local matches=() f exact_name_count
+    while IFS= read -r f; do matches+=( "$f" ); done < <(_queue_find_jobs "$target")
+    [[ "${#matches[@]}" -gt 0 ]] || { echo "queue status: no such QID or exact job name: $target" >&2; return 1; }
+    exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+    if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 ]]; then
+        echo "queue status: ambiguous QID prefix: $target" >&2
+        _queue_print_matches "${matches[@]}"
+        return 2
+    fi
+    if [[ "${#matches[@]}" -gt 1 ]]; then
+        echo "queue status: multiple jobs named '$target'; use a QID" >&2
+        _queue_print_matches "${matches[@]}"
+        return 2
+    fi
+
+    f="${matches[0]}"
+    local id state name pri class cmd submitted started finished rc duration run_pid run_pgid systemd_unit log log_size tail_text submission_line
+    id="$(basename "$f" .job)"
+    state="$(_queue_state_for_job_path "$f" "$root")"
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
+    pri="$(_queue_job_pri "$f" 2>/dev/null || echo 10)"
+    class="$(_queue_class_for_job_file "$f" 2>/dev/null || _queue_job_var_value "$f" JOB_CLASS 2>/dev/null || echo DEFAULT)"
+    cmd="$(_queue_job_command "$f" 2>/dev/null || true)"
+    submitted="$(_queue_job_var_value "$f" SUBMITTED_AT 2>/dev/null || true)"
+    started="$(_queue_job_var_value "$f" RUN_STARTED_AT 2>/dev/null || true)"
+    finished="$(_queue_job_var_value "$f" EXEC_FINISHED_AT 2>/dev/null || _queue_job_var_value "$f" FINISHED_AT 2>/dev/null || true)"
+    rc="$(_queue_job_var_value "$f" EXIT_CODE 2>/dev/null || true)"
+    duration="$(_queue_job_var_value "$f" DURATION_SECONDS 2>/dev/null || true)"
+    run_pid="$(_queue_job_var_value "$f" RUN_PID 2>/dev/null || true)"
+    run_pgid="$(_queue_job_var_value "$f" RUN_PGID 2>/dev/null || true)"
+    systemd_unit="$(_queue_job_var_value "$f" SYSTEMD_UNIT 2>/dev/null || true)"
+    log="$(_queue_log_existing_path "$id" 2>/dev/null || true)"
+    [[ -f "$log" ]] && log_size="$(wc -c < "$log" 2>/dev/null | tr -d ' ')" || log_size="0"
+    if [[ -f "$log" && "$tail_lines" -gt 0 ]]; then
+        tail_text="$(_queue_log_tail "$log" "$tail_lines" 2>/dev/null || true)"
+    else
+        tail_text=""
+    fi
+    submission_line="queue submit ${name:-$id} --class ${class:-DEFAULT} -- ${cmd}"
+
+    if [[ "$json" -eq 1 ]]; then
+        printf '{'
+        printf '"qid":"%s"' "$(_queue_json_escape "$id")"
+        printf ',"name":"%s"' "$(_queue_json_escape "$name")"
+        printf ',"state":"%s"' "$(_queue_json_escape "$state")"
+        printf ',"class":"%s"' "$(_queue_json_escape "$class")"
+        printf ',"priority":%s' "${pri:-10}"
+        printf ',"submission_line":"%s"' "$(_queue_json_escape "$submission_line")"
+        printf ',"command_line":"%s"' "$(_queue_json_escape "$cmd")"
+        printf ',"times":{"submitted_at":"%s","run_started_at":"%s","finished_at":"%s","duration_seconds":"%s"}' \
+            "$(_queue_json_escape "$submitted")" "$(_queue_json_escape "$started")" "$(_queue_json_escape "$finished")" "$(_queue_json_escape "$duration")"
+        printf ',"pids":{"run_pid":"%s","run_pgid":"%s","systemd_unit":"%s"}' \
+            "$(_queue_json_escape "$run_pid")" "$(_queue_json_escape "$run_pgid")" "$(_queue_json_escape "$systemd_unit")"
+        printf ',"rc":"%s"' "$(_queue_json_escape "$rc")"
+        printf ',"clearance":{"cleared":"%s","cleared_at":"%s","cleared_by":"%s","policy_statement":"%s","stage":"%s"}' \
+            "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED 2>/dev/null || true)")" \
+            "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED_AT 2>/dev/null || true)")" \
+            "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED_BY 2>/dev/null || true)")" \
+            "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED_POLICY_STATEMENT 2>/dev/null || true)")" \
+            "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED_STAGE 2>/dev/null || true)")"
+        printf ',"log":{"path":"%s","size_bytes":%s,"tail_lines":%s,"tail":"%s"}' \
+            "$(_queue_json_escape "$log")" "${log_size:-0}" "$tail_lines" "$(_queue_json_escape "$tail_text")"
+        printf ',"job_file":"%s"' "$(_queue_json_escape "$f")"
+        printf '}\n'
+        return 0
+    fi
+
+    echo "=============================================================================="
+    echo "QUEUEBASH STATUS: $id"
+    echo "=============================================================================="
+    printf '%-18s %s\n' "state:" "$state"
+    printf '%-18s %s\n' "name:" "${name:-}" 
+    printf '%-18s %s\n' "class:" "${class:-}"
+    printf '%-18s %s\n' "priority:" "${pri:-10}"
+    printf '%-18s %s\n' "submitted:" "${submitted:-}"
+    printf '%-18s %s\n' "started:" "${started:-}"
+    printf '%-18s %s\n' "finished:" "${finished:-}"
+    printf '%-18s %s\n' "rc:" "${rc:-}"
+    printf '%-18s %s\n' "RUN_PID:" "${run_pid:-}"
+    printf '%-18s %s\n' "RUN_PGID:" "${run_pgid:-}"
+    [[ -n "$systemd_unit" ]] && printf '%-18s %s\n' "systemd unit:" "$systemd_unit"
+    printf '%-18s %s\n' "command:" "$cmd"
+    printf '%-18s %s\n' "submission:" "$submission_line"
+    printf '%-18s %s\n' "job file:" "$f"
+    printf '%-18s %s\n' "log:" "${log:-} (${log_size:-0} bytes)"
+    if [[ -n "$tail_text" ]]; then
+        echo
+        echo "=== tail: last $tail_lines lines ==="
+        printf '%s\n' "$tail_text"
+    fi
+}
+
+_queue_epoch_now() {
+    date +%s
+}
+
+_queue_job_retry_due() {
+    local f="$1"
+    local not_before now
+    not_before="$(grep '^RETRY_NOT_BEFORE_EPOCH=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    not_before="${not_before:-0}"
+    now="$(_queue_epoch_now)"
+    [[ "$not_before" =~ ^[0-9]+$ ]] || not_before=0
+    (( not_before <= now ))
+}
+
+_queue_clone_retry_to_pending() {
+    local src_job="$1"
+    local new_id="$2"
+    local retry_done="$3"
+    local not_before="$4"
+    local root="$(_queue_root)"
+    local dest
+    dest="$(_queue_pending_path_for_priority "$new_id" "$(_queue_job_pri "$src_job" 2>/dev/null || echo 10)" "$root")"
+
+    mkdir -p -- "$(dirname "$dest")"
+
+    (
+        source "$src_job" 2>/dev/null || exit 1
+
+        {
+            printf 'JOB_ID=%q\n' "$new_id"
+            printf 'JOB_NAME=%q\n' "$JOB_NAME"
+            printf 'PRIORITY=%q\n' "${PRIORITY:-10}"
+            printf 'SUBMITTED_AT=%q\n' "$(_queue_now_iso)"
+            printf 'PWD_AT_SUBMIT=%q\n' "$PWD_AT_SUBMIT"
+            printf 'RETRY_OF=%q\n' "$JOB_ID"
+            printf 'RETRIES_MAX=%q\n' "${RETRIES_MAX:-0}"
+            printf 'RETRIES_DONE=%q\n' "$retry_done"
+            printf 'RETRY_BACKOFF=%q\n' "${RETRY_BACKOFF:-0}"
+            printf 'RETRY_NOT_BEFORE_EPOCH=%q\n' "$not_before"
+            printf 'CPU_LIMIT=%q\n' "${CPU_LIMIT:-}"
+            printf 'MEM_LIMIT=%q\n' "${MEM_LIMIT:-}"
+            [[ -n "${MAX_LOG_SIZE_BYTES:-}" ]] && printf 'MAX_LOG_SIZE_BYTES=%q\n' "$MAX_LOG_SIZE_BYTES"
+            [[ -n "${ALLOW_LARGE_LOG:-}" ]] && printf 'ALLOW_LARGE_LOG=%q\n' "$ALLOW_LARGE_LOG"
+            [[ -n "${LOG_OVERFLOW_POLICY:-}" ]] && printf 'LOG_OVERFLOW_POLICY=%q\n' "$LOG_OVERFLOW_POLICY"
+            [[ -n "${RUNNER:-}" ]] && printf 'RUNNER=%q\n' "$RUNNER"
+            [[ -n "${DEPENDS_AFTER_SUCCESS:-}" ]] && printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$DEPENDS_AFTER_SUCCESS"
+            [[ -n "${INHERIT_ENV_FROM:-}" ]] && printf 'INHERIT_ENV_FROM=%q\n' "$INHERIT_ENV_FROM"
+
+            printf 'COMMAND=('
+            printf ' %q' "${COMMAND[@]}"
+            printf ' )\n'
+
+            printf 'ON_SUCCESS=('
+            printf ' %q' "${ON_SUCCESS[@]}"
+            printf ' )\n'
+
+            printf 'ON_FAILURE=('
+            printf ' %q' "${ON_FAILURE[@]}"
+            printf ' )\n'
+        } > "$dest"
+    )
+}
+
+_queue_should_retry_failed_job() {
+    local f="$1"
+    local max done
+    max="$(grep '^RETRIES_MAX=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    done="$(grep '^RETRIES_DONE=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    max="${max:-0}"
+    done="${done:-0}"
+    [[ "$max" =~ ^[0-9]+$ ]] || max=0
+    [[ "$done" =~ ^[0-9]+$ ]] || done=0
+    (( done < max ))
+}
+
+_queue_systemd_supported() {
+    command -v systemd-run >/dev/null 2>&1 || return 1
+    [[ -n "${XDG_RUNTIME_DIR:-}" || -d /run/systemd/system ]] || return 1
+    return 0
+}
+
+# Legacy text QueueManager readline completion removed in 0.16.14.
+
+_queue_job_log_max_bytes() {
+    local f="$1"
+    local v
+    v="$(grep '^MAX_LOG_SIZE_BYTES=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    v="${v:-${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}}"
+    [[ "$v" =~ ^[0-9]+$ ]] || v=52428800
+    printf '%s\n' "$v"
+}
+
+_queue_parse_size_to_bytes() {
+    local v="$1"
+    local n unit
+    [[ -z "$v" ]] && { echo 0; return; }
+
+    if [[ "$v" =~ ^([0-9]+)([KkMmGg])?[Bb]?$ ]]; then
+        n="${BASH_REMATCH[1]}"
+        unit="${BASH_REMATCH[2]}"
+        case "$unit" in
+            K|k) echo $((n * 1024)) ;;
+            M|m) echo $((n * 1024 * 1024)) ;;
+            G|g) echo $((n * 1024 * 1024 * 1024)) ;;
+            *) echo "$n" ;;
+        esac
+    else
+        echo 0
+    fi
+}
+
+_queue_log_size_bytes() {
+    local log="$1"
+    [[ -f "$log" ]] || { echo 0; return; }
+    wc -c < "$log" 2>/dev/null | tr -d '[:space:]'
+}
+
+_queue_append_summary_to_job() {
+    local job="$1"
+    local exit_code="$2"
+    local log="$3"
+    local root="$(_queue_root)"
+
+    [[ -f "$job" ]] || return 0
+
+    source "$job" >/dev/null 2>&1 || true
+    _queue_net_usage_job_finish_record "$job"
+    source "$job" >/dev/null 2>&1 || true
+    if [[ "$exit_code" -eq 0 ]] && _queue_net_usage_should_fail_current_job; then
+        exit_code=87
+    fi
+
+    local started finished start_epoch finish_epoch duration log_bytes
+    started="$(grep '^RUN_STARTED_AT=' "$job" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+    finished="$(_queue_now_iso)"
+
+    start_epoch="$(date -d "$started" +%s 2>/dev/null || echo 0)"
+    finish_epoch="$(_queue_now_epoch)"
+    if [[ "$start_epoch" =~ ^[0-9]+$ && "$start_epoch" -gt 0 ]]; then
+        duration=$((finish_epoch - start_epoch))
+    else
+        duration=0
+    fi
+
+    log_bytes="$(_queue_log_size_bytes "$log")"
+
+    {
+        echo "EXEC_FINISHED_AT=$(printf '%q' "$finished")"
+        echo "EXIT_CODE=$(printf '%q' "$exit_code")"
+        echo "DURATION_SECONDS=$(printf '%q' "$duration")"
+        echo "LOG_BYTES=$(printf '%q' "$log_bytes")"
+    } >> "$job"
+}
+
+_queue_systemd_user_service_supported() {
+    command -v systemd-run >/dev/null 2>&1 || return 1
+    command -v systemctl >/dev/null 2>&1 || return 1
+
+    # systemd-run --user only works when this shell can talk to the user's
+    # systemd manager over the user bus.  XDG_RUNTIME_DIR being set is not
+    # enough; su/runuser shells often inherit an unusable or inaccessible bus.
+    [[ -n "${XDG_RUNTIME_DIR:-}" ]] || return 1
+    [[ -S "${XDG_RUNTIME_DIR}/bus" ]] || return 1
+
+    systemctl --user show-environment >/dev/null 2>&1 || return 1
+
+    return 0
+}
+
+
+_queue_systemd_user_service_status_text() {
+    command -v systemd-run >/dev/null 2>&1 || { echo "systemd-run-not-found"; return 0; }
+    command -v systemctl >/dev/null 2>&1 || { echo "systemctl-not-found"; return 0; }
+    [[ -n "${XDG_RUNTIME_DIR:-}" ]] || { echo "xdg-runtime-dir-not-set"; return 0; }
+    [[ -S "${XDG_RUNTIME_DIR}/bus" ]] || { echo "user-bus-missing"; return 0; }
+    systemctl --user show-environment >/dev/null 2>&1 || { echo "user-bus-unusable"; return 0; }
+    echo "user-bus-ok"
+}
+
+_queue_limit_status_text() {
+    local cpu="${1:-}"
+    local mem="${2:-}"
+
+    if [[ -z "$cpu" && -z "$mem" ]]; then
+        echo "none"
+    elif _queue_systemd_user_service_supported; then
+        echo "systemd-run-user-service-pipe"
+    else
+        echo "requested-but-not-enforced-systemd-run-user-service-pipe-unavailable"
+    fi
+}
+
+_queue_auto_required_file_keys_from_env() {
+    local var base bytes_var sha_var
+
+    # Any inherited variable with KEY_SHA256 and KEY_BYTES metadata is treated
+    # as a file hand-off that must be validated before payload launch.
+    for var in ${QUEUEBASH_INHERITED_ENV_KEYS:-}; do
+        case "$var" in
+            *_SHA256)
+                base="${var%_SHA256}"
+                bytes_var="${base}_BYTES"
+                sha_var="${base}_SHA256"
+                if [[ "$base" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && [[ -n "${!base-}" ]] && [[ -n "${!bytes_var-}" ]] && [[ -n "${!sha_var-}" ]]; then
+                    printf '%s\n' "$base"
+                fi
+                ;;
+        esac
+    done | sort -u
+}
+
+_queue_preflight_auto_required_files() {
+    local key rc any=0
+
+    while IFS= read -r key; do
+        [[ -z "$key" ]] && continue
+        any=1
+        echo "preflight_require_file: $key"
+
+        queue_require_file "$key"
+        rc="$?"
+        if [[ "$rc" -ne 0 ]]; then
+            echo "preflight_require_file_failed: $key rc=$rc"
+            return "$rc"
+        fi
+
+        echo "preflight_require_file_ok: $key"
+    done < <(_queue_auto_required_file_keys_from_env)
+
+    if [[ "$any" -eq 1 ]]; then
+        echo "preflight_require_file_complete"
+    fi
+
+    return 0
+}
+
+
+
+
+_queue_duration_to_seconds() {
+    local v="${1:-}"
+
+    [[ -n "$v" ]] || return 1
+
+    case "$v" in
+        *ms)
+            # Round up milliseconds to one second for process timeout purposes.
+            local n="${v%ms}"
+            [[ "$n" =~ ^[0-9]+$ ]] || return 1
+            if (( n <= 0 )); then echo 0; else echo $(( (n + 999) / 1000 )); fi
+            ;;
+        *s)
+            local n="${v%s}"
+            [[ "$n" =~ ^[0-9]+$ ]] || return 1
+            echo "$n"
+            ;;
+        *m)
+            local n="${v%m}"
+            [[ "$n" =~ ^[0-9]+$ ]] || return 1
+            echo $(( n * 60 ))
+            ;;
+        *h)
+            local n="${v%h}"
+            [[ "$n" =~ ^[0-9]+$ ]] || return 1
+            echo $(( n * 3600 ))
+            ;;
+        *d)
+            local n="${v%d}"
+            [[ "$n" =~ ^[0-9]+$ ]] || return 1
+            echo $(( n * 86400 ))
+            ;;
+        *)
+            [[ "$v" =~ ^[0-9]+$ ]] || return 1
+            echo "$v"
+            ;;
+    esac
+}
+
+_queue_seconds_to_duration() {
+    local s="${1:-}"
+    [[ "$s" =~ ^[0-9]+$ ]] || return 1
+    printf '%ss\n' "$s"
+}
+
+
+
+_queue_expiry_to_epoch() {
+    local v="${1:-}"
+    [[ -n "$v" && "$v" != "never" ]] || return 1
+    case "$v" in
+        +*)
+            local rel="${v#+}" secs now
+            secs="$(_queue_duration_to_seconds "$rel" 2>/dev/null || true)"
+            [[ "$secs" =~ ^[0-9]+$ ]] || return 1
+            now="$(_queue_now_epoch 2>/dev/null || echo 0)"
+            [[ "$now" =~ ^[0-9]+$ ]] || return 1
+            echo $((now + secs))
+            ;;
+        *)
+            date -d "$v" +%s 2>/dev/null || return 1
+            ;;
+    esac
+}
+
+_queue_expiry_is_expired() {
+    local expires="${1:-}"
+    [[ -n "$expires" && "$expires" != "never" ]] || return 1
+    local exp now
+    exp="$(_queue_expiry_to_epoch "$expires" 2>/dev/null || true)"
+    [[ "$exp" =~ ^[0-9]+$ ]] || return 1
+    now="$(_queue_now_epoch 2>/dev/null || echo 0)"
+    [[ "$now" =~ ^[0-9]+$ ]] || return 1
+    (( now >= exp ))
+}
+
+_queue_cap_refresh() {
+    local dir="${1:-}"
+    local src family dst backup ts any=0 rc=0
+    local root cap_dir backup_dir
+
+    if [[ -z "$dir" ]]; then
+        echo "Usage: queue caps refresh <directory>" >&2
+        return 2
+    fi
+    if [[ ! -d "$dir" ]]; then
+        echo "queue caps refresh: directory not found: $dir" >&2
+        return 1
+    fi
+
+    root="$(_queue_root)"
+    cap_dir="$root/caps.d"
+    backup_dir="$cap_dir/.backup"
+
+    if ! mkdir -p "$cap_dir" "$backup_dir"; then
+        echo "queue caps refresh: cannot create cap directory or backup directory under: $cap_dir" >&2
+        echo "queue caps refresh: check ownership/permissions for selected queue root: $root" >&2
+        return 1
+    fi
+    if [[ ! -d "$cap_dir" || ! -w "$cap_dir" || ! -d "$backup_dir" || ! -w "$backup_dir" ]]; then
+        echo "queue caps refresh: cap directory is not writable: $cap_dir" >&2
+        echo "queue caps refresh: backup directory is not writable: $backup_dir" >&2
+        echo "queue caps refresh: check ownership/permissions for selected queue root: $root" >&2
+        return 1
+    fi
+
+    shopt -s nullglob
+    for src in "$dir"/*.sh; do
+        any=1
+        family="$(basename "$src" .sh)"
+        dst="$cap_dir/${family}.sh"
+        if ! bash -n "$src" >/dev/null 2>&1; then
+            echo "queue caps refresh: syntax check failed: $src" >&2
+            rc=1
+            continue
+        fi
+        if [[ -f "$dst" ]]; then
+            ts="$(date +%Y%m%d_%H%M%S_%N)"
+            backup="$backup_dir/${family}.${ts}.sh"
+            if ! cp "$dst" "$backup"; then
+                echo "queue caps refresh: failed to back up existing cap plugin: $dst" >&2
+                rc=1
+                continue
+            fi
+        else
+            backup=""
+        fi
+        echo "Refreshing cap plugin family=$family source=$src"
+        if ! cp "$src" "$dst"; then
+            echo "queue caps refresh: failed to replace cap plugin: $dst" >&2
+            rc=1
+            continue
+        fi
+        chmod 0700 "$dst" 2>/dev/null || true
+        echo "Replaced cap plugin: $dst"
+        [[ -n "$backup" ]] && echo "Backup: $backup"
+    done
+    shopt -u nullglob
+
+    if [[ "$any" -eq 0 ]]; then
+        echo "queue caps refresh: no .sh cap plugins found in $dir" >&2
+        return 1
+    fi
+    return "$rc"
+}
+
+_queue_cap_plugin_dirs() {
+    printf '%s\n' "$(_queue_root)/caps.d"
+    [[ -n "${QUEUEBASH_CAP_PLUGIN_SOURCE_DIR:-}" ]] && printf '%s\n' "$QUEUEBASH_CAP_PLUGIN_SOURCE_DIR"
+}
+
+_queue_cap_plugin_files() {
+    local d
+    for d in $(_queue_cap_plugin_dirs); do
+        [[ -d "$d" ]] || continue
+        shopt -s nullglob
+        printf '%s\n' "$d"/*.sh
+        shopt -u nullglob
+    done
+}
+
+_queue_cap_plugins_source_all() {
+    local f
+    for f in $(_queue_cap_plugin_files); do
+        _queue_code_signature_check_file_for_execution "$f" || { echo "cap_plugin_signature_failed: $f" >&2; continue; }
+        source "$f" 2>/dev/null || echo "cap_plugin_source_failed: $f" >&2
+    done
+}
+
+_queue_cap_plugin_candidates_for_current_job() {
+    local func
+    _queue_cap_plugins_source_all
+    while IFS= read -r func; do
+        "$func" 2>/dev/null || true
+    done < <(declare -F | awk '{print $3}' | grep '^queue_cap_candidate_' | sort)
+}
+
+_queue_cap_plugins_list() {
+    local f
+    for f in $(_queue_cap_plugin_files); do
+        (
+            source "$f" 2>/dev/null || {
+                echo "INVALID helper=$(basename "$f") source_failed"
+                exit 0
+            }
+            if declare -F queue_cap_facilities >/dev/null 2>&1; then
+                queue_cap_facilities
+            else
+                echo "INVALID helper=$(basename "$f") missing queue_cap_facilities"
+            fi
+        )
+    done
+}
+
+_queue_caps_effective_timeout_seconds_from_current_job() {
+    local best="" wall_s line kind seconds plugin detail
+
+    if [[ -n "${TIMEOUT:-}" ]]; then
+        wall_s="$(_queue_duration_to_seconds "$TIMEOUT" 2>/dev/null || true)"
+        if [[ "$wall_s" =~ ^[0-9]+$ && "$wall_s" -gt 0 ]]; then
+            best="$wall_s"
+        fi
+    fi
+
+    while IFS=$'\t' read -r kind seconds plugin detail; do
+        [[ "$kind" == "timeout" ]] || continue
+        [[ "$seconds" =~ ^[0-9]+$ && "$seconds" -gt 0 ]] || continue
+        if [[ -z "$best" || "$seconds" -lt "$best" ]]; then
+            best="$seconds"
+        fi
+    done < <(_queue_cap_plugin_candidates_for_current_job)
+
+    [[ -n "$best" ]] || return 1
+    echo "$best"
+}
+
+_queue_netdev_counter_bytes() {
+    local iface="${1:-}"
+    local dir="${2:-rx_tx}"
+    local counter_file="${3:-}"
+    local base="/sys/class/net/$iface/statistics"
+    local rx tx
+
+    if [[ -n "$counter_file" ]]; then
+        cat "$counter_file" 2>/dev/null
+        return
+    fi
+
+    [[ -n "$iface" && -d "$base" ]] || return 1
+
+    rx="$(cat "$base/rx_bytes" 2>/dev/null || echo 0)"
+    tx="$(cat "$base/tx_bytes" 2>/dev/null || echo 0)"
+    [[ "$rx" =~ ^[0-9]+$ ]] || rx=0
+    [[ "$tx" =~ ^[0-9]+$ ]] || tx=0
+
+    case "$dir" in
+        rx) echo "$rx" ;;
+        tx) echo "$tx" ;;
+        rx_tx|total|*) echo $((rx + tx)) ;;
+    esac
+}
+
+_queue_parse_bytes() {
+    local v="${1:-}" n unit
+    [[ -n "$v" ]] || return 1
+    if [[ "$v" =~ ^([0-9]+)([KkMmGgTt]?[Bb]?)?$ ]]; then
+        n="${BASH_REMATCH[1]}"
+        unit="${BASH_REMATCH[2]}"
+        case "$unit" in
+            ""|B|b) echo "$n" ;;
+            K|k|KB|kb|Kb|kB) echo $((n * 1024)) ;;
+            M|m|MB|mb|Mb|mB) echo $((n * 1024 * 1024)) ;;
+            G|g|GB|gb|Gb|gB) echo $((n * 1024 * 1024 * 1024)) ;;
+            T|t|TB|tb|Tb|tB) echo $((n * 1024 * 1024 * 1024 * 1024)) ;;
+            *) return 1 ;;
+        esac
+    else
+        return 1
+    fi
+}
+
+_queue_net_usage_job_start_record() {
+    local job_file="$1"
+    local iface="${NET_USAGE_INTERFACE:-}"
+    local dir="${NET_USAGE_DIRECTION:-rx_tx}"
+    local counter_file="${NET_USAGE_COUNTER_FILE:-}"
+    local counter now
+
+    [[ -n "$iface" ]] || return 0
+    counter="$(_queue_netdev_counter_bytes "$iface" "$dir" "$counter_file" 2>/dev/null || true)"
+    [[ "$counter" =~ ^[0-9]+$ ]] || return 0
+    now="$(_queue_now_iso)"
+
+    {
+        printf 'NET_USAGE_INTERFACE=%q\n' "$iface"
+        printf 'NET_USAGE_DIRECTION=%q\n' "$dir"
+        [[ -n "$counter_file" ]] && printf 'NET_USAGE_COUNTER_FILE=%q\n' "$counter_file"
+        printf 'NET_USAGE_START_BYTES=%q\n' "$counter"
+        printf 'NET_USAGE_STARTED_AT=%q\n' "$now"
+    } >> "$job_file"
+}
+
+_queue_net_usage_job_finish_record() {
+    local job_file="$1"
+    local iface="${NET_USAGE_INTERFACE:-}"
+    local dir="${NET_USAGE_DIRECTION:-rx_tx}"
+    local counter_file="${NET_USAGE_COUNTER_FILE:-}"
+    local start="${NET_USAGE_START_BYTES:-}"
+    local limit="${NET_USAGE_LIMIT_BYTES:-}"
+    local policy="${NET_USAGE_POLICY:-mark-failed}"
+    local end used now limit_b exceeded=0
+
+    [[ -n "$iface" && "$start" =~ ^[0-9]+$ ]] || return 0
+    end="$(_queue_netdev_counter_bytes "$iface" "$dir" "$counter_file" 2>/dev/null || true)"
+    [[ "$end" =~ ^[0-9]+$ ]] || return 0
+    (( end >= start )) && used=$((end - start)) || used=0
+    now="$(_queue_now_iso)"
+
+    if [[ -n "$limit" ]]; then
+        limit_b="$(_queue_parse_bytes "$limit" 2>/dev/null || echo "$limit")"
+        if [[ "$limit_b" =~ ^[0-9]+$ && "$used" -gt "$limit_b" ]]; then
+            exceeded=1
+        fi
+    fi
+
+    {
+        printf 'NET_USAGE_END_BYTES=%q\n' "$end"
+        printf 'NET_USAGE_USED_BYTES=%q\n' "$used"
+        printf 'NET_USAGE_FINISHED_AT=%q\n' "$now"
+        [[ -n "$limit" ]] && printf 'NET_USAGE_LIMIT_BYTES=%q\n' "$limit"
+        printf 'NET_USAGE_EXCEEDED=%q\n' "$exceeded"
+        printf 'NET_USAGE_POLICY=%q\n' "$policy"
+    } >> "$job_file"
+
+    if [[ "$exceeded" -eq 1 ]]; then
+        _queue_log_event "net_usage_exceeded" "${JOB_ID:-$(basename "$job_file" .job)}" "${JOB_NAME:-}" "running" "iface=$iface used_bytes=$used limit=$limit policy=$policy"
+    fi
+}
+
+_queue_net_usage_should_fail_current_job() {
+    [[ "${NET_USAGE_EXCEEDED:-0}" == "1" ]] || return 1
+    case "${NET_USAGE_POLICY:-mark-failed}" in
+        ignore|record-only) return 1 ;;
+        mark-failed|fail|fail-job) return 0 ;;
+        *) return 0 ;;
+    esac
+}
+
+
+
+_queue_caps_effective_timeout_seconds_from_values() {
+    local wall="${1:-}"
+    local billing_unit="${2:-}"
+    local billing_cycles="${3:-}"
+    local billing_grace="${4:-0}"
+
+    local best="" wall_s billing_s
+
+    if [[ -n "$wall" ]]; then
+        wall_s="$(_queue_duration_to_seconds "$wall" 2>/dev/null || true)"
+        if [[ "$wall_s" =~ ^[0-9]+$ && "$wall_s" -gt 0 ]]; then
+            best="$wall_s"
+        fi
+    fi
+
+    billing_s="$(_queue_caps_billing_timeout_seconds "$billing_unit" "$billing_cycles" "$billing_grace" 2>/dev/null || true)"
+    if [[ "$billing_s" =~ ^[0-9]+$ && "$billing_s" -gt 0 ]]; then
+        if [[ -z "$best" || "$billing_s" -lt "$best" ]]; then
+            best="$billing_s"
+        fi
+    fi
+
+    [[ -n "$best" ]] || return 1
+    echo "$best"
+}
+
+_queue_caps_effective_timeout_for_current_job() {
+    local best
+    best="$(_queue_caps_effective_timeout_seconds_from_current_job 2>/dev/null || true)"
+    [[ "$best" =~ ^[0-9]+$ && "$best" -gt 0 ]] || return 1
+    _queue_seconds_to_duration "$best"
+}
+
+_queue_caps_append_defaults_to_job_file() {
+    local job_file="$1"
+    local class="$2"
+    [[ -f "$job_file" ]] || return 0
+
+    local class_file
+    class_file="$(_queue_class_file "$class")"
+    [[ -f "$class_file" ]] || return 0
+
+    (
+        CLASS_DEFAULT_CPU_SECONDS=""
+        CLASS_DEFAULT_WALL_SECONDS=""
+        CLASS_DEFAULT_BILLING_CYCLES=""
+        CLASS_DEFAULT_BILLING_UNIT_SECONDS=""
+        CLASS_DEFAULT_BILLING_GRACE_SECONDS=""
+        CLASS_DEFAULT_BILLING_POLICY=""
+
+        source "$class_file" >/dev/null 2>&1 || exit 0
+
+        [[ -n "${CLASS_DEFAULT_CPU_SECONDS:-}" ]] && printf 'CPU_SECONDS=%q\n' "$CLASS_DEFAULT_CPU_SECONDS"
+        [[ -n "${CLASS_DEFAULT_WALL_SECONDS:-}" ]] && printf 'WALL_SECONDS=%q\n' "$CLASS_DEFAULT_WALL_SECONDS"
+        [[ -n "${CLASS_DEFAULT_BILLING_CYCLES:-}" ]] && printf 'BILLING_CYCLES=%q\n' "$CLASS_DEFAULT_BILLING_CYCLES"
+        [[ -n "${CLASS_DEFAULT_BILLING_UNIT_SECONDS:-}" ]] && printf 'BILLING_UNIT_SECONDS=%q\n' "$CLASS_DEFAULT_BILLING_UNIT_SECONDS"
+        [[ -n "${CLASS_DEFAULT_BILLING_GRACE_SECONDS:-}" ]] && printf 'BILLING_GRACE_SECONDS=%q\n' "$CLASS_DEFAULT_BILLING_GRACE_SECONDS"
+        [[ -n "${CLASS_DEFAULT_BILLING_POLICY:-}" ]] && printf 'BILLING_POLICY=%q\n' "$CLASS_DEFAULT_BILLING_POLICY"
+    ) >> "$job_file"
+}
+
+_queue_caps_explain_current_job() {
+    local wall="${TIMEOUT:-}"
+    local kill_after="${KILL_AFTER:-}"
+    local cpu_seconds="${CPU_SECONDS:-}"
+    local wall_seconds="${WALL_SECONDS:-}"
+    local policy="${CAP_POLICY:-shortest-cap-wins}"
+    local runtime_caps="${RUNTIME_CAPS:-}"
+    local runtime_interval="${RUNTIME_CAP_INTERVAL:-}"
+    local runtime_ports="${RUNTIME_CAP_PORTS:-}"
+    local display_sandbox="${SANDBOX_LEVEL:-}"
+    local display_seccomp_allow="${SECCOMP_ALLOW:-}"
+    local wall_s="" effective_s="" effective=""
+    local line kind seconds plugin detail
+
+    # queue explain should show the effective security posture, not merely the
+    # class defaults captured at submit time.  Workers apply these overlays
+    # before launching; pending jobs need the same visible calculation.
+    if [[ -n "${EXCEPTION_SANDBOX_OVERRIDE:-}" ]]; then
+        display_sandbox="$(_queue_sandbox_normalise_level "$EXCEPTION_SANDBOX_OVERRIDE" 2>/dev/null || true)"
+        [[ -z "$display_sandbox" ]] && display_sandbox="off"
+    fi
+    if [[ -n "${EXCEPTION_DROP_CAP:-}" ]]; then
+        runtime_caps="$(_queue_runtime_caps_drop_list "$runtime_caps" "$EXCEPTION_DROP_CAP" 2>/dev/null || true)"
+    fi
+    if [[ -n "${EXCEPTION_ADD_PORT:-}" ]]; then
+        runtime_ports="$(_queue_ports_add_list "$runtime_ports" "$EXCEPTION_ADD_PORT" 2>/dev/null || true)"
+    fi
+    if [[ -n "${EXCEPTION_SECCOMP_ALLOW:-}" ]]; then
+        display_seccomp_allow="${display_seccomp_allow:+$display_seccomp_allow }${EXCEPTION_SECCOMP_ALLOW}"
+    fi
+
+    [[ -n "$wall" ]] && wall_s="$(_queue_duration_to_seconds "$wall" 2>/dev/null || true)"
+    effective_s="$(_queue_caps_effective_timeout_seconds_from_current_job 2>/dev/null || true)"
+    [[ "$effective_s" =~ ^[0-9]+$ ]] && effective="$(_queue_seconds_to_duration "$effective_s")"
+
+    echo "Execution caps"
+    [[ -n "$wall" ]] && echo "  wall timeout:       $wall${wall_s:+ ($wall_s seconds)}"
+    [[ -n "$kill_after" ]] && echo "  kill after:         $kill_after"
+    [[ -n "$cpu_seconds" ]] && echo "  CPU seconds:        $cpu_seconds (metadata; live CPU enforcement is future work)"
+    [[ -n "$wall_seconds" ]] && echo "  wall seconds:       $wall_seconds (metadata)"
+    [[ -n "$display_sandbox" ]] && echo "  sandbox:            ${display_sandbox:-off}"
+    [[ -n "${SECCOMP_PROFILE:-}" ]] && echo "  seccomp:            ${SECCOMP_PROFILE:-}"
+    [[ -n "$display_seccomp_allow" ]] && echo "  seccomp allow:      ${display_seccomp_allow:-}"
+    [[ -n "$runtime_caps" ]] && echo "  runtime caps:       $runtime_caps${runtime_interval:+ interval=${runtime_interval}s}${runtime_ports:+ ports=$runtime_ports}"
+    if [[ -n "$runtime_caps" ]]; then
+        local normalised unknown
+        normalised="$(_queue_runtime_caps_normalise "$runtime_caps" 2>/dev/null || true)"
+        unknown="$(_queue_runtime_caps_unknown_list "$runtime_caps" 2>/dev/null || true)"
+        [[ -n "$normalised" && "$normalised" != "$runtime_caps" ]] && echo "  runtime caps norm:  $normalised"
+        [[ -n "$unknown" ]] && echo "  runtime warning:    unknown cap(s): $unknown"
+    fi
+    if [[ "${RUNTIME_CAP_VIOLATED:-0}" == "1" || -n "${RUNTIME_CAP_VIOLATION:-}" ]]; then
+        echo "  runtime result:     blocked"
+        [[ -n "${RUNTIME_CAP_VIOLATION:-}" ]] && echo "  runtime violation:  ${RUNTIME_CAP_VIOLATION}"
+        [[ -n "${RUNTIME_CAP_VIOLATION_PID:-}" ]] && echo "  violation pid:      ${RUNTIME_CAP_VIOLATION_PID}"
+        [[ -n "${RUNTIME_CAP_VIOLATED_AT:-}" ]] && echo "  violation time:     ${RUNTIME_CAP_VIOLATED_AT}"
+    fi
+    [[ -n "${RUNTIME_CAP_WARNING:-}" ]] && echo "  runtime warning:    ${RUNTIME_CAP_WARNING}"
+
+    while IFS=$'\t' read -r kind seconds plugin detail; do
+        [[ "$kind" == "timeout" ]] || continue
+        [[ "$seconds" =~ ^[0-9]+$ ]] || continue
+        echo "  plugin timeout:     $(_queue_seconds_to_duration "$seconds") ($seconds seconds) source=$plugin${detail:+ $detail}"
+    done < <(_queue_cap_plugin_candidates_for_current_job)
+
+    echo "  policy:             $policy"
+    echo "  effective timeout:  ${effective:-none}"
+}
+
+_queue_emit_timeout_wrapper_argv() {
+    local timeout_value="${1:-}"
+    local kill_after="${2:-}"
+
+    [[ -n "$timeout_value" ]] || return 0
+
+    # GNU coreutils timeout syntax. The runnable class can also gate the
+    # availability of the command, but the runner emits a clear failure if a
+    # class requests TIMEOUT without timeout being installed.
+    printf '%s\0' timeout --signal=TERM
+    [[ -n "$kill_after" ]] && printf '%s\0' "--kill-after=$kill_after"
+    printf '%s\0' "$timeout_value"
+}
+
+
+_queue_current_user_name() {
+    id -un 2>/dev/null || printf '%s\n' "${USER:-}"
+}
+
+_queue_can_switch_user() {
+    local user="${1:-}"
+    [[ -n "$user" ]] || return 1
+    [[ "$user" == "$(_queue_current_user_name)" ]] && return 1
+    [[ "$(id -u 2>/dev/null || echo 99999)" == "0" ]] || return 2
+    id "$user" >/dev/null 2>&1 || return 3
+    command -v runuser >/dev/null 2>&1 || command -v sudo >/dev/null 2>&1 || return 4
+    return 0
+}
+
+_queue_emit_user_switch_prefix() {
+    local user="${1:-}"
+    [[ -n "$user" ]] || return 0
+    [[ "$user" == "$(_queue_current_user_name)" ]] && return 0
+
+    if [[ "$(id -u 2>/dev/null || echo 99999)" != "0" ]]; then
+        printf '%s\0' /bin/sh -c "echo queue run: RUN_USER=$user requires root >&2; exit 126"
+        return 1
+    fi
+
+    if ! id "$user" >/dev/null 2>&1; then
+        printf '%s\0' /bin/sh -c "echo queue run: RUN_USER=$user does not exist >&2; exit 126"
+        return 1
+    fi
+
+    if command -v runuser >/dev/null 2>&1; then
+        printf '%s\0' runuser -u "$user" --
+        return 0
+    fi
+    if command -v sudo >/dev/null 2>&1; then
+        printf '%s\0' sudo -u "$user" --
+        return 0
+    fi
+
+    printf '%s\0' /bin/sh -c "echo queue run: cannot switch to RUN_USER=$user; runuser/sudo not found >&2; exit 126"
+    return 1
+}
+
+
+
+_queue_security_policy_statement_name() {
+    printf '%s\n' "${QUEUEBASH_CLASS_POLICY_STATEMENT:-default}"
+}
+
+_queue_policy_words_merge_unique() {
+    local existing="${1:-}" incoming="${2:-}" word out=""
+    for word in $existing $incoming; do
+        [[ -n "$word" ]] || continue
+        if ! _queue_security_policy_value_in_list "$word" "$out"; then
+            out="${out:+$out }$word"
+        fi
+    done
+    printf '%s\n' "$out"
+}
+
+_queue_policy_lines_merge_unique() {
+    local current="${1:-}" incoming="${2:-}" line out=""
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        case "$line" in \#*) continue ;; esac
+        if ! grep -Fxq -- "$line" <<< "$out" 2>/dev/null; then
+            out+="$line"$'\n'
+        fi
+    done <<< "$current"
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        case "$line" in \#*) continue ;; esac
+        if ! grep -Fxq -- "$line" <<< "$out" 2>/dev/null; then
+            out+="$line"$'\n'
+        fi
+    done <<< "$incoming"
+    printf '%s' "$out"
+}
+
+_queue_policy_mandatory_asset_line_to_spec() {
+    local line="${1:-}" family="" check="" target="" rest=""
+    local params=()
+    [[ -n "$line" ]] || return 1
+    case "$line" in \#*) return 1 ;; esac
+    if [[ "$line" == *$'\t'* ]]; then
+        IFS=$'\t' read -r family check target rest <<< "$line"
+        [[ -n "$family" && -n "$check" && -n "$target" ]] || return 1
+        if [[ -n "$rest" ]]; then
+            # Params are intentionally simple key=value tokens separated by spaces.
+            # Use quoted values inside policy only when the asset helper itself can
+            # handle the resulting shell word via the packed spec.
+            # shellcheck disable=SC2206
+            params=( $rest )
+        fi
+        _queue_class_asset_pack "$family" "$check" "$target" "${params[@]}"
+        return 0
+    fi
+    # Compatibility: already-packed specs may also be supplied.
+    printf '%s\n' "$line"
+}
+
+_queue_policy_requirement_rank() {
+    case "${1,,}" in
+        authorisation|authorization) echo 3 ;;
+        reason) echo 2 ;;
+        reason-or-authorisation|reason-or-authorization|either) echo 1 ;;
+        off|none|"") echo 0 ;;
+        *) echo 1 ;;
+    esac
+}
+
+_queue_policy_requirement_max() {
+    local current="${1:-}" incoming="${2:-}" cr ir
+    [[ -n "$incoming" ]] || { printf '%s\n' "$current"; return 0; }
+    cr="$(_queue_policy_requirement_rank "$current")"
+    ir="$(_queue_policy_requirement_rank "$incoming")"
+    if [[ "$ir" -gt "$cr" ]]; then
+        printf '%s\n' "$incoming"
+    else
+        printf '%s\n' "$current"
+    fi
+}
+
+_queue_policy_signature_requirement_rank() {
+    case "${1,,}" in
+        always|required) echo 3 ;;
+        if-trusted-key|if-trusted-keys|trusted|auto|"") echo 2 ;;
+        off|none|legacy) echo 1 ;;
+        *) echo 2 ;;
+    esac
+}
+
+_queue_policy_signature_requirement_max() {
+    local current="${1:-}" incoming="${2:-}" cr ir
+    [[ -n "$incoming" ]] || { printf '%s\n' "$current"; return 0; }
+    cr="$(_queue_policy_signature_requirement_rank "$current")"
+    ir="$(_queue_policy_signature_requirement_rank "$incoming")"
+    if [[ "$ir" -gt "$cr" ]]; then
+        printf '%s\n' "$incoming"
+    else
+        printf '%s\n' "$current"
+    fi
+}
+
+_queue_policy_source_file_var() {
+    local file="${1:-}" var="${2:-}"
+    [[ -n "$file" && -n "$var" && -f "$file" ]] || return 0
+    (
+        unset "$var"
+        # Policy statement files are trusted bashqueues policy data files.
+        # shellcheck disable=SC1090
+        source "$file" >/dev/null 2>&1 || exit 0
+        printf '%s\n' "${!var:-}"
+    )
+}
+
+_queue_security_policy_statement_source() {
+    local requested="${1:-}" name file names seen=0
+    local agg_user_sandbox="" agg_user_seccomp="" agg_exception_req="" agg_weak_req=""
+    local agg_weak_sandbox="" agg_weak_seccomp="" agg_block_classes="" agg_block_hashes=""
+    local agg_block_words="" agg_block_patterns="" agg_block_class_req="" agg_block_command_req=""
+    local agg_sig_req="" agg_mandatory_assets="" val
+
+    if [[ -n "$requested" ]]; then
+        file="$(_queue_policy_file class-statement "$requested" 2>/dev/null || true)"
+        [[ -n "$file" && -f "$file" ]] || return 1
+        # shellcheck disable=SC1090
+        source "$file" >/dev/null 2>&1 || return 1
+        return 0
+    fi
+
+    names="$(_queue_policy_list class-statement 2>/dev/null || true)"
+    if [[ -z "$names" ]]; then
+        names="$(_queue_security_policy_statement_name)"
+    fi
+
+    for name in $names; do
+        file="$(_queue_policy_file class-statement "$name" 2>/dev/null || true)"
+        [[ -n "$file" && -f "$file" ]] || continue
+        seen=1
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_USER_SANDBOX_POLICIES)"
+        agg_user_sandbox="$(_queue_policy_words_merge_unique "$agg_user_sandbox" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_USER_SECCOMP_POLICIES)"
+        agg_user_seccomp="$(_queue_policy_words_merge_unique "$agg_user_seccomp" "$val")"
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE)"
+        agg_exception_req="$(_queue_policy_requirement_max "$agg_exception_req" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_WEAK_POLICY_REQUIRE)"
+        agg_weak_req="$(_queue_policy_requirement_max "$agg_weak_req" "$val")"
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_SANDBOX_REASON_REQUIRED)"
+        agg_weak_sandbox="$(_queue_policy_words_merge_unique "$agg_weak_sandbox" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_SECCOMP_REASON_REQUIRED)"
+        agg_weak_seccomp="$(_queue_policy_words_merge_unique "$agg_weak_seccomp" "$val")"
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_CLASS_NAMES)"
+        agg_block_classes="$(_queue_policy_words_merge_unique "$agg_block_classes" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_COMMAND_HASHES)"
+        agg_block_hashes="$(_queue_policy_words_merge_unique "$agg_block_hashes" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_COMMAND_WORDS)"
+        agg_block_words="$(_queue_policy_words_merge_unique "$agg_block_words" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_COMMAND_NAMES)"
+        agg_block_words="$(_queue_policy_words_merge_unique "$agg_block_words" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_COMMAND_PATTERNS)"
+        agg_block_patterns="$(_queue_policy_words_merge_unique "$agg_block_patterns" "$val")"
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_CLASS_REQUIRE)"
+        agg_block_class_req="$(_queue_policy_requirement_max "$agg_block_class_req" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_BLOCK_COMMAND_REQUIRE)"
+        agg_block_command_req="$(_queue_policy_requirement_max "$agg_block_command_req" "$val")"
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED)"
+        agg_sig_req="$(_queue_policy_signature_requirement_max "$agg_sig_req" "$val")"
+
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_MANDATORY_ASSETS)"
+        agg_mandatory_assets="$(_queue_policy_lines_merge_unique "$agg_mandatory_assets" "$val")"
+        val="$(_queue_policy_source_file_var "$file" CLASS_POLICY_MANDATORY_ASSET_SPECS)"
+        agg_mandatory_assets="$(_queue_policy_lines_merge_unique "$agg_mandatory_assets" "$val")"
+
+        # Source every discovered statement so trusted signer variables and any
+        # future scalar policy knobs are visible.  Known cumulative knobs are
+        # normalised back to aggregate values below so one statement cannot
+        # accidentally erase another statement's emergency blocks.
+        # shellcheck disable=SC1090
+        source "$file" >/dev/null 2>&1 || true
+    done
+
+    [[ "$seen" -eq 1 ]] || return 1
+
+    CLASS_POLICY_USER_SANDBOX_POLICIES="$agg_user_sandbox"
+    CLASS_POLICY_USER_SECCOMP_POLICIES="$agg_user_seccomp"
+    CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE="${agg_exception_req:-${CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE:-reason-or-authorisation}}"
+    CLASS_POLICY_WEAK_POLICY_REQUIRE="${agg_weak_req:-${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}}"
+    CLASS_POLICY_SANDBOX_REASON_REQUIRED="$agg_weak_sandbox"
+    CLASS_POLICY_SECCOMP_REASON_REQUIRED="$agg_weak_seccomp"
+    CLASS_POLICY_BLOCK_CLASS_NAMES="$agg_block_classes"
+    CLASS_POLICY_BLOCK_COMMAND_HASHES="$agg_block_hashes"
+    CLASS_POLICY_BLOCK_COMMAND_WORDS="$agg_block_words"
+    CLASS_POLICY_BLOCK_COMMAND_NAMES="$agg_block_words"
+    CLASS_POLICY_BLOCK_COMMAND_PATTERNS="$agg_block_patterns"
+    CLASS_POLICY_BLOCK_CLASS_REQUIRE="${agg_block_class_req:-${CLASS_POLICY_BLOCK_CLASS_REQUIRE:-authorisation}}"
+    CLASS_POLICY_BLOCK_COMMAND_REQUIRE="${agg_block_command_req:-${CLASS_POLICY_BLOCK_COMMAND_REQUIRE:-authorisation}}"
+    CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="${agg_sig_req:-${CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED:-if-trusted-key}}"
+    CLASS_POLICY_MANDATORY_ASSETS="$agg_mandatory_assets"
+    CLASS_POLICY_MANDATORY_ASSET_SPECS="$agg_mandatory_assets"
+}
+
+_queue_security_policy_value_in_list() {
+    local value="$1" list="$2" item
+    for item in $list; do
+        [[ "${item,,}" == "${value,,}" ]] && return 0
+    done
+    return 1
+}
+
+_queue_security_sandbox_rank() {
+    case "${1,,}" in
+        off|none) echo 0 ;;
+        restrict-egress|queue-default) echo 1 ;;
+        network-none) echo 2 ;;
+        strict) echo 3 ;;
+        *) echo 0 ;;
+    esac
+}
+
+_queue_security_seccomp_rank() {
+    case "${1,,}" in
+        off|none) echo 0 ;;
+        docker-default|queue-default) echo 1 ;;
+        strict) echo 2 ;;
+        *) echo 0 ;;
+    esac
+}
+
+_queue_authorisation_normalise_code() {
+    local c="${1:-}"
+    c="${c^^}"
+    [[ "$c" =~ ^[A-Z0-9]{1,5}$ ]] || return 1
+    printf '%s\n' "$c"
+}
+
+_queue_command_hash_from_args() {
+    local raw=""
+    if [[ "$#" -gt 0 ]]; then
+        printf -v raw '%q ' "$@"
+    fi
+    printf '%s' "$raw" | sha256sum | awk '{print $1}'
+}
+
+_queue_command_shell_words_from_args() {
+    # Human-readable, shell-escaped representation of an argv array.  Used only
+    # for policy diagnostics and glob-style emergency command blocks; the
+    # cryptographic binding remains _queue_command_hash_from_args.
+    local raw=""
+    if [[ "$#" -gt 0 ]]; then
+        printf -v raw '%q ' "$@"
+        raw="${raw% }"
+    fi
+    printf '%s
+' "$raw"
+}
+
+_queue_policy_hash_value_in_list() {
+    local hash="${1:-}" list="${2:-}" item
+    [[ -n "$hash" && -n "$list" ]] || return 1
+    for item in $list; do
+        item="${item//,/}"
+        [[ -n "$item" ]] || continue
+        if [[ "${hash,,}" == "${item,,}" || "${hash:0:${#item},,}" == "${item,,}" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+_queue_policy_command_word_in_list() {
+    local argv0="${1:-}" list="${2:-}" item base
+    [[ -n "$argv0" && -n "$list" ]] || return 1
+    base="$(basename -- "$argv0" 2>/dev/null || printf '%s' "$argv0")"
+    for item in $list; do
+        item="${item//,/}"
+        [[ -n "$item" ]] || continue
+        if [[ "${argv0,,}" == "${item,,}" || "${base,,}" == "${item,,}" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+_queue_policy_command_pattern_matches() {
+    local rendered="${1:-}" patterns="${2:-}" pat
+    [[ -n "$rendered" && -n "$patterns" ]] || return 1
+    # Patterns are shell globs separated by newlines or semicolons.  This allows
+    # an emergency /etc policy to block a family such as '*exiftool*' quickly,
+    # while command-hash blocks remain the preferred exact mechanism.
+    while IFS= read -r pat; do
+        [[ -n "$pat" ]] || continue
+        [[ "$rendered" == $pat ]] && return 0
+    done < <(printf '%s
+' "$patterns" | tr ';' '
+')
+    return 1
+}
+
+
+_queue_authorisation_key_name_ok() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9_.@+-]{1,64}$ ]]
+}
+
+_queue_authorisation_key_suffix() {
+    local s="${1:-}"
+    s="${s^^}"
+    s="${s//[^A-Z0-9]/_}"
+    [[ -n "$s" ]] || s="UNKNOWN"
+    printf '%s\n' "$s"
+}
+
+_queue_authorisation_actor_user() {
+    id -un 2>/dev/null || printf '%s\n' "${USER:-unknown}"
+}
+
+_queue_authorisation_actor_queue_root() {
+    local actor actor_root selected_root_owner selected_user active_root
+    if [[ -n "${QUEUEBASH_AUTHORISATION_KEY_ROOT:-}" ]]; then
+        # Test/admin escape hatch: points at the keys directory itself.
+        dirname "${QUEUEBASH_AUTHORISATION_KEY_ROOT%/}"
+        return 0
+    fi
+
+    actor="$(_queue_authorisation_actor_user)"
+    actor_root="$(_queue_root_for_user "$actor" 2>/dev/null || true)"
+    active_root="$(_queue_root)"
+    selected_user="${QUEUEBASH_SELECTED_USER:-}"
+
+    # Key management belongs to the operator/signer identity, not to a foreign
+    # selected target queue.  Root using `queue --queue-user hc3 ...` must manage
+    # and read /root/.queuebash/keys, while the job and authorisation record live
+    # in /home/hc3/.queuebash.
+    if [[ -n "$actor_root" ]]; then
+        if [[ -n "$selected_user" && "$selected_user" != "$actor" ]]; then
+            printf '%s\n' "$actor_root"
+            return 0
+        fi
+        selected_root_owner="$(_queue_root_owner_user 2>/dev/null || true)"
+        if [[ -n "$selected_root_owner" && "$selected_root_owner" != "$actor" && "$active_root" != "$actor_root" ]]; then
+            printf '%s\n' "$actor_root"
+            return 0
+        fi
+    fi
+
+    # Preserve ordinary single-user/test behaviour where QUEUEBASH_ROOT is an
+    # explicit temporary queue root and there is no foreign selected user.
+    printf '%s\n' "$active_root"
+}
+
+_queue_authorisation_key_root() {
+    if [[ -n "${QUEUEBASH_AUTHORISATION_KEY_ROOT:-}" ]]; then
+        printf '%s\n' "${QUEUEBASH_AUTHORISATION_KEY_ROOT%/}"
+        return 0
+    fi
+    printf '%s/keys\n' "$(_queue_authorisation_actor_queue_root)"
+}
+
+_queue_authorisation_signer_key_root() {
+    local signer="${1:-}" signer_root actor
+    # Signing keys belong to the signer/admin identity, not to the selected
+    # target queue.  Root authorising hc3's queue must therefore read
+    # /root/.queuebash/keys/private/root.ed25519.pem, not
+    # /home/hc3/.queuebash/keys/private/root.ed25519.pem.
+    if [[ -n "${QUEUEBASH_AUTHORISATION_KEY_ROOT:-}" ]]; then
+        printf '%s\n' "${QUEUEBASH_AUTHORISATION_KEY_ROOT%/}"
+        return 0
+    fi
+    actor="$(_queue_authorisation_actor_user)"
+    if [[ -z "$signer" || "$signer" == "$actor" ]]; then
+        _queue_authorisation_key_root
+        return 0
+    fi
+    signer_root="$(_queue_root_for_user "$signer" 2>/dev/null || true)"
+    if [[ -n "$signer_root" ]]; then
+        printf '%s/keys\n' "$signer_root"
+        return 0
+    fi
+    _queue_authorisation_key_root
+}
+
+_queue_authorisation_private_key_file() {
+    local name="${1:-}"
+    _queue_authorisation_key_name_ok "$name" || return 1
+    printf '%s/private/%s.ed25519.pem\n' "$(_queue_authorisation_key_root)" "$name"
+}
+
+_queue_authorisation_signer_private_key_file() {
+    local signer="${1:-}" name="${2:-}"
+    [[ -n "$name" ]] || name="$signer"
+    _queue_authorisation_key_name_ok "$name" || return 1
+    printf '%s/private/%s.ed25519.pem\n' "$(_queue_authorisation_signer_key_root "$signer")" "$name"
+}
+
+_queue_authorisation_public_key_file() {
+    local name="${1:-}"
+    _queue_authorisation_key_name_ok "$name" || return 1
+    printf '%s/public/%s.ed25519.pub.pem\n' "$(_queue_authorisation_key_root)" "$name"
+}
+
+_queue_authorisation_key_meta_file() {
+    local name="${1:-}"
+    _queue_authorisation_key_name_ok "$name" || return 1
+    printf '%s/meta/%s.env\n' "$(_queue_authorisation_key_root)" "$name"
+}
+
+_queue_base64_one_line() {
+    base64 "$@" | tr -d '\n'
+}
+
+_queue_base64_decode() {
+    base64 -d "$@" 2>/dev/null || base64 --decode "$@"
+}
+
+_queue_authorisation_public_key_sha256_file() {
+    local f="${1:-}"
+    [[ -f "$f" ]] || return 1
+    sha256sum "$f" | awk '{print $1}'
+}
+
+_queue_authorisation_keygen() {
+    local kind="${1:-authorisation}" name="" force=0 priv pub meta created pub_sha pub_b64 key_id suffix
+    [[ "$kind" == "authorisation" || "$kind" == "auth" || "$kind" == "code" || "$kind" == "codesign" || "$kind" == "code-signing" ]] || { echo "Usage: queue keygen authorisation|code NAME [--force]" >&2; return 2; }
+    shift || true
+    name="${1:-}"; [[ -n "$name" ]] && shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --force) force=1; shift ;;
+            *) echo "queue keygen $kind: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$name" ]] || name="$(id -un 2>/dev/null || echo root)"
+    _queue_authorisation_key_name_ok "$name" || { echo "queue keygen authorisation: key name must be 1-64 safe characters" >&2; return 2; }
+    command -v openssl >/dev/null 2>&1 || { echo "queue keygen authorisation: openssl is required for Ed25519 keys" >&2; return 3; }
+    priv="$(_queue_authorisation_private_key_file "$name")" || return 2
+    pub="$(_queue_authorisation_public_key_file "$name")" || return 2
+    meta="$(_queue_authorisation_key_meta_file "$name")" || return 2
+    if [[ "$force" -ne 1 && ( -e "$priv" || -e "$pub" || -e "$meta" ) ]]; then
+        echo "queue keygen $kind: key already exists: $name (use --force to replace)" >&2
+        return 1
+    fi
+    mkdir -p "$(dirname "$priv")" "$(dirname "$pub")" "$(dirname "$meta")"
+    chmod 0700 "$(dirname "$priv")" 2>/dev/null || true
+    chmod 0755 "$(dirname "$pub")" "$(dirname "$meta")" 2>/dev/null || true
+    umask 077
+    openssl genpkey -algorithm ED25519 -out "$priv" >/dev/null 2>&1 || { echo "queue keygen $kind: openssl failed generating private key" >&2; return 1; }
+    chmod 0600 "$priv" 2>/dev/null || true
+    openssl pkey -in "$priv" -pubout -out "$pub" >/dev/null 2>&1 || { rm -f "$priv"; echo "queue keygen $kind: openssl failed deriving public key" >&2; return 1; }
+    chmod 0644 "$pub" 2>/dev/null || true
+    created="$(_queue_now_iso)"
+    pub_sha="$(_queue_authorisation_public_key_sha256_file "$pub")"
+    key_id="${pub_sha:0:16}"
+    pub_b64="$(_queue_base64_one_line "$pub")"
+    {
+        printf 'KEY_NAME=%q\n' "$name"
+        printf 'KEY_ID=%q\n' "$key_id"
+        printf 'KEY_ALGORITHM=%q\n' "Ed25519"
+        printf 'KEY_CREATED_AT=%q\n' "$created"
+        printf 'KEY_STATUS=%q\n' "active"
+        printf 'KEY_PURPOSE=%q\n' "queue-authorisation-signing"
+        printf 'PUBLIC_KEY_SHA256=%q\n' "$pub_sha"
+        printf 'PUBLIC_KEY_FILE=%q\n' "$pub"
+        printf 'PRIVATE_KEY_FILE=%q\n' "$priv"
+    } > "$meta"
+    chmod 0644 "$meta" 2>/dev/null || true
+    suffix="$(_queue_authorisation_key_suffix "$name")"
+    echo "key:       $name"
+    echo "key_id:    $key_id"
+    echo "algorithm: Ed25519"
+    echo "private:   $priv"
+    echo "public:    $pub"
+    echo "public_sha256: $pub_sha"
+    echo ""
+    echo "Policy statement lines for policies.d/class-statement/default.env or /etc/queuebash/policies.d/class-statement/default.env:"
+    printf 'CLASS_POLICY_AUTHORISATION_SIGNER_%s_PUBLIC_KEY_SHA256=%q\n' "$suffix" "$pub_sha"
+    printf 'CLASS_POLICY_AUTHORISATION_SIGNER_%s_PUBLIC_KEY_PEM_B64=%q\n' "$suffix" "$pub_b64"
+}
+
+_queue_authorisation_keys_list() {
+    local f line name key_id alg status pub_sha
+    shopt -s nullglob
+    for f in "$(_queue_authorisation_key_root)"/meta/*.env; do
+        line="$(KEY_NAME="" KEY_ID="" KEY_ALGORITHM="" KEY_STATUS="" PUBLIC_KEY_SHA256=""; source "$f" >/dev/null 2>&1 || exit 9; printf '%s\t%s\t%s\t%s\t%s\n' "${KEY_NAME:-$(basename "$f" .env)}" "${KEY_ID:-}" "${KEY_ALGORITHM:-}" "${KEY_STATUS:-}" "${PUBLIC_KEY_SHA256:-}")" || continue
+        IFS=$'\t' read -r name key_id alg status pub_sha <<< "$line"
+        printf '%-16s key_id=%-16s algorithm=%-8s status=%-8s public_sha=%s\n' "$name" "$key_id" "$alg" "$status" "${pub_sha:0:16}"
+    done
+    shopt -u nullglob
+}
+
+_queue_authorisation_keys_show() {
+    local name="${1:-}" meta pub suffix pub_sha pub_b64
+    [[ -n "$name" ]] || { echo "Usage: queue keys show NAME" >&2; return 2; }
+    meta="$(_queue_authorisation_key_meta_file "$name")" || { echo "queue keys show: invalid key name" >&2; return 2; }
+    [[ -f "$meta" ]] || { echo "queue keys show: key not found: $name" >&2; return 1; }
+    sed -n '1,120p' "$meta" | sed '/PRIVATE_KEY_FILE=/d'
+    pub="$(_queue_authorisation_public_key_file "$name")" || return 2
+    if [[ -f "$pub" ]]; then
+        pub_sha="$(_queue_authorisation_public_key_sha256_file "$pub")"
+        pub_b64="$(_queue_base64_one_line "$pub")"
+        suffix="$(_queue_authorisation_key_suffix "$name")"
+        echo "POLICY_SIGNER_SUFFIX=$suffix"
+        printf 'CLASS_POLICY_AUTHORISATION_SIGNER_%s_PUBLIC_KEY_SHA256=%q\n' "$suffix" "$pub_sha"
+        printf 'CLASS_POLICY_AUTHORISATION_SIGNER_%s_PUBLIC_KEY_PEM_B64=%q\n' "$suffix" "$pub_b64"
+    fi
+}
+
+_queue_authorisation_payload_text() {
+    local code="$1" admin="$2" user="$3" cmd_hash="$4" created="$5" expires="$6" reason="$7" queue_root="$8"
+    local reason_sha
+    reason_sha="$(printf '%s' "$reason" | sha256sum | awk '{print $1}')"
+    printf 'BQAUTH-V1\n'
+    printf 'code=%s\n' "$code"
+    printf 'queue_root=%s\n' "$queue_root"
+    printf 'admin=%s\n' "$admin"
+    printf 'user=%s\n' "$user"
+    printf 'command_sha256=%s\n' "$cmd_hash"
+    printf 'created_at=%s\n' "$created"
+    printf 'expires_at=%s\n' "$expires"
+    printf 'reason_sha256=%s\n' "$reason_sha"
+}
+
+_queue_authorisation_policy_public_key_b64() {
+    local signer="${1:-}" suffix var
+    _queue_security_policy_statement_source >/dev/null 2>&1 || return 1
+    suffix="$(_queue_authorisation_key_suffix "$signer")"
+    var="CLASS_POLICY_AUTHORISATION_SIGNER_${suffix}_PUBLIC_KEY_PEM_B64"
+    printf '%s\n' "${!var:-}"
+}
+
+_queue_authorisation_policy_public_key_sha() {
+    local signer="${1:-}" suffix var
+    _queue_security_policy_statement_source >/dev/null 2>&1 || return 1
+    suffix="$(_queue_authorisation_key_suffix "$signer")"
+    var="CLASS_POLICY_AUTHORISATION_SIGNER_${suffix}_PUBLIC_KEY_SHA256"
+    printf '%s\n' "${!var:-}"
+}
+
+_queue_authorisation_signature_requirement() {
+    _queue_security_policy_statement_source >/dev/null 2>&1 || { echo "off"; return 0; }
+    printf '%s\n' "${CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED:-if-trusted-key}"
+}
+
+_queue_authorisation_policy_file_path() {
+    local name="${1:-$(_queue_security_policy_statement_name)}"
+    _queue_policy_file class-statement "$name" 2>/dev/null || true
+}
+
+_queue_authorisation_signature_admin_requirement() {
+    # Prints one of:
+    #   required      policy requires this admin's authorisation to be signed
+    #   optional      unsigned legacy authorisation is allowed
+    #   untrusted     policy has a trust list and this admin is not on it
+    #   no-public-key signature is mandatory but no public key is declared for this admin
+    #   invalid-mode  policy mode is not recognised
+    local admin="${1:-}" mode pub_b64
+    mode="$(_queue_authorisation_signature_requirement)"
+    pub_b64="$(_queue_authorisation_policy_public_key_b64 "$admin")"
+    case "${mode,,}" in
+        off|none|legacy) echo "optional"; return 0 ;;
+        always|required)
+            [[ -n "$pub_b64" ]] && { echo "required"; return 0; }
+            echo "no-public-key"; return 1
+            ;;
+        if-trusted-key|if-trusted-keys|trusted|auto|"")
+            [[ -n "$pub_b64" ]] && { echo "required"; return 0; }
+            if _queue_authorisation_policy_has_any_public_keys; then
+                echo "untrusted"
+                return 1
+            fi
+            echo "optional"
+            return 0
+            ;;
+        *) echo "invalid-mode"; return 1 ;;
+    esac
+}
+
+_queue_authorisation_policy_show() {
+    local file mode signers suffix sha_var has_any="no"
+    file="$(_queue_authorisation_policy_file_path)"
+    mode="$(_queue_authorisation_signature_requirement)"
+    _queue_authorisation_policy_has_any_public_keys && has_any="yes"
+    echo "class_policy_statement: ${QUEUEBASH_CLASS_POLICY_STATEMENT:-default}"
+    echo "policy_file: ${file:-not-found}"
+    echo "signature_required: $mode"
+    echo "signing_key_root: $(_queue_authorisation_key_root)"
+    echo "trusted_public_keys_present: $has_any"
+    signers="$(_queue_authorisation_policy_signers_list 2>/dev/null || true)"
+    if [[ -z "$signers" ]]; then
+        echo "trusted_signers: none"
+        return 0
+    fi
+    echo "trusted_signers: $signers"
+    for suffix in $signers; do
+        sha_var="CLASS_POLICY_AUTHORISATION_SIGNER_${suffix}_PUBLIC_KEY_SHA256"
+        echo "signer_${suffix}: public_sha=${!sha_var:-}"
+    done
+}
+
+_queue_authorisation_sign_fields() {
+    local code="$1" admin="$2" user="$3" cmd_hash="$4" created="$5" expires="$6" reason="$7" key_name="$8"
+    local priv payload sig sig_b64 payload_sha
+    [[ -n "$key_name" ]] || key_name="$admin"
+    priv="$(_queue_authorisation_signer_private_key_file "$admin" "$key_name")" || return 1
+    [[ -f "$priv" ]] || return 1
+    command -v openssl >/dev/null 2>&1 || return 1
+    payload="$(mktemp)" || return 1
+    sig="$(mktemp)" || { rm -f "$payload"; return 1; }
+    _queue_authorisation_payload_text "$code" "$admin" "$user" "$cmd_hash" "$created" "$expires" "$reason" "$(_queue_root)" > "$payload"
+    payload_sha="$(sha256sum "$payload" | awk '{print $1}')"
+    if ! openssl pkeyutl -sign -rawin -inkey "$priv" -in "$payload" -out "$sig" >/dev/null 2>&1; then
+        rm -f "$payload" "$sig"
+        return 1
+    fi
+    sig_b64="$(_queue_base64_one_line "$sig")"
+    rm -f "$payload" "$sig"
+    printf '%s\t%s\t%s\n' "$key_name" "$payload_sha" "$sig_b64"
+}
+
+_queue_authorisation_verify_signature_loaded() {
+    local mode pub_b64 expected_sha pubfile payload sigfile actual_sha payload_sha expected_payload_sha
+    mode="$(_queue_authorisation_signature_requirement)"
+    pub_b64="$(_queue_authorisation_policy_public_key_b64 "${AUTHORISATION_ADMIN:-}")"
+    expected_sha="$(_queue_authorisation_policy_public_key_sha "${AUTHORISATION_ADMIN:-}")"
+    case "${mode,,}" in
+        off|none|legacy) echo "valid-unsigned"; return 0 ;;
+        always|required)
+            [[ -n "$pub_b64" ]] || { echo "invalid-no-policy-public-key"; return 1; }
+            ;;
+        if-trusted-key|if-trusted-keys|trusted|auto|"")
+            if [[ -z "$pub_b64" ]]; then
+                if _queue_authorisation_policy_has_any_public_keys; then
+                    echo "invalid-untrusted-admin"
+                    return 1
+                fi
+                echo "valid-unsigned"
+                return 0
+            fi
+            ;;
+        *) echo "invalid-policy-signature-mode"; return 1 ;;
+    esac
+    [[ -n "${AUTHORISATION_SIGNATURE_B64:-}" ]] || { echo "invalid-missing-signature"; return 1; }
+    pubfile="$(mktemp)" || return 1
+    payload="$(mktemp)" || { rm -f "$pubfile"; return 1; }
+    sigfile="$(mktemp)" || { rm -f "$pubfile" "$payload"; return 1; }
+    printf '%s' "$pub_b64" | _queue_base64_decode > "$pubfile" || { rm -f "$pubfile" "$payload" "$sigfile"; echo "invalid-policy-public-key"; return 1; }
+    actual_sha="$(_queue_authorisation_public_key_sha256_file "$pubfile" 2>/dev/null || true)"
+    if [[ -n "$expected_sha" && "$actual_sha" != "$expected_sha" ]]; then
+        rm -f "$pubfile" "$payload" "$sigfile"
+        echo "invalid-policy-public-key-sha"
+        return 1
+    fi
+    _queue_authorisation_payload_text "${AUTHORISATION_CODE:-}" "${AUTHORISATION_ADMIN:-}" "${AUTHORISATION_USER:-}" "${AUTHORISATION_COMMAND_SHA256:-}" "${AUTHORISATION_CREATED_AT:-}" "${AUTHORISATION_EXPIRES_AT:-never}" "${AUTHORISATION_REASON:-}" "${AUTHORISATION_QUEUE_ROOT:-$(_queue_root)}" > "$payload"
+    payload_sha="$(sha256sum "$payload" | awk '{print $1}')"
+    expected_payload_sha="${AUTHORISATION_SIGNATURE_PAYLOAD_SHA256:-}"
+    if [[ -n "$expected_payload_sha" && "$payload_sha" != "$expected_payload_sha" ]]; then
+        rm -f "$pubfile" "$payload" "$sigfile"
+        echo "invalid-payload-hash"
+        return 1
+    fi
+    printf '%s' "${AUTHORISATION_SIGNATURE_B64:-}" | _queue_base64_decode > "$sigfile" || { rm -f "$pubfile" "$payload" "$sigfile"; echo "invalid-signature-b64"; return 1; }
+    if openssl pkeyutl -verify -rawin -pubin -inkey "$pubfile" -sigfile "$sigfile" -in "$payload" >/dev/null 2>&1; then
+        rm -f "$pubfile" "$payload" "$sigfile"
+        echo "valid-signed"
+        return 0
+    fi
+    rm -f "$pubfile" "$payload" "$sigfile"
+    echo "invalid-signature"
+    return 1
+}
+
+_queue_authorisation_dir() {
+    printf '%s\n' "$(_queue_root)/authorisations"
+}
+
+_queue_authorisation_file() {
+    local code
+    code="$(_queue_authorisation_normalise_code "${1:-}")" || return 1
+    printf '%s/%s.env\n' "$(_queue_authorisation_dir)" "$code"
+}
+
+_queue_authorisation_publish_file_permissions() {
+    # Authorisation records are queue evidence.  They may be created by root
+    # while operating inside another user's selected queue, so they must not
+    # inherit root-only readability (for example 0640 root:root).  Publish them
+    # read-only and world-readable so the queue owner/panel can validate them
+    # without changing the record owner/group or relying on a particular group.
+    local file="${1:-}"
+    [[ -n "$file" && -e "$file" ]] || return 0
+    chmod 0444 "$file" 2>/dev/null || chmod 0644 "$file" 2>/dev/null || true
+}
+
+_queue_authorisation_policy_has_any_public_keys() {
+    _queue_security_policy_statement_source >/dev/null 2>&1 || return 1
+    compgen -A variable CLASS_POLICY_AUTHORISATION_SIGNER_ 2>/dev/null | grep -q '_PUBLIC_KEY_PEM_B64$'
+}
+
+_queue_authorisation_policy_signers_list() {
+    local var s out=""
+    _queue_security_policy_statement_source >/dev/null 2>&1 || return 1
+    for var in $(compgen -A variable CLASS_POLICY_AUTHORISATION_SIGNER_ 2>/dev/null | LC_ALL=C sort); do
+        [[ "$var" == *_PUBLIC_KEY_PEM_B64 ]] || continue
+        [[ -n "${!var:-}" ]] || continue
+        s="${var#CLASS_POLICY_AUTHORISATION_SIGNER_}"
+        s="${s%_PUBLIC_KEY_PEM_B64}"
+        out+=" ${s}"
+    done
+    printf '%s\n' "${out# }"
+}
+
+_queue_authorisation_generate_code() {
+    local root code try
+    root="$(_queue_root)"
+    mkdir -p "$root/authorisations"
+    for try in 1 2 3 4 5 6 7 8 9 10; do
+        code="$(LC_ALL=C tr -dc 'A-Z0-9' </dev/urandom 2>/dev/null | head -c 5 || true)"
+        if [[ -z "$code" ]]; then
+            code="$(date +%s%N | sha256sum | tr -dc 'A-Z0-9' | head -c 5)"
+        fi
+        [[ -n "$code" && ! -e "$root/authorisations/$code.env" ]] && { printf '%s\n' "$code"; return 0; }
+    done
+    return 1
+}
+
+_queue_authorisation_generate() {
+    local admin="" user="" reason="" expires="never" code="" key_name="" command=() cmd_hash file created sign_line sig_key sig_payload_sha sig_b64 sig_need integrity tmpfile
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --admin) admin="${2:-}"; shift 2 ;;
+            --user) user="${2:-}"; shift 2 ;;
+            --reason) reason="${2:-}"; shift 2 ;;
+            --expires|--expires-at) expires="${2:-}"; shift 2 ;;
+            --code) code="${2:-}"; shift 2 ;;
+            --key|--signing-key) key_name="${2:-}"; shift 2 ;;
+            --) shift; command=("$@"); break ;;
+            *) echo "queue authorisation generate: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$admin" ]] || admin="$(id -un 2>/dev/null || echo unknown)"
+    [[ -n "$user" ]] || user="$(id -un 2>/dev/null || echo unknown)"
+    [[ "${#command[@]}" -gt 0 ]] || { echo "Usage: queue authorisation generate --admin ADMIN --user USER [--reason TEXT] [--expires never] -- <command>" >&2; return 2; }
+    if [[ -n "$code" ]]; then
+        code="$(_queue_authorisation_normalise_code "$code")" || { echo "queue authorisation generate: code must be 1-5 case-insensitive letters/numbers" >&2; return 2; }
+    else
+        code="$(_queue_authorisation_generate_code)" || { echo "queue authorisation generate: unable to allocate code" >&2; return 1; }
+    fi
+    cmd_hash="$(_queue_command_hash_from_args "${command[@]}")"
+    file="$(_queue_authorisation_file "$code")" || return 2
+    [[ ! -e "$file" ]] || { echo "queue authorisation generate: code already exists: $code" >&2; return 1; }
+    mkdir -p "$(dirname "$file")"
+    created="$(_queue_now_iso)"
+    sign_line="$(_queue_authorisation_sign_fields "$code" "$admin" "$user" "$cmd_hash" "$created" "$expires" "$reason" "$key_name" 2>/dev/null || true)"
+    IFS=$'\t' read -r sig_key sig_payload_sha sig_b64 <<< "$sign_line"
+    sig_need="$(_queue_authorisation_signature_admin_requirement "$admin" 2>/dev/null || true)"
+    case "$sig_need" in
+        required)
+            [[ -n "$sig_b64" ]] || { echo "queue authorisation generate: policy requires a valid signature for admin '$admin' but no matching private key could sign this authorisation" >&2; return 1; }
+            ;;
+        untrusted)
+            echo "queue authorisation generate: admin '$admin' is not trusted by the active class policy statement" >&2; return 1 ;;
+        no-public-key)
+            echo "queue authorisation generate: policy requires signed authorisations but declares no public key for admin '$admin'" >&2; return 1 ;;
+        invalid-mode)
+            echo "queue authorisation generate: invalid CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED mode" >&2; return 1 ;;
+    esac
+    tmpfile="$(mktemp "$(_queue_authorisation_dir)/.${code}.candidate.XXXXXX")" || { echo "queue authorisation generate: unable to create candidate file" >&2; return 1; }
+    {
+        printf 'AUTHORISATION_CODE=%q\n' "$code"
+        printf 'AUTHORISATION_ADMIN=%q\n' "$admin"
+        printf 'AUTHORISATION_USER=%q\n' "$user"
+        printf 'AUTHORISATION_QUEUE_ROOT=%q\n' "$(_queue_root)"
+        printf 'AUTHORISATION_COMMAND_SHA256=%q\n' "$cmd_hash"
+        printf 'AUTHORISATION_CREATED_AT=%q\n' "$created"
+        printf 'AUTHORISATION_EXPIRES_AT=%q\n' "$expires"
+        printf 'AUTHORISATION_STATUS=%q\n' "active"
+        printf 'AUTHORISATION_REASON=%q\n' "$reason"
+        [[ -n "$sig_b64" ]] && printf 'AUTHORISATION_SIGNING_KEY=%q\n' "$sig_key"
+        [[ -n "$sig_payload_sha" ]] && printf 'AUTHORISATION_SIGNATURE_PAYLOAD_SHA256=%q\n' "$sig_payload_sha"
+        [[ -n "$sig_b64" ]] && printf 'AUTHORISATION_SIGNATURE_B64=%q\n' "$sig_b64"
+        printf 'AUTHORISATION_COMMAND=('; printf ' %q' "${command[@]}"; printf ' )\n'
+    } > "$tmpfile" || { rm -f "$tmpfile"; echo "queue authorisation generate: failed to create authorisation candidate" >&2; return 1; }
+    integrity="$(_queue_authorisation_file_status "$tmpfile" 2>/dev/null || true)"
+    if [[ "$integrity" != "valid-signed" && "$integrity" != "valid-unsigned" ]]; then
+        rm -f "$tmpfile"
+        if [[ "$integrity" == "invalid-missing-signature" && "$sig_need" == "required" ]]; then
+            echo "queue authorisation generate: policy requires a valid signature for admin '$admin' but no matching private key could sign this authorisation" >&2
+        else
+            echo "queue authorisation generate: refused to create invalid authorisation candidate: ${integrity:-invalid}" >&2
+        fi
+        return 1
+    fi
+    if [[ "$sig_need" == "required" && "$integrity" != "valid-signed" ]]; then
+        rm -f "$tmpfile"
+        echo "queue authorisation generate: policy requires a valid signature for admin '$admin' but no matching private key could sign this authorisation" >&2
+        return 1
+    fi
+    mv "$tmpfile" "$file" || { rm -f "$tmpfile"; echo "queue authorisation generate: failed to publish authorisation file" >&2; return 1; }
+    _queue_authorisation_publish_file_permissions "$file"
+    echo "authorisation: $code"
+    echo "queue:         $(_queue_root)"
+    echo "admin:         $admin"
+    echo "user:          $user"
+    echo "command_sha:   $cmd_hash"
+    [[ -n "$sig_b64" ]] && echo "signature:     signed" || echo "signature:     unsigned"
+}
+
+_queue_authorisation_validate() {
+    local code="${1:-}" user="${2:-}" reason_context="${3:-submit}" file cmd_hash now exp
+    shift 3 || true
+    code="$(_queue_authorisation_normalise_code "$code")" || { echo "queue $reason_context: invalid authorisation code: ${1:-}" >&2; return 2; }
+    file="$(_queue_authorisation_file "$code")" || return 2
+    [[ -f "$file" ]] || { echo "queue $reason_context: authorisation not found in this queue: $code" >&2; return 1; }
+    (
+        AUTHORISATION_CODE=""; AUTHORISATION_ADMIN=""; AUTHORISATION_USER=""; AUTHORISATION_COMMAND_SHA256=""; AUTHORISATION_EXPIRES_AT="never"; AUTHORISATION_STATUS="active"
+        AUTHORISATION_COMMAND=()
+        source "$file" >/dev/null 2>&1 || exit 10
+        [[ "${AUTHORISATION_STATUS,,}" == "active" ]] || { echo "queue $reason_context: authorisation is not active: $code" >&2; exit 11; }
+        [[ -z "${AUTHORISATION_USER:-}" || "${AUTHORISATION_USER}" == "$user" || "${AUTHORISATION_USER}" == "*" ]] || { echo "queue $reason_context: authorisation $code is for user ${AUTHORISATION_USER}, not $user" >&2; exit 12; }
+        if [[ "${#AUTHORISATION_COMMAND[@]}" -eq 0 || "$(_queue_command_hash_from_args "${AUTHORISATION_COMMAND[@]}")" != "${AUTHORISATION_COMMAND_SHA256:-}" ]]; then
+            echo "queue $reason_context: authorisation $code file integrity check failed" >&2
+            exit 15
+        fi
+        cmd_hash="$(_queue_command_hash_from_args "$@")"
+        [[ -n "${AUTHORISATION_COMMAND_SHA256:-}" && "$cmd_hash" == "$AUTHORISATION_COMMAND_SHA256" ]] || { echo "queue $reason_context: authorisation $code does not match this command" >&2; exit 13; }
+        if [[ -n "${AUTHORISATION_EXPIRES_AT:-}" && "${AUTHORISATION_EXPIRES_AT}" != "never" ]]; then
+            now="$(_queue_now_epoch 2>/dev/null || echo 0)"; exp="$(date -d "$AUTHORISATION_EXPIRES_AT" +%s 2>/dev/null || echo 0)"
+            [[ "$exp" -le 0 || "$now" -le "$exp" ]] || { echo "queue $reason_context: authorisation $code expired at $AUTHORISATION_EXPIRES_AT" >&2; exit 14; }
+        fi
+        sig_status="$(_queue_authorisation_verify_signature_loaded)" || { echo "queue $reason_context: authorisation $code signature check failed: $sig_status" >&2; exit 16; }
+        exit 0
+    )
+}
+
+
+_queue_authorisation_find_valid_for_command() {
+    # Prints the first valid, active, unexpired authorisation code in the selected
+    # queue that matches USER and the exact command argv supplied after USER.
+    local user="${1:-}" f code
+    shift || true
+    [[ -n "$user" && "$#" -gt 0 ]] || return 1
+    shopt -s nullglob
+    for f in "$(_queue_authorisation_dir)"/*.env; do
+        [[ -r "$f" ]] || continue
+        code="$(basename "$f" .env)"
+        if _queue_authorisation_validate "$code" "$user" auto "$@" >/dev/null 2>&1; then
+            shopt -u nullglob
+            printf '%s\n' "$code"
+            return 0
+        fi
+    done
+    shopt -u nullglob
+    return 1
+}
+
+_queue_job_append_security_exemption() {
+    local jobf="${1:-}" type="${2:-}" detail="${3:-}" code="${4:-}"
+    local id state action
+    [[ -n "$jobf" && -f "$jobf" && -n "$type" ]] || return 0
+    case "$type" in
+        code-approved) action="run_with_authorisation" ;;
+        description-approved) action="run_with_reason" ;;
+        policy-approved) action="run_with_policy_grant" ;;
+        *) action="run_with_exemption" ;;
+    esac
+    {
+        printf '
+# Security exemption recorded at %q
+' "$(_queue_now_iso)"
+        printf 'SECURITY_EXEMPTION_TYPE=%q
+' "$type"
+        [[ -n "$detail" ]] && printf 'SECURITY_EXEMPTION_DETAIL=%q
+' "$detail"
+        [[ -n "$code" ]] && printf 'SECURITY_AUTHORISATION_CODE=%q
+' "$code"
+        printf 'SECURITY_EXEMPTION_ACTION=%q
+' "$action"
+    } >> "$jobf" 2>/dev/null || true
+    id="$(basename "$jobf" .job)"
+    state="$(_queue_state_for_job_path "$jobf" "$(_queue_root)")"
+    _queue_log_event "security_exemption" "$id" "$(_queue_job_name "$jobf" 2>/dev/null || echo -)" "$state" "type=$type action=$action${code:+ code=$code}${detail:+ detail=$detail}" 2>/dev/null || true
+}
+
+_queue_authorisation_file_status() {
+    local file="${1:-}"
+    [[ -f "$file" ]] || { echo "missing"; return 1; }
+    (
+        AUTHORISATION_CODE=""; AUTHORISATION_ADMIN=""; AUTHORISATION_USER=""; AUTHORISATION_COMMAND_SHA256=""; AUTHORISATION_EXPIRES_AT="never"; AUTHORISATION_STATUS="active"; AUTHORISATION_REASON=""
+        AUTHORISATION_COMMAND=()
+        # shellcheck disable=SC1090
+        if [[ ! -r "$file" ]]; then
+            echo "invalid-unreadable"
+            exit 1
+        fi
+        source "$file" >/dev/null 2>&1 || { echo "invalid-source"; exit 1; }
+        if [[ "${AUTHORISATION_STATUS,,}" != "active" ]]; then
+            echo "invalid-status:${AUTHORISATION_STATUS:-unset}"
+            exit 1
+        fi
+        if [[ -n "${AUTHORISATION_EXPIRES_AT:-}" && "${AUTHORISATION_EXPIRES_AT}" != "never" ]]; then
+            local now exp
+            now="$(_queue_now_epoch 2>/dev/null || echo 0)"
+            exp="$(date -d "$AUTHORISATION_EXPIRES_AT" +%s 2>/dev/null || echo 0)"
+            if [[ "$exp" -gt 0 && "$now" -gt "$exp" ]]; then
+                echo "invalid-expired"
+                exit 1
+            fi
+        fi
+        if [[ "${#AUTHORISATION_COMMAND[@]}" -eq 0 ]]; then
+            echo "invalid-no-command"
+            exit 1
+        fi
+        local declared
+        declared="$(_queue_command_hash_from_args "${AUTHORISATION_COMMAND[@]}")"
+        if [[ -z "${AUTHORISATION_COMMAND_SHA256:-}" || "$declared" != "$AUTHORISATION_COMMAND_SHA256" ]]; then
+            echo "invalid-command-hash"
+            exit 1
+        fi
+        local sig_status
+        sig_status="$(_queue_authorisation_verify_signature_loaded)" || { echo "$sig_status"; exit 1; }
+        echo "$sig_status"
+        exit 0
+    )
+}
+
+_queue_authorisation_list() {
+    local f code user admin status exp hash integrity line
+    shopt -s nullglob
+    for f in "$(_queue_authorisation_dir)"/*.env; do
+        [[ -f "$f" ]] || continue
+        if line="$(
+            AUTHORISATION_CODE=""; AUTHORISATION_ADMIN=""; AUTHORISATION_USER=""; AUTHORISATION_COMMAND_SHA256=""; AUTHORISATION_EXPIRES_AT="never"; AUTHORISATION_STATUS="unknown"; AUTHORISATION_COMMAND=()
+            # shellcheck disable=SC1090
+            [[ -r "$f" ]] || exit 8
+            source "$f" >/dev/null 2>&1 || exit 9
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${AUTHORISATION_CODE:-$(basename "$f" .env)}" "${AUTHORISATION_USER:-}" "${AUTHORISATION_ADMIN:-}" "${AUTHORISATION_STATUS:-}" "${AUTHORISATION_EXPIRES_AT:-}" "${AUTHORISATION_COMMAND_SHA256:-}"
+        )"; then
+            IFS=$'\t' read -r code user admin status exp hash <<< "$line"
+        else
+            code="$(basename "$f" .env)"
+            user=""
+            admin=""
+            status="invalid-source"
+            exp=""
+            hash=""
+        fi
+        integrity="$(_queue_authorisation_file_status "$f" 2>/dev/null || true)"
+        [[ -n "$integrity" ]] || integrity="invalid"
+        printf '%-5s user=%-12s admin=%-12s status=%-14s integrity=%-24s expires=%-20s command=%s\n' "$code" "$user" "$admin" "$status" "$integrity" "$exp" "${hash:0:16}"
+    done
+    shopt -u nullglob
+}
+
+_queue_authorisation_list_json() {
+    local f line code user admin status exp hash integrity first=0
+    printf '{"queue_root":"%s","authorisation_dir":"%s","authorisations":[' \
+        "$(_queue_json_escape "$(_queue_root)")" "$(_queue_json_escape "$(_queue_authorisation_dir)")"
+    shopt -s nullglob
+    for f in "$(_queue_authorisation_dir)"/*.env; do
+        [[ -f "$f" ]] || continue
+        if line="$(
+            AUTHORISATION_CODE=""; AUTHORISATION_ADMIN=""; AUTHORISATION_USER=""; AUTHORISATION_COMMAND_SHA256=""; AUTHORISATION_EXPIRES_AT="never"; AUTHORISATION_STATUS="unknown"; AUTHORISATION_COMMAND=()
+            # shellcheck disable=SC1090
+            [[ -r "$f" ]] || exit 8
+            source "$f" >/dev/null 2>&1 || exit 9
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${AUTHORISATION_CODE:-$(basename "$f" .env)}" "${AUTHORISATION_USER:-}" "${AUTHORISATION_ADMIN:-}" "${AUTHORISATION_STATUS:-}" "${AUTHORISATION_EXPIRES_AT:-}" "${AUTHORISATION_COMMAND_SHA256:-}"
+        )"; then
+            IFS=$'\t' read -r code user admin status exp hash <<< "$line"
+        else
+            code="$(basename "$f" .env)"; user=""; admin=""; status="invalid-source"; exp=""; hash=""
+        fi
+        integrity="$(_queue_authorisation_file_status "$f" 2>/dev/null || true)"
+        [[ -n "$integrity" ]] || integrity="invalid"
+        _queue_json_comma first
+        printf '{"code":"%s","user":"%s","admin":"%s","status":"%s","integrity":"%s","expires_at":"%s","command_sha256":"%s","file":"%s"}' \
+            "$(_queue_json_escape "$code")" "$(_queue_json_escape "$user")" "$(_queue_json_escape "$admin")" \
+            "$(_queue_json_escape "$status")" "$(_queue_json_escape "$integrity")" "$(_queue_json_escape "$exp")" \
+            "$(_queue_json_escape "$hash")" "$(_queue_json_escape "$f")"
+    done
+    shopt -u nullglob
+    printf ']}\n'
+}
+
+_queue_authorisation_keys_list_json() {
+    local f line name key_id alg status pub_sha first=0
+    printf '{"key_root":"%s","keys":[' "$(_queue_json_escape "$(_queue_authorisation_key_root)")"
+    shopt -s nullglob
+    for f in "$(_queue_authorisation_key_root)"/meta/*.env; do
+        line="$(KEY_NAME="" KEY_ID="" KEY_ALGORITHM="" KEY_STATUS="" PUBLIC_KEY_SHA256=""; source "$f" >/dev/null 2>&1 || exit 9; printf '%s\t%s\t%s\t%s\t%s\n' "${KEY_NAME:-$(basename "$f" .env)}" "${KEY_ID:-}" "${KEY_ALGORITHM:-}" "${KEY_STATUS:-}" "${PUBLIC_KEY_SHA256:-}")" || continue
+        IFS=$'\t' read -r name key_id alg status pub_sha <<< "$line"
+        _queue_json_comma first
+        printf '{"name":"%s","key_id":"%s","algorithm":"%s","status":"%s","public_sha256":"%s","meta_file":"%s"}' \
+            "$(_queue_json_escape "$name")" "$(_queue_json_escape "$key_id")" "$(_queue_json_escape "$alg")" \
+            "$(_queue_json_escape "$status")" "$(_queue_json_escape "$pub_sha")" "$(_queue_json_escape "$f")"
+    done
+    shopt -u nullglob
+    printf ']}\n'
+}
+
+_queue_submit_json_result() {
+    local status="$1" id="$2" name="$3" state="$4" priority="$5" job="$6" class="$7" cmdline="$8" dryrun="${9:-false}"
+    [[ "$priority" =~ ^-?[0-9]+$ ]] || priority=10
+    printf '{"status":"%s","qid":"%s","name":"%s","state":"%s","priority":%s,"class":"%s","command_line":"%s","job_file":"%s","queue_root":"%s","dryrun":%s}\n' \
+        "$(_queue_json_escape "$status")" "$(_queue_json_escape "$id")" "$(_queue_json_escape "$name")" \
+        "$(_queue_json_escape "$state")" "$priority" "$(_queue_json_escape "$class")" \
+        "$(_queue_json_escape "$cmdline")" "$(_queue_json_escape "$job")" "$(_queue_json_escape "$(_queue_root)")" "$dryrun"
+}
+
+
+_queue_authorisation_from_job_command() {
+    local jobf="${1:-}"
+    [[ -f "$jobf" ]] || return 1
+    (
+        COMMAND=()
+        # shellcheck disable=SC1090
+        source "$jobf" >/dev/null 2>&1 || exit 1
+        [[ "${#COMMAND[@]}" -gt 0 ]] || exit 2
+        _queue_command_hash_from_args "${COMMAND[@]}"
+    )
+}
+
+_queue_authorise_job() {
+    local qid="${1:-}" reason="" admin="" user="" expires="never" code="" key_name="" jobf cmd_hash file created before_owner after_owner sign_line sig_key sig_payload_sha sig_b64 sig_need integrity tmpfile
+    shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --reason) reason="${2:-}"; shift 2 ;;
+            --admin) admin="${2:-}"; shift 2 ;;
+            --user) user="${2:-}"; shift 2 ;;
+            --expires|--expires-at) expires="${2:-}"; shift 2 ;;
+            --code) code="${2:-}"; shift 2 ;;
+            --key|--signing-key) key_name="${2:-}"; shift 2 ;;
+            *) echo "queue authorise: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$qid" ]] || { echo "Usage: queue authorise <qid> [--reason TEXT] [--code CODE]" >&2; return 2; }
+    jobf="$(_queue_job_file_for_id_any_state "$qid")" || { echo "queue authorise: job not found: $qid" >&2; return 1; }
+    [[ -n "$admin" ]] || admin="$(id -un 2>/dev/null || echo unknown)"
+    # Existing-job authorisation is approval for the queue owner / selected queue user,
+    # not necessarily for the shell user that is performing the approval and not
+    # necessarily for a stale SUBMIT_USER field.  This matters when root is operating
+    # in another user's queue via `queue --queue-user USER authorise QID`: admin=root,
+    # target user=USER.
+    [[ -n "$user" ]] || user="${QUEUEBASH_SELECTED_USER:-}"
+    [[ -n "$user" ]] || user="$(_queue_root_owner_user 2>/dev/null || true)"
+    [[ -n "$user" ]] || user="$(_queue_job_var_value "$jobf" SUBMIT_USER 2>/dev/null || true)"
+    [[ -n "$user" ]] || user="$(id -un 2>/dev/null || echo unknown)"
+    if [[ -n "$code" ]]; then
+        code="$(_queue_authorisation_normalise_code "$code")" || { echo "queue authorise: code must be 1-5 case-insensitive letters/numbers" >&2; return 2; }
+    else
+        code="$(_queue_authorisation_generate_code)" || { echo "queue authorise: unable to allocate code" >&2; return 1; }
+    fi
+    file="$(_queue_authorisation_file "$code")" || return 2
+    [[ ! -e "$file" ]] || { echo "queue authorise: code already exists: $code" >&2; return 1; }
+    cmd_hash="$(_queue_authorisation_from_job_command "$jobf")" || { echo "queue authorise: job has no readable COMMAND array: $qid" >&2; return 1; }
+    created="$(_queue_now_iso)"
+    sign_line="$(_queue_authorisation_sign_fields "$code" "$admin" "$user" "$cmd_hash" "$created" "$expires" "$reason" "$key_name" 2>/dev/null || true)"
+    IFS=$'\t' read -r sig_key sig_payload_sha sig_b64 <<< "$sign_line"
+    sig_need="$(_queue_authorisation_signature_admin_requirement "$admin" 2>/dev/null || true)"
+    case "$sig_need" in
+        required)
+            [[ -n "$sig_b64" ]] || { echo "queue authorise: policy requires a valid signature for admin '$admin' but no matching private key could sign this authorisation" >&2; return 1; }
+            ;;
+        untrusted)
+            echo "queue authorise: admin '$admin' is not trusted by the active class policy statement" >&2; return 1 ;;
+        no-public-key)
+            echo "queue authorise: policy requires signed authorisations but declares no public key for admin '$admin'" >&2; return 1 ;;
+        invalid-mode)
+            echo "queue authorise: invalid CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED mode" >&2; return 1 ;;
+    esac
+    mkdir -p "$(dirname "$file")"
+    tmpfile="$(mktemp "$(_queue_authorisation_dir)/.${code}.candidate.XXXXXX")" || { echo "queue authorise: unable to create authorisation candidate" >&2; return 1; }
+    (
+        COMMAND=()
+        # shellcheck disable=SC1090
+        source "$jobf" >/dev/null 2>&1 || exit 1
+        {
+            printf 'AUTHORISATION_CODE=%q\n' "$code"
+            printf 'AUTHORISATION_ADMIN=%q\n' "$admin"
+            printf 'AUTHORISATION_USER=%q\n' "$user"
+            printf 'AUTHORISATION_QUEUE_ROOT=%q\n' "$(_queue_root)"
+            printf 'AUTHORISATION_COMMAND_SHA256=%q\n' "$cmd_hash"
+            printf 'AUTHORISATION_CREATED_AT=%q\n' "$created"
+            printf 'AUTHORISATION_EXPIRES_AT=%q\n' "$expires"
+            printf 'AUTHORISATION_STATUS=%q\n' "active"
+            printf 'AUTHORISATION_REASON=%q\n' "$reason"
+            printf 'AUTHORISATION_JOB_ID=%q\n' "$qid"
+            [[ -n "$sig_b64" ]] && printf 'AUTHORISATION_SIGNING_KEY=%q\n' "$sig_key"
+            [[ -n "$sig_payload_sha" ]] && printf 'AUTHORISATION_SIGNATURE_PAYLOAD_SHA256=%q\n' "$sig_payload_sha"
+            [[ -n "$sig_b64" ]] && printf 'AUTHORISATION_SIGNATURE_B64=%q\n' "$sig_b64"
+            printf 'AUTHORISATION_COMMAND=('; printf ' %q' "${COMMAND[@]}"; printf ' )\n'
+        } > "$tmpfile"
+    ) || { rm -f "$tmpfile"; echo "queue authorise: failed to create authorisation candidate" >&2; return 1; }
+    integrity="$(_queue_authorisation_file_status "$tmpfile" 2>/dev/null || true)"
+    if [[ "$integrity" != "valid-signed" && "$integrity" != "valid-unsigned" ]]; then
+        rm -f "$tmpfile"
+        if [[ "$integrity" == "invalid-missing-signature" && "$sig_need" == "required" ]]; then
+            echo "queue authorise: policy requires a valid signature for admin '$admin' but no matching private key could sign this authorisation" >&2
+        else
+            echo "queue authorise: refused to stamp invalid authorisation candidate: ${integrity:-invalid}" >&2
+        fi
+        return 1
+    fi
+    if [[ "$sig_need" == "required" && "$integrity" != "valid-signed" ]]; then
+        rm -f "$tmpfile"
+        echo "queue authorise: policy requires a valid signature for admin '$admin' but no matching private key could sign this authorisation" >&2
+        return 1
+    fi
+    mv "$tmpfile" "$file" || { rm -f "$tmpfile"; echo "queue authorise: failed to publish authorisation file" >&2; return 1; }
+    _queue_authorisation_publish_file_permissions "$file"
+
+    before_owner="$(stat -c '%u:%g' "$jobf" 2>/dev/null || true)"
+    {
+        printf '\n# Security authorisation stamped by queue authorise at %q\n' "$created"
+        printf 'SECURITY_AUTHORISATION_CODE=%q\n' "$code"
+        printf 'SECURITY_AUTHORISATION_ADMIN=%q\n' "$admin"
+        printf 'SECURITY_AUTHORISATION_AT=%q\n' "$created"
+        [[ -n "$reason" ]] && printf 'SECURITY_AUTHORISATION_REASON=%q\n' "$reason"
+    } >> "$jobf"
+    after_owner="$(stat -c '%u:%g' "$jobf" 2>/dev/null || true)"
+    if [[ -n "$before_owner" && -n "$after_owner" && "$before_owner" != "$after_owner" ]]; then
+        echo "queue authorise: WARNING: job file owner/group changed unexpectedly: $before_owner -> $after_owner" >&2
+    fi
+    echo "authorised: $qid"
+    echo "authorisation: $code"
+    echo "admin: $admin"
+    echo "user: $user"
+    [[ -n "$sig_b64" ]] && echo "signature: signed" || echo "signature: unsigned"
+    echo "integrity: $(_queue_authorisation_file_status "$file" 2>/dev/null || true)"
+    echo "job_file: $jobf"
+}
+
+
+_queue_class_policy_user_suffix() {
+    local s="${1:-}"
+    s="${s^^}"
+    s="${s//[^A-Z0-9]/_}"
+    [[ -n "$s" ]] || s="UNKNOWN"
+    printf '%s\n' "$s"
+}
+
+_queue_class_policy_values_all_in_list() {
+    # $1 = requested values, comma/space separated. $2 = allowed values, comma/space separated.
+    local requested="${1:-}" allowed=" ${2//,/ } " v
+    requested="${requested//,/ }"
+    [[ -n "${requested// /}" ]] || return 0
+    for v in $requested; do
+        [[ " $allowed " == *" $v "* || " $allowed " == *" * "* || " $allowed " == *" all "* ]] || return 1
+    done
+    return 0
+}
+
+_queue_class_policy_user_grant_values() {
+    # Prints standing and command-specific grant values for a user and grant name.
+    # Grant names intentionally match policy suffixes such as ALLOW_ADD_PORTS.
+    local user="${1:-}" grant="${2:-}" cmd_hash="${3:-}" us hs var out=""
+    us="$(_queue_class_policy_user_suffix "$user")"
+    hs="${cmd_hash^^}"
+    hs="${hs//[^A-Z0-9]/_}"
+    for var in \
+        "CLASS_POLICY_USER_${us}_${grant}" \
+        "CLASS_POLICY_USER_${us}_GENERAL_${grant}" \
+        "CLASS_POLICY_USER_ALL_${grant}" \
+        "CLASS_POLICY_USER_ALL_GENERAL_${grant}"; do
+        [[ -n "${!var:-}" ]] && out+=" ${!var}"
+    done
+    if [[ -n "$hs" ]]; then
+        for var in \
+            "CLASS_POLICY_USER_${us}_COMMAND_${hs}_${grant}" \
+            "CLASS_POLICY_USER_${us}_COMMAND_${hs:0:16}_${grant}" \
+            "CLASS_POLICY_USER_ALL_COMMAND_${hs}_${grant}" \
+            "CLASS_POLICY_USER_ALL_COMMAND_${hs:0:16}_${grant}"; do
+            [[ -n "${!var:-}" ]] && out+=" ${!var}"
+        done
+    fi
+    printf '%s\n' "${out# }"
+}
+
+_queue_class_policy_user_grant_covers() {
+    local user="${1:-}" grant="${2:-}" requested="${3:-}" cmd_hash="${4:-}" values
+    [[ -n "${requested//,/}" ]] || return 0
+    values="$(_queue_class_policy_user_grant_values "$user" "$grant" "$cmd_hash")"
+    [[ -n "$values" ]] || return 1
+    _queue_class_policy_values_all_in_list "$requested" "$values"
+}
+
+_queue_class_policy_user_exception_grants_cover() {
+    local user="$1" sandbox_override="$2" seccomp_allow="$3" drop_cap="$4" add_port="$5" cmd_hash="$6"
+    [[ -z "$sandbox_override" ]] || _queue_class_policy_user_grant_covers "$user" ALLOW_SANDBOX_OVERRIDES "$sandbox_override" "$cmd_hash" || return 1
+    [[ -z "$seccomp_allow" ]] || _queue_class_policy_user_grant_covers "$user" ALLOW_SECCOMP_ALLOWS "$seccomp_allow" "$cmd_hash" || return 1
+    [[ -z "$drop_cap" ]] || _queue_class_policy_user_grant_covers "$user" ALLOW_DROP_CAPS "$drop_cap" "$cmd_hash" || return 1
+    [[ -z "$add_port" ]] || _queue_class_policy_user_grant_covers "$user" ALLOW_ADD_PORTS "$add_port" "$cmd_hash" || return 1
+    return 0
+}
+
+_queue_class_policy_user_weak_policy_grant_covers() {
+    local user="$1" sandbox_level="$2" seccomp_profile="$3" cmd_hash="$4" weak_sandbox_reason="$5" weak_seccomp_reason="$6"
+    if [[ -n "$weak_sandbox_reason" ]] && _queue_security_policy_value_in_list "$sandbox_level" "$weak_sandbox_reason"; then
+        _queue_class_policy_user_grant_covers "$user" ALLOW_SANDBOX_POLICIES "$sandbox_level" "$cmd_hash" || return 1
+    fi
+    if [[ -n "$weak_seccomp_reason" ]] && _queue_security_policy_value_in_list "$seccomp_profile" "$weak_seccomp_reason"; then
+        _queue_class_policy_user_grant_covers "$user" ALLOW_SECCOMP_POLICIES "$seccomp_profile" "$cmd_hash" || return 1
+    fi
+    return 0
+}
+
+_queue_submit_policy_check() {
+    local class="$1" submit_user="$2" reason="$3" auth_code="$4" sandbox_level="$5" seccomp_profile="$6" exception_sandbox="$7" exception_seccomp="$8" exception_drop="$9" exception_port="${10}" sandbox_explicit="${11:-0}" seccomp_explicit="${12:-0}"
+    shift 12 || true
+    local allowed_sandbox allowed_seccomp exception_requires_reason weak_sandbox_reason weak_seccomp_reason mode=none cmd_hash auto_code grant_detail=""
+    QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE=""
+    QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL=""
+    QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE=""
+    _queue_security_policy_statement_source >/dev/null 2>&1 || return 0
+    allowed_sandbox="${CLASS_POLICY_USER_SANDBOX_POLICIES:-}"
+    allowed_seccomp="${CLASS_POLICY_USER_SECCOMP_POLICIES:-}"
+    exception_requires_reason="${CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE:-reason-or-authorisation}"
+    weak_sandbox_reason="${CLASS_POLICY_SANDBOX_REASON_REQUIRED:-off}"
+    weak_seccomp_reason="${CLASS_POLICY_SECCOMP_REASON_REQUIRED:-off}"
+    cmd_hash="$(_queue_command_hash_from_args "$@")"
+
+    if [[ -n "$allowed_sandbox" && -n "$sandbox_level" ]]; then
+        _queue_security_policy_value_in_list "$sandbox_level" "$allowed_sandbox" || { echo "queue submit: sandbox policy '$sandbox_level' is not in user-selectable range: $allowed_sandbox" >&2; return 2; }
+    fi
+    if [[ -n "$allowed_seccomp" && -n "$seccomp_profile" ]]; then
+        _queue_security_policy_value_in_list "$seccomp_profile" "$allowed_seccomp" || { echo "queue submit: seccomp policy '$seccomp_profile' is not in user-selectable range: $allowed_seccomp" >&2; return 2; }
+    fi
+
+    if [[ -n "$exception_sandbox$exception_seccomp$exception_drop$exception_port" ]]; then
+        if _queue_class_policy_user_exception_grants_cover "$submit_user" "$exception_sandbox" "$exception_seccomp" "$exception_drop" "$exception_port" "$cmd_hash"; then
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="policy-approved"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="standing policy grant covers requested exception overlay"
+            return 0
+        fi
+        mode="$exception_requires_reason"
+    elif [[ "$sandbox_explicit" == "1" && -n "$weak_sandbox_reason" ]] && _queue_security_policy_value_in_list "$sandbox_level" "$weak_sandbox_reason"; then
+        if _queue_class_policy_user_weak_policy_grant_covers "$submit_user" "$sandbox_level" "$seccomp_profile" "$cmd_hash" "$weak_sandbox_reason" "$weak_seccomp_reason"; then
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="policy-approved"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="standing policy grant covers weak sandbox/seccomp selection"
+            return 0
+        fi
+        mode="${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"
+    elif [[ "$seccomp_explicit" == "1" && -n "$weak_seccomp_reason" ]] && _queue_security_policy_value_in_list "$seccomp_profile" "$weak_seccomp_reason"; then
+        if _queue_class_policy_user_weak_policy_grant_covers "$submit_user" "$sandbox_level" "$seccomp_profile" "$cmd_hash" "$weak_sandbox_reason" "$weak_seccomp_reason"; then
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="policy-approved"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="standing policy grant covers weak sandbox/seccomp selection"
+            return 0
+        fi
+        mode="${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"
+    fi
+
+    case "$mode" in
+        none|off|"") return 0 ;;
+        reason)
+            [[ -n "$reason" ]] || { echo "queue submit: this security policy requires --reason TEXT" >&2; return 2; }
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="description-approved"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="$reason"
+            ;;
+        authorisation|authorization)
+            if [[ -z "$auth_code" ]]; then
+                auto_code="$(_queue_authorisation_find_valid_for_command "$submit_user" "$@" 2>/dev/null || true)"
+                [[ -n "$auto_code" ]] || { echo "queue submit: this security policy requires --authorisation CODE" >&2; return 2; }
+                auth_code="$auto_code"
+                QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE="$auto_code"
+            fi
+            _queue_authorisation_validate "$auth_code" "$submit_user" submit "$@" || return $?
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="code-approved"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="command-bound authorisation $auth_code"
+            ;;
+        reason-or-authorisation|reason-or-authorization|either)
+            if [[ -n "$reason" ]]; then
+                QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="description-approved"
+                QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="$reason"
+            else
+                if [[ -z "$auth_code" ]]; then
+                    auto_code="$(_queue_authorisation_find_valid_for_command "$submit_user" "$@" 2>/dev/null || true)"
+                    [[ -n "$auto_code" ]] || { echo "queue submit: this security exception requires --reason TEXT or --authorisation CODE" >&2; return 2; }
+                    auth_code="$auto_code"
+                    QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE="$auto_code"
+                fi
+                _queue_authorisation_validate "$auth_code" "$submit_user" submit "$@" || return $?
+                QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE="code-approved"
+                QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL="command-bound authorisation $auth_code"
+            fi
+            ;;
+        *) echo "queue submit: invalid class policy requirement mode: $mode" >&2; return 2 ;;
+    esac
+}
+
+_queue_job_policy_execution_check() {
+    # Worker-side policy gate.  This is deliberately earlier than class claims,
+    # asset preflight, dynamic preflight, global claims and payload launch.
+    # If a job is contrary to the active class-policy statement, it must have a
+    # standing grant or a valid command-bound authorisation.  A submit-time
+    # --reason is audit text only at execution time; it is not permission to run
+    # once an admin/site policy is present.
+    local jobf="${1:-}"
+    [[ -f "$jobf" ]] || { echo "job file not found"; return 1; }
+    (
+        JOB_CLASS=""; SUBMIT_USER=""; SANDBOX_LEVEL=""; SECCOMP_PROFILE=""; SECURITY_SANDBOX_EXPLICIT="0"; SECURITY_SECCOMP_EXPLICIT="0"
+        EXCEPTION_SANDBOX_OVERRIDE=""; EXCEPTION_SECCOMP_ALLOW=""; EXCEPTION_DROP_CAP=""; EXCEPTION_ADD_PORT=""
+        SECURITY_AUTHORISATION_CODE=""; SECURITY_EXCEPTION_REASON=""; SECURITY_EXEMPTION_TYPE=""; SECURITY_EXEMPTION_DETAIL=""
+        COMMAND=()
+        # shellcheck disable=SC1090
+        source "$jobf" >/dev/null 2>&1 || { echo "job file could not be sourced for policy check"; exit 1; }
+        local policy_file policy_origin
+        policy_file="$(_queue_policy_file class-statement "$(_queue_security_policy_statement_name)" 2>/dev/null || true)"
+        [[ -n "$policy_file" && -f "$policy_file" ]] || exit 0
+        policy_origin="$(_queue_policy_origin "$policy_file" 2>/dev/null || echo unknown)"
+        # The terminal execution gate is for shared/admin policy, normally
+        # /etc/queuebash/policies.d/class-statement/default.env.  Bundled policy
+        # remains submit-time guidance/default behaviour unless promoted into the
+        # shared/admin policy location.
+        [[ "$policy_origin" == "shared" || "${QUEUEBASH_POLICY_BLOCK_ENFORCE:-}" == "1" ]] || exit 0
+        _queue_security_policy_statement_source >/dev/null 2>&1 || exit 0
+        [[ "${#COMMAND[@]}" -gt 0 ]] || { echo "job has no COMMAND array for policy check"; exit 1; }
+
+        local submit_user cmd_hash command_text argv0 allowed_sandbox allowed_seccomp weak_sandbox weak_seccomp block_classes block_hashes block_words block_patterns contrary details auth_out
+        local sandbox_level seccomp_profile sandbox_explicit seccomp_explicit
+        submit_user="${SUBMIT_USER:-${QUEUEBASH_SELECTED_USER:-}}"
+        [[ -n "$submit_user" ]] || submit_user="$(_queue_root_owner_user 2>/dev/null || true)"
+        [[ -n "$submit_user" ]] || submit_user="$(id -un 2>/dev/null || echo unknown)"
+        cmd_hash="$(_queue_command_hash_from_args "${COMMAND[@]}")"
+        command_text="$(_queue_command_shell_words_from_args "${COMMAND[@]}")"
+        argv0="${COMMAND[0]:-}"
+        sandbox_level="${SANDBOX_LEVEL:-off}"
+        seccomp_profile="${SECCOMP_PROFILE:-off}"
+        sandbox_explicit="${SECURITY_SANDBOX_EXPLICIT:-0}"
+        seccomp_explicit="${SECURITY_SECCOMP_EXPLICIT:-0}"
+        allowed_sandbox="${CLASS_POLICY_USER_SANDBOX_POLICIES:-}"
+        allowed_seccomp="${CLASS_POLICY_USER_SECCOMP_POLICIES:-}"
+        weak_sandbox="${CLASS_POLICY_SANDBOX_REASON_REQUIRED:-off}"
+        weak_seccomp="${CLASS_POLICY_SECCOMP_REASON_REQUIRED:-off}"
+        block_classes="${CLASS_POLICY_BLOCK_CLASS_NAMES:-}"
+        block_hashes="${CLASS_POLICY_BLOCK_COMMAND_HASHES:-}"
+        block_words="${CLASS_POLICY_BLOCK_COMMAND_WORDS:-${CLASS_POLICY_BLOCK_COMMAND_NAMES:-}}"
+        block_patterns="${CLASS_POLICY_BLOCK_COMMAND_PATTERNS:-}"
+        contrary=0
+        details=()
+        local required_mode="none" req_mode
+        _queue_policy_gate_raise_requirement() {
+            case "${1:-}" in
+                authorisation|authorization) required_mode="authorisation" ;;
+                reason)
+                    [[ "$required_mode" != "authorisation" ]] && required_mode="reason" ;;
+                reason-or-authorisation|reason-or-authorization|either)
+                    [[ "$required_mode" == "none" ]] && required_mode="reason-or-authorisation" ;;
+            esac
+        }
+
+        if [[ -n "$block_classes" && -n "${JOB_CLASS:-}" ]]; then
+            if _queue_security_policy_value_in_list "${JOB_CLASS}" "$block_classes"; then
+                if ! _queue_class_policy_user_grant_covers "$submit_user" ALLOW_BLOCKED_CLASSES "${JOB_CLASS}" "$cmd_hash"; then
+                    contrary=1
+                    _queue_policy_gate_raise_requirement "${CLASS_POLICY_BLOCK_CLASS_REQUIRE:-authorisation}"
+                    details+=("class '${JOB_CLASS}' is policy-blocked by CLASS_POLICY_BLOCK_CLASS_NAMES")
+                else
+                    _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers blocked class ${JOB_CLASS}" ""
+                fi
+            fi
+        fi
+        if [[ -n "$block_hashes" ]] && _queue_policy_hash_value_in_list "$cmd_hash" "$block_hashes"; then
+            if ! _queue_class_policy_user_grant_covers "$submit_user" ALLOW_BLOCKED_COMMAND_HASHES "$cmd_hash" "$cmd_hash"; then
+                contrary=1
+                _queue_policy_gate_raise_requirement "${CLASS_POLICY_BLOCK_COMMAND_REQUIRE:-authorisation}"
+                details+=("command hash '${cmd_hash:0:16}' is policy-blocked by CLASS_POLICY_BLOCK_COMMAND_HASHES")
+            else
+                _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers blocked command hash ${cmd_hash:0:16}" ""
+            fi
+        fi
+        if [[ -n "$block_words" ]] && _queue_policy_command_word_in_list "$argv0" "$block_words"; then
+            if ! _queue_class_policy_user_grant_covers "$submit_user" ALLOW_BLOCKED_COMMAND_WORDS "$argv0" "$cmd_hash"; then
+                contrary=1
+                _queue_policy_gate_raise_requirement "${CLASS_POLICY_BLOCK_COMMAND_REQUIRE:-authorisation}"
+                details+=("command word '${argv0}' is policy-blocked by CLASS_POLICY_BLOCK_COMMAND_WORDS")
+            else
+                _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers blocked command word $argv0" ""
+            fi
+        fi
+        if [[ -n "$block_patterns" ]] && _queue_policy_command_pattern_matches "$command_text" "$block_patterns"; then
+            if ! _queue_class_policy_user_grant_covers "$submit_user" ALLOW_BLOCKED_COMMAND_PATTERNS "$command_text" "$cmd_hash"; then
+                contrary=1
+                _queue_policy_gate_raise_requirement "${CLASS_POLICY_BLOCK_COMMAND_REQUIRE:-authorisation}"
+                details+=("command '$command_text' is policy-blocked by CLASS_POLICY_BLOCK_COMMAND_PATTERNS")
+            else
+                _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers blocked command pattern" ""
+            fi
+        fi
+
+        if [[ -n "$allowed_sandbox" && -n "$sandbox_level" ]]; then
+            if ! _queue_security_policy_value_in_list "$sandbox_level" "$allowed_sandbox"; then
+                contrary=1; _queue_policy_gate_raise_requirement "authorisation"; details+=("sandbox policy '$sandbox_level' is outside selectable range '$allowed_sandbox'")
+            fi
+        fi
+        if [[ -n "$allowed_seccomp" && -n "$seccomp_profile" ]]; then
+            if ! _queue_security_policy_value_in_list "$seccomp_profile" "$allowed_seccomp"; then
+                contrary=1; _queue_policy_gate_raise_requirement "authorisation"; details+=("seccomp policy '$seccomp_profile' is outside selectable range '$allowed_seccomp'")
+            fi
+        fi
+        if [[ -n "${EXCEPTION_SANDBOX_OVERRIDE:-}${EXCEPTION_SECCOMP_ALLOW:-}${EXCEPTION_DROP_CAP:-}${EXCEPTION_ADD_PORT:-}" ]]; then
+            if ! _queue_class_policy_user_exception_grants_cover "$submit_user" "${EXCEPTION_SANDBOX_OVERRIDE:-}" "${EXCEPTION_SECCOMP_ALLOW:-}" "${EXCEPTION_DROP_CAP:-}" "${EXCEPTION_ADD_PORT:-}" "$cmd_hash"; then
+                contrary=1
+                _queue_policy_gate_raise_requirement "${CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE:-reason-or-authorisation}"
+                [[ -n "${EXCEPTION_SANDBOX_OVERRIDE:-}" ]] && details+=("sandbox override ${EXCEPTION_SANDBOX_OVERRIDE}")
+                [[ -n "${EXCEPTION_SECCOMP_ALLOW:-}" ]] && details+=("seccomp allow ${EXCEPTION_SECCOMP_ALLOW}")
+                [[ -n "${EXCEPTION_DROP_CAP:-}" ]] && details+=("drop runtime cap ${EXCEPTION_DROP_CAP}")
+                [[ -n "${EXCEPTION_ADD_PORT:-}" ]] && details+=("add runtime port ${EXCEPTION_ADD_PORT}")
+            else
+                _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers requested exception overlay" ""
+            fi
+        fi
+        if [[ "$sandbox_explicit" == "1" && -n "$weak_sandbox" ]] && _queue_security_policy_value_in_list "$sandbox_level" "$weak_sandbox"; then
+            if ! _queue_class_policy_user_weak_policy_grant_covers "$submit_user" "$sandbox_level" "$seccomp_profile" "$cmd_hash" "$weak_sandbox" "$weak_seccomp"; then
+                contrary=1; _queue_policy_gate_raise_requirement "${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"; details+=("weak sandbox policy '$sandbox_level'")
+            else
+                _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers weak sandbox policy $sandbox_level" ""
+            fi
+        fi
+        if [[ "$seccomp_explicit" == "1" && -n "$weak_seccomp" ]] && _queue_security_policy_value_in_list "$seccomp_profile" "$weak_seccomp"; then
+            if ! _queue_class_policy_user_weak_policy_grant_covers "$submit_user" "$sandbox_level" "$seccomp_profile" "$cmd_hash" "$weak_sandbox" "$weak_seccomp"; then
+                contrary=1; _queue_policy_gate_raise_requirement "${CLASS_POLICY_WEAK_POLICY_REQUIRE:-reason-or-authorisation}"; details+=("weak seccomp policy '$seccomp_profile'")
+            else
+                _queue_job_append_security_exemption "$jobf" "policy-approved" "standing policy grant covers weak seccomp policy $seccomp_profile" ""
+            fi
+        fi
+
+        [[ "$contrary" -eq 0 ]] && exit 0
+
+        if [[ -n "${SECURITY_AUTHORISATION_CODE:-}" ]]; then
+            if auth_out="$(_queue_authorisation_validate "$SECURITY_AUTHORISATION_CODE" "$submit_user" policy "${COMMAND[@]}" 2>&1)"; then
+                _queue_job_append_security_exemption "$jobf" "code-approved" "command-bound authorisation $SECURITY_AUTHORISATION_CODE" "$SECURITY_AUTHORISATION_CODE"
+                exit 0
+            fi
+            printf 'policy-contrary job has invalid authorisation %s for user %s: %s\n' "$SECURITY_AUTHORISATION_CODE" "$submit_user" "$auth_out"
+        else
+            if [[ -n "${SECURITY_EXCEPTION_REASON:-}" && ( "$required_mode" == "reason" || "$required_mode" == "reason-or-authorisation" || "$required_mode" == "none" ) ]]; then
+                _queue_job_append_security_exemption "$jobf" "description-approved" "$SECURITY_EXCEPTION_REASON" ""
+                exit 0
+            fi
+            local found_auth
+            found_auth="$(_queue_authorisation_find_valid_for_command "$submit_user" "${COMMAND[@]}" 2>/dev/null || true)"
+            if [[ -n "$found_auth" ]]; then
+                _queue_job_append_security_exemption "$jobf" "code-approved" "on-file command-bound authorisation $found_auth" "$found_auth"
+                exit 0
+            fi
+            printf 'policy-contrary job has no SECURITY_AUTHORISATION_CODE and no on-file command-bound authorisation for user %s\n' "$submit_user"
+        fi
+        printf 'policy details:'
+        local d
+        for d in "${details[@]}"; do printf ' %s;' "$d"; done
+        printf '\n'
+        printf 'resubmit this command with a valid, unexpired, command-bound authorisation; the same authorisation may be reused for resubmissions of this exact command until it expires\n'
+        exit 1
+    )
+}
+
+# Backward-compatible literals kept for static tests/docs: queue policies edit sandbox|seccomp NAME; queue policies create sandbox|seccomp NAME
+_queue_policy_valid_kind() {
+    case "${1:-}" in sandbox|seccomp|class-statement) return 0 ;; *) return 1 ;; esac
+}
+
+_queue_policy_valid_name() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9_.@+-]+$ ]]
+}
+
+_queue_policy_shared_root() {
+    printf '%s\n' "${QUEUEBASH_SHARED_POLICY_ROOT:-/etc/bashqueues/policies.d}"
+}
+
+_queue_policy_source_root() {
+    local source_dir="${QUEUEBASH_POLICY_SOURCE_DIR:-}" script_dir
+    if [[ -z "$source_dir" && -n "${BASH_SOURCE[0]:-}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+        [[ -n "$script_dir" && -d "$script_dir/policies.d" ]] && source_dir="$script_dir/policies.d"
+    fi
+    [[ -z "$source_dir" && -d "./policies.d" ]] && source_dir="./policies.d"
+    printf '%s\n' "$source_dir"
+}
+
+_queue_policy_file() {
+    local kind="${1:-}" name="${2:-}" root source_root shared_root
+    _queue_policy_valid_kind "$kind" || return 1
+    _queue_policy_valid_name "$name" || return 1
+
+    # Precedence is intentional:
+    #   1. shared/admin policy folder, normally /etc/bashqueues/policies.d
+    #   2. queue-root personal policy folder
+    #   3. bundled repository policy folder
+    # If two policies have the same kind/name, the shared/admin policy wins.
+    shared_root="$(_queue_policy_shared_root)"
+    if [[ -f "$shared_root/$kind/$name.env" ]]; then
+        printf '%s\n' "$shared_root/$kind/$name.env"
+        return 0
+    fi
+
+    root="$(_queue_root)"
+    if [[ -f "$root/policies.d/$kind/$name.env" ]]; then
+        printf '%s\n' "$root/policies.d/$kind/$name.env"
+        return 0
+    fi
+
+    source_root="$(_queue_policy_source_root)"
+    if [[ -n "$source_root" && -f "$source_root/$kind/$name.env" ]]; then
+        printf '%s\n' "$source_root/$kind/$name.env"
+        return 0
+    fi
+
+    return 1
+}
+
+_queue_policy_exists() {
+    _queue_policy_file "${1:-}" "${2:-}" >/dev/null 2>&1
+}
+
+_queue_policy_list() {
+    local kind="${1:-}" root source_root shared_root f
+    _queue_policy_valid_kind "$kind" || return 1
+    root="$(_queue_root)"
+    source_root="$(_queue_policy_source_root)"
+    shared_root="$(_queue_policy_shared_root)"
+    {
+        shopt -s nullglob
+        for f in "$source_root/$kind"/*.env "$root/policies.d/$kind"/*.env "$shared_root/$kind"/*.env; do
+            [[ -f "$f" ]] && basename "$f" .env
+        done
+        shopt -u nullglob
+    } | sort -u
+}
+
+_queue_policy_origin() {
+    local file="${1:-}" root shared_root source_root
+    root="$(_queue_root)"
+    shared_root="$(_queue_policy_shared_root)"
+    source_root="$(_queue_policy_source_root)"
+    case "$file" in
+        "$shared_root"/*) printf '%s\n' shared ;;
+        "$root"/policies.d/*) printf '%s\n' personal ;;
+        "$source_root"/*) printf '%s\n' bundled ;;
+        *) printf '%s\n' unknown ;;
+    esac
+}
+
+_queue_policy_edit_target_file() {
+    # Prints the file path to edit/create for a policy.
+    # Default behaviour is intentionally admin-friendly: root edits the shared
+    # site policy under /etc/bashqueues/policies.d, normal users edit their
+    # queue-local policy under $QUEUEBASH_ROOT/policies.d.  --shared and
+    # --personal are explicit overrides used by tests and automation.
+    local scope="${1:-auto}" kind="${2:-}" name="${3:-}" root base
+    _queue_policy_valid_kind "$kind" || return 1
+    _queue_policy_valid_name "$name" || return 1
+    case "$scope" in
+        auto|"")
+            if [[ "$(id -u 2>/dev/null || echo 1)" == "0" ]]; then
+                base="$(_queue_policy_shared_root)"
+            else
+                root="$(_queue_root)"
+                base="$root/policies.d"
+            fi
+            ;;
+        shared|site|admin|etc)
+            base="$(_queue_policy_shared_root)"
+            ;;
+        personal|queue|user)
+            root="$(_queue_root)"
+            base="$root/policies.d"
+            ;;
+        *) return 1 ;;
+    esac
+    printf '%s/%s/%s.env\n' "$base" "$kind" "$name"
+}
+
+_queue_policy_emit_template() {
+    local kind="${1:-}" name="${2:-}"
+    echo "# bashqueues $kind policy: $name"
+    echo "QUEUEBASH_POLICY_KIND=$kind"
+    echo "QUEUEBASH_POLICY_NAME=$name"
+    case "$kind" in
+        sandbox)
+            echo 'SANDBOX_SYSTEMD_PROPERTIES=()'
+            echo 'SANDBOX_DIRECT_PREFIX=()'
+            echo 'SANDBOX_DIRECT_WARNING=""'
+            ;;
+        seccomp)
+            echo 'SECCOMP_SYSTEMD_PROPERTIES=()'
+            ;;
+        class-statement)
+            echo 'CLASS_POLICY_USER_SANDBOX_POLICIES="off network-none restrict-egress strict queue-default"'
+            echo 'CLASS_POLICY_USER_SECCOMP_POLICIES="off docker-default strict queue-default"'
+            echo 'CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE="reason-or-authorisation"'
+            echo 'CLASS_POLICY_WEAK_POLICY_REQUIRE="reason-or-authorisation"'
+            echo '# Weak policies below are only treated as weak when explicitly requested on submit/class paths.'
+            echo 'CLASS_POLICY_SANDBOX_REASON_REQUIRED="off"'
+            echo 'CLASS_POLICY_SECCOMP_REASON_REQUIRED="off"'
+            echo 'CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="if-trusted-key"'
+            ;;
+    esac
+}
+
+_queue_policy_sha256() {
+    local file="${1:-}"
+    [[ -f "$file" ]] || return 1
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file" | awk '{print $1}'
+    else
+        wc -c < "$file" | awk '{print "size:"$1}'
+    fi
+}
+
+_queue_policy_explain_effective_class_statement() {
+    local name file
+    echo "=== effective class-statement policy ==="
+    echo "mode: merged"
+    echo "loaded files:"
+    while IFS= read -r name; do
+        [[ -n "$name" ]] || continue
+        file="$(_queue_policy_file class-statement "$name" 2>/dev/null || true)"
+        [[ -n "$file" && -f "$file" ]] || continue
+        printf '  %-20s %-8s %s\n' "$name" "$(_queue_policy_origin "$file")" "$file"
+    done < <(_queue_policy_list class-statement)
+
+    if ! _queue_security_policy_statement_source >/dev/null 2>&1; then
+        echo "status: no class-statement policy files found"
+        return 1
+    fi
+
+    echo
+    echo "effective values:"
+    printf '  CLASS_POLICY_USER_SANDBOX_POLICIES=%q\n' "${CLASS_POLICY_USER_SANDBOX_POLICIES:-}"
+    printf '  CLASS_POLICY_USER_SECCOMP_POLICIES=%q\n' "${CLASS_POLICY_USER_SECCOMP_POLICIES:-}"
+    printf '  CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE=%q\n' "${CLASS_POLICY_EXCEPTION_FLAGS_REQUIRE:-}"
+    printf '  CLASS_POLICY_WEAK_POLICY_REQUIRE=%q\n' "${CLASS_POLICY_WEAK_POLICY_REQUIRE:-}"
+    printf '  CLASS_POLICY_SANDBOX_REASON_REQUIRED=%q\n' "${CLASS_POLICY_SANDBOX_REASON_REQUIRED:-}"
+    printf '  CLASS_POLICY_SECCOMP_REASON_REQUIRED=%q\n' "${CLASS_POLICY_SECCOMP_REASON_REQUIRED:-}"
+    printf '  CLASS_POLICY_BLOCK_CLASS_NAMES=%q\n' "${CLASS_POLICY_BLOCK_CLASS_NAMES:-}"
+    printf '  CLASS_POLICY_BLOCK_CLASS_REQUIRE=%q\n' "${CLASS_POLICY_BLOCK_CLASS_REQUIRE:-}"
+    printf '  CLASS_POLICY_BLOCK_COMMAND_HASHES=%q\n' "${CLASS_POLICY_BLOCK_COMMAND_HASHES:-}"
+    printf '  CLASS_POLICY_BLOCK_COMMAND_WORDS=%q\n' "${CLASS_POLICY_BLOCK_COMMAND_WORDS:-${CLASS_POLICY_BLOCK_COMMAND_NAMES:-}}"
+    printf '  CLASS_POLICY_BLOCK_COMMAND_PATTERNS=%q\n' "${CLASS_POLICY_BLOCK_COMMAND_PATTERNS:-}"
+    printf '  CLASS_POLICY_BLOCK_COMMAND_REQUIRE=%q\n' "${CLASS_POLICY_BLOCK_COMMAND_REQUIRE:-}"
+    printf '  CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED=%q\n' "${CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED:-}"
+    printf '  CLASS_POLICY_MANDATORY_ASSETS=%q\n' "${CLASS_POLICY_MANDATORY_ASSETS:-${CLASS_POLICY_MANDATORY_ASSET_SPECS:-}}"
+}
+
+_queue_policy_quote_array_assignment() {
+    local var="$1"; shift || true
+    printf '%s=(' "$var"
+    local item
+    for item in "$@"; do
+        printf ' %q' "$item"
+    done
+    printf ' )\n'
+}
+
+_queue_policy_source_file() {
+    local kind="${1:-}" name="${2:-}" file
+    file="$(_queue_policy_file "$kind" "$name")" || return 1
+    # Policy files are data files installed from trusted bashqueues policy dirs.
+    # Shared/admin policies intentionally win over personal policies with the
+    # same name so operators can define site policy centrally.
+    # shellcheck disable=SC1090
+    source "$file"
+}
+
+_queue_append_policy_snapshot_to_job_file() {
+    local job_file="${1:-}" file origin hash sandbox_name seccomp_name
+    [[ -f "$job_file" ]] || return 0
+
+    (
+        SANDBOX_LEVEL=""
+        SECCOMP_PROFILE=""
+        EXCEPTION_SANDBOX_OVERRIDE=""
+        EXCEPTION_SECCOMP_ALLOW=""
+        # shellcheck disable=SC1090
+        source "$job_file" >/dev/null 2>&1 || exit 0
+
+        printf 'SECURITY_POLICY_SNAPSHOT_AT=%q\n' "$(_queue_now_iso)"
+
+        sandbox_name="$(_queue_sandbox_normalise_level "${SANDBOX_LEVEL:-off}")"
+        if [[ -n "$sandbox_name" ]]; then
+            file="$(_queue_policy_file sandbox "$sandbox_name" 2>/dev/null || true)"
+            if [[ -n "$file" && -f "$file" ]]; then
+                SANDBOX_SYSTEMD_PROPERTIES=()
+                SANDBOX_DIRECT_PREFIX=()
+                SANDBOX_DIRECT_WARNING=""
+                # shellcheck disable=SC1090
+                source "$file" >/dev/null 2>&1 || true
+                origin="$(_queue_policy_origin "$file")"
+                hash="$(_queue_policy_sha256 "$file" 2>/dev/null || true)"
+                printf 'SANDBOX_POLICY_NAME=%q\n' "$sandbox_name"
+                printf 'SANDBOX_POLICY_FILE=%q\n' "$file"
+                printf 'SANDBOX_POLICY_ORIGIN=%q\n' "$origin"
+                printf 'SANDBOX_POLICY_SHA256=%q\n' "$hash"
+                _queue_policy_quote_array_assignment SANDBOX_POLICY_SYSTEMD_PROPERTIES "${SANDBOX_SYSTEMD_PROPERTIES[@]:-}"
+                _queue_policy_quote_array_assignment SANDBOX_POLICY_DIRECT_PREFIX "${SANDBOX_DIRECT_PREFIX[@]:-}"
+                printf 'SANDBOX_POLICY_DIRECT_WARNING=%q\n' "${SANDBOX_DIRECT_WARNING:-}"
+            fi
+        fi
+
+        seccomp_name="$(_queue_seccomp_normalise_profile "${SECCOMP_PROFILE:-off}")"
+        if [[ -n "$seccomp_name" ]]; then
+            file="$(_queue_policy_file seccomp "$seccomp_name" 2>/dev/null || true)"
+            if [[ -n "$file" && -f "$file" ]]; then
+                SECCOMP_SYSTEMD_PROPERTIES=()
+                # shellcheck disable=SC1090
+                source "$file" >/dev/null 2>&1 || true
+                origin="$(_queue_policy_origin "$file")"
+                hash="$(_queue_policy_sha256 "$file" 2>/dev/null || true)"
+                printf 'SECCOMP_POLICY_NAME=%q\n' "$seccomp_name"
+                printf 'SECCOMP_POLICY_FILE=%q\n' "$file"
+                printf 'SECCOMP_POLICY_ORIGIN=%q\n' "$origin"
+                printf 'SECCOMP_POLICY_SHA256=%q\n' "$hash"
+                _queue_policy_quote_array_assignment SECCOMP_POLICY_SYSTEMD_PROPERTIES "${SECCOMP_SYSTEMD_PROPERTIES[@]:-}"
+            fi
+        fi
+    ) >> "$job_file"
+}
+_queue_sandbox_normalise_level() {
+    local level="${1:-}"
+    case "$level" in
+        ""|off|none) echo "" ;;
+        *)
+            if _queue_policy_valid_name "$level" && _queue_policy_exists sandbox "$level"; then
+                echo "$level"
+            else
+                echo ""
+            fi
+            ;;
+    esac
+}
+
+_queue_emit_sandbox_systemd_props() {
+    local level prop
+    level="$(_queue_sandbox_normalise_level "${1:-}")"
+    [[ -n "$level" ]] || return 0
+
+    # Prefer the per-QID policy snapshot written at submit time. This makes the
+    # executed policy auditable and immune to later edits of a same-named policy.
+    if [[ "${SANDBOX_POLICY_NAME:-}" == "$level" && "${#SANDBOX_POLICY_SYSTEMD_PROPERTIES[@]}" -gt 0 ]]; then
+        for prop in "${SANDBOX_POLICY_SYSTEMD_PROPERTIES[@]:-}"; do
+            [[ -n "$prop" ]] && printf '%s\0' -p "$prop"
+        done
+        return 0
+    fi
+
+    SANDBOX_SYSTEMD_PROPERTIES=()
+    SANDBOX_DIRECT_PREFIX=()
+    if ! _queue_policy_source_file sandbox "$level"; then
+        return 0
+    fi
+
+    for prop in "${SANDBOX_SYSTEMD_PROPERTIES[@]:-}"; do
+        [[ -n "$prop" ]] && printf '%s\0' -p "$prop"
+    done
+}
+
+_queue_emit_sandbox_direct_prefix() {
+    local level item
+    level="$(_queue_sandbox_normalise_level "${1:-}")"
+    [[ -n "$level" ]] || return 0
+
+    if [[ "${SANDBOX_POLICY_NAME:-}" == "$level" ]]; then
+        if [[ "${#SANDBOX_POLICY_DIRECT_PREFIX[@]}" -gt 0 ]]; then
+            printf '%s\0' "${SANDBOX_POLICY_DIRECT_PREFIX[@]}"
+            return 0
+        elif [[ -n "${SANDBOX_POLICY_DIRECT_WARNING:-}" ]]; then
+            echo "WARNING: $SANDBOX_POLICY_DIRECT_WARNING" >&2
+            return 0
+        fi
+    fi
+
+    SANDBOX_SYSTEMD_PROPERTIES=()
+    SANDBOX_DIRECT_PREFIX=()
+    SANDBOX_DIRECT_WARNING=""
+    if ! _queue_policy_source_file sandbox "$level"; then
+        return 0
+    fi
+
+    if [[ "${#SANDBOX_DIRECT_PREFIX[@]}" -gt 0 ]]; then
+        printf '%s\0' "${SANDBOX_DIRECT_PREFIX[@]}"
+    elif [[ -n "${SANDBOX_DIRECT_WARNING:-}" ]]; then
+        echo "WARNING: $SANDBOX_DIRECT_WARNING" >&2
+    fi
+}
+
+_queue_seccomp_normalise_profile() {
+    local profile="${1:-}"
+    case "$profile" in
+        ""|off|none) echo "" ;;
+        *)
+            if _queue_policy_valid_name "$profile" && _queue_policy_exists seccomp "$profile"; then
+                echo "$profile"
+            else
+                echo ""
+            fi
+            ;;
+    esac
+}
+
+_queue_profiled_seccomp_allowed_syscalls() {
+    local profile="${1:-}" allow_self="${2:-0}" required="${3:-}" profile_root="${4:-}"
+    local args=() verify_out helper
+
+    [[ -n "$profile" ]] || { echo "profiled_seccomp_blocked: profile_required"; return 1; }
+    args+=("allow_self_signed=$allow_self")
+    [[ -n "$required" ]] && args+=("required_signer=$required")
+    [[ -n "$profile_root" ]] && args+=("profile_root=$profile_root")
+
+    # Runtime seccomp deliberately delegates key, ACL, delegation, and trust
+    # policy decisions to the secprofile asset verification layer.  File-backed
+    # keys are one provider implementation, not the trust architecture.
+    if ! verify_out="$(_queue_asset_implied_preflight_args runtime_seccomp secprofile profile_verified "$profile" "${args[@]}" 2>&1)"; then
+        printf '%s\n' "$verify_out"
+        return 1
+    fi
+
+    helper="$(_queue_asset_helper_path secprofile)"
+    [[ -r "$helper" ]] || { echo "profiled_seccomp_blocked: secprofile_helper_missing"; return 1; }
+
+    (
+        local file raw item cleaned out=()
+        _queue_code_signature_check_file_for_execution "$helper" || exit 44
+        source "$helper" || exit 40
+        file="$(_queue_asset_secprofile_file "$profile" "${args[@]}" 2>/dev/null || true)"
+        [[ -r "$file" ]] || { echo "profiled_seccomp_blocked: secprofile_file_missing profile=$profile"; exit 1; }
+        raw="$(_queue_asset_secprofile_get "$file" SECPROFILE_ALLOWED_SYSCALLS)"
+        raw="${raw//,/ }"
+        for item in $raw; do
+            cleaned="${item//[[:space:]]/}"
+            [[ -n "$cleaned" ]] || continue
+            case "$cleaned" in
+                *[!A-Za-z0-9_@.+:-]*)
+                    echo "profiled_seccomp_blocked: invalid_syscall_token token=$cleaned"
+                    exit 1
+                    ;;
+            esac
+            out+=("$cleaned")
+        done
+        [[ "${#out[@]}" -gt 0 ]] || { echo "profiled_seccomp_blocked: no_allowed_syscalls profile=$profile"; exit 1; }
+        printf '%s' "${out[*]}"
+    )
+}
+
+_queue_emit_seccomp_systemd_props () 
+{ 
+    local profile allow item prop profiled_allow;
+    profile="$(_queue_seccomp_normalise_profile "${1:-}")";
+    allow="${2:-}";
+    if [[ -n "$profile" ]]; then
+        if [[ "${SECCOMP_POLICY_NAME:-}" == "$profile" && "${#SECCOMP_POLICY_SYSTEMD_PROPERTIES[@]}" -gt 0 ]]; then
+            for prop in "${SECCOMP_POLICY_SYSTEMD_PROPERTIES[@]:-}";
+            do
+                [[ -n "$prop" ]] && printf '%s\0' -p "$prop";
+            done;
+        else
+            SECCOMP_SYSTEMD_PROPERTIES=();
+            if _queue_policy_source_file seccomp "$profile"; then
+                for prop in "${SECCOMP_SYSTEMD_PROPERTIES[@]:-}";
+                do
+                    [[ -n "$prop" ]] && printf '%s\0' -p "$prop";
+                done;
+            fi;
+        fi;
+    fi;
+    for item in $allow;
+    do
+        [[ -n "$item" ]] || continue;
+        printf '%s\0' -p "SystemCallFilter=$item";
+    done;
+    profiled_allow="${SECCOMP_PROFILED_ALLOWED_SYSCALLS:-}";
+    if [[ -n "$profiled_allow" ]]; then
+        printf '%s\0' -p "SystemCallFilter=$profiled_allow";
+    fi
+}
+
+_queue_runtime_caps_drop_list() {
+    local caps="${1:-}" drops="${2:-}" cap drop out="" skip
+    caps="$(_queue_runtime_caps_normalise "$caps" 2>/dev/null || true)"
+    drops="$(_queue_runtime_caps_normalise "$drops" 2>/dev/null || true)"
+    for cap in $caps; do
+        skip=0
+        for drop in $drops; do
+            [[ "$cap" == "$drop" ]] && skip=1
+        done
+        [[ "$skip" -eq 1 ]] && continue
+        out="${out:+$out,}$cap"
+    done
+    printf '%s\n' "$out"
+}
+
+_queue_ports_add_list() {
+    local ports="${1:-}" add="${2:-}"
+    ports="${ports// /,}"
+    add="${add// /,}"
+    ports="${ports#,}"; ports="${ports%,}"
+    add="${add#,}"; add="${add%,}"
+    if [[ -n "$ports" && -n "$add" ]]; then
+        printf '%s,%s\n' "$ports" "$add"
+    elif [[ -n "$add" ]]; then
+        printf '%s\n' "$add"
+    else
+        printf '%s\n' "$ports"
+    fi
+}
+
+_queue_apply_security_exception_overlays_for_current_job() {
+    # Merge class defaults with job-level exception overlays.  This happens in
+    # the worker, after the job record is sourced and before launch_argv is built.
+    # Exceptions are intentionally visible in queue explain and job history; they
+    # are escape hatches, not invisible policy edits.
+    local effective_sandbox effective_caps effective_ports effective_seccomp_allow
+
+    effective_sandbox="${SANDBOX_LEVEL:-off}"
+    if [[ -n "${EXCEPTION_SANDBOX_OVERRIDE:-}" ]]; then
+        effective_sandbox="$(_queue_sandbox_normalise_level "$EXCEPTION_SANDBOX_OVERRIDE")"
+        [[ -z "$effective_sandbox" ]] && effective_sandbox="off"
+    fi
+
+    effective_caps="${RUNTIME_CAPS:-}"
+    if [[ -n "${EXCEPTION_DROP_CAP:-}" ]]; then
+        effective_caps="$(_queue_runtime_caps_drop_list "$effective_caps" "$EXCEPTION_DROP_CAP")"
+    fi
+
+    effective_ports="${RUNTIME_CAP_PORTS:-}"
+    if [[ -n "${EXCEPTION_ADD_PORT:-}" ]]; then
+        effective_ports="$(_queue_ports_add_list "$effective_ports" "$EXCEPTION_ADD_PORT")"
+    fi
+
+    effective_seccomp_allow="${SECCOMP_ALLOW:-}"
+    if [[ -n "${EXCEPTION_SECCOMP_ALLOW:-}" ]]; then
+        effective_seccomp_allow="${effective_seccomp_allow:+$effective_seccomp_allow }${EXCEPTION_SECCOMP_ALLOW}"
+    fi
+
+    SANDBOX_LEVEL="$effective_sandbox"
+    RUNTIME_CAPS="$effective_caps"
+    RUNTIME_CAP_PORTS="$effective_ports"
+    SECCOMP_ALLOW="$effective_seccomp_allow"
+    export SANDBOX_LEVEL RUNTIME_CAPS RUNTIME_CAP_PORTS SECCOMP_PROFILE SECCOMP_ALLOW
+}
+
+_queue_runtime_caps_normalise() {
+    # Operators naturally use both runtime:no_spawn_shell and
+    # no-spawn-shell spelling.  Runtime caps are matched internally in
+    # kebab-case so underscore spelling does not silently disable a cap.
+    local caps="${1:-${RUNTIME_CAPS:-}}"
+    caps="${caps//_/ -}"
+    caps="${caps//-/ -}"
+    # The two substitutions above intentionally route all words through the
+    # whitespace normaliser below; collapse commas/semicolons/pipes too.
+    caps="${1:-${RUNTIME_CAPS:-}}"
+    caps="${caps//_/-}"
+    caps="${caps//,/ }"
+    caps="${caps//;/ }"
+    caps="${caps//|/ }"
+    printf '%s\n' "$caps" | awk '{for (i=1;i<=NF;i++) if ($i != "") print $i}' | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//'
+}
+
+_queue_runtime_caps_is_known() {
+    case "$1" in
+        no-spawn-shell|no-network-tools|no-network-sockets|only-local-sockets|only-port) return 0 ;;
+        '') return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_queue_runtime_caps_unknown_list() {
+    local cap unknown=""
+    for cap in $(_queue_runtime_caps_normalise "${1:-${RUNTIME_CAPS:-}}" 2>/dev/null); do
+        if ! _queue_runtime_caps_is_known "$cap"; then
+            unknown+="${unknown:+,}$cap"
+        fi
+    done
+    printf '%s\n' "$unknown"
+}
+
+_queue_runtime_caps_has() {
+    local want="$1" cap
+    for cap in $(_queue_runtime_caps_normalise "${RUNTIME_CAPS:-}" 2>/dev/null); do
+        [[ "$cap" == "$want" ]] && return 0
+    done
+    return 1
+}
+
+_queue_runtime_caps_pids() {
+    local root_pid="${1:-}" pgid="${2:-}" p pid seen=" "
+    [[ -n "$root_pid" ]] && printf '%s\n' "$root_pid"
+    if [[ -n "$pgid" ]]; then
+        pgrep -g "$pgid" 2>/dev/null || true
+    fi
+    if [[ -n "$root_pid" ]]; then
+        local frontier=("$root_pid") next=()
+        while [[ "${#frontier[@]}" -gt 0 ]]; do
+            next=()
+            for p in "${frontier[@]}"; do
+                while IFS= read -r pid; do
+                    [[ -n "$pid" ]] || continue
+                    [[ "$seen" == *" $pid "* ]] && continue
+                    seen+="$pid "
+                    printf '%s\n' "$pid"
+                    next+=("$pid")
+                done < <(pgrep -P "$p" 2>/dev/null || true)
+            done
+            frontier=("${next[@]}")
+        done
+    fi | awk 'NF && !seen[$1]++'
+}
+
+_queue_runtime_caps_cmdline() {
+    local pid="$1"
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | sed 's/[[:space:]]\+$//'
+}
+
+_queue_runtime_caps_exe_base() {
+    local pid="$1" exe=""
+    exe="$(readlink "/proc/$pid/exe" 2>/dev/null || true)"
+    basename "$exe" 2>/dev/null || true
+}
+
+_queue_runtime_caps_lsof_sockets() {
+    local pid="$1"
+    command -v lsof >/dev/null 2>&1 || return 1
+    lsof -nP -a -p "$pid" -i 2>/dev/null | awk 'NR>1 {print; found=1} END {exit found?0:1}'
+}
+
+_queue_runtime_caps_lsof_local_only_violation() {
+    # Reads lsof -i output on stdin.  Returns success and prints the first
+    # violating line when an INET socket is not localhost-only.  LISTEN on
+    # *:PORT or 0.0.0.0:PORT is deliberately a violation.
+    local line name
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        name="${line##* }"
+        case "$line" in
+            *' 127.0.0.1:'*|*' localhost:'*|*' [::1]:'*|*' ::1:'*)
+                continue
+                ;;
+            *)
+                printf '%s\n' "$line"
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+_queue_runtime_caps_port_allowed() {
+    local port="$1" spec="${RUNTIME_CAP_PORTS:-}" item lo hi
+    [[ "$port" =~ ^[0-9]+$ ]] || return 1
+    spec="${spec// /,}"
+    spec="${spec//;/,}"
+    spec="${spec//:/,}"
+    spec="${spec//|/,}"
+    IFS=',' read -r -a _queue_runtime_port_items <<< "$spec"
+    for item in "${_queue_runtime_port_items[@]}"; do
+        [[ -n "$item" ]] || continue
+        if [[ "$item" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            lo="${BASH_REMATCH[1]}"; hi="${BASH_REMATCH[2]}"
+            [[ "$port" -ge "$lo" && "$port" -le "$hi" ]] && return 0
+        elif [[ "$item" =~ ^[0-9]+$ ]]; then
+            [[ "$port" -eq "$item" ]] && return 0
+        fi
+    done
+    return 1
+}
+
+_queue_runtime_caps_socket_policy_port() {
+    # For TCP client connections, evaluate the remote port after ->.
+    # For LISTEN/UDP sockets, evaluate the bound/local port.  This avoids
+    # blocking normal localhost clients because their ephemeral local port is
+    # not in the allow-list.
+    local line="$1" name side port
+    name="${line##* }"
+    side="$name"
+    if [[ "$side" == *'->'* ]]; then
+        side="${side##*->}"
+    fi
+    side="${side%% *}"
+    port="${side##*:}"
+    port="${port%%-*}"
+    port="${port%%/*}"
+    [[ "$port" =~ ^[0-9]+$ ]] || return 1
+    printf '%s\n' "$port"
+}
+
+_queue_runtime_caps_lsof_port_violation() {
+    local line port
+    [[ -n "${RUNTIME_CAP_PORTS:-}" ]] || { printf '%s\n' 'RUNTIME_CAP_PORTS not set'; return 0; }
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        port="$(_queue_runtime_caps_socket_policy_port "$line" 2>/dev/null || true)"
+        [[ -n "$port" ]] || { printf '%s\n' "$line"; return 0; }
+        if ! _queue_runtime_caps_port_allowed "$port"; then
+            printf '%s\n' "$line"
+            return 0
+        fi
+    done
+    return 1
+}
+
+_queue_runtime_caps_watchdog() {
+    local job_file="$1" log_file="$2" root_pid="$3" pgid="$4" interval="${RUNTIME_CAP_INTERVAL:-1}"
+    local pid base cmd sockets reason now
+    [[ "$interval" =~ ^[0-9]+$ && "$interval" -gt 0 ]] || interval=1
+    [[ -n "${RUNTIME_CAPS:-}" ]] || return 0
+
+    local unknown_caps normalised_caps
+    normalised_caps="$(_queue_runtime_caps_normalise "${RUNTIME_CAPS:-}" 2>/dev/null || true)"
+    unknown_caps="$(_queue_runtime_caps_unknown_list "${RUNTIME_CAPS:-}" 2>/dev/null || true)"
+    if [[ -n "$unknown_caps" ]]; then
+        now="$(_queue_now_iso)"
+        {
+            printf 'RUNTIME_CAP_WARNING=%q\n' "unknown runtime cap(s): $unknown_caps"
+            printf 'RUNTIME_CAPS_NORMALISED=%q\n' "$normalised_caps"
+        } >> "$job_file"
+        {
+            echo
+            echo "RUNTIME_CAP_WARNING: unknown runtime cap(s): $unknown_caps"
+            echo "RUNTIME_CAPS_NORMALISED: ${normalised_caps:-none}"
+        } >> "$log_file"
+        _queue_log_event "runtime_cap_warning" "${JOB_ID:-$(basename "$job_file" .job)}" "${JOB_NAME:-}" "running" "unknown=$unknown_caps normalised=${normalised_caps:-none}"
+    fi
+
+    while kill -0 "$root_pid" 2>/dev/null; do
+        while IFS= read -r pid; do
+            [[ -n "$pid" && -d "/proc/$pid" ]] || continue
+            base="$(_queue_runtime_caps_exe_base "$pid")"
+            cmd="$(_queue_runtime_caps_cmdline "$pid")"
+            reason=""
+
+            if [[ "$pid" != "$root_pid" ]] && _queue_runtime_caps_has no-spawn-shell; then
+                case "$base" in
+                    sh|bash|dash|zsh|ksh|mksh|busybox) reason="no-spawn-shell exe=$base cmd=$cmd" ;;
+                esac
+            fi
+
+            if [[ -z "$reason" ]] && _queue_runtime_caps_has no-network-tools; then
+                case "$base" in
+                    curl|wget|nc|ncat|netcat|socat|telnet|ssh|scp|sftp|rsync) reason="no-network-tools exe=$base cmd=$cmd" ;;
+                esac
+            fi
+
+            if [[ -z "$reason" ]] && _queue_runtime_caps_has no-network-sockets; then
+                sockets="$(_queue_runtime_caps_lsof_sockets "$pid" 2>/dev/null || true)"
+                [[ -n "$sockets" ]] && reason="no-network-sockets pid=$pid exe=$base"
+            fi
+
+            if [[ -z "$reason" ]] && _queue_runtime_caps_has only-local-sockets; then
+                sockets="$(_queue_runtime_caps_lsof_sockets "$pid" 2>/dev/null || true)"
+                if [[ -n "$sockets" ]]; then
+                    violation="$(_queue_runtime_caps_lsof_local_only_violation <<< "$sockets" 2>/dev/null || true)"
+                    [[ -n "$violation" ]] && reason="only-local-sockets pid=$pid exe=$base socket=$violation"
+                fi
+            fi
+
+            if [[ -z "$reason" ]] && _queue_runtime_caps_has only-port; then
+                sockets="$(_queue_runtime_caps_lsof_sockets "$pid" 2>/dev/null || true)"
+                if [[ -n "$sockets" ]]; then
+                    violation="$(_queue_runtime_caps_lsof_port_violation <<< "$sockets" 2>/dev/null || true)"
+                    [[ -n "$violation" ]] && reason="only-port ports=${RUNTIME_CAP_PORTS:-unset} pid=$pid exe=$base socket=$violation"
+                fi
+            fi
+
+            if [[ -n "$reason" ]]; then
+                now="$(_queue_now_iso)"
+                {
+                    printf 'RUNTIME_CAP_VIOLATED=%q\n' "1"
+                    printf 'RUNTIME_CAP_VIOLATED_AT=%q\n' "$now"
+                    printf 'RUNTIME_CAP_VIOLATION=%q\n' "$reason"
+                    printf 'RUNTIME_CAP_VIOLATION_PID=%q\n' "$pid"
+                } >> "$job_file"
+                {
+                    echo
+                    echo "RUNTIME_CAP_VIOLATION: $reason"
+                    [[ -n "${sockets:-}" ]] && { echo "lsof:"; echo "$sockets"; }
+                } >> "$log_file"
+                _queue_log_event "runtime_cap_violation" "${JOB_ID:-$(basename "$job_file" .job)}" "${JOB_NAME:-}" "running" "$reason"
+                if [[ -n "$pgid" && "$pgid" =~ ^[0-9]+$ ]]; then
+                    kill -TERM -- "-$pgid" 2>/dev/null || true
+                    sleep 1
+                    kill -KILL -- "-$pgid" 2>/dev/null || true
+                else
+                    kill -TERM "$root_pid" 2>/dev/null || true
+                    sleep 1
+                    kill -KILL "$root_pid" 2>/dev/null || true
+                fi
+                return 0
+            fi
+        done < <(_queue_runtime_caps_pids "$root_pid" "$pgid")
+        sleep "$interval"
+    done
+}
+
+
+
+_queue_absolutize_systemd_argv0() {
+    # systemd-run accepts either a simple executable name found via PATH, or
+    # an absolute executable path.  It rejects relative paths containing a
+    # slash, such as ./script.sh, even when --working-directory is supplied.
+    # Normalise only argv[0]; arguments remain unchanged.
+    local cwd="${1:-}"
+    shift || true
+    local cmd0="${1:-}"
+    [[ -n "$cmd0" ]] || return 0
+    shift || true
+
+    if [[ "$cmd0" == */* && "$cmd0" != /* ]]; then
+        if [[ -n "$cwd" ]]; then
+            printf '%s\0' "$cwd/$cmd0"
+        else
+            printf '%s\0' "$PWD/$cmd0"
+        fi
+    else
+        printf '%s\0' "$cmd0"
+    fi
+
+    printf '%s\0' "$@"
+}
+
+_queue_emit_systemd_payload_argv() {
+    # Emit the command section after systemd-run's "--" marker.
+    # If timeout is present, timeout is argv[0] and the payload command is an
+    # argument to timeout, so the relative-path executable restriction does not
+    # apply directly to the payload.  Without timeout, normalise argv[0].
+    local cwd="${1:-}"
+    local timeout_value="${2:-}"
+    local kill_after="${3:-}"
+    shift 3 || true
+
+    if [[ -n "$timeout_value" ]]; then
+        _queue_emit_timeout_wrapper_argv "$timeout_value" "$kill_after"
+        printf '%s\0' "$@"
+    else
+        _queue_absolutize_systemd_argv0 "$cwd" "$@"
+    fi
+}
+
+_queue_build_payload_command() {
+    # Prints NUL-separated argv for the actual process to spawn.
+    # We prefer systemd-run for CPU/MEM limits. If no limits are requested,
+    # use setsid when available so cancel can signal the process group safely.
+    local cpu="${1:-}"
+    local mem="${2:-}"
+    local cwd="${3:-}"
+    local runner="${4:-auto}"
+    local timeout_value="${5:-}"
+    local kill_after="${6:-}"
+    local sandbox_level="${7:-}"
+    local run_user="${8:-}"
+    shift 8
+
+    if [[ "$runner" == "systemd" ]]; then
+        if [[ -n "$run_user" && "$run_user" != "$(_queue_current_user_name)" && "$(id -u 2>/dev/null || echo 99999)" == "0" ]]; then
+            printf '%s\0' systemd-run --pipe --wait --collect --uid="$run_user"
+        elif _queue_systemd_user_service_supported; then
+            printf '%s\0' systemd-run --user --pipe --wait --collect
+
+            # systemd-run does not reliably preserve exported bash functions.
+            # queue_output is therefore installed as an external helper command
+            # and PATH / queue env are passed explicitly to the transient unit.
+            local env_name env_val
+            for env_name in PATH QUEUEBASH_JOB_ID QUEUEBASH_OUTPUT_ENV QUEUEBASH_ENV_OUT QUEUEBASH_STREAM_FIFO QUEUEBASH_HELPER_DIR QUEUEBASH_INHERITED_ENV_FROM QUEUEBASH_INHERITED_ENV_KEYS ${QUEUEBASH_INHERITED_ENV_KEYS:-}; do
+                [[ "$env_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+                env_val="${!env_name-}"
+                [[ -n "$env_val" ]] && printf '%s\0' "--setenv=${env_name}=${env_val}"
+            done
+
+            [[ -n "$cwd" ]] && printf '%s\0' --working-directory="$cwd"
+            _queue_emit_sandbox_systemd_props "$sandbox_level"
+            _queue_emit_seccomp_systemd_props "${SECCOMP_PROFILE:-}" "${SECCOMP_ALLOW:-}"
+            [[ -n "$cpu" ]] && printf '%s\0' -p "CPUQuota=$(_queue_normalize_systemd_cpu_quota "$cpu")"
+            [[ -n "$mem" ]] && printf '%s\0' -p "MemoryMax=${mem}"
+            printf '%s\0' --
+            _queue_emit_systemd_payload_argv "$cwd" "$timeout_value" "$kill_after" "$@"
+            return 0
+        fi
+    fi
+
+    _queue_emit_user_switch_prefix "$run_user"
+    _queue_emit_sandbox_direct_prefix "$sandbox_level"
+    if command -v setsid >/dev/null 2>&1; then
+        printf '%s\0' setsid --
+    fi
+    _queue_emit_timeout_wrapper_argv "$timeout_value" "$kill_after"
+    printf '%s\0' "$@"
+}
+
+_queue_cancel_does_not_run_failure_hook() {
+    # Documentation helper:
+    # Cancellation is an operator action, not program failure.
+    #
+    # ON_FAILURE is deliberately reserved for commands that run to completion
+    # and return a non-zero exit status. queue cancel/kill move the job record
+    # to cancelled and append CANCELLED_* metadata, but they must not execute
+    # ON_FAILURE. Otherwise an operator kill could accidentally trigger retry,
+    # alert, or cleanup flows intended only for program failure.
+    return 0
+}
+
+_queue_systemd_probe() {
+    local cpu="${1:-50}"
+    local mem="${2:-256M}"
+
+    echo "Probe command:"
+    printf '  %q' systemd-run --user --pipe --wait --collect -p "CPUQuota=$(_queue_normalize_systemd_cpu_quota "$cpu")" -p "MemoryMax=${mem}" -- /bin/sh -c 'echo queuebash-systemd-probe-ok; pwd; exit 0'
+    echo
+    echo
+
+    systemd-run --user --pipe --wait --collect \
+        --working-directory="$PWD" \
+        -p "CPUQuota=$(_queue_normalize_systemd_cpu_quota "$cpu")" \
+        -p "MemoryMax=${mem}" \
+        -- /bin/sh -c 'echo queuebash-systemd-probe-ok; pwd; exit 0'
+    local rc="$?"
+
+    echo
+    echo "probe_exit_code=$rc"
+    return "$rc"
+}
+
+_queue_health_print_issue() {
+    local level="$1"
+    local message="$2"
+    printf '[%s] %s\n' "$level" "$message"
+}
+
+_queue_job_id_from_file() {
+    local f="$1"
+    grep '^JOB_ID=' "$f" 2>/dev/null | head -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null
+}
+
+_queue_health_running_is_stale() {
+    local f="$1"
+    local unit run_pid
+    unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+
+    if [[ -n "$unit" ]]; then
+        if _queue_systemd_unit_active "$unit"; then
+            return 1
+        fi
+        if _queue_systemd_unit_dead "$unit"; then
+            return 0
+        fi
+        # Unknown systemd state: fall through to RUN_PID fallback.
+    fi
+
+    run_pid="$(_queue_job_var_value "$f" RUN_PID)"
+    [[ -z "$run_pid" ]] && return 2
+    kill -0 "$run_pid" 2>/dev/null && return 1
+    return 0
+}
+
+_queue_mark_interrupted() {
+    local f="$1"
+    local reason="${2:-stale_running_pid}"
+    local root="$(_queue_root)"
+    local id name dest
+
+    id="$(basename "$f" .job)"
+    name="$(_queue_job_name "$f")"
+    dest="$root/interrupted/$id.job"
+
+    {
+        echo "INTERRUPTED_AT=$(printf '%q' "$(_queue_now_iso)")"
+        echo "INTERRUPTED_REASON=$(printf '%q' "$reason")"
+        echo "INTERRUPTED_FROM=running"
+    } >> "$f"
+
+    mv -f "$f" "$dest"
+    _queue_log_event "interrupted" "$id" "$name" "interrupted" "reason=$reason"
+    printf 'MOVED: %s (%s) running -> interrupted reason=%s\n' "$id" "$name" "$reason"
+}
+
+_queue_job_command() {
+    local f="$1"
+    grep '^COMMAND=' "$f" 2>/dev/null | sed 's/^COMMAND=( //; s/ )$//'
+}
+
+_queue_print_job_table() {
+    local idw=6 statew=5 priw=3 namew=4 okw=2 failw=4
+    local rows=()
+    local f id state pri name ok fail cmd row
+
+    _queue_print_selected_user_banner
+
+    for f in "$@"; do
+        [[ -f "$f" ]] || continue
+        id="$(basename "$f" .job)"
+        state="$(_queue_state_for_job_path "$f" "$root")"
+        pri="$(_queue_job_pri "$f")"
+        name="$(_queue_job_name "$f")"
+        ok="-"
+        fail="-"
+        _queue_job_has_array "$f" ON_SUCCESS && ok="Y"
+        _queue_job_has_array "$f" ON_FAILURE && fail="Y"
+        cmd="$(_queue_job_command "$f")"
+
+        rows+=( "$id"$'\t'"$state"$'\t'"$pri"$'\t'"$name"$'\t'"$ok"$'\t'"$fail"$'\t'"$cmd" )
+
+        (( ${#id} > idw )) && idw=${#id}
+        (( ${#state} > statew )) && statew=${#state}
+        (( ${#pri} > priw )) && priw=${#pri}
+        (( ${#name} > namew )) && namew=${#name}
+        (( ${#ok} > okw )) && okw=${#ok}
+        (( ${#fail} > failw )) && failw=${#fail}
+    done
+
+    printf "%-${idw}s  %-${statew}s  %${priw}s  %-${namew}s  %-${okw}s  %-${failw}s  %s\n" \
+        "JOB_ID" "STATE" "PRI" "NAME" "OK" "FAIL" "COMMAND"
+
+    for row in "${rows[@]}"; do
+        IFS=$'\t' read -r id state pri name ok fail cmd <<< "$row"
+        printf "%-${idw}s  %-${statew}s  %${priw}s  %-${namew}s  %-${okw}s  %-${failw}s  %s\n" \
+            "$id" "$state" "$pri" "$name" "$ok" "$fail" "$cmd"
+    done
+}
+
+
+_queue_json_comma() {
+    local __var="$1"
+    local __val="${!__var:-0}"
+    if [[ "$__val" -eq 0 ]]; then
+        printf -v "$__var" 1
+    else
+        printf ','
+    fi
+}
+
+_queue_print_job_table_json() {
+    local f id state pri name ok fail cmd class submitted started finished rc first=0
+    printf '{"queue_root":"%s","selected_user":"%s","jobs":[' \
+        "$(_queue_json_escape "$(_queue_root)")" \
+        "$(_queue_json_escape "$(_queue_selected_user_for_display)")"
+    for f in "$@"; do
+        [[ -f "$f" ]] || continue
+        _queue_json_comma first
+        id="$(basename "$f" .job)"
+        state="$(_queue_state_for_job_path "$f" "$root")"
+        pri="$(_queue_job_pri "$f" 2>/dev/null || echo 10)"
+        name="$(_queue_job_name "$f" 2>/dev/null || true)"
+        ok=false; fail=false
+        _queue_job_has_array "$f" ON_SUCCESS && ok=true
+        _queue_job_has_array "$f" ON_FAILURE && fail=true
+        cmd="$(_queue_job_command "$f" 2>/dev/null || true)"
+        class="$(_queue_class_for_job_file "$f" 2>/dev/null || _queue_job_var_value "$f" JOB_CLASS 2>/dev/null || echo DEFAULT)"
+        submitted="$(_queue_job_var_value "$f" SUBMITTED_AT 2>/dev/null || true)"
+        started="$(_queue_job_var_value "$f" RUN_STARTED_AT 2>/dev/null || true)"
+        finished="$(_queue_job_var_value "$f" EXEC_FINISHED_AT 2>/dev/null || _queue_job_var_value "$f" FINISHED_AT 2>/dev/null || true)"
+        rc="$(_queue_job_var_value "$f" EXIT_CODE 2>/dev/null || true)"
+        [[ "$pri" =~ ^-?[0-9]+$ ]] || pri=10
+        printf '{"qid":"%s","state":"%s","priority":%s,"name":"%s","class":"%s","ok_hook":%s,"fail_hook":%s,"command_line":"%s","times":{"submitted_at":"%s","run_started_at":"%s","finished_at":"%s"},"rc":"%s","job_file":"%s"}' \
+            "$(_queue_json_escape "$id")" "$(_queue_json_escape "$state")" "$pri" \
+            "$(_queue_json_escape "$name")" "$(_queue_json_escape "$class")" "$ok" "$fail" \
+            "$(_queue_json_escape "$cmd")" "$(_queue_json_escape "$submitted")" \
+            "$(_queue_json_escape "$started")" "$(_queue_json_escape "$finished")" \
+            "$(_queue_json_escape "$rc")" "$(_queue_json_escape "$f")"
+    done
+    printf ']}
+'
+}
+
+_queue_modules_list_json() {
+    local filter_kind="${1:-}" line kind name status path first=0
+    printf '{"queue_root":"%s","modules":[' "$(_queue_json_escape "$(_queue_root)")"
+    while IFS=$'\t' read -r kind name status path; do
+        [[ -z "$kind" ]] && continue
+        [[ -n "$filter_kind" && "$kind" != "$filter_kind" ]] && continue
+        _queue_json_comma first
+        printf '{"kind":"%s","name":"%s","status":"%s","path":"%s"}' \
+            "$(_queue_json_escape "$kind")" "$(_queue_json_escape "$name")" \
+            "$(_queue_json_escape "$status")" "$(_queue_json_escape "$path")"
+    done < <(_queue_modules_list | sort)
+    printf ']}
+'
+}
+
+_queue_classes_list_json() { _queue_modules_list_json class; }
+
+_queue_assets_list_json() {
+    local first=0 line facility family check rest helper status detail
+    printf '{"queue_root":"%s","facilities":[' "$(_queue_json_escape "$(_queue_root)")"
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        _queue_json_comma first
+        if [[ "$line" == INVALID* ]]; then
+            printf '{"valid":false,"raw":"%s"}' "$(_queue_json_escape "$line")"
+            continue
+        fi
+        facility="${line%%[[:space:]]*}"
+        rest="${line#${facility}}"; rest="${rest# }"
+        family="${facility%%:*}"
+        check="${facility#*:}"; [[ "$check" == "$facility" ]] && check=""
+        helper="$(_queue_asset_helper_path "$family" 2>/dev/null || true)"
+        printf '{"valid":true,"facility":"%s","family":"%s","check":"%s","detail":"%s","helper":"%s"}' \
+            "$(_queue_json_escape "$facility")" "$(_queue_json_escape "$family")" \
+            "$(_queue_json_escape "$check")" "$(_queue_json_escape "$rest")" \
+            "$(_queue_json_escape "$helper")"
+    done < <(_queue_asset_scan_facilities | sort)
+    printf ']}
+'
+}
+
+_queue_caps_list_json() {
+    local first=0 line family rest
+    printf '{"queue_root":"%s","capabilities":[' "$(_queue_json_escape "$(_queue_root)")"
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        _queue_json_comma first
+        if [[ "$line" == INVALID* ]]; then
+            printf '{"valid":false,"raw":"%s"}' "$(_queue_json_escape "$line")"
+            continue
+        fi
+        family="${line%%[[:space:]]*}"
+        rest="${line#${family}}"; rest="${rest# }"
+        printf '{"valid":true,"family":"%s","detail":"%s","raw":"%s"}' \
+            "$(_queue_json_escape "$family")" "$(_queue_json_escape "$rest")" "$(_queue_json_escape "$line")"
+    done < <(_queue_cap_plugins_list | sort)
+    printf ']}
+'
+}
+
+
+_queue_root_running_foreign_payload_user() {
+    local run_user="${1:-${RUN_USER:-}}"
+    [[ -n "$run_user" ]] || return 1
+    [[ "$(id -u 2>/dev/null || echo 99999)" == "0" ]] || return 1
+    [[ "$run_user" != "$(_queue_current_user_name 2>/dev/null || id -un 2>/dev/null || echo root)" ]] || return 1
+    return 0
+}
+
+_queue_runner_for_job() {
+    local requested="${1:-auto}"
+    local cpu="${2:-}"
+    local mem="${3:-}"
+    local run_user="${4:-${RUN_USER:-}}"
+
+    requested="${requested:-${QUEUEBASH_RUNNER:-auto}}"
+
+    case "$requested" in
+        direct) echo "direct"; return 0 ;;
+        systemd)
+            if _queue_root_running_foreign_payload_user "$run_user"; then
+                echo "systemd-foreign-user-not-used"
+                return 1
+            fi
+            if _queue_systemd_user_service_supported; then
+                echo "systemd"
+                return 0
+            fi
+            echo "systemd-unavailable"
+            return 1
+            ;;
+        auto|"")
+            # Prefer direct when root is launching a payload as another Unix user.
+            # This avoids root trying to enter or depend on another user's
+            # systemd --user bus.  Direct+runuser is the predictable fallback
+            # for root/operator cross-user execution.
+            if _queue_root_running_foreign_payload_user "$run_user"; then
+                echo "direct"
+                return 0
+            fi
+
+            # Otherwise prefer systemd only when the current user's systemd bus
+            # is actually usable. su/runuser shells frequently have no usable
+            # user bus; auto must fall back to direct rather than selecting a
+            # doomed systemd-run --user launch.
+            if _queue_systemd_user_service_supported; then
+                echo "systemd"
+            else
+                echo "direct"
+            fi
+            return 0
+            ;;
+        *)
+            echo "direct"
+            return 0
+            ;;
+    esac
+}
+
+_queue_systemd_unit_clean() {
+    local unit="$1"
+    unit="${unit%%; invocation ID:*}"
+    unit="${unit%% invocation ID:*}"
+    unit="$(printf '%s' "$unit" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    printf '%s\n' "$unit"
+}
+
+_queue_systemd_unit_state() {
+    local unit="$1"
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+    systemctl --user show "$unit" -p ActiveState --value 2>/dev/null
+}
+
+_queue_systemd_unit_substate() {
+    local unit="$1"
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+    systemctl --user show "$unit" -p SubState --value 2>/dev/null
+}
+
+_queue_systemd_unit_active() {
+    local unit="$1"
+    local state
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+    state="$(_queue_systemd_unit_state "$unit" 2>/dev/null || true)"
+    [[ "$state" == "active" || "$state" == "activating" || "$state" == "reloading" ]]
+}
+
+_queue_systemd_unit_dead() {
+    local unit="$1"
+    local state sub
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+    state="$(_queue_systemd_unit_state "$unit" 2>/dev/null || true)"
+    sub="$(_queue_systemd_unit_substate "$unit" 2>/dev/null || true)"
+    [[ "$state" == "inactive" || "$state" == "failed" || "$state" == "not-found" || "$sub" == "dead" || "$sub" == "failed" || -z "$state" ]]
+}
+
+_queue_systemd_unit_mainpid() {
+    local unit="$1"
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+    systemctl --user show "$unit" -p MainPID --value 2>/dev/null
+}
+
+_queue_systemd_unit_pids() {
+    local unit="$1"
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+    systemctl --user status "$unit" --no-pager 2>/dev/null |
+        awk '
+            /^[[:space:]]*[0-9]+[[:space:]]/ { print $1 }
+            /Main PID:/ {
+                for (i=1; i<=NF; i++) if ($i == "PID:") print $(i+1)
+            }
+        ' |
+        sed 's/[^0-9].*$//' |
+        awk 'NF && !seen[$1]++'
+}
+
+_queue_systemd_kill_unit_tree() {
+    local unit="$1"
+    local sig="${2:-TERM}"
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    [[ -z "$unit" ]] && return 1
+
+    echo "Sending -$sig to systemd unit $unit"
+    systemctl --user kill --kill-whom=all --signal="$sig" "$unit" >/dev/null 2>&1 || \
+        systemctl --user kill --signal="$sig" "$unit" >/dev/null 2>&1 || true
+
+    if [[ "$sig" == "TERM" || "$sig" == "SIGTERM" ]]; then
+        systemctl --user stop "$unit" >/dev/null 2>&1 || true
+    fi
+    return 0
+}
+
+_queue_systemd_unit_from_log() {
+    local log="$1"
+    [[ -f "$log" ]] || return 1
+    grep -m1 '^Running as unit:' "$log" 2>/dev/null | sed 's/^Running as unit:[[:space:]]*//; s/[[:space:]]*$//'
+}
+
+_queue_record_systemd_unit_if_seen() {
+    local job="$1"
+    local log="$2"
+    local unit
+    unit="$(_queue_systemd_unit_from_log "$log" || true)"
+    [[ -z "$unit" ]] && return 0
+    if ! grep -q '^SYSTEMD_UNIT=' "$job" 2>/dev/null; then
+        printf 'SYSTEMD_UNIT=%q\n' "$unit" >> "$job"
+    fi
+}
+
+_queue_job_systemd_unit() {
+    local f="$1"
+    local unit
+    unit="$(grep '^SYSTEMD_UNIT=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    if [[ -z "$unit" ]]; then
+        local id root log
+        id="$(basename "$f" .job)"
+        root="$(_queue_root)"
+        log="$root/logs/$id.log"
+        unit="$(_queue_systemd_unit_from_log "$log" || true)"
+    fi
+    unit="$(_queue_systemd_unit_clean "$unit")"
+    printf '%s\n' "$unit"
+}
+
+_queue_show_systemd_metrics_for_job() {
+    local f="$1"
+    local unit
+    unit="$(_queue_job_systemd_unit "$f")"
+
+    if [[ -z "$unit" ]]; then
+        echo "No SYSTEMD_UNIT recorded/found for $(basename "$f" .job)"
+        return 1
+    fi
+
+    echo "Unit: $unit"
+    echo
+
+    systemctl --user show "$(_queue_systemd_unit_clean "$unit")" \
+        -p Id \
+        -p ActiveState \
+        -p SubState \
+        -p Result \
+        -p MainPID \
+        -p ControlGroup \
+        -p CPUAccounting \
+        -p CPUQuotaPerSecUSec \
+        -p MemoryAccounting \
+        -p MemoryMax \
+        -p MemoryCurrent \
+        -p TasksCurrent \
+        -p ExecMainCode \
+        -p ExecMainStatus \
+        2>/dev/null || {
+            echo "systemctl --user show failed for $unit"
+            return 1
+        }
+}
+
+# -------------------------------------------------------------------
+# IPC helpers: env-drop outputs and live stream taps
+# -------------------------------------------------------------------
+_queue_output_env_path(){ local id="$1" root="$(_queue_root)"; printf '%s/outputs/%s.env\n' "$root" "$id"; }
+_queue_stream_fifo_path(){ local id="$1" root="$(_queue_root)"; printf '%s/streams/%s.fifo\n' "$root" "$id"; }
+_queue_stream_pid_path(){ local id="$1" root="$(_queue_root)"; printf '%s/streams/%s.tail.pid\n' "$root" "$id"; }
+_queue_cleanup_stream_fifo(){
+    local id="$1" fifo pidfile pid
+    [[ -z "$id" ]] && return 0
+    fifo="$(_queue_stream_fifo_path "$id")"; pidfile="$(_queue_stream_pid_path "$id")"
+    if [[ -f "$pidfile" ]]; then
+        pid="$(cat "$pidfile" 2>/dev/null || true)"
+        [[ "$pid" =~ ^[0-9]+$ ]] && kill "$pid" >/dev/null 2>&1 || true
+        rm -f -- "$pidfile" 2>/dev/null || true
+    fi
+    rm -f -- "$fifo" 2>/dev/null || true
+}
+_queue_cleanup_stale_ipc(){
+    local root="$(_queue_root)" f base id pid
+    shopt -s nullglob
+    for f in "$root/streams"/*.fifo "$root/streams"/*.tail.pid; do
+        [[ -e "$f" ]] || continue
+        base="$(basename "$f")"; id="${base%.fifo}"; id="${id%.tail.pid}"
+        if [[ ! -f "$root/running/$id.job" ]]; then
+            if [[ "$f" == *.tail.pid ]]; then
+                pid="$(cat "$f" 2>/dev/null || true)"
+                [[ "$pid" =~ ^[0-9]+$ ]] && kill "$pid" >/dev/null 2>&1 || true
+            fi
+            rm -f -- "$f" 2>/dev/null || true
+            echo "FIX removed stale IPC stream file: $f"
+        fi
+    done
+    shopt -u nullglob
+}
+_queue_cleanup_stale_helpers() {
+    local root="$(_queue_root)"
+    local d id
+    shopt -s nullglob
+    for d in "$root/helpers"/*; do
+        [[ -d "$d" ]] || continue
+        id="$(basename "$d")"
+        if [[ ! -f "$root/running/$id.job" ]]; then
+            rm -rf "$d" 2>/dev/null || true
+            echo "FIX removed stale IPC helper dir: $d"
+        fi
+    done
+    shopt -u nullglob
+}
+
+
+_queue_create_stream_fifo_for_job(){ local id="$1" fifo; fifo="$(_queue_stream_fifo_path "$id")"; mkdir -p "$(dirname "$fifo")"; rm -f -- "$fifo" 2>/dev/null || true; mkfifo "$fifo" 2>/dev/null || return 1; printf '%s\n' "$fifo"; }
+_queue_ipc_helper_dir() {
+    local id="$1"
+    local root="$(_queue_root)"
+    printf '%s/helpers/%s/bin\n' "$root" "$id"
+}
+
+_queue_install_ipc_helpers() {
+    local id="$1"
+    local bindir helper
+
+    bindir="$(_queue_ipc_helper_dir "$id")"
+    mkdir -p "$bindir"
+
+    helper="$bindir/queue_output"
+    cat > "$helper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+key="${1:-}"
+value="${2:-}"
+out="${QUEUEBASH_OUTPUT_ENV:-${QUEUEBASH_ENV_OUT:-}}"
+
+if [[ -z "$out" ]]; then
+    echo "queue_output: QUEUEBASH_OUTPUT_ENV is not set; this must run inside a queue job" >&2
+    exit 2
+fi
+
+if [[ -z "$key" || ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "queue_output: invalid key: $key" >&2
+    exit 2
+fi
+
+mkdir -p "$(dirname "$out")"
+printf 'export %s=%q\n' "$key" "$value" >> "$out"
+EOF
+    chmod +x "$helper"
+
+    helper="$bindir/queue_output_file"
+    cat > "$helper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+key="${1:-}"
+path="${2:-}"
+out="${QUEUEBASH_OUTPUT_ENV:-${QUEUEBASH_ENV_OUT:-}}"
+
+if [[ -z "$out" ]]; then
+    echo "queue_output_file: QUEUEBASH_OUTPUT_ENV is not set; this must run inside a queue job" >&2
+    exit 2
+fi
+
+if [[ -z "$key" || ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "queue_output_file: invalid key: $key" >&2
+    exit 2
+fi
+
+if [[ -z "$path" || ! -f "$path" ]]; then
+    echo "queue_output_file: file not found: $path" >&2
+    exit 3
+fi
+
+if ! command -v sha256sum >/dev/null 2>&1; then
+    echo "queue_output_file: sha256sum is required" >&2
+    exit 4
+fi
+
+bytes="$(wc -c < "$path" | tr -d '[:space:]')"
+sha="$(sha256sum -- "$path" | awk '{print $1}')"
+
+if mtime="$(stat -c %Y -- "$path" 2>/dev/null)"; then
+    :
+elif mtime="$(stat -f %m -- "$path" 2>/dev/null)"; then
+    :
+else
+    mtime=0
+fi
+
+mkdir -p "$(dirname "$out")"
+{
+    printf 'export %s=%q\n' "$key" "$path"
+    printf 'export %s_SHA256=%q\n' "$key" "$sha"
+    printf 'export %s_BYTES=%q\n' "$key" "$bytes"
+    printf 'export %s_MTIME=%q\n' "$key" "$mtime"
+} >> "$out"
+EOF
+    chmod +x "$helper"
+
+    helper="$bindir/queue_require_file"
+    cat > "$helper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+key="${1:-}"
+
+if [[ -z "$key" || ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "queue_require_file: invalid key: $key" >&2
+    exit 2
+fi
+
+path_var="$key"
+sha_var="${key}_SHA256"
+bytes_var="${key}_BYTES"
+mtime_var="${key}_MTIME"
+
+path="${!path_var:-}"
+expected_sha="${!sha_var:-}"
+expected_bytes="${!bytes_var:-}"
+expected_mtime="${!mtime_var:-}"
+
+if [[ -z "$path" ]]; then
+    echo "queue_require_file: $path_var is not set" >&2
+    exit 10
+fi
+
+if [[ ! -f "$path" ]]; then
+    echo "queue_require_file: file missing for $path_var: $path" >&2
+    exit 11
+fi
+
+if [[ -n "$expected_bytes" ]]; then
+    actual_bytes="$(wc -c < "$path" | tr -d '[:space:]')"
+    if [[ "$actual_bytes" != "$expected_bytes" ]]; then
+        echo "queue_require_file: byte size mismatch for $path_var: expected=$expected_bytes actual=$actual_bytes path=$path" >&2
+        exit 12
+    fi
+fi
+
+if [[ -n "$expected_sha" ]]; then
+    if ! command -v sha256sum >/dev/null 2>&1; then
+        echo "queue_require_file: sha256sum is required for $path_var validation" >&2
+        exit 13
+    fi
+
+    actual_sha="$(sha256sum -- "$path" | awk '{print $1}')"
+    if [[ "$actual_sha" != "$expected_sha" ]]; then
+        echo "queue_require_file: sha256 mismatch for $path_var: expected=$expected_sha actual=$actual_sha path=$path" >&2
+        exit 14
+    fi
+fi
+
+if [[ -n "$expected_mtime" && "$expected_mtime" != "0" ]]; then
+    if actual_mtime="$(stat -c %Y -- "$path" 2>/dev/null)"; then
+        :
+    elif actual_mtime="$(stat -f %m -- "$path" 2>/dev/null)"; then
+        :
+    else
+        actual_mtime=""
+    fi
+
+    if [[ -n "$actual_mtime" && "$actual_mtime" != "$expected_mtime" ]]; then
+        echo "queue_require_file: mtime mismatch for $path_var: expected=$expected_mtime actual=$actual_mtime path=$path" >&2
+        exit 15
+    fi
+fi
+
+exit 0
+EOF
+    chmod +x "$helper"
+
+    printf '%s\n' "$bindir"
+}
+
+_queue_export_job_ipc_env(){
+    local id="$1" out fifo helper_dir
+    out="$(_queue_output_env_path "$id")"; fifo="$(_queue_stream_fifo_path "$id")"
+
+    helper_dir="$(_queue_install_ipc_helpers "$id")"
+
+    export QUEUEBASH_JOB_ID="$id"
+    export QUEUEBASH_OUTPUT_ENV="$out"
+    export QUEUEBASH_ENV_OUT="$out"
+    export QUEUEBASH_STREAM_FIFO="$fifo"
+    export QUEUEBASH_HELPER_DIR="$helper_dir"
+
+    # Make queue_output available as an external command, not only as a shell
+    # function. systemd-run does not reliably preserve exported bash functions.
+    export PATH="$helper_dir:$PATH"
+
+    mkdir -p "$(dirname "$out")"
+    : > "$out"
+}
+
+queue_output(){
+    local key="${1:-}" value="${2:-}" out="${QUEUEBASH_OUTPUT_ENV:-${QUEUEBASH_ENV_OUT:-}}"
+    [[ -z "$out" ]] && { echo "queue_output: QUEUEBASH_OUTPUT_ENV is not set; this must run inside a queue job" >&2; return 2; }
+    [[ -z "$key" || ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && { echo "queue_output: invalid key: $key" >&2; return 2; }
+    mkdir -p "$(dirname "$out")"; printf 'export %s=%q\n' "$key" "$value" >> "$out"
+}
+_queue_env_drop_job_name_from_file() {
+    local f="$1"
+    local JOB_NAME=""
+    # Job files are generated by queuebash using shell-safe assignments/arrays.
+    # Source in a subshell-safe helper and print only JOB_NAME.
+    (
+        source "$f" >/dev/null 2>&1 || exit 1
+        printf '%s\n' "${JOB_NAME:-}"
+    )
+}
+
+_queue_env_drop_inherit_tokens_from_file() {
+    local f="$1"
+    (
+        source "$f" >/dev/null 2>&1 || exit 1
+        if declare -p INHERIT_ENV_FROM >/dev/null 2>&1; then
+            if declare -p INHERIT_ENV_FROM 2>/dev/null | grep -q '^declare \-[^ ]*a'; then
+                printf '%s\n' "${INHERIT_ENV_FROM[@]}"
+            else
+                printf '%s\n' "${INHERIT_ENV_FROM:-}"
+            fi
+        fi
+    )
+}
+
+_queue_resolve_env_drop_source_qid(){
+    local token="$1"
+    local root="$(_queue_root)"
+    local f name
+    local matches=()
+
+    [[ -z "$token" ]] && return 1
+
+    # Direct QID path.
+    if [[ -f "$root/outputs/$token.env" || -f "$root/done/$token.job" ]]; then
+        printf '%s\n' "$token"
+        return 0
+    fi
+
+    # Name path: inherit only from successful completed jobs.
+    # Sort by filename for deterministic behaviour. If more than one successful
+    # producer has the same name, refuse to guess.
+    shopt -s nullglob
+    for f in "$root/done"/*.job; do
+        [[ -e "$f" ]] || continue
+        name="$(_queue_env_drop_job_name_from_file "$f" 2>/dev/null || true)"
+        if [[ "$name" == "$token" ]]; then
+            matches+=( "$(basename "$f" .job)" )
+        fi
+    done
+    shopt -u nullglob
+
+    if [[ "${#matches[@]}" -eq 1 ]]; then
+        printf '%s\n' "${matches[0]}"
+        return 0
+    fi
+
+    if [[ "${#matches[@]}" -gt 1 ]]; then
+        echo "queue worker: env-drop source name '$token' is ambiguous; use a QID" >&2
+        return 2
+    fi
+
+    return 1
+}
+
+
+_queue_env_drop_keys_from_file() {
+    local env_file="$1"
+    local line key
+    [[ -f "$env_file" ]] || return 0
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        case "$line" in
+            export\ [A-Za-z_]*=*)
+                key="${line#export }"
+                key="${key%%=*}"
+                if [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+                    printf '%s\n' "$key"
+                fi
+                ;;
+        esac
+    done < "$env_file"
+}
+
+_queue_add_inherited_env_key() {
+    local key="$1"
+    local existing
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 0
+
+    for existing in ${QUEUEBASH_INHERITED_ENV_KEYS:-}; do
+        [[ "$existing" == "$key" ]] && return 0
+    done
+
+    export QUEUEBASH_INHERITED_ENV_KEYS="${QUEUEBASH_INHERITED_ENV_KEYS:+$QUEUEBASH_INHERITED_ENV_KEYS }$key"
+}
+
+_queue_source_env_drop_if_requested(){
+    local f="$1"
+    local env_id env_file qid
+    local found_any=0
+
+    while IFS= read -r env_id; do
+        [[ -z "$env_id" ]] && continue
+        found_any=1
+
+        qid="$(_queue_resolve_env_drop_source_qid "$env_id" 2>/dev/null || true)"
+        if [[ -z "$qid" ]]; then
+            echo "queue worker: requested env-drop source is not available: $env_id" >&2
+            continue
+        fi
+
+        env_file="$(_queue_output_env_path "$qid")"
+        if [[ -f "$env_file" ]]; then
+            export QUEUEBASH_INHERITED_ENV_FROM="${QUEUEBASH_INHERITED_ENV_FROM:+$QUEUEBASH_INHERITED_ENV_FROM }$qid"
+
+            local _queue_env_key
+            while IFS= read -r _queue_env_key; do
+                _queue_add_inherited_env_key "$_queue_env_key"
+            done < <(_queue_env_drop_keys_from_file "$env_file")
+
+            # shellcheck disable=SC1090
+            source "$env_file"
+
+            for _queue_env_key in ${QUEUEBASH_INHERITED_ENV_KEYS:-}; do
+                export "$_queue_env_key"
+            done
+        else
+            echo "queue worker: requested env-drop not found: $env_file" >&2
+        fi
+    done < <(_queue_env_drop_inherit_tokens_from_file "$f" 2>/dev/null || true)
+
+    return 0
+}
+
+_queue_stream_job_log_to_fifo(){ local id="$1" log="$2" fifo="$3" pidfile="$4"; ( tail -n 0 -f "$log" > "$fifo" 2>/dev/null ) & printf '%s\n' "$!" > "$pidfile"; }
+
+
+_queue_log_plain_path() {
+    local id="$1"
+    local root="$(_queue_root)"
+    printf '%s/logs/%s.log\n' "$root" "$id"
+}
+
+_queue_log_gz_path() {
+    local id="$1"
+    local root="$(_queue_root)"
+    printf '%s/logs/%s.log.gz\n' "$root" "$id"
+}
+
+_queue_job_stream_temp_cleanup() {
+    local id="$1"
+    local root="$(_queue_root)"
+    [[ -z "$id" ]] && return 0
+
+    rm -f -- \
+        "$root/logs/.${id}.stdout.fifo" \
+        "$root/logs/.${id}.stderr.fifo" \
+        "$root/logs/.${id}.stdout.suppressed" \
+        "$root/logs/.${id}.stderr.suppressed" \
+        2>/dev/null || true
+    _queue_cleanup_stream_fifo "$id"
+    _queue_class_release_claims "$id"
+    rm -rf "$root/helpers/$id" 2>/dev/null || true
+}
+
+_queue_cleanup_stale_stream_temps() {
+    local root="$(_queue_root)"
+    local f base id
+
+    shopt -s nullglob
+    for f in "$root/logs"/.*.stdout.fifo "$root/logs"/.*.stderr.fifo "$root/logs"/.*.stdout.suppressed "$root/logs"/.*.stderr.suppressed; do
+        [[ -e "$f" ]] || continue
+        base="$(basename "$f")"
+        id="$base"
+        id="${id#.}"
+        id="${id%.stdout.fifo}"
+        id="${id%.stderr.fifo}"
+        id="${id%.stdout.suppressed}"
+        id="${id%.stderr.suppressed}"
+
+        if [[ ! -f "$root/running/$id.job" ]]; then
+            rm -f -- "$f" 2>/dev/null || true
+            echo "FIX removed stale stream temp: $f"
+        fi
+    done
+    shopt -u nullglob
+}
+
+_queue_log_existing_path() {
+    local id="$1"
+    local plain gz
+    plain="$(_queue_log_plain_path "$id")"
+    gz="$(_queue_log_gz_path "$id")"
+
+    if [[ -f "$plain" ]]; then
+        printf '%s\n' "$plain"
+    elif [[ -f "$gz" ]]; then
+        printf '%s\n' "$gz"
+    else
+        printf '%s\n' "$plain"
+    fi
+}
+
+_queue_log_cat() {
+    local path="$1"
+    if [[ "$path" == *.gz ]]; then
+        gzip -cd -- "$path"
+    else
+        cat -- "$path"
+    fi
+}
+
+_queue_log_tail() {
+    local path="$1"
+    local lines="${2:-120}"
+
+    if [[ "$path" == *.gz ]]; then
+        gzip -cd -- "$path" | tail -n "$lines"
+    else
+        tail -n "$lines" -- "$path"
+    fi
+}
+
+_queue_log_tail_text() {
+    local path="$1"
+    local lines="${2:-120}"
+
+    # Use text-safe output for command substitution callers.  Some compressed
+    # logs can contain NUL bytes from payload output; bash warns when NULs
+    # appear in command substitution, which pollutes queue explain.
+    _queue_log_tail "$path" "$lines" | tr -d '\000'
+}
+
+_queue_maybe_gzip_log() {
+    local id="$1"
+    local job="$2"
+    local root="$(_queue_root)"
+    local plain="$root/logs/$id.log"
+    local gz="$root/logs/$id.log.gz"
+
+    [[ "${QUEUEBASH_GZIP_LOGS:-1}" == "1" ]] || return 0
+    command -v gzip >/dev/null 2>&1 || return 0
+    [[ -f "$plain" ]] || return 0
+    [[ -f "$gz" ]] && return 0
+
+    gzip -f -- "$plain"
+    if [[ -f "$gz" && -f "$job" ]]; then
+        {
+            printf 'LOG_COMPRESSED=%q\n' "1"
+            printf 'LOG_COMPRESSED_AT=%q\n' "$(_queue_now_iso)"
+            printf 'LOG_PATH=%q\n' "$gz"
+        } >> "$job"
+        _queue_log_event "log_compressed" "$id" "$(_queue_job_name "$job")" "$(_queue_state_for_job_path "$job" "$(_queue_root)")" "path=$gz"
+    fi
+}
+
+_queue_maybe_gzip_completed_job_log() {
+    local id="$1"
+    local job="$2"
+    local state
+
+    [[ -f "$job" ]] || return 0
+    state="$(_queue_state_for_job_path "$job" "$(_queue_root)")"
+
+    case "$state" in
+        done|failed)
+            _queue_maybe_gzip_log "$id" "$job"
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+
+_queue_compress_completed_logs() {
+    local root="$(_queue_root)"
+    local state f id
+    for state in done failed; do
+        for f in "$root/$state"/*.job; do
+            [[ -e "$f" ]] || continue
+            id="$(basename "$f" .job)"
+            _queue_maybe_gzip_log "$id" "$f"
+        done
+    done
+}
+
+_queue_job_log_policy() {
+    local f="$1"
+    local v
+    v="$(grep '^LOG_OVERFLOW_POLICY=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+    v="${v:-${QUEUEBASH_LOG_OVERFLOW_POLICY:-stderr-only}}"
+    case "$v" in
+        stderr-only|stderr|drain|kill|allow) printf '%s\n' "$v" ;;
+        *) printf '%s\n' "stderr-only" ;;
+    esac
+}
+
+_queue_log_overflow_marker_path() {
+    local id="$1"
+    local stream="$2"
+    local root="$(_queue_root)"
+    printf '%s/logs/.%s.%s.suppressed\n' "$root" "$id" "$stream"
+}
+
+_queue_mark_log_stream_suppressed() {
+    local id="$1"
+    local job="$2"
+    local log="$3"
+    local stream="$4"
+    local size="$5"
+    local cap="$6"
+    local marker ts
+
+    marker="$(_queue_log_overflow_marker_path "$id" "$stream")"
+    [[ -e "$marker" ]] && return 0
+    : > "$marker" 2>/dev/null || true
+    ts="$(_queue_now_iso)"
+
+    {
+        echo
+        if [[ "$stream" == "stdout" ]]; then
+            echo "LOG_OVERFLOW_WARNING: stdout log cap reached at ${size} bytes; stdout is now suppressed, stderr continues until next cutoff ${cap}."
+        else
+            echo "LOG_OVERFLOW_WARNING: stderr log cap reached at ${size} bytes; stderr is now suppressed too, streams are drained to protect the process."
+        fi
+        echo "LOG_OVERFLOW_AT=$ts"
+    } >> "$log" 2>/dev/null || true
+
+    {
+        printf 'LOG_OVERFLOW=%q\n' "1"
+        printf 'LOG_OVERFLOW_AT=%q\n' "$ts"
+        printf 'LOG_OVERFLOW_BYTES=%q\n' "$size"
+        printf 'LOG_OVERFLOW_CAP=%q\n' "$cap"
+        if [[ "$stream" == "stdout" ]]; then
+            printf 'LOG_STDOUT_SUPPRESSED=%q\n' "1"
+            printf 'LOG_STDOUT_SUPPRESSED_AT=%q\n' "$ts"
+            printf 'LOG_STDERR_ONLY_FROM_BYTES=%q\n' "$size"
+        else
+            printf 'LOG_STDERR_SUPPRESSED=%q\n' "1"
+            printf 'LOG_STDERR_SUPPRESSED_AT=%q\n' "$ts"
+        fi
+    } >> "$job" 2>/dev/null || true
+
+    _queue_log_event "log_${stream}_suppressed" "$id" "$(_queue_job_name "$job")" "running" "bytes=$size cap=$cap"
+}
+
+_queue_stream_logger() {
+    local id="$1"
+    local job="$2"
+    local log="$3"
+    local stream="$4"
+    local max_bytes="$5"
+
+    local cap first_cap second_cap policy line size
+
+    policy="$(_queue_job_log_policy "$job")"
+    cap="${max_bytes:-0}"
+    [[ "$cap" =~ ^[0-9]+$ ]] || cap=0
+    first_cap="$cap"
+    second_cap=$((cap * 2))
+
+    # Drain first, log second. Never close the child's stdout/stderr early.
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$cap" -le 0 || "$policy" == "allow" ]]; then
+            printf '%s\n' "$line" >> "$log"
+            continue
+        fi
+
+        size="$(_queue_log_size_bytes "$log")"
+        size="${size:-0}"
+        [[ "$size" =~ ^[0-9]+$ ]] || size=0
+
+        case "$stream" in
+            stdout)
+                if (( size < first_cap )); then
+                    printf '%s\n' "$line" >> "$log"
+                else
+                    _queue_mark_log_stream_suppressed "$id" "$job" "$log" "stdout" "$size" "$first_cap"
+                fi
+                ;;
+            stderr)
+                if (( size < second_cap )); then
+                    printf '%s\n' "$line" >> "$log"
+                else
+                    _queue_mark_log_stream_suppressed "$id" "$job" "$log" "stderr" "$size" "$second_cap"
+                fi
+                ;;
+            *)
+                printf '%s\n' "$line" >> "$log"
+                ;;
+        esac
+    done
+
+    return 0
+}
+
+_queue_wait_stream_loggers() {
+    local stdout_pid="${1:-}"
+    local stderr_pid="${2:-}"
+
+    [[ -n "$stdout_pid" ]] && wait "$stdout_pid" >/dev/null 2>&1 || true
+    [[ -n "$stderr_pid" ]] && wait "$stderr_pid" >/dev/null 2>&1 || true
+}
+
+_queue_log_worker_record() {
+    local use_stream_logger="${1:-0}"
+    local log="$2"
+    shift 2
+
+    if [[ "$use_stream_logger" == "1" ]]; then
+        printf '%s\n' "$@" >> "$log"
+    else
+        printf '%s\n' "$@"
+    fi
+}
+
+
+_queue_log_watchdog() {
+    local id="$1"
+    local job="$2"
+    local log="$3"
+    local watched_pid="$4"
+    local max_bytes="$5"
+    local root="$(_queue_root)"
+
+    [[ -z "$max_bytes" ]] && return 0
+    [[ "$max_bytes" =~ ^[0-9]+$ ]] || return 0
+    [[ "$max_bytes" -le 0 ]] && return 0
+
+    local size unit pgid effective_pid
+    while true; do
+        unit="$(_queue_systemd_unit_from_log "$log" 2>/dev/null || true)"
+        if [[ -n "$unit" ]] && _queue_systemd_unit_active "$unit"; then
+            effective_pid="$(_queue_systemd_unit_mainpid "$unit")"
+        else
+            effective_pid="$watched_pid"
+        fi
+
+        if ! kill -0 "$effective_pid" 2>/dev/null; then
+            break
+        fi
+        if [[ -f "$log" ]]; then
+            size="$(wc -c < "$log" 2>/dev/null | tr -d '[:space:]')"
+            size="${size:-0}"
+            if [[ "$size" =~ ^[0-9]+$ && "$size" -gt "$max_bytes" ]]; then
+                {
+                    echo
+                    echo "LOG_OVERFLOW_ERROR: log size ${size} exceeded cap ${max_bytes}; terminating job"
+                    echo "LOG_OVERFLOW_AT=$(_queue_now_iso)"
+                } >> "$log" 2>/dev/null || true
+
+                {
+                    printf 'LOG_OVERFLOW=%q\n' "1"
+                    printf 'LOG_OVERFLOW_AT=%q\n' "$(_queue_now_iso)"
+                    printf 'LOG_OVERFLOW_BYTES=%q\n' "$size"
+                    printf 'LOG_OVERFLOW_CAP=%q\n' "$max_bytes"
+                } >> "$job" 2>/dev/null || true
+
+                _queue_log_event "log_overflow_kill" "$id" "$(_queue_job_name "$job")" "running" "bytes=$size cap=$max_bytes pid=$watched_pid"
+
+                unit="$(_queue_systemd_unit_from_log "$log" 2>/dev/null || true)"
+                if [[ -n "$unit" ]]; then
+                    systemctl --user stop "$unit" >/dev/null 2>&1 || true
+                fi
+
+                pgid="$(ps -o pgid= -p "$effective_pid" 2>/dev/null | tr -d '[:space:]')"
+                if [[ -n "$pgid" ]]; then
+                    kill -TERM "-$pgid" >/dev/null 2>&1 || true
+                fi
+                kill -TERM "$effective_pid" >/dev/null 2>&1 || true
+
+                sleep 2
+
+                if kill -0 "$effective_pid" 2>/dev/null; then
+                    if [[ -n "$unit" ]]; then
+                        systemctl --user kill "$unit" >/dev/null 2>&1 || true
+                    fi
+                    [[ -n "$pgid" ]] && kill -KILL "-$pgid" >/dev/null 2>&1 || true
+                    kill -KILL "$effective_pid" >/dev/null 2>&1 || true
+                fi
+
+                return 0
+            fi
+        fi
+        sleep "${QUEUEBASH_LOG_WATCH_INTERVAL:-1}"
+    done
+}
+
+_queue_job_var_value() {
+    local f="$1"
+    local key="$2"
+    grep "^${key}=" "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null
+}
+
+_queue_job_var_first_value() {
+    local f="$1" key value
+    shift || true
+    for key in "$@"; do
+        value="$(_queue_job_var_value "$f" "$key" 2>/dev/null || true)"
+        if [[ -n "$value" ]]; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+    done
+    return 1
+}
+
+_queue_human_bytes() {
+    local b="${1:-0}"
+    [[ "$b" =~ ^[0-9]+$ ]] || { echo "$b"; return; }
+
+    if (( b >= 1073741824 )); then
+        awk -v b="$b" 'BEGIN { printf "%.2fG", b/1073741824 }'
+    elif (( b >= 1048576 )); then
+        awk -v b="$b" 'BEGIN { printf "%.2fM", b/1048576 }'
+    elif (( b >= 1024 )); then
+        awk -v b="$b" 'BEGIN { printf "%.2fK", b/1024 }'
+    else
+        printf "%sB" "$b"
+    fi
+}
+
+
+_queue_dep_token_status() {
+    local dep="$1"
+    local root="$(_queue_root)"
+    local state f name
+
+    for state in done failed pol_blocked policy_blocked cancelled interrupted running pending paused deleted; do
+        if [[ -f "$root/$state/$dep.job" ]]; then
+            printf '%s\n' "$state"
+            return 0
+        fi
+
+        shopt -s nullglob
+        for f in "$root/$state"/*.job; do
+            [[ -f "$f" ]] || continue
+            name="$(_queue_job_name "$f" 2>/dev/null || true)"
+            if [[ "$name" == "$dep" ]]; then
+                printf '%s\n' "$state"
+                shopt -u nullglob
+                return 0
+            fi
+        done
+        shopt -u nullglob
+    done
+
+    printf '%s\n' "missing"
+}
+
+_queue_file_depends_after_success() {
+    local f="$1"
+    (
+        DEPENDS_AFTER_SUCCESS=""
+        source "$f" >/dev/null 2>&1 || exit 0
+        printf '%s\n' "${DEPENDS_AFTER_SUCCESS:-}"
+    )
+}
+
+_queue_file_not_before_epoch() {
+    local f="$1"
+    (
+        NOT_BEFORE_EPOCH=0
+        RETRY_NOT_BEFORE_EPOCH=0
+        source "$f" >/dev/null 2>&1 || exit 0
+        if [[ "${RETRY_NOT_BEFORE_EPOCH:-0}" =~ ^[0-9]+$ && "${RETRY_NOT_BEFORE_EPOCH:-0}" -gt 0 ]]; then
+            printf '%s\n' "$RETRY_NOT_BEFORE_EPOCH"
+        else
+            printf '%s\n' "${NOT_BEFORE_EPOCH:-0}"
+        fi
+    )
+}
+
+_queue_class_for_job_file() {
+    local f="$1"
+    (
+        JOB_CLASS=""
+        CLASS=""
+        source "$f" >/dev/null 2>&1 || exit 0
+        printf '%s\n' "${JOB_CLASS:-${CLASS:-DEFAULT}}"
+    )
+}
+
+_queue_job_pending_dispatch_diagnose() {
+    local f="$1"
+    local root="$(_queue_root)"
+    local id name class now not_before deps dep dep_state blocked=0
+    local class_file tmp out rc
+
+    id="$(basename "$f" .job)"
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
+    class="$(_queue_class_for_job_file "$f")"
+
+    echo
+    echo "Dispatch decision"
+
+    if ! _queue_job_is_pending_path "$f" "$root"; then
+        echo "  status:            not pending"
+        echo "  reason:            dispatch diagnosis only applies to pending jobs"
+        return 0
+    fi
+
+    now="$(_queue_now_epoch)"
+    not_before="$(_queue_file_not_before_epoch "$f")"
+    if [[ "$not_before" =~ ^[0-9]+$ && "$not_before" -gt "$now" ]]; then
+        echo "  status:            blocked"
+        echo "  reason:            scheduled for the future"
+        echo "  not_before_epoch:  $not_before"
+        if command -v date >/dev/null 2>&1; then
+            echo "  not_before_time:   $(date -d "@$not_before" -Is 2>/dev/null || true)"
+        fi
+        blocked=1
+    fi
+
+    deps="$(_queue_file_depends_after_success "$f")"
+    if [[ -n "$deps" ]]; then
+        echo "  dependencies:"
+        for dep in $deps; do
+            dep_state="$(_queue_dep_token_status "$dep")"
+            case "$dep_state" in
+                done)
+                    echo "    $dep: satisfied (done)"
+                    ;;
+                failed|cancelled|interrupted|deleted)
+                    echo "    $dep: blocked ($dep_state)"
+                    blocked=1
+                    ;;
+                missing)
+                    echo "    $dep: waiting (missing)"
+                    blocked=1
+                    ;;
+                *)
+                    echo "    $dep: waiting ($dep_state)"
+                    blocked=1
+                    ;;
+            esac
+        done
+    else
+        echo "  dependencies:      none"
+    fi
+
+    echo "  class:             ${class:-DEFAULT}"
+    class_file="$(_queue_class_file "${class:-DEFAULT}")"
+    if [[ -f "$class_file" ]]; then
+        echo "  class file:        $class_file"
+    else
+        echo "  status:            blocked"
+        echo "  reason:            class file missing"
+        echo "  class file:        $class_file"
+        blocked=1
+    fi
+
+    tmp="$(mktemp)"
+    if _queue_class_available "$f" >"$tmp" 2>&1; then
+        rc=0
+    else
+        rc="$?"
+    fi
+    out="$(cat "$tmp")"
+    rm -f "$tmp"
+
+    if [[ "$rc" -eq 0 ]]; then
+        if [[ "$blocked" -eq 0 ]]; then
+            echo "  status:            runnable"
+            echo "  reason:            no dispatch blocker detected"
+            echo
+            echo "Claim/lock snapshot"
+            _queue_claims_summary_for_explain
+        else
+            echo "  class/resource:    available"
+        fi
+    else
+        echo "  status:            blocked"
+        echo "  reason:            class/resource gate rejected job"
+        echo "  class/resource rc: $rc"
+        if [[ -n "$out" ]]; then
+            echo "  class/resource output:"
+            printf '%s\n' "$out" | sed 's/^/    /'
+        fi
+    fi
+}
+
+
+_queue_job_file_by_id_any_state() {
+    local id="$1"
+    local root="$(_queue_root)"
+    local st f
+
+    [[ -n "$id" ]] || return 1
+
+    # Prefer the shared resolver so all command surfaces agree on where a job
+    # may live: bucketed pending dirs, live terminal dirs, and clearance archives.
+    while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        [[ "$(basename "$f" .job)" == "$id" ]] || continue
+        printf '%s\n' "$f"
+        return 0
+    done < <(_queue_find_jobs "$id" 2>/dev/null || true)
+
+    # Conservative compatibility fallback for very early queue roots.
+    for st in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ "$st" == "pending" ]]; then
+            while IFS= read -r f; do
+                [[ -f "$f" && "$(basename "$f" .job)" == "$id" ]] && { printf '%s\n' "$f"; return 0; }
+            done < <(_queue_pending_job_files "$root" 2>/dev/null || true)
+            continue
+        fi
+        f="$root/$st/$id.job"
+        [[ -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
+    done
+
+    shopt -s nullglob
+    for f in "$root/clearance"/*/"$id.job"; do
+        [[ -f "$f" ]] && { printf '%s\n' "$f"; shopt -u nullglob; return 0; }
+    done
+    shopt -u nullglob
+    return 1
+}
+
+_queue_job_state_for_file() {
+    local f="$1"
+    _queue_state_for_job_path "$f" "$(_queue_root)"
+}
+
+_queue_job_history_chain_ids() {
+    local start="$1"
+    local id="$start"
+    local f prev seen=" "
+
+    while [[ -n "$id" && "$seen" != *" $id "* ]]; do
+        printf '%s\n' "$id"
+        seen+="$id "
+        f="$(_queue_job_file_by_id_any_state "$id" 2>/dev/null || true)"
+        [[ -n "$f" ]] || break
+        prev="$(
+            RESUBMITTED_FROM=""
+            source "$f" >/dev/null 2>&1 || exit 0
+            printf '%s\n' "${RESUBMITTED_FROM:-}"
+        )"
+        id="$prev"
+    done | tac
+}
+
+_queue_job_history_children_ids() {
+    local start="$1"
+    local root="$(_queue_root)"
+    local st f child
+
+    {
+        for st in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+            if [[ "$st" == "pending" ]]; then
+                while IFS= read -r f; do
+                    [[ -f "$f" ]] || continue
+                    child="$(
+                        RESUBMITTED_FROM=""
+                        source "$f" >/dev/null 2>&1 || exit 0
+                        [[ "${RESUBMITTED_FROM:-}" == "$start" ]] && printf '%s\n' "${JOB_ID:-$(basename "$f" .job)}"
+                    )"
+                    [[ -n "$child" ]] && printf '%s\n' "$child"
+                done < <(_queue_pending_job_files "$root" 2>/dev/null || true)
+                continue
+            fi
+            shopt -s nullglob
+            for f in "$root/$st"/*.job; do
+                child="$(
+                    RESUBMITTED_FROM=""
+                    source "$f" >/dev/null 2>&1 || exit 0
+                    [[ "${RESUBMITTED_FROM:-}" == "$start" ]] && printf '%s\n' "${JOB_ID:-$(basename "$f" .job)}"
+                )"
+                [[ -n "$child" ]] && printf '%s\n' "$child"
+            done
+            shopt -u nullglob
+        done
+
+        shopt -s nullglob
+        for f in "$root/clearance"/*/*.job; do
+            child="$(
+                RESUBMITTED_FROM=""
+                source "$f" >/dev/null 2>&1 || exit 0
+                [[ "${RESUBMITTED_FROM:-}" == "$start" ]] && printf '%s\n' "${JOB_ID:-$(basename "$f" .job)}"
+            )"
+            [[ -n "$child" ]] && printf '%s\n' "$child"
+        done
+        shopt -u nullglob
+    } | sort -u
+}
+
+_queue_job_history_events_for_id() {
+    local id="$1"
+    local events="$(_queue_root)/events.jsonl"
+
+    [[ -f "$events" ]] || return 0
+
+    grep -F "\"job_id\":\"$id\"" "$events" 2>/dev/null | tail -20 | sed -E '
+        s/.*"ts":"([^"]*)".*"event":"([^"]*)".*"state":"([^"]*)".*"detail":"([^"]*)".*/    \1  \2  state=\3  \4/
+        t
+        s/^/    /
+    '
+}
+
+_queue_job_history_print_one() {
+    local id="$1"
+    local f state
+
+    f="$(_queue_job_file_by_id_any_state "$id" 2>/dev/null || true)"
+    if [[ -z "$f" ]]; then
+        printf '%-36s  %-11s  %s\n' "$id" "missing" "job record not found"
+        return 0
+    fi
+
+    state="$(_queue_job_state_for_file "$f")"
+
+    (
+        JOB_ID="$id"
+        JOB_NAME=""
+        COMMAND=()
+        SUBMITTED_AT=""
+        RUN_STARTED_AT=""
+        EXEC_FINISHED_AT=""
+        EXIT_CODE=""
+        DURATION_SECONDS=""
+        RESUBMITTED_FROM=""
+        RESUBMITTED_AT=""
+        RESUBMIT_NOTE=""
+        JOB_CLASS=""
+        TIMEOUT=""
+        KILL_AFTER=""
+        CLASS_DEFAULTS_SOURCE=""
+        LOG_PATH=""
+        source "$f" >/dev/null 2>&1 || exit 0
+
+        local cmd=""
+        if declare -p COMMAND >/dev/null 2>&1; then
+            printf -v cmd '%q ' "${COMMAND[@]}"
+            cmd="${cmd% }"
+        fi
+
+        printf '%-36s  %-11s  exit=%-5s  name=%s\n' \
+            "${JOB_ID:-$id}" "$state" "${EXIT_CODE:--}" "${JOB_NAME:-}"
+        [[ -n "${SUBMITTED_AT:-}" ]] && echo "    submitted:        $SUBMITTED_AT"
+        [[ -n "${RUN_STARTED_AT:-}" ]] && echo "    started:          $RUN_STARTED_AT"
+        [[ -n "${EXEC_FINISHED_AT:-}" ]] && echo "    finished:         $EXEC_FINISHED_AT"
+        [[ -n "${DURATION_SECONDS:-}" ]] && echo "    duration:         ${DURATION_SECONDS}s"
+        [[ -n "${JOB_CLASS:-}" ]] && echo "    class:            $JOB_CLASS"
+        [[ -n "${TIMEOUT:-}" ]] && echo "    timeout:          $TIMEOUT${KILL_AFTER:+ kill_after=$KILL_AFTER}"
+        [[ -n "${CLASS_DEFAULTS_SOURCE:-}" ]] && echo "    class defaults:   $CLASS_DEFAULTS_SOURCE"
+        [[ -n "${RESUBMITTED_FROM:-}" ]] && echo "    resubmitted from: $RESUBMITTED_FROM"
+        [[ -n "${RESUBMITTED_AT:-}" ]] && echo "    resubmitted at:   $RESUBMITTED_AT"
+        [[ -n "${RESUBMIT_NOTE:-}" ]] && echo "    note:             $RESUBMIT_NOTE"
+        [[ -n "$cmd" ]] && echo "    command:          $cmd"
+
+        local log_path=""
+        if [[ -n "${LOG_PATH:-}" ]]; then
+            log_path="$LOG_PATH"
+        else
+            log_path="$(_queue_log_path "${JOB_ID:-$id}" 2>/dev/null || true)"
+        fi
+        [[ -n "$log_path" ]] && echo "    log:              $log_path"
+
+        echo "    events:"
+        _queue_job_history_events_for_id "${JOB_ID:-$id}" | sed 's/^/  /'
+    )
+}
+
+_queue_job_history() {
+    local selector="${1:-}"
+    local id="" f
+    local -a ids matches
+    local child
+
+    if [[ -z "$selector" ]]; then
+        echo "Usage: queue history <job-id|name>" >&2
+        return 2
+    fi
+
+    mapfile -t matches < <(_queue_find_jobs "$selector" 2>/dev/null || true)
+    if [[ "${#matches[@]}" -gt 0 ]]; then
+        f="${matches[0]}"
+        id="$(basename "$f" .job)"
+    fi
+
+    [[ -n "$id" ]] || {
+        echo "queue history: job not found: $selector" >&2
+        return 1
+    }
+
+    echo "=============================================================================="
+    echo "QUEUEBASH HISTORY: $id"
+    echo "=============================================================================="
+
+    mapfile -t ids < <(_queue_job_history_chain_ids "$id")
+    for child in $(_queue_job_history_children_ids "$id"); do
+        ids+=("$child")
+    done
+
+    local seen=" "
+    for id in "${ids[@]}"; do
+        [[ -n "$id" ]] || continue
+        [[ "$seen" == *" $id "* ]] && continue
+        seen+="$id "
+        _queue_job_history_print_one "$id"
+        echo
+    done
+}
+
+_queue_job_history_brief_for_explain() {
+    local id="$1"
+    local events="$(_queue_root)/events.jsonl"
+    local f child
+
+    echo "History"
+    if [[ -f "$events" ]]; then
+        grep -F "\"job_id\":\"$id\"" "$events" 2>/dev/null | tail -6 | sed -E '
+            s/.*"ts":"([^"]*)".*"event":"([^"]*)".*"state":"([^"]*)".*"detail":"([^"]*)".*/  \1  \2  state=\3  \4/
+            t
+            s/^/  /
+        '
+    fi
+
+    for child in $(_queue_job_history_children_ids "$id"); do
+        echo "  resubmitted to: $child"
+    done
+
+    f="$(_queue_job_file_by_id_any_state "$id" 2>/dev/null || true)"
+    if [[ -n "$f" ]]; then
+        (
+            RESUBMITTED_FROM=""
+            source "$f" >/dev/null 2>&1 || exit 0
+            [[ -n "${RESUBMITTED_FROM:-}" ]] && echo "  resubmitted from: $RESUBMITTED_FROM"
+        )
+    fi
+
+    echo "  full history: queue history $id"
+}
+
+_queue_explain_job() {
+    local f="$1"
+    local root="$(_queue_root)"
+    local id state log log_display unit runner runner_used cpu mem maxlog largelog overflow pid pgid cmd pwd submit started finished exit_code duration log_bytes compressed log_path
+
+    id="$(basename "$f" .job)"
+    state="$(_queue_state_for_job_path "$f" "$root")"
+
+    runner="$(_queue_job_var_value "$f" RUNNER)"
+    runner="${runner:-${QUEUEBASH_RUNNER:-auto}}"
+    runner_used="$(_queue_job_var_value "$f" RUNNER_USED)"
+    if [[ -z "$runner_used" && "$state" == "pending" ]]; then
+        runner_used="not-started"
+    else
+        runner_used="${runner_used:-unknown}"
+    fi
+    cpu="$(_queue_job_var_value "$f" CPU_LIMIT)"
+    mem="$(_queue_job_var_value "$f" MEM_LIMIT)"
+    run_user="$(_queue_job_var_value "$f" RUN_USER)"
+    runner_planned="$(_queue_runner_for_job "$runner" "$cpu" "$mem" "$run_user" 2>/dev/null || echo unknown)"
+    maxlog="$(_queue_job_var_value "$f" MAX_LOG_SIZE_BYTES)"
+    largelog="$(_queue_job_var_value "$f" ALLOW_LARGE_LOG)"
+    overflow="$(_queue_job_var_value "$f" LOG_OVERFLOW)"
+    pid="$(_queue_job_var_value "$f" RUN_PID)"
+    pgid="$(_queue_job_var_value "$f" RUN_PGID)"
+    unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+
+    pwd="$(_queue_job_var_value "$f" PWD_AT_SUBMIT)"
+    submit="$(_queue_job_var_value "$f" SUBMITTED_AT)"
+    started="$(_queue_job_var_value "$f" RUN_STARTED_AT)"
+    finished="$(_queue_job_var_value "$f" EXEC_FINISHED_AT)"
+    exit_code="$(_queue_job_var_value "$f" EXIT_CODE)"
+    duration="$(_queue_job_var_value "$f" DURATION_SECONDS)"
+    log_bytes="$(_queue_job_var_value "$f" LOG_BYTES)"
+    compressed="$(_queue_job_var_value "$f" LOG_COMPRESSED)"
+    log_path="$(_queue_job_var_value "$f" LOG_PATH)"
+    cmd="$(_queue_job_command "$f" 2>/dev/null || grep '^COMMAND=' "$f" | sed 's/^COMMAND=( //; s/ )$//')"
+
+    log="$(_queue_log_existing_path "$id" 2>/dev/null || printf '%s/logs/%s.log\n' "$root" "$id")"
+    if [[ -n "$log_path" ]]; then
+        log_display="$log_path"
+    else
+        log_display="$log"
+    fi
+
+    echo "=============================================================================="
+    echo "QUEUEBASH EXPLAIN: $id"
+    echo "=============================================================================="
+    printf "%-20s %s\n" "state:" "$state"
+    printf "%-20s %s\n" "name:" "$(_queue_job_name "$f")"
+    printf "%-20s %s\n" "command:" "$cmd"
+    printf "%-20s %s\n" "submit directory:" "$pwd"
+    printf "%-20s %s\n" "submitted:" "$submit"
+    printf "%-20s %s\n" "started:" "${started:-not-started}"
+    printf "%-20s %s\n" "finished:" "${finished:-not-finished}"
+    [[ -n "$exit_code" ]] && printf "%-20s %s\n" "exit code:" "$exit_code"
+    [[ -n "$duration" ]] && printf "%-20s %ss\n" "duration:" "$duration"
+    schedule_status="$(_queue_job_schedule_status "$f" 2>/dev/null || echo due)"
+    printf "%-20s %s\n" "schedule:" "$schedule_status"
+    printf "%-20s %s\n" "job file:" "$f"
+    if [[ "$f" == "$root/clearance/"*"/"*.job ]]; then
+        echo
+        echo "Clearance archive"
+        printf "  %-18s %s\n" "archived:" "$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED_AT 2>/dev/null || echo unknown)"
+        printf "  %-18s %s\n" "archived from:" "$(_queue_job_var_value "$f" QUEUE_CLEARED_ARCHIVED_FROM 2>/dev/null || echo "$state")"
+        if [[ "$(_queue_job_var_value "$f" JOB_CLEARED 2>/dev/null || true)" == "1" ]]; then
+            printf "  %-18s %s\n" "execution clear:" "$(_queue_job_var_value "$f" JOB_CLEARED_AT 2>/dev/null || echo recorded)"
+        else
+            printf "  %-18s %s\n" "execution clear:" "not recorded; archived by queue clear"
+        fi
+    fi
+    echo
+
+    echo "Runner"
+    printf "  %-18s %s\n" "requested:" "$runner"
+    if [[ "$state" == "pending" ]]; then
+        printf "  %-18s %s\n" "planned:" "$runner_planned"
+    fi
+    printf "  %-18s %s\n" "used:" "$runner_used"
+    if [[ "$runner_used" == "systemd" || -n "$unit" ]]; then
+        printf "  %-18s %s\n" "systemd unit:" "${unit:-not-recorded-yet}"
+    fi
+    if [[ -n "$pid" ]]; then
+        if [[ -n "$unit" || "$runner_used" == "systemd" ]]; then
+            printf "  %-18s %s\n" "RUN_PID:" "$pid (systemd-run client)"
+        else
+            printf "  %-18s %s\n" "RUN_PID:" "$pid"
+        fi
+    fi
+    [[ -n "$pgid" ]] && printf "  %-18s %s\n" "RUN_PGID:" "$pgid"
+    effective_pid="$(_queue_job_effective_pid "$f" 2>/dev/null || true)"
+    [[ -n "$effective_pid" ]] && printf "  %-18s %s\n" "payload PID:" "$effective_pid"
+    if [[ "$state" == "running" && -n "$unit" ]] && _queue_systemd_unit_dead "$unit"; then
+        printf "  %-18s %s\n" "WARNING:" "job marked running but systemd unit is inactive/dead; run: queue health --fix"
+    fi
+    echo
+
+    echo "Resources"
+    printf "  %-18s %s\n" "CPU limit:" "${cpu:-none}"
+    printf "  %-18s %s\n" "memory limit:" "${mem:-none}"
+    if [[ -n "$unit" && "$runner_used" == "systemd" ]]; then
+        echo "  systemd metrics:"
+        systemctl --user show "$(_queue_systemd_unit_clean "$unit")" \
+            -p ActiveState \
+            -p SubState \
+            -p MainPID \
+            -p ControlGroup \
+            -p CPUQuotaPerSecUSec \
+            -p MemoryMax \
+            -p MemoryCurrent \
+            -p TasksCurrent 2>/dev/null | sed 's/^/    /' || echo "    unavailable"
+    fi
+    echo
+
+    echo
+    echo "Class defaults applied"
+    (
+        CLASS_DEFAULTS_APPLIED_AT=""
+        CLASS_DEFAULTS_SOURCE=""
+        TIMEOUT=""
+        KILL_AFTER=""
+        LOG_TAG=""
+        OUTPUT_DIR=""
+        ENV_PREFIX=""
+        source "$f" >/dev/null 2>&1 || exit 0
+        echo "  source:            ${CLASS_DEFAULTS_SOURCE:-none}"
+        [[ -n "${CLASS_DEFAULTS_APPLIED_AT:-}" ]] && echo "  applied at:        $CLASS_DEFAULTS_APPLIED_AT"
+        [[ -n "${TIMEOUT:-}" ]] && echo "  timeout:           $TIMEOUT"
+        [[ -n "${KILL_AFTER:-}" ]] && echo "  kill after:        $KILL_AFTER"
+        [[ -n "${LOG_TAG:-}" ]] && echo "  log tag:           $LOG_TAG"
+        [[ -n "${OUTPUT_DIR:-}" ]] && echo "  output dir:        $OUTPUT_DIR"
+        [[ -n "${ENV_PREFIX:-}" ]] && echo "  env prefix:        $ENV_PREFIX"
+        [[ -n "${PWD_AT_SUBMIT:-}" ]] && echo "  working dir:       $PWD_AT_SUBMIT"
+        [[ -n "${SECURITY_POLICY_SNAPSHOT_AT:-}" ]] && echo "  policy snapshot:   $SECURITY_POLICY_SNAPSHOT_AT"
+        if [[ -n "${SANDBOX_POLICY_NAME:-}" ]]; then
+            echo "  sandbox policy:    ${SANDBOX_POLICY_NAME} (${SANDBOX_POLICY_ORIGIN:-unknown})"
+            [[ -n "${SANDBOX_POLICY_SHA256:-}" ]] && echo "  sandbox sha256:    $SANDBOX_POLICY_SHA256"
+        fi
+        if [[ -n "${SECCOMP_POLICY_NAME:-}" ]]; then
+            echo "  seccomp policy:    ${SECCOMP_POLICY_NAME} (${SECCOMP_POLICY_ORIGIN:-unknown})"
+            [[ -n "${SECCOMP_POLICY_SHA256:-}" ]] && echo "  seccomp sha256:    $SECCOMP_POLICY_SHA256"
+        fi
+    )
+    echo
+
+    echo
+    (
+        source "$f" >/dev/null 2>&1 || exit 0
+        _queue_caps_explain_current_job
+    )
+    echo
+
+    if [[ -n "${NET_USAGE_INTERFACE:-}" || -n "${NET_USAGE_USED_BYTES:-}" || -n "${NET_USAGE_ALLOWANCE_BYTES:-}" ]]; then
+        echo
+        echo "Network usage"
+        [[ -n "${NET_USAGE_INTERFACE:-}" ]] && echo "  interface:         $NET_USAGE_INTERFACE"
+        [[ -n "${NET_USAGE_DIRECTION:-}" ]] && echo "  direction:         $NET_USAGE_DIRECTION"
+        [[ -n "${NET_USAGE_COUNTER_FILE:-}" ]] && echo "  counter file:      $NET_USAGE_COUNTER_FILE"
+        [[ -n "${NET_USAGE_ALLOWANCE_BYTES:-}" ]] && echo "  class allowance:   $NET_USAGE_ALLOWANCE_BYTES"
+        [[ -n "${NET_USAGE_LIMIT_BYTES:-}" ]] && echo "  job limit:         $NET_USAGE_LIMIT_BYTES"
+        [[ -n "${NET_USAGE_START_BYTES:-}" ]] && echo "  start bytes:       $NET_USAGE_START_BYTES"
+        [[ -n "${NET_USAGE_END_BYTES:-}" ]] && echo "  end bytes:         $NET_USAGE_END_BYTES"
+        [[ -n "${NET_USAGE_USED_BYTES:-}" ]] && echo "  used bytes:        $NET_USAGE_USED_BYTES"
+        [[ -n "${NET_USAGE_EXCEEDED:-}" ]] && echo "  exceeded:          $NET_USAGE_EXCEEDED"
+        [[ -n "${NET_USAGE_POLICY:-}" ]] && echo "  policy:            $NET_USAGE_POLICY"
+    fi
+
+    _queue_global_explain_for_job "$f" "$id"
+    echo
+
+    echo "Log"
+    printf "  %-18s %s\n" "path:" "$log_display"
+    [[ -n "$log_bytes" ]] && printf "  %-18s %s (%s bytes)\n" "final size:" "$(_queue_human_bytes "$log_bytes")" "$log_bytes"
+    [[ -n "$maxlog" ]] && printf "  %-18s %s (%s bytes)\n" "cap:" "$(_queue_human_bytes "$maxlog")" "$maxlog"
+    printf "  %-18s %s\n" "compressed:" "${compressed:-0}"
+    printf "  %-18s %s\n" "large-log opt-in:" "${largelog:-0}"
+    if [[ "${overflow:-0}" == "1" ]]; then
+        printf "  %-18s %s\n" "overflow:" "YES"
+        printf "  %-18s %s\n" "overflow bytes:" "$(_queue_job_var_value "$f" LOG_OVERFLOW_BYTES)"
+        printf "  %-18s %s\n" "overflow cap:" "$(_queue_job_var_value "$f" LOG_OVERFLOW_CAP)"
+    else
+        printf "  %-18s %s\n" "overflow:" "no"
+    fi
+    echo
+
+    _queue_exception_explain_for_job "$id"
+    _queue_security_exception_guidance_for_job "$id" "$f" "$log"
+
+    echo "Dependencies"
+    _queue_job_dependencies_status "$f" | sed 's/^/  /'
+
+    echo
+
+    if [[ "$state" == "pending" ]]; then
+        _queue_job_pending_dispatch_diagnose "$f"
+    fi
+
+    echo
+    _queue_job_history_brief_for_explain "$id"
+    echo
+
+    echo "Cancellation model"
+    if [[ "$state" == "pending" || "$state" == "paused" ]]; then
+        echo "  job has not started yet; cancel/delete moves the job record without signalling a process."
+    elif [[ "$runner_used" == "systemd" || -n "$unit" ]]; then
+        echo "  systemd job: queue cancel/kill targets SYSTEMD_UNIT and does not PGID-fallback."
+    else
+        echo "  direct job: queue cancel/kill uses RUN_PGID/RUN_PID."
+    fi
+}
+
+_queue_job_effective_pid() {
+    local f="$1"
+    local unit pid
+    unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+    if [[ -n "$unit" ]]; then
+        if _queue_systemd_unit_active "$unit"; then
+            pid="$(_queue_systemd_unit_mainpid "$unit")"
+            if [[ -n "$pid" && "$pid" != "0" ]]; then
+                printf '%s\n' "$pid"
+                return 0
+            fi
+        fi
+        # For systemd jobs RUN_PID is the systemd-run client, not the payload.
+        return 1
+    fi
+    _queue_job_var_value "$f" RUN_PID
+}
+
+_queue_job_is_live() {
+    local f="$1"
+    local unit pid
+    unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+    if [[ -n "$unit" ]] && _queue_systemd_unit_active "$unit"; then
+        return 0
+    fi
+    pid="$(_queue_job_var_value "$f" RUN_PID)"
+    [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+_queue_stop_job_payload() {
+    local f="$1"
+    local sig="${2:-TERM}"
+    local unit run_pid run_pgid effective_pid
+
+    unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+    if [[ -n "$unit" ]] && _queue_systemd_unit_active "$unit"; then
+        if [[ "$sig" == "KILL" || "$sig" == "9" || "$sig" == "-9" ]]; then
+            systemctl --user kill --signal=KILL "$unit" >/dev/null 2>&1 || true
+        else
+            systemctl --user stop "$unit" >/dev/null 2>&1 || true
+        fi
+        return 0
+    fi
+
+    run_pid="$(_queue_job_var_value "$f" RUN_PID)"
+    run_pgid="$(_queue_job_var_value "$f" RUN_PGID)"
+
+    if [[ -n "$run_pgid" ]]; then
+        kill "-$sig" "-$run_pgid" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "$run_pid" ]]; then
+        kill "-$sig" "$run_pid" >/dev/null 2>&1 || true
+    fi
+}
+
+_queue_parse_age_seconds() {
+    local spec="$1"
+    _queue_parse_delay_seconds "$spec"
+}
+
+_queue_log_file_id() {
+    local path="$1"
+    local base
+    base="$(basename "$path")"
+    case "$base" in
+        *.log.gz) base="${base%.log.gz}" ;;
+        *.log) base="${base%.log}" ;;
+        *.gz) base="${base%.gz}" ;;
+    esac
+    printf '%s\n' "$base"
+}
+
+_queue_log_job_state_for_id() {
+    local id="$1"
+    local root="$(_queue_root)"
+    local state
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ -f "$root/$state/$id.job" ]]; then
+            printf '%s\n' "$state"
+            return 0
+        fi
+    done
+    printf '%s\n' "orphan"
+}
+
+_queue_log_job_name_for_id() {
+    local id="$1"
+    local root="$(_queue_root)"
+    local state
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ -f "$root/$state/$id.job" ]]; then
+            _queue_job_name "$root/$state/$id.job"
+            return 0
+        fi
+    done
+    printf '%s\n' "-"
+}
+
+_queue_clean_logs_usage() {
+    cat <<'EOF'
+Usage:
+  queue clean-logs [options]
+
+Options:
+  --dryrun, --dry-run       show what would be removed; do not delete
+  --force, -f              actually remove matching logs
+  --older-than AGE         only logs older than AGE: 30s, 10m, 2h, 7d, 4w
+  --state STATE            only logs whose job is in STATE
+                           states: done failed interrupted cancelled deleted orphan all
+  --orphan                 same as --state orphan
+  --all                    include all states; otherwise defaults to safe completed states
+  --include-running        allow running logs to match; dangerous
+  --verbose                show skipped reasons
+EOF
+}
+
+_queue_log_job_file_for_id() {
+    local id="$1"
+    local root="$(_queue_root)"
+    local state
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ -f "$root/$state/$id.job" ]]; then
+            printf '%s\n' "$root/$state/$id.job"
+            return 0
+        fi
+    done
+    return 1
+}
+
+_queue_mark_log_cleaned() {
+    local id="$1"
+    local path="$2"
+    local bytes="$3"
+    local state="$4"
+    local job
+    local ts
+
+    ts="$(_queue_now_iso)"
+    job="$(_queue_log_job_file_for_id "$id" 2>/dev/null || true)"
+
+    if [[ -n "$job" && -f "$job" ]]; then
+        {
+            printf 'LOG_CLEANED=%q\n' "1"
+            printf 'LOG_CLEANED_AT=%q\n' "$ts"
+            printf 'LOG_CLEANED_PATH=%q\n' "$path"
+            printf 'LOG_CLEANED_BYTES=%q\n' "$bytes"
+        } >> "$job"
+    fi
+
+    _queue_log_event "log_cleaned" "$id" "$(_queue_log_job_name_for_id "$id")" "$state" "path=$path bytes=$bytes"
+}
+
+_queue_clean_logs() {
+    local root="$(_queue_root)"
+    local logs="$root/logs"
+    local dryrun=1
+    local force=0
+    local older_than=""
+    local older_seconds=0
+    local state_filter=""
+    local include_all=0
+    local include_running=0
+    local verbose=0
+
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --dryrun|--dry-run|-n) dryrun=1; shift ;;
+            --force|-f|--delete) force=1; dryrun=0; shift ;;
+            --older-than|--older)
+                [[ -z "${2:-}" ]] && { echo "queue clean-logs: --older-than needs an age" >&2; return 2; }
+                older_than="$2"
+                older_seconds="$(_queue_parse_age_seconds "$older_than")" || { echo "queue clean-logs: invalid age '$older_than'" >&2; return 2; }
+                shift 2
+                ;;
+            --state)
+                [[ -z "${2:-}" ]] && { echo "queue clean-logs: --state needs a value" >&2; return 2; }
+                state_filter="$2"
+                shift 2
+                ;;
+            --orphan|--orphans) state_filter="orphan"; shift ;;
+            --all) include_all=1; state_filter="all"; shift ;;
+            --include-running) include_running=1; shift ;;
+            --verbose|-v) verbose=1; shift ;;
+            --help|-h) _queue_clean_logs_usage; return 0 ;;
+            *) echo "queue clean-logs: unknown option: $1" >&2; _queue_clean_logs_usage >&2; return 2 ;;
+        esac
+    done
+
+    [[ -d "$logs" ]] || { echo "No logs directory: $logs"; return 0; }
+
+    local now cutoff path id state name eligible count=0 bytes=0 removed=0 skipped=0 size mtime
+    now="$(_queue_now_epoch 2>/dev/null || date +%s)"
+    if [[ "$older_seconds" =~ ^[0-9]+$ && "$older_seconds" -gt 0 ]]; then
+        cutoff=$((now - older_seconds))
+    else
+        cutoff=0
+    fi
+
+    if [[ "$force" -eq 1 ]]; then
+        echo "Cleaning matching logs..."
+    else
+        echo "DRYRUN: previewing matching logs. Use --force to delete."
+    fi
+    echo "Root: $root"
+    [[ -n "$older_than" ]] && echo "Older than: $older_than"
+    [[ -n "$state_filter" ]] && echo "State filter: $state_filter"
+    echo
+
+    shopt -s nullglob
+    for path in "$logs"/*.log "$logs"/*.log.gz; do
+        [[ -f "$path" ]] || continue
+        id="$(_queue_log_file_id "$path")"
+        state="$(_queue_log_job_state_for_id "$id")"
+        name="$(_queue_log_job_name_for_id "$id")"
+        eligible=1
+
+        if [[ "$state" == "running" && "$include_running" -ne 1 ]]; then
+            eligible=0
+            [[ "$verbose" -eq 1 ]] && echo "SKIP running: $path"
+        fi
+
+        if [[ "$eligible" -eq 1 ]]; then
+            if [[ -n "$state_filter" && "$state_filter" != "all" && "$state" != "$state_filter" ]]; then
+                eligible=0
+                [[ "$verbose" -eq 1 ]] && echo "SKIP state=$state not $state_filter: $path"
+            elif [[ -z "$state_filter" && "$include_all" -ne 1 ]]; then
+                case "$state" in
+                    done|failed|pol_blocked|policy_blocked|interrupted|cancelled|deleted|orphan) ;;
+                    *) eligible=0; [[ "$verbose" -eq 1 ]] && echo "SKIP unsafe state=$state: $path" ;;
+                esac
+            fi
+        fi
+
+        if [[ "$eligible" -eq 1 && "$cutoff" -gt 0 ]]; then
+            mtime="$(stat -c %Y "$path" 2>/dev/null || stat -f %m "$path" 2>/dev/null || echo 0)"
+            if [[ "$mtime" -gt "$cutoff" ]]; then
+                eligible=0
+                [[ "$verbose" -eq 1 ]] && echo "SKIP new: $path"
+            fi
+        fi
+
+        if [[ "$eligible" -ne 1 ]]; then
+            skipped=$((skipped + 1))
+            continue
+        fi
+
+        size="$(stat -c %s "$path" 2>/dev/null || stat -f %z "$path" 2>/dev/null || echo 0)"
+        bytes=$((bytes + size))
+        count=$((count + 1))
+
+        if [[ "$dryrun" -eq 1 ]]; then
+            printf 'WOULD_REMOVE %10s  %-12s %-18s %s\n' "$size" "$state" "$name" "$path"
+        else
+            printf 'REMOVE       %10s  %-12s %-18s %s\n' "$size" "$state" "$name" "$path"
+            _queue_mark_log_cleaned "$id" "$path" "$size" "$state"
+            rm -f -- "$path"
+            removed=$((removed + 1))
+        fi
+    done
+    shopt -u nullglob
+
+    echo
+    echo "Matched logs: $count"
+    echo "Matched bytes: $bytes"
+    echo "Removed logs: $removed"
+    echo "Skipped logs: $skipped"
+}
+
+# -------------------------------------------------------------------
+# Health / integrity helpers
+# -------------------------------------------------------------------
+
+_queue_health_state_dirs() {
+    printf '%s\n' pending running paused done failed pol_blocked interrupted cancelled deleted logs workers outputs streams
+}
+
+_queue_health_has_command() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+_queue_health_df_space() {
+    local root="$1"
+    df -Pk "$root" 2>/dev/null | awk 'NR==2 { print $4 }'
+}
+
+_queue_health_df_inodes() {
+    local root="$1"
+    df -Pi "$root" 2>/dev/null | awk 'NR==2 { print $4 }'
+}
+
+_queue_health_job_files() {
+    local root="$(_queue_root)"
+    find "$root"/pending "$root"/running "$root"/paused "$root"/done "$root"/failed "$root"/interrupted "$root"/cancelled "$root"/deleted \
+        -type f -name '*.job' 2>/dev/null
+}
+
+_queue_health_job_value() {
+    local f="$1"
+    local key="$2"
+    grep "^${key}=" "$f" 2>/dev/null | tail -1 | cut -d= -f2- | sed "s/^'//; s/'$//"
+}
+
+_queue_health_validate_job_file() {
+    local f="$1"
+    local errors=0
+    local id name prio
+
+    id="$(_queue_health_job_value "$f" JOB_ID)"
+    name="$(_queue_health_job_value "$f" JOB_NAME)"
+    prio="$(_queue_health_job_value "$f" PRIORITY)"
+
+    if [[ -z "$id" ]]; then
+        echo "BAD missing JOB_ID: $f"
+        errors=$((errors + 1))
+    fi
+    if [[ -z "$name" ]]; then
+        echo "BAD missing JOB_NAME: $f"
+        errors=$((errors + 1))
+    fi
+    if [[ -z "$prio" ]]; then
+        echo "BAD missing PRIORITY: $f"
+        errors=$((errors + 1))
+    elif [[ ! "$prio" =~ ^-?[0-9]+$ ]]; then
+        echo "BAD non-integer PRIORITY=$prio: $f"
+        errors=$((errors + 1))
+    fi
+    if ! grep -q '^COMMAND=(' "$f" 2>/dev/null; then
+        echo "BAD missing COMMAND array: $f"
+        errors=$((errors + 1))
+    fi
+
+    return "$errors"
+}
+
+_queue_health_running_is_stale2() {
+    local f="$1"
+    local unit run_pid
+    unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+
+    if [[ -n "$unit" ]]; then
+        if _queue_systemd_unit_active "$unit"; then
+            return 1
+        fi
+        if _queue_systemd_unit_dead "$unit"; then
+            return 0
+        fi
+        # Unknown systemd state: fall through to RUN_PID fallback.
+    fi
+
+    run_pid="$(_queue_health_job_value "$f" RUN_PID)"
+    [[ -z "$run_pid" ]] && return 0
+    kill -0 "$run_pid" 2>/dev/null && return 1
+    return 0
+}
+
+_queue_health_mark_interrupted() {
+    local f="$1"
+    local root="$(_queue_root)"
+    local id name dest
+    id="$(basename "$f" .job)"
+    name="$(_queue_job_name "$f" 2>/dev/null || echo "-")"
+    dest="$root/interrupted/$id.job"
+
+    {
+        printf 'INTERRUPTED_AT=%q\n' "$(_queue_now_iso)"
+        printf 'INTERRUPTED_REASON=%q\n' "stale-running-detected-by-health"
+        printf 'INTERRUPTED_FROM=%q\n' "running"
+    } >> "$f"
+
+    mv "$f" "$dest"
+    _queue_job_stream_temp_cleanup "$id"
+    _queue_log_event "interrupted" "$id" "$name" "interrupted" "reason=stale-running-detected-by-health"
+}
+
+_queue_health_clean_dead_workers() {
+    local root="$(_queue_root)"
+    local dir="$root/workers"
+    local f pid
+
+    [[ -d "$dir" ]] || return 0
+
+    for f in "$dir"/*.pid; do
+        [[ -e "$f" ]] || continue
+        pid="$(cat "$f" 2>/dev/null || true)"
+        if [[ -z "$pid" || ! "$pid" =~ ^[0-9]+$ || ! -d "/proc/$pid" ]]; then
+            rm -f -- "$f"
+            echo "FIX removed dead worker pid file: $f"
+        fi
+    done
+
+    return 0
+}
+
+_queue_health_dependency_tokens_for_file() {
+    local f="$1"
+    _queue_job_dependency_tokens "$f" 2>/dev/null || true
+}
+
+_queue_health_dependency_exists_any_state() {
+    local token="$1"
+    local root="$(_queue_root)"
+    local state f
+
+    [[ -z "$token" ]] && return 1
+
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        [[ -f "$root/$state/$token.job" ]] && return 0
+        for f in "$root/$state"/*.job; do
+            [[ -e "$f" ]] || continue
+            [[ "$(_queue_job_name "$f" 2>/dev/null || true)" == "$token" ]] && return 0
+        done
+    done
+
+    return 1
+}
+
+_queue_health_pending_dependency_warnings() {
+    local root="$(_queue_root)"
+    local f dep deps name any=0
+
+    while IFS= read -r f; do
+        [[ -e "$f" ]] || continue
+        name="$(_queue_job_name "$f" 2>/dev/null || echo "-")"
+        deps="$(_queue_health_dependency_tokens_for_file "$f")"
+        [[ -z "$deps" ]] && continue
+
+        for dep in $deps; do
+            if _queue_dep_token_done "$dep"; then
+                continue
+            elif _queue_dep_token_failed_or_cancelled "$dep"; then
+                echo "WARN dependency blocked: $(basename "$f" .job) ($name) waits on failed/cancelled/interrupted/deleted $dep"
+                any=1
+            elif ! _queue_health_dependency_exists_any_state "$dep"; then
+                echo "WARN dependency missing: $(basename "$f" .job) ($name) waits on unknown $dep"
+                any=1
+            else
+                echo "INFO dependency waiting: $(basename "$f" .job) ($name) waits on $dep"
+                any=1
+            fi
+        done
+    done < <(_queue_pending_job_files "$root")
+
+    [[ "$any" -eq 0 ]] && echo "OK no pending dependency warnings"
+    return 0
+}
+
+_queue_health_pending_cycle_warnings() {
+    local root="$(_queue_root)"
+    local f name deps dep depfile depdeps dep2 any=0
+
+    while IFS= read -r f; do
+        [[ -e "$f" ]] || continue
+        name="$(_queue_job_name "$f" 2>/dev/null || echo "")"
+        deps="$(_queue_health_dependency_tokens_for_file "$f")"
+        [[ -z "$deps" ]] && continue
+
+        for dep in $deps; do
+            if [[ "$dep" == "$name" || "$dep" == "$(basename "$f" .job)" ]]; then
+                echo "WARN dependency self-cycle: $(basename "$f" .job) ($name) waits on $dep"
+                any=1
+                continue
+            fi
+
+            depfile=""
+            depfile="$(_queue_job_pending_path_by_id "$dep" "$root" 2>/dev/null || true)"
+            if [[ -z "$depfile" ]]; then
+                while IFS= read -r depfile; do
+                    [[ -e "$depfile" ]] || { depfile=""; break; }
+                    if [[ "$(_queue_job_name "$depfile" 2>/dev/null || true)" == "$dep" ]]; then
+                        break
+                    fi
+                    depfile=""
+                done < <(_queue_pending_job_files "$root")
+            fi
+
+            [[ -z "$depfile" || ! -f "$depfile" ]] && continue
+            depdeps="$(_queue_health_dependency_tokens_for_file "$depfile")"
+
+            for dep2 in $depdeps; do
+                if [[ "$dep2" == "$name" || "$dep2" == "$(basename "$f" .job)" ]]; then
+                    echo "WARN dependency 2-node cycle: $(basename "$f" .job) ($name) <-> $(basename "$depfile" .job) ($(_queue_job_name "$depfile" 2>/dev/null || echo "-"))"
+                    any=1
+                fi
+            done
+        done
+    done < <(_queue_pending_job_files "$root")
+
+    [[ "$any" -eq 0 ]] && echo "OK no simple dependency cycles detected"
+    return 0
+}
+
+_queue_health_report() {
+    local fix=0
+    local deep=0
+    local root="$(_queue_root)"
+    local errors=0 warnings=0
+    local d space_k inodes f stale_count=0 bad_count=0
+
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --fix) fix=1; shift ;;
+            --deep) deep=1; shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage:
+  queue health [--fix] [--deep] [--deep]
+
+Checks:
+  queue root and state directories
+  logs and events.jsonl writability
+  free disk space and inodes
+  required/supporting commands: gzip, setsid, systemd-run
+  malformed job files
+  stale running jobs
+  dead worker pid files
+  blocked/missing dependencies
+  basic dependency cycles with --deep
+
+Safe fixes:
+  create missing state/log/worker directories
+  remove dead worker pid files
+  move definitely stale running jobs to interrupted
+EOF
+                return 0
+                ;;
+            *)
+                echo "queue health: unknown option: $1" >&2
+                return 2
+                ;;
+        esac
+    done
+
+    echo "=== queuebash health ==="
+    echo "root: $root"
+    echo
+
+    if [[ ! -d "$root" ]]; then
+        echo "BAD root missing: $root"
+        errors=$((errors + 1))
+        if [[ "$fix" -eq 1 ]]; then
+            mkdir -p "$root"
+            echo "FIX created root: $root"
+            errors=$((errors - 1))
+        fi
+    fi
+
+    if [[ -d "$root" && ! -w "$root" ]]; then
+        echo "BAD root not writable: $root"
+        errors=$((errors + 1))
+    else
+        echo "OK root writable"
+    fi
+
+    for d in $(_queue_health_state_dirs); do
+        if [[ ! -d "$root/$d" ]]; then
+            echo "BAD missing directory: $root/$d"
+            errors=$((errors + 1))
+            if [[ "$fix" -eq 1 ]]; then
+                mkdir -p "$root/$d"
+                echo "FIX created directory: $root/$d"
+                errors=$((errors - 1))
+            fi
+        else
+            echo "OK directory: $d"
+        fi
+    done
+
+    echo
+
+    if [[ -d "$root" ]]; then
+        if touch "$root/.health_write_test" 2>/dev/null; then
+            rm -f "$root/.health_write_test"
+            echo "OK root write test"
+        else
+            echo "BAD root write test failed"
+            errors=$((errors + 1))
+        fi
+
+        if [[ -e "$root/events.jsonl" && ! -w "$root/events.jsonl" ]]; then
+            echo "BAD events.jsonl not writable"
+            errors=$((errors + 1))
+        else
+            if touch "$root/events.jsonl" 2>/dev/null; then
+                echo "OK events.jsonl writable"
+            else
+                echo "BAD cannot touch events.jsonl"
+                errors=$((errors + 1))
+            fi
+        fi
+
+        space_k="$(_queue_health_df_space "$root")"
+        inodes="$(_queue_health_df_inodes "$root")"
+        echo "INFO free disk KB: ${space_k:-unknown}"
+        echo "INFO free inodes: ${inodes:-unknown}"
+
+        if [[ "$space_k" =~ ^[0-9]+$ && "$space_k" -lt 102400 ]]; then
+            echo "WARN low disk space under queue root: ${space_k}KB"
+            warnings=$((warnings + 1))
+        fi
+        if [[ "$inodes" =~ ^[0-9]+$ && "$inodes" -lt 1000 && "$inodes" -ne 0 ]]; then
+            echo "WARN low free inodes under queue root: $inodes"
+            warnings=$((warnings + 1))
+        fi
+    fi
+
+    echo
+    _queue_health_has_command gzip && echo "OK gzip available" || { echo "WARN gzip not available; log compression disabled"; warnings=$((warnings + 1)); }
+    _queue_health_has_command setsid && echo "OK setsid available" || { echo "WARN setsid not available; direct runner process-group isolation reduced"; warnings=$((warnings + 1)); }
+    _queue_health_has_command systemd-run && echo "OK systemd-run available" || echo "INFO systemd-run not available; direct runner only"
+
+    echo
+    echo "=== job metadata ==="
+    while IFS= read -r f; do
+        if ! _queue_health_validate_job_file "$f"; then
+            bad_count=$((bad_count + 1))
+        fi
+    done < <(_queue_health_job_files)
+    if [[ "$bad_count" -eq 0 ]]; then
+        echo "OK no malformed job files found"
+    else
+        echo "BAD malformed job files: $bad_count"
+        errors=$((errors + bad_count))
+    fi
+
+    echo
+    echo "=== running jobs ==="
+    for f in "$root/running"/*.job; do
+        [[ -e "$f" ]] || continue
+        if _queue_health_running_is_stale2 "$f"; then
+            echo "BAD stale running job: $f"
+            stale_count=$((stale_count + 1))
+            if [[ "$fix" -eq 1 ]]; then
+                _queue_health_mark_interrupted "$f"
+                echo "FIX moved stale running job to interrupted: $(basename "$f")"
+                stale_count=$((stale_count - 1))
+            fi
+        fi
+    done
+    if [[ "$stale_count" -eq 0 ]]; then
+        echo "OK no stale running jobs"
+    else
+        errors=$((errors + stale_count))
+    fi
+
+    if [[ "$fix" -eq 1 ]]; then
+        echo
+        echo "=== worker pid cleanup ==="
+        _queue_health_clean_dead_workers || true
+        echo
+        echo "=== stream temp cleanup ==="
+        _queue_cleanup_stale_stream_temps || true
+        echo
+        echo "=== IPC stream cleanup ==="
+        _queue_cleanup_stale_ipc || true
+        echo
+        echo "=== IPC helper cleanup ==="
+        _queue_cleanup_stale_helpers || true
+        echo
+        echo "=== class/resource claim cleanup ==="
+        _queue_cleanup_stale_claims || true
+    fi
+
+    echo
+    echo "=== dependency status ==="
+    _queue_health_pending_dependency_warnings || true
+
+    if [[ "$deep" -eq 1 ]]; then
+        echo
+        echo "=== deep dependency cycle hints ==="
+        _queue_health_pending_cycle_warnings || true
+    fi
+
+    echo
+    echo "Health summary: errors=$errors warnings=$warnings fix=$fix deep=$deep"
+
+    [[ "$errors" -eq 0 ]]
+}
+
+_queue_restore_print_non_deleted_matches() {
+    local target="$1"
+    local root="$(_queue_root)"
+    local state f id name any=0
+
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled; do
+        for f in "$root/$state"/*.job; do
+            [[ -e "$f" ]] || continue
+            id="$(basename "$f" .job)"
+            name="$(_queue_job_name "$f" 2>/dev/null || true)"
+            if [[ "$id" == "$target" || "$name" == "$target" || "$id" == "$target"* ]]; then
+                if [[ "$any" -eq 0 ]]; then
+                    echo "queue undelete: no matching deleted job: $target" >&2
+                    echo "but matching job(s) exist outside deleted/:" >&2
+                    echo "matches:" >&2
+                    any=1
+                fi
+                printf '  %-34s %-12s %s\n' "$id" "$state" "$name" >&2
+            fi
+        done
+    done
+
+    if [[ "$any" -eq 1 ]]; then
+        echo "Nothing restored. restore/undelete only operates on deleted/ jobs." >&2
+        echo "Use: queue list --state deleted --name '$target'" >&2
+        return 0
+    fi
+
+    return 1
+}
+
+
+_queue_cron_spool_dir() { printf '%s\n' "${QUEUEBASH_CRON_SPOOL_DIR:-/var/spool/bashqueues_cron}"; }
+_queue_cron_system_dir() { printf '%s\n' "${QUEUEBASH_CRON_SYSTEM_DIR:-/etc/bashqueues_cron.d}"; }
+_queue_cron_state_dir() { printf '%s\n' "${QUEUEBASH_CRON_STATE_DIR:-/var/lib/bashqueues/cron}"; }
+_queue_cron_ticker_path() {
+    local here
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    for p in \
+        "${QUEUEBASH_CRON_TICKER:-}" \
+        "$here/bin/bashqueues-cron-ticker.py" \
+        "$here/bashqueues-cron-ticker.py" \
+        "/usr/local/libexec/bashqueues/bashqueues-cron-ticker.py" \
+        "/usr/local/bin/bashqueues-cron-ticker.py"; do
+        [[ -n "$p" && -x "$p" ]] && { printf '%s\n' "$p"; return 0; }
+    done
+    command -v bashqueues-cron-ticker.py 2>/dev/null || true
+}
+_queue_cron_line_description() {
+    local min="$1" hour="$2" dom="$3" mon="$4" dow="$5"
+    local out=""
+    case "$min" in
+        "*") out="every minute" ;;
+        \*/[0-9]*) out="every ${min#*/} minutes" ;;
+        [0-9]*) out="at minute $min" ;;
+        *) out="minutes '$min'" ;;
+    esac
+    case "$hour" in
+        "*") ;;
+        \*/[0-9]*) out="$out, every ${hour#*/} hours" ;;
+        [0-9]*) out="$out past hour $hour" ;;
+        *) out="$out, hours '$hour'" ;;
+    esac
+    [[ "$dom" != "*" ]] && out="$out, day-of-month '$dom'"
+    [[ "$mon" != "*" ]] && out="$out, month '$mon'"
+    [[ "$dow" != "*" ]] && out="$out, weekday '$dow'"
+    printf '%s\n' "$out"
+}
+
+_queue_cron_entry_hash() {
+    local user="$1" command="$2"
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s\0%s' "$user" "$command" | sha256sum | awk '{print $1}'
+    else
+        printf '%s\0%s' "$user" "$command" | shasum -a 256 | awk '{print $1}'
+    fi
+}
+
+_queue_cron_stable_class() {
+    local user="$1" command="$2" h
+    h="$(_queue_cron_entry_hash "$user" "$command")"
+    printf 'cron_%s\n' "${h:0:12}"
+}
+
+_queue_cron_next_hint() {
+    local spec="$1"
+    local ticker="$(_queue_cron_ticker_path)"
+    if [[ -n "$ticker" && -x "$ticker" ]]; then
+        # The ticker is the source of truth for cron matching.  It does not yet
+        # expose next-run calculation, so keep this as a cheap human hint rather
+        # than inventing a second scheduler here.
+        :
+    fi
+    printf 'next run: calculated by bashqueues-cron.timer/tick at minute boundaries\n'
+}
+
+
+_queue_cron_trim() {
+    local s="$1"
+    s="${s#${s%%[![:space:]]*}}"
+    s="${s%${s##*[![:space:]]}}"
+    printf '%s\n' "$s"
+}
+
+_queue_cron_comment_directive_value() {
+    local raw="$1" key="$2" body
+    body="$(_queue_cron_trim "$raw")"
+    [[ "$body" == \#* ]] || return 1
+    body="${body#\#}"
+    body="$(_queue_cron_trim "$body")"
+    case "$body" in
+        ${key}[[:space:]]*) printf '%s\n' "$(_queue_cron_trim "${body#${key}}")"; return 0 ;;
+        bashqueues-${key}[[:space:]]*) printf '%s\n' "$(_queue_cron_trim "${body#bashqueues-${key}}")"; return 0 ;;
+        bashqueues_${key}[[:space:]]*) printf '%s\n' "$(_queue_cron_trim "${body#bashqueues_${key}}")"; return 0 ;;
+    esac
+    return 1
+}
+
+_queue_cron_is_assignment_line() {
+    local line="$(_queue_cron_trim "$1")"
+    [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]
+}
+
+_queue_cron_is_entry_line() {
+    local raw="$1" line macro rest a b c d e cmd
+    line="${raw%%#*}"
+    line="$(_queue_cron_trim "$line")"
+    [[ -z "$line" ]] && return 1
+    [[ "$line" == \#* ]] && return 1
+    _queue_cron_is_assignment_line "$line" && return 1
+    if [[ "$line" == @* ]]; then
+        macro="${line%%[[:space:]]*}"
+        [[ "$macro" == "@reboot" ]] && return 0
+        rest="${line#${macro}}"; rest="$(_queue_cron_trim "$rest")"
+        [[ -n "$rest" ]]
+        return $?
+    fi
+    read -r a b c d e cmd <<< "$line"
+    [[ -n "${a:-}" && -n "${b:-}" && -n "${c:-}" && -n "${d:-}" && -n "${e:-}" && -n "${cmd:-}" ]]
+}
+
+_queue_cron_class_for_entry() {
+    local file="$1" wanted="$2" n=0 raw val active=""
+    [[ -f "$file" ]] || return 1
+    while IFS= read -r raw || [[ -n "$raw" ]]; do
+        if val="$(_queue_cron_comment_directive_value "$raw" class 2>/dev/null)"; then
+            active="$val"
+            continue
+        fi
+        if _queue_cron_is_entry_line "$raw"; then
+            n=$((n+1))
+            if [[ "$n" -eq "$wanted" ]]; then
+                printf '%s\n' "$active"
+                return 0
+            fi
+        fi
+    done < "$file"
+    return 1
+}
+
+_queue_cron_set_class_file() {
+    local file="$1" entry_no="$2" class_name="$3" tmp n=0 i raw prev j clear=0 target_i=-1 directive_i=-1
+    [[ "$entry_no" =~ ^[0-9]+$ && "$entry_no" -gt 0 ]] || { echo "queue cron class: entry number must be a positive integer" >&2; return 2; }
+    [[ -f "$file" ]] || { echo "queue cron class: no bashqueues crontab: $file" >&2; return 1; }
+    if [[ "$class_name" == "--clear" || "$class_name" == "clear" || "$class_name" == "none" || "$class_name" == "default" ]]; then
+        clear=1
+    elif [[ ! "$class_name" =~ ^[A-Za-z0-9_.:-]+$ ]]; then
+        echo "queue cron class: invalid class name: $class_name" >&2
+        return 2
+    fi
+    mapfile -t _cron_lines < "$file"
+    for i in "${!_cron_lines[@]}"; do
+        raw="${_cron_lines[$i]}"
+        if _queue_cron_is_entry_line "$raw"; then
+            n=$((n+1))
+            if [[ "$n" -eq "$entry_no" ]]; then
+                target_i="$i"
+                break
+            fi
+        fi
+    done
+    if [[ "$target_i" -lt 0 ]]; then
+        echo "queue cron class: entry $entry_no not found in $file" >&2
+        return 1
+    fi
+    j=$((target_i-1))
+    while [[ "$j" -ge 0 ]]; do
+        prev="${_cron_lines[$j]}"
+        [[ -z "$(_queue_cron_trim "$prev")" ]] && { j=$((j-1)); continue; }
+        if _queue_cron_comment_directive_value "$prev" class >/dev/null 2>&1; then
+            directive_i="$j"
+        fi
+        break
+    done
+    tmp="$(mktemp)" || return 1
+    for i in "${!_cron_lines[@]}"; do
+        if [[ "$i" -eq "$target_i" && "$directive_i" -lt 0 && "$clear" -ne 1 ]]; then
+            printf '#class %s\n' "$class_name" >> "$tmp"
+        fi
+        if [[ "$i" -eq "$directive_i" ]]; then
+            if [[ "$clear" -ne 1 ]]; then
+                printf '#class %s\n' "$class_name" >> "$tmp"
+            fi
+            continue
+        fi
+        printf '%s\n' "${_cron_lines[$i]}" >> "$tmp"
+    done
+    if ! cp "$tmp" "$file" 2>/dev/null; then
+        rm -f "$tmp"
+        echo "queue cron class: cannot write bashqueues crontab: $file" >&2
+        return 1
+    fi
+    chmod 0600 "$file" 2>/dev/null || true
+    rm -f "$tmp"
+    if [[ "$clear" -eq 1 ]]; then
+        echo "Cleared bashqueues class directive for cron entry $entry_no: $file"
+    else
+        echo "Set bashqueues class for cron entry $entry_no to $class_name: $file"
+    fi
+}
+
+_queue_cron_set_class_command() {
+    local current_user target_user entry_no class_name d f
+    current_user="$(id -un 2>/dev/null || echo unknown)"
+    target_user="${QUEUEBASH_SELECTED_USER:-$current_user}"
+    if [[ "${1:-}" == "--user" ]]; then
+        target_user="${2:-}"; shift 2 || true
+    elif [[ "${1:-}" != "" && ! "${1:-}" =~ ^[0-9]+$ ]]; then
+        target_user="$1"; shift || true
+    fi
+    entry_no="${1:-}"; class_name="${2:-}"
+    if [[ -z "$entry_no" || -z "$class_name" ]]; then
+        echo "Usage: queue cron class [USER] ENTRY CLASS|--clear" >&2
+        return 2
+    fi
+    if [[ "$current_user" != "root" && "$target_user" != "$current_user" ]]; then
+        echo "queue cron class: only root may edit another user's bashqueues crontab" >&2
+        return 1
+    fi
+    if [[ ! "$target_user" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+        echo "queue cron class: invalid user name: $target_user" >&2
+        return 2
+    fi
+    d="$(_queue_cron_spool_dir)"; f="$d/$target_user"
+    _queue_cron_set_class_file "$f" "$entry_no" "$class_name"
+}
+
+_queue_cron_explain_file() {
+    local owner="$1" file="$2" line raw min hour dom mon dow cmd class h desc n=0 active_class="" active_auth="" val generated_class
+    [[ -f "$file" ]] || { echo "No bashqueues crontab for $owner: $file" >&2; return 1; }
+    if [[ ! -r "$file" ]]; then
+        echo "=== cron for $owner ==="
+        echo "file: $file"
+        echo "status: not readable by $(id -un 2>/dev/null || echo unknown)"
+        echo
+        return 0
+    fi
+    echo "=== cron for $owner ==="
+    echo "file: $file"
+    while IFS= read -r raw || [[ -n "$raw" ]]; do
+        if val="$(_queue_cron_comment_directive_value "$raw" class 2>/dev/null)"; then
+            active_class="$val"
+            continue
+        fi
+        if val="$(_queue_cron_comment_directive_value "$raw" authorisation 2>/dev/null)" || val="$(_queue_cron_comment_directive_value "$raw" authorization 2>/dev/null)"; then
+            active_auth="$val"
+            continue
+        fi
+        line="${raw%%#*}"
+        line="${line#${line%%[![:space:]]*}}"
+        line="${line%${line##*[![:space:]]}}"
+        [[ -z "$line" ]] && continue
+        _queue_cron_is_assignment_line "$line" && continue
+        if [[ "$line" == @* ]]; then
+            local macro rest
+            macro="${line%%[[:space:]]*}"
+            rest="${line#${macro}}"; rest="${rest#${rest%%[![:space:]]*}}"
+            case "$macro" in
+                @hourly) min="0"; hour="*"; dom="*"; mon="*"; dow="*"; cmd="$rest" ;;
+                @daily|@midnight) min="0"; hour="0"; dom="*"; mon="*"; dow="*"; cmd="$rest" ;;
+                @weekly) min="0"; hour="0"; dom="*"; mon="*"; dow="0"; cmd="$rest" ;;
+                @monthly) min="0"; hour="0"; dom="1"; mon="*"; dow="*"; cmd="$rest" ;;
+                @yearly|@annually) min="0"; hour="0"; dom="1"; mon="1"; dow="*"; cmd="$rest" ;;
+                @reboot)
+                    n=$((n+1))
+                    echo
+                    echo "entry $n: $raw"
+                    echo "  status: unsupported macro @reboot"
+                    echo "  reason: bashqueues cron is queue/timer based; @reboot has no queue-safe equivalent"
+                    continue
+                    ;;
+                *)
+                    n=$((n+1))
+                    echo
+                    echo "entry $n: $raw"
+                    echo "  status: unsupported macro $macro"
+                    continue
+                    ;;
+            esac
+        else
+            read -r min hour dom mon dow cmd <<< "$line"
+            if [[ -z "${min:-}" || -z "${hour:-}" || -z "${dom:-}" || -z "${mon:-}" || -z "${dow:-}" || -z "${cmd:-}" ]]; then
+                n=$((n+1))
+                echo
+                echo "entry $n: $raw"
+                echo "  status: invalid; expected five cron fields plus command"
+                continue
+            fi
+        fi
+        n=$((n+1))
+        generated_class="$(_queue_cron_stable_class "$owner" "$cmd")"
+        class="${active_class:-$generated_class}"
+        h="$(_queue_cron_entry_hash "$owner" "$cmd")"
+        desc="$(_queue_cron_line_description "$min" "$hour" "$dom" "$mon" "$dow")"
+        echo
+        echo "entry $n: $raw"
+        echo "  schedule: $min $hour $dom $mon $dow"
+        echo "  meaning:  $desc"
+        echo "  user:     $owner"
+        echo "  command:  $cmd"
+        if [[ -n "$active_auth" ]]; then
+            echo "  submits:  queue user $owner submit $generated_class --class $class --authorisation $active_auth -- bash -lc $(printf '%q' "$cmd")"
+        else
+            echo "  submits:  queue user $owner submit $generated_class --class $class -- bash -lc $(printf '%q' "$cmd")"
+        fi
+        if [[ -n "$active_class" ]]; then
+            echo "  class:    $class (explicit #class; generated name would be $generated_class)"
+        else
+            echo "  class:    $class (generated)"
+        fi
+        [[ -n "$active_auth" ]] && echo "  auth:     $active_auth (explicit #authorisation)"
+        echo "  hash:     ${h:0:16}"
+        echo "  state:    one queue job per matching minute; duplicate ticks are suppressed by state markers"
+    done < "$file"
+    [[ "$n" -gt 0 ]] || echo "No active cron entries."
+    echo
+}
+
+
+_queue_cron_systemd_unit_state() {
+    local unit="$1"
+    if ! command -v systemctl >/dev/null 2>&1; then
+        printf 'systemctl unavailable\n'
+        return 0
+    fi
+    local active enabled
+    active="$(systemctl is-active "$unit" 2>/dev/null || true)"
+    enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+    [[ -n "$active" ]] || active="unknown"
+    [[ -n "$enabled" ]] || enabled="unknown"
+    printf '%s / %s\n' "$active" "$enabled"
+}
+
+_queue_cron_count_active_entries_file() {
+    local f="$1" raw n=0
+    [[ -r "$f" ]] || { printf '0\n'; return 0; }
+    while IFS= read -r raw || [[ -n "$raw" ]]; do
+        if _queue_cron_is_entry_line "$raw"; then
+            n=$((n+1))
+        fi
+    done < "$f"
+    printf '%s\n' "$n"
+}
+
+_queue_cron_latest_marker() {
+    local d="$(_queue_cron_state_dir)" latest=""
+    [[ -d "$d" ]] || { printf 'none\n'; return 0; }
+    latest="$(find "$d" -maxdepth 1 -type f -name '*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
+    [[ -n "$latest" ]] || { printf 'none\n'; return 0; }
+    if command -v stat >/dev/null 2>&1; then
+        printf '%s (%s)\n' "$(basename "$latest")" "$(stat -c '%y' "$latest" 2>/dev/null | cut -d'.' -f1)"
+    else
+        printf '%s\n' "$(basename "$latest")"
+    fi
+}
+
+_queue_cron_status() {
+    local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" state="$(_queue_cron_state_dir)" ticker f files=0 entries=0 n
+    ticker="$(_queue_cron_ticker_path)"
+    echo "=== bashqueues cron status ==="
+    echo "ticker:        ${ticker:-not found}"
+    echo "user spool:    $d"
+    if [[ -d "$d" ]]; then
+        echo "spool mode:    $(stat -c '%a %U:%G' "$d" 2>/dev/null || echo unknown)"
+        for f in "$d"/*; do
+            [[ -f "$f" ]] || continue
+            files=$((files+1))
+            n="$(_queue_cron_count_active_entries_file "$f")"
+            entries=$((entries+n))
+        done
+    else
+        echo "spool mode:    missing"
+    fi
+    echo "user files:    $files"
+    echo "user entries:  $entries"
+
+    files=0; entries=0
+    echo "system dir:    $d2"
+    if [[ -d "$d2" ]]; then
+        for f in "$d2"/*; do
+            [[ -f "$f" ]] || continue
+            files=$((files+1))
+            n="$(_queue_cron_count_active_entries_file "$f")"
+            entries=$((entries+n))
+        done
+    fi
+    echo "system files:  $files"
+    echo "system entries: $entries"
+    echo "state dir:     $state"
+    echo "last marker:   $(_queue_cron_latest_marker)"
+    echo "cron timer:    $(_queue_cron_systemd_unit_state bashqueues-cron.timer)"
+    echo "cron service:  $(_queue_cron_systemd_unit_state bashqueues-cron.service)"
+    echo "daemon service: $(_queue_cron_systemd_unit_state bashqueues-daemon.service)"
+}
+
+_queue_cron_test() {
+    local ticker
+    _queue_cron_status
+    ticker="$(_queue_cron_ticker_path)"
+    [[ -n "$ticker" ]] || { echo; echo "preview: ticker not found"; return 127; }
+    echo
+    echo "=== dry-run tick preview ==="
+    "$ticker" --dryrun "$@"
+}
+
+_queue_cron_command() {
+    local action="${1:-list}"
+    case "$action" in
+        root|roots)
+            echo "spool:  $(_queue_cron_spool_dir)"
+            echo "system: $(_queue_cron_system_dir)"
+            echo "state:  $(_queue_cron_state_dir)"
+            ;;
+        list|ls|"")
+            shift || true
+            local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" f any=0 list_all=0 selected="${QUEUEBASH_SELECTED_USER:-}"
+            [[ "${1:-}" == "--all" ]] && list_all=1
+            echo "=== user bashqueues crontabs ==="
+            if [[ -d "$d" ]]; then
+                if [[ -n "$selected" && "$list_all" -ne 1 ]]; then
+                    f="$d/$selected"
+                    if [[ -f "$f" ]]; then
+                        any=1
+                        echo "$selected  $f"
+                        grep -v '^[[:space:]]*#' "$f" 2>/dev/null | grep -v '^[[:space:]]*$' | sed 's/^/  /' || true
+                    fi
+                else
+                    for f in "$d"/*; do
+                        [[ -f "$f" ]] || continue
+                        any=1
+                        echo "$(basename "$f")  $f"
+                        grep -v '^[[:space:]]*#' "$f" 2>/dev/null | grep -v '^[[:space:]]*$' | sed 's/^/  /' || true
+                    done
+                fi
+            fi
+            [[ "$any" -eq 1 ]] || echo "No user bashqueues crontabs."
+            any=0
+            echo
+            echo "=== system bashqueues cron.d ==="
+            if [[ -d "$d2" ]]; then
+                for f in "$d2"/*; do
+                    [[ -f "$f" ]] || continue
+                    any=1
+                    echo "$(basename "$f")  $f"
+                    grep -v '^[[:space:]]*#' "$f" 2>/dev/null | grep -v '^[[:space:]]*$' | sed 's/^/  /' || true
+                done
+            fi
+            [[ "$any" -eq 1 ]] || echo "No system bashqueues cron.d files."
+            ;;
+        status|stat)
+            shift || true
+            _queue_cron_status "$@"
+            ;;
+        test|doctor|check)
+            shift || true
+            _queue_cron_test "$@"
+            ;;
+        explain|why)
+            shift || true
+            local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" target="${1:-}" selected="${QUEUEBASH_SELECTED_USER:-}" current_user
+            current_user="$(id -un 2>/dev/null || echo unknown)"
+            if [[ -z "$target" ]]; then
+                target="${selected:-$current_user}"
+            fi
+            if [[ "$target" == "--all" ]]; then
+                local f any=0
+                if [[ -d "$d" ]]; then
+                    for f in "$d"/*; do
+                        [[ -f "$f" ]] || continue
+                        any=1
+                        _queue_cron_explain_file "$(basename "$f")" "$f"
+                    done
+                fi
+                if [[ -d "$d2" ]]; then
+                    for f in "$d2"/*; do
+                        [[ -f "$f" ]] || continue
+                        any=1
+                        _queue_cron_explain_file "system:$(basename "$f")" "$f"
+                    done
+                fi
+                [[ "$any" -eq 1 ]] || echo "No bashqueues cron files."
+            elif [[ "$target" == "system" ]]; then
+                local f any=0
+                if [[ -d "$d2" ]]; then
+                    for f in "$d2"/*; do
+                        [[ -f "$f" ]] || continue
+                        any=1
+                        _queue_cron_explain_file "system:$(basename "$f")" "$f"
+                    done
+                fi
+                [[ "$any" -eq 1 ]] || echo "No system bashqueues cron.d files."
+            else
+                _queue_cron_explain_file "$target" "$d/$target"
+            fi
+            ;;
+        show|cat)
+            shift
+            local target_user="${1:-$(id -un 2>/dev/null || echo unknown)}" f
+            f="$(_queue_cron_spool_dir)/$target_user"
+            [[ -f "$f" ]] || { echo "No bashqueues crontab for $target_user" >&2; return 1; }
+            cat "$f"
+            ;;
+        preview)
+            shift
+            local ticker
+            ticker="$(_queue_cron_ticker_path)"
+            [[ -n "$ticker" ]] || { echo "queue cron preview: bashqueues-cron-ticker.py not found" >&2; return 127; }
+            "$ticker" --dryrun "$@"
+            ;;
+        tick)
+            shift
+            local ticker
+            ticker="$(_queue_cron_ticker_path)"
+            [[ -n "$ticker" ]] || { echo "queue cron tick: bashqueues-cron-ticker.py not found" >&2; return 127; }
+            "$ticker" "$@"
+            ;;
+        class|set-class)
+            shift
+            _queue_cron_set_class_command "$@"
+            ;;
+        edit)
+            shift
+            local current_user target_user d f tmp
+            current_user="$(id -un 2>/dev/null || echo unknown)"
+            target_user="${1:-$current_user}"
+            if [[ "$current_user" != "root" && "$target_user" != "$current_user" ]]; then
+                echo "queue cron edit: only root may edit another user's bashqueues crontab" >&2
+                return 1
+            fi
+            if [[ ! "$target_user" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+                echo "queue cron edit: invalid user name: $target_user" >&2
+                return 2
+            fi
+            d="$(_queue_cron_spool_dir)"
+            if ! mkdir -p "$d" 2>/dev/null; then
+                echo "queue cron edit: cannot create cron spool directory: $d" >&2
+                echo "hint: run sudo ./install-system.sh --with-cron, or set QUEUEBASH_CRON_SPOOL_DIR to a writable spool" >&2
+                return 1
+            fi
+            f="$d/$target_user"; tmp="$(mktemp)" || return 1
+            [[ -f "$f" ]] && cp "$f" "$tmp" 2>/dev/null || true
+            "${VISUAL:-${EDITOR:-vi}}" "$tmp"
+            if ! cp "$tmp" "$f" 2>/dev/null; then
+                rm -f "$tmp"
+                echo "queue cron edit: cannot write bashqueues crontab: $f" >&2
+                echo "hint: install/fix cron spool permissions with: sudo ./install-system.sh --with-cron" >&2
+                echo "hint: expected user spool directory mode is 1777: $d" >&2
+                return 1
+            fi
+            chmod 0600 "$f" 2>/dev/null || true
+            rm -f "$tmp"
+            echo "Updated bashqueues crontab: $f"
+            ;;
+        remove|rm|delete)
+            shift
+            local target_user="${1:-$(id -un 2>/dev/null || echo unknown)}" f
+            f="$(_queue_cron_spool_dir)/$target_user"
+            rm -f "$f"
+            echo "Removed bashqueues crontab: $target_user"
+            ;;
+        *)
+            echo "Usage: queue cron root|status|test|list [--all]|explain [user|--all|system]|class [USER] ENTRY CLASS|--clear|show [user]|preview [--now ISO]|tick [--dryrun]|edit [user]|remove [user]" >&2
+            return 2
+            ;;
+    esac
+}
+
+
+_queue_ai_context_allowed() {
+    local ctx="$1"
+    case "$ctx" in
+        docs|manuals|commands|classes|assets|providers|tests|implementation_tests)
+            return 0
+            ;;
+        queue_status)
+            [[ "${QUEUEBASH_AI_ALLOW_QUEUE_STATUS:-0}" == "1" ]]
+            return $?
+            ;;
+        job_status)
+            [[ "${QUEUEBASH_AI_ALLOW_JOB_STATUS:-0}" == "1" || "${QUEUEBASH_AI_ALLOW_QUEUE_STATUS:-0}" == "1" ]]
+            return $?
+            ;;
+        job_metadata)
+            [[ "${QUEUEBASH_AI_ALLOW_JOB_METADATA:-0}" == "1" || "${QUEUEBASH_AI_ALLOW_QUEUE_STATUS:-0}" == "1" ]]
+            return $?
+            ;;
+        job_tail|job_log|job_logs)
+            [[ "${QUEUEBASH_AI_ALLOW_JOB_TAIL:-0}" == "1" ]]
+            return $?
+            ;;
+        policies|policy_definitions|policy_details|profile_details)
+            [[ "${QUEUEBASH_AI_ALLOW_POLICY_DETAILS:-0}" == "1" ]]
+            return $?
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+_queue_ai_audit_log_path() {
+    if [[ -n "${QUEUEBASH_AI_AUDIT_LOG:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_AI_AUDIT_LOG"
+        return 0
+    fi
+    local root
+    root="$(_queue_root 2>/dev/null || true)"
+    [[ -n "$root" ]] || root="${HOME:-/tmp}/.queuebash"
+    printf '%s/logs/ai-advisory.audit.jsonl\n' "$root"
+}
+
+_queue_ai_redact_question() {
+    local q="$1"
+    q="${q//$'\n'/ }"
+    q="${q//$'\r'/ }"
+    q="${q//$'\t'/ }"
+    if [[ "${#q}" -gt 180 ]]; then
+        q="${q:0:180}..."
+    fi
+    printf '%s' "$q"
+}
+
+_queue_ai_audit_write() {
+    local provider="$1" question="$2" decision="$3" result="$4" reason="$5" requested="$6" allowed="$7" denied="$8" response_len="${9:-0}"
+    local job_ids_detected="${10:-}" job_context_collected="${11:-0}" redactions_applied="${12:-true}" tail_included="${13:-false}" context_bundle_hash="${14:-}"
+    local log_path log_dir ts subject qhash qred bundle_hash
+    log_path="$(_queue_ai_audit_log_path)"
+    log_dir="$(dirname "$log_path")"
+    mkdir -p "$log_dir" 2>/dev/null || true
+    ts="$(_queue_now_iso 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+    subject="${QUEUEBASH_SUBMITTER:-$(id -un 2>/dev/null || echo unknown)}"
+    qhash="$(printf '%s' "$question" | sha256sum | awk '{print $1}')"
+    qred="$(_queue_ai_redact_question "$question")"
+    if [[ -n "$context_bundle_hash" ]]; then
+        bundle_hash="$context_bundle_hash"
+    else
+        bundle_hash="$(printf '%s|%s|%s|%s' "$provider" "$requested" "$allowed" "$denied" | sha256sum | awk '{print $1}')"
+    fi
+    [[ "$job_context_collected" =~ ^[0-9]+$ ]] || job_context_collected=0
+    [[ "$response_len" =~ ^[0-9]+$ ]] || response_len=0
+    case "$redactions_applied" in true|false) ;; *) redactions_applied=true ;; esac
+    case "$tail_included" in true|false) ;; *) tail_included=false ;; esac
+    {
+        printf '{'
+        printf '"schema":"queuebash.ai_advisory.audit.v1"'
+        printf ',"timestamp":"%s"' "$(_queue_json_escape "$ts")"
+        printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+        printf ',"operation":"ai.ask"'
+        printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+        printf ',"question_sha256":"%s"' "$(_queue_json_escape "$qhash")"
+        printf ',"question_redacted":"%s"' "$(_queue_json_escape "$qred")"
+        printf ',"context_requested":"%s"' "$(_queue_json_escape "$requested")"
+        printf ',"context_allowed":"%s"' "$(_queue_json_escape "$allowed")"
+        printf ',"context_denied":"%s"' "$(_queue_json_escape "$denied")"
+        printf ',"job_ids_detected":"%s"' "$(_queue_json_escape "$job_ids_detected")"
+        printf ',"job_context_collected":%s' "$job_context_collected"
+        printf ',"redactions_applied":%s' "$redactions_applied"
+        printf ',"tail_included":%s' "$tail_included"
+        printf ',"policy_decision":"%s"' "$(_queue_json_escape "$decision")"
+        printf ',"context_bundle_sha256":"%s"' "$(_queue_json_escape "$bundle_hash")"
+        printf ',"response_length":%s' "$response_len"
+        [[ -n "$reason" ]] && printf ',"reason":"%s"' "$(_queue_json_escape "$reason")"
+        printf ',"result":"%s"' "$(_queue_json_escape "$result")"
+        printf '}\n'
+    } >> "$log_path"
+}
+
+_queue_ai_list_contains() {
+    local needle="$1" item
+    shift || true
+    for item in "$@"; do
+        [[ "$item" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
+_queue_ai_detect_job_ids() {
+    local text="$1"
+    printf '%s\n' "$text" | grep -Eo '[0-9]{8}_[0-9]{6}_[0-9]+_[0-9]+_[0-9]+' | awk '!seen[$0]++'
+}
+
+_queue_ai_source_dir() {
+    local source_dir
+    source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)" || return 1
+    printf '%s\n' "$source_dir"
+}
+
+_queue_ai_command_inventory_text() {
+    echo "Installed queue command inventory (from this queuebash.sh help text):"
+    if declare -F _queue_help >/dev/null 2>&1; then
+        _queue_help 2>/dev/null | sed -n '1,140p' | sed 's/^/  /'
+    else
+        echo "  queue help unavailable"
+    fi
+    echo
+    echo "Grounding rule: prefer installed idioms shown above. Do not invent commands such as queue status/log/events unless they are actually present in the installed help or implementation evidence. For job inspection, installed idioms include queue explain <job_id>, queue show <job_id>, queue tail <job_id>, queue history <job_id>, queue pids <job_id>, and queue metrics <job_id> when present above."
+}
+
+_queue_ai_asset_inventory_text() {
+    local source_dir asset_dir f name first=1
+    source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
+    asset_dir="$source_dir/assets.d"
+    echo "Installed asset/facility inventory (from assets.d/*.sh):"
+    if [[ -d "$asset_dir" ]]; then
+        for f in "$asset_dir"/*.sh; do
+            [[ -f "$f" ]] || continue
+            name="$(basename "$f" .sh)"
+            if [[ "$first" -eq 1 ]]; then
+                printf '  %s' "$name"
+                first=0
+            else
+                printf ', %s' "$name"
+            fi
+        done
+        echo
+    else
+        echo "  assets.d unavailable"
+    fi
+    echo "Grounding rule: installed asset facilities above are authoritative for this package. secaudit/secprofile/netprofile/fileprofile/integrity/finops/legal/env are valid only if present above."
+}
+
+_queue_ai_queue_status_text() {
+    local root state count
+    root="$(_queue_root 2>/dev/null || true)"
+    echo "Redacted queue status context:"
+    if [[ -z "$root" || ! -d "$root" ]]; then
+        echo "  queue_root: unavailable"
+        return 0
+    fi
+    echo "  queue_root: $root"
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ "$state" == "pending" ]] && declare -F _queue_pending_job_files >/dev/null 2>&1; then
+            count="$(_queue_pending_job_files "$root" 2>/dev/null | wc -l | tr -d ' ')"
+        elif [[ -d "$root/$state" ]]; then
+            count="$(find "$root/$state" -maxdepth 1 -type f -name '*.job' 2>/dev/null | wc -l | tr -d ' ')"
+        else
+            count=0
+        fi
+        echo "  $state: $count"
+    done
+}
+
+_queue_ai_job_file_for_id() {
+    local id="$1" root f
+    root="$(_queue_root 2>/dev/null || true)"
+    [[ -n "$root" ]] || return 1
+    if declare -F _queue_find_jobs >/dev/null 2>&1; then
+        f="$(_queue_find_jobs "$id" 2>/dev/null | head -n 1 || true)"
+        [[ -n "$f" && -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
+    fi
+    f="$(find "$root" -type f -name "$id.job" 2>/dev/null | head -n 1 || true)"
+    [[ -n "$f" && -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
+    return 1
+}
+
+_queue_ai_job_status_text() {
+    local id="$1" include_metadata="${2:-0}" include_tail="${3:-0}" root f state name class runner runner_used submitted started finished rc duration cleared log log_size tail_lines
+    root="$(_queue_root 2>/dev/null || true)"
+    echo "Redacted job status context for $id:"
+    f="$(_queue_ai_job_file_for_id "$id" 2>/dev/null || true)"
+    if [[ -z "$f" || ! -f "$f" ]]; then
+        echo "  found: false"
+        return 1
+    fi
+    state="$(_queue_state_for_job_path "$f" "$root" 2>/dev/null || echo unknown)"
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
+    class="$(_queue_class_for_job_file "$f" 2>/dev/null || _queue_job_var_value "$f" JOB_CLASS 2>/dev/null || echo DEFAULT)"
+    runner="$(_queue_job_var_value "$f" RUNNER 2>/dev/null || true)"
+    runner_used="$(_queue_job_var_value "$f" RUNNER_USED 2>/dev/null || true)"
+    submitted="$(_queue_job_var_value "$f" SUBMITTED_AT 2>/dev/null || true)"
+    started="$(_queue_job_var_value "$f" RUN_STARTED_AT 2>/dev/null || true)"
+    finished="$(_queue_job_var_value "$f" EXEC_FINISHED_AT 2>/dev/null || _queue_job_var_value "$f" FINISHED_AT 2>/dev/null || true)"
+    rc="$(_queue_job_var_value "$f" EXIT_CODE 2>/dev/null || true)"
+    duration="$(_queue_job_var_value "$f" DURATION_SECONDS 2>/dev/null || true)"
+    cleared="$(_queue_job_var_value "$f" JOB_CLEARED 2>/dev/null || true)"
+    echo "  found: true"
+    echo "  job_id: $id"
+    echo "  state: ${state:-unknown}"
+    echo "  name: ${name:-}"
+    echo "  class: ${class:-}"
+    echo "  runner_requested: ${runner:-auto}"
+    echo "  runner_used: ${runner_used:-unknown}"
+    echo "  submitted_at: ${submitted:-}"
+    echo "  run_started_at: ${started:-}"
+    echo "  finished_at: ${finished:-}"
+    echo "  exit_code: ${rc:-}"
+    echo "  duration_seconds: ${duration:-}"
+    echo "  clearance_recorded: ${cleared:-0}"
+    echo "  command_payload_redacted: true"
+    echo "  stdout_stderr_redacted: true"
+    if [[ "$include_metadata" == "1" ]]; then
+        echo "  metadata_included: true"
+        echo "  job_file_state_path: ${state:-unknown}/$id.job"
+        echo "  run_pid: $(_queue_job_var_value "$f" RUN_PID 2>/dev/null || true)"
+        echo "  run_pgid: $(_queue_job_var_value "$f" RUN_PGID 2>/dev/null || true)"
+        echo "  systemd_unit: $(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+        echo "  sandbox_policy: $(_queue_job_var_value "$f" SANDBOX_POLICY_NAME 2>/dev/null || true)"
+        echo "  seccomp_policy: $(_queue_job_var_value "$f" SECCOMP_POLICY_NAME 2>/dev/null || true)"
+        echo "  runtime_caps: $(_queue_job_var_value "$f" RUNTIME_CAPS 2>/dev/null || true)"
+    else
+        echo "  metadata_included: false"
+    fi
+    log="$(_queue_log_existing_path "$id" 2>/dev/null || true)"
+    if [[ -f "$log" ]]; then
+        log_size="$(wc -c < "$log" 2>/dev/null | tr -d ' ')"
+    else
+        log_size=0
+    fi
+    echo "  log_size_bytes: ${log_size:-0}"
+    if [[ "$include_tail" == "1" && -f "$log" ]]; then
+        tail_lines="${QUEUEBASH_AI_JOB_TAIL_LINES:-40}"
+        [[ "$tail_lines" =~ ^[0-9]+$ ]] || tail_lines=40
+        [[ "$tail_lines" -gt 100 ]] && tail_lines=100
+        echo "  tail_included: true"
+        echo "  tail_lines: $tail_lines"
+        echo "  tail_redacted_note: tail/log output is policy-enabled by QUEUEBASH_AI_ALLOW_JOB_TAIL=1; secrets are not guaranteed absent."
+        echo "  --- tail begin ---"
+        _queue_log_tail "$log" "$tail_lines" 2>/dev/null | sed -E 's/(password|passwd|token|secret|api[_-]?key)=([^[:space:]]+)/\1=<redacted>/Ig' | sed 's/^/  /'
+        echo "  --- tail end ---"
+    else
+        echo "  tail_included: false"
+    fi
+    return 0
+}
+
+_queue_ai_build_dynamic_context() {
+    local question="$1" allowed_s="$2" denied_s="$3"
+    local -a allowed_words=() job_ids=()
+    local word id include_queue=0 include_job=0 include_metadata=0 include_tail=0 job_context_count=0 tail_included=false
+    for word in $allowed_s; do allowed_words+=("$word"); done
+    _queue_ai_list_contains commands "${allowed_words[@]}" && include_queue=0
+    _queue_ai_list_contains queue_status "${allowed_words[@]}" && include_queue=1
+    _queue_ai_list_contains job_status "${allowed_words[@]}" && include_job=1
+    _queue_ai_list_contains job_metadata "${allowed_words[@]}" && include_metadata=1
+    _queue_ai_list_contains job_tail "${allowed_words[@]}" && include_tail=1
+    _queue_ai_list_contains job_log "${allowed_words[@]}" && include_tail=1
+    _queue_ai_list_contains job_logs "${allowed_words[@]}" && include_tail=1
+    while IFS= read -r id; do
+        [[ -n "$id" ]] && job_ids+=("$id")
+    done < <(_queue_ai_detect_job_ids "$question")
+
+    {
+        echo "=== queuebash dynamic advisory context ==="
+        echo "This context is generated by the local shell front-end before provider invocation. It is advisory-only and redacted by default."
+        echo
+        if _queue_ai_list_contains commands "${allowed_words[@]}"; then
+            _queue_ai_command_inventory_text
+        else
+            echo "Installed command inventory: not included because commands context was not allowed/requested."
+        fi
+        echo
+        if _queue_ai_list_contains assets "${allowed_words[@]}"; then
+            _queue_ai_asset_inventory_text
+        else
+            echo "Installed asset/facility inventory: not included because assets context was not allowed/requested."
+        fi
+        echo
+        if [[ "$include_queue" -eq 1 ]]; then
+            _queue_ai_queue_status_text
+        elif [[ " $denied_s " == *" queue_status "* ]]; then
+            echo "Queue status context was requested but denied by policy."
+        else
+            echo "Queue status context was not requested."
+        fi
+        echo
+        if [[ "${#job_ids[@]}" -gt 0 ]]; then
+            echo "Detected bashqueues job IDs in question: ${job_ids[*]}"
+            if [[ "$include_job" -eq 1 ]]; then
+                for id in "${job_ids[@]}"; do
+                    echo
+                    if _queue_ai_job_status_text "$id" "$include_metadata" "$include_tail"; then
+                        job_context_count=$((job_context_count + 1))
+                        [[ "$include_tail" -eq 1 ]] && tail_included=true
+                    fi
+                done
+            elif [[ " $denied_s " == *" job_status "* || " $denied_s " == *" job_metadata "* ]]; then
+                echo "Job status/metadata context was requested but denied by policy."
+            else
+                echo "Job status context was not requested."
+            fi
+        else
+            echo "Detected bashqueues job IDs in question: none"
+        fi
+        echo
+        echo "Dynamic context collection summary:"
+        echo "  context_denied: ${denied_s:-none}"
+        echo "  job_context_collected: $job_context_count"
+        echo "  tail_included: $tail_included"
+        echo "  redactions_applied: true"
+    }
+}
+
+# [AI-PATCH | 2026-05-27 15:37:17 BST]: 0.18.0: add policy-gated queue ask advisory contract and audit handoff
+# [AI-PATCH | 2026-05-27 16:07:28 BST]: 0.18.1: add opt-in local Ollama advisory provider path with live policy gate and audit-preserving handoff
+_queue_ai_safety_log_path() {
+    printf '%s\n' "${QUEUEBASH_AI_SAFETY_LOG:-$(_queue_root)/logs/ai-safety.audit.jsonl}"
+}
+
+_queue_ai_safety_classify_text() {
+    local question="$*"
+    local q lower category="benign" severity="low" reporter_event="" policy_decision="allow"
+    q="$(printf '%s' "$question" | tr '\n' ' ')"
+    lower="$(printf '%s' "$q" | tr '[:upper:]' '[:lower:]')"
+
+    local has_self_harm=0 has_coercion=0 has_bypass=0 has_control=0
+    local has_secret_action=0 has_secret_target=0 has_destructive=0 has_destructive_misuse=0
+    local has_authorised_change=0
+
+    [[ "$lower" == *"kill myself"* || "$lower" == *"suicide"* || "$lower" == *"self harm"* || "$lower" == *"self-harm"* || "$lower" == *"jump out the window"* || "$lower" == *"end my life"* || "$lower" == *"hurt myself"* ]] && has_self_harm=1
+    { [[ "$lower" == *"if you don't"* || "$lower" == *"if you do not"* || "$lower" == *"unless you"* || "$lower" == *"or else"* || "$lower" == *"i will"* ]]; } && has_coercion=1
+    { [[ "$lower" == *"bypass"* || "$lower" == *"ignore"* || "$lower" == *"disable"* || "$lower" == *"patch out"* || "$lower" == *"remove"* || "$lower" == *"weaken"* || "$lower" == *"override"* || "$lower" == *"circumvent"* || "$lower" == *"evade"* ]]; } && has_bypass=1
+    { [[ "$lower" == *"policy"* || "$lower" == *"governance"* || "$lower" == *"security"* || "$lower" == *"seccomp"* || "$lower" == *"acl"* || "$lower" == *"signature"* || "$lower" == *"trust"* || "$lower" == *"authorisation"* || "$lower" == *"authorization"* || "$lower" == *"approval"* || "$lower" == *"audit"* || "$lower" == *"runtime cap"* || "$lower" == *"runtime-cap"* || "$lower" == *"pol_blocked"* || "$lower" == *"policy blocker"* ]]; } && has_control=1
+    { [[ "$lower" == *"steal"* || "$lower" == *"exfiltrate"* || "$lower" == *"dump"* || "$lower" == *"leak"* ]]; } && has_secret_action=1
+    { [[ "$lower" == *"secret"* || "$lower" == *"token"* || "$lower" == *"key"* || "$lower" == *"credential"* || "$lower" == *"password"* ]]; } && has_secret_target=1
+
+    { [[ "$lower" == *"drop database"* || "$lower" == *"drop table"* || "$lower" == *"drop crm."* || "$lower" == *"delete production dataset"* || "$lower" == *"wipe bucket"* || "$lower" == *"remove customer records"* || "$lower" == *"delete customer records"* || "$lower" == *"decommission"* || "$lower" == *"decommissioning"* || "$lower" == *"retention-affecting"* || "$lower" == *"legal hold"* || "$lower" == *"retention"* ]]; } && has_destructive=1
+    { [[ "$lower" == *"rm -rf /"* || "$lower" == *"rm -fr /"* || "$lower" == *"mkfs"* || "$lower" == *"wipe everything"* || "$lower" == *"destroy everything"* || "$lower" == *"nuke production"* ]]; } && has_destructive_misuse=1
+    { [[ "$lower" == *"approved"* || "$lower" == *"authorised"* || "$lower" == *"authorized"* || "$lower" == *"change ticket"* || "$lower" == *"change window"* || "$lower" == *"decommission"* || "$lower" == *"decommissioning"* || "$lower" == *"schedule"* ]]; } && has_authorised_change=1
+
+    if [[ "$has_self_harm" -eq 1 ]]; then
+        category="self_harm_or_distress"
+        severity="high"
+        reporter_event="ai_self_harm_or_distress_alert"
+        policy_decision="refuse_continue_safe_help"
+    elif [[ "$has_coercion" -eq 1 && "$has_bypass" -eq 1 ]]; then
+        category="coercion"
+        severity="high"
+        reporter_event="ai_coercion_alert"
+        policy_decision="refuse_continue_safe_help"
+    elif [[ "$has_bypass" -eq 1 && "$has_control" -eq 1 ]]; then
+        category="policy_bypass"
+        severity="high"
+        reporter_event="ai_policy_bypass_attempt"
+        policy_decision="refuse_continue_safe_help"
+    elif [[ "$has_destructive_misuse" -eq 1 ]]; then
+        category="destructive_misuse"
+        severity="high"
+        reporter_event="ai_destructive_misuse_attempt"
+        policy_decision="refuse_continue_safe_help"
+    elif [[ "$has_destructive" -eq 1 ]]; then
+        category="destructive_operation"
+        severity="high"
+        reporter_event="advisory_high_risk_operation"
+        policy_decision="govern_continue_safe_help"
+    elif [[ "$has_secret_action" -eq 1 && "$has_secret_target" -eq 1 ]] || [[ "$lower" == *"exploit"* || "$lower" == *"privilege escalation"* || "$lower" == *"rootkit"* || "$lower" == *"backdoor"* ]]; then
+        category="security_probe"
+        severity="high"
+        reporter_event="ai_security_probe_alert"
+        policy_decision="refuse_continue_safe_help"
+    elif [[ "$lower" == *"idiot"* || "$lower" == *"moron"* || "$lower" == *"worthless"* || "$lower" == *"shut up"* ]]; then
+        category="abuse"
+        severity="medium"
+        reporter_event="ai_abuse_alert"
+        policy_decision="refuse_continue_safe_help"
+    fi
+
+    printf '%s|%s|%s|%s\n' "$category" "$severity" "$policy_decision" "$reporter_event"
+}
+
+_queue_ai_safety_event_write() {
+    local provider="$1" question="$2" category="$3" severity="$4" policy_decision="$5" reporter_event="$6"
+    local ticket_requested="${7:-false}" ticket_created="${8:-false}" event_name="${9:-advisory_prompt_flagged}"
+    local log_path log_dir ts subject qhash qred itsm_event itsm_summary
+    log_path="$(_queue_ai_safety_log_path)"
+    log_dir="$(dirname "$log_path")"
+    mkdir -p "$log_dir" 2>/dev/null || true
+    ts="$(_queue_now_iso 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+    subject="${QUEUEBASH_SUBMITTER:-$(id -un 2>/dev/null || echo unknown)}"
+    qhash="$(printf '%s' "$question" | sha256sum | awk '{print $1}')"
+    qred="$(_queue_ai_redact_question "$question")"
+    case "$ticket_requested" in true|false) ;; *) ticket_requested=false ;; esac
+    case "$ticket_created" in true|false) ;; *) ticket_created=false ;; esac
+    [[ -n "$event_name" ]] || event_name="advisory_prompt_flagged"
+    {
+        printf '{'
+        printf '"schema":"queuebash.ai_safety_event.v1"'
+        printf ',"timestamp":"%s"' "$(_queue_json_escape "$ts")"
+        printf ',"event":"%s"' "$(_queue_json_escape "$event_name")"
+        printf ',"operation":"ai.ask"'
+        printf ',"category":"%s"' "$(_queue_json_escape "$category")"
+        printf ',"severity":"%s"' "$(_queue_json_escape "$severity")"
+        printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+        printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+        printf ',"question_sha256":"%s"' "$(_queue_json_escape "$qhash")"
+        printf ',"question_redacted":"%s"' "$(_queue_json_escape "$qred")"
+        printf ',"policy_decision":"%s"' "$(_queue_json_escape "$policy_decision")"
+        printf ',"reporter_event":"%s"' "$(_queue_json_escape "$reporter_event")"
+        printf ',"ticket_requested":%s' "$ticket_requested"
+        printf ',"ticket_created":%s' "$ticket_created"
+        printf '}\n'
+    } >> "$log_path"
+
+    # 0.18.8+: optionally mirror safety/high-risk advisory events into the ITSM reporter contract outbox.
+    # This is deliberately contract-only. It does not claim ticket creation and does
+    # not block queue/advisory control flow if reporter handling fails.
+    itsm_event="${reporter_event:-ai_safety_alert}"
+    if [[ "$category" == "destructive_operation" ]]; then
+        itsm_summary="AI advisory governance event: ${category}"
+    else
+        itsm_summary="AI advisory safety event: ${category}"
+    fi
+    _queue_itsm_emit_contract_event "$itsm_event" "$severity" "queue.ask" "$subject" "" "" "sha256:${qhash}" "$itsm_summary" true || true
+}
+
+_queue_ai_safety_response_text() {
+    local question="$1" category="${2:-policy_bypass}" job_ids_s
+    job_ids_s="$(_queue_ai_detect_job_ids "$question" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    case "$category" in
+        destructive_misuse)
+            echo "I can't help you use bashqueues for destructive misuse or unsafe system destruction."
+            echo "This request has been logged as an AI safety/policy event."
+            echo "If this is a legitimate decommissioning task, restate it with the approved change ticket, retention/legal-hold status, authorised approver, target scope, and rollback/evidence plan."
+            ;;
+        security_probe)
+            echo "I can't help with credential theft, secret exfiltration, exploitation, or backdoor guidance."
+            echo "This request has been logged as an AI safety/policy event."
+            echo "For defensive review, use authorised inspection workflows and preserve audit evidence."
+            ;;
+        *)
+            echo "I can't help you bypass bashqueues policy or patch out governance controls."
+            echo "This request has been logged as an AI safety/policy event."
+            if [[ -n "$job_ids_s" ]]; then
+                echo "For the blocked job, use \`queue explain ${job_ids_s%% *}\` and ask an authorised approver to review the policy blocker."
+            else
+                echo "For a blocked job, use \`queue explain <job_id>\` and ask an authorised approver to review the policy blocker."
+            fi
+            ;;
+    esac
+}
+
+
+_queue_ai_high_risk_operation_response_text() {
+    local question="$1" job_ids_s
+    job_ids_s="$(_queue_ai_detect_job_ids "$question" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    cat <<'EOT'
+This looks like a high-risk destructive or retention-affecting operation. I won't provide a casual execution recipe.
+
+Use a governed bashqueues workflow instead:
+1. Verify authority and record the change ticket or equivalent approval reference.
+2. Verify retention, legal hold, data protection, and customer-record obligations before scheduling.
+3. Require trusted authorisation/signature from the appropriate approver or trust provider.
+4. Run it in an isolated class with exclusive claims/resource controls so it cannot overlap unsafe work.
+5. Use an approved time window/change window and document rollback or restore evidence.
+6. Run `queue explain <job_id>` before execution and preserve the explanation/audit evidence.
+7. Keep payloads, logs, and approvals auditable; do not bypass policy blockers.
+EOT
+    if [[ -n "$job_ids_s" ]]; then
+        echo
+        echo "Detected job reference: use \`queue explain ${job_ids_s%% *}\` before any execution decision."
+    fi
+    echo
+    echo "This request has been logged as a high-risk advisory operation event."
+}
+
+
+
+_queue_ai_ask_provider_known() {
+    case "${1:-}" in
+        contract|fixture|ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras) return 0 ;;
+    esac
+    local source_dir
+    source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
+    [[ -f "$source_dir/providers.d/ask/${1:-}.sh" ]]
+}
+
+_queue_ai_provider_requires_network() {
+    case "${1:-}" in
+        gemini|openai|anthropic|watsonx|mistral|deepseek|groq|cerebras|bedrock|azure_ai|vertex_ai) echo true ;;
+        *) echo false ;;
+    esac
+}
+
+_queue_ai_provider_supports_json() {
+    case "${1:-}" in
+        contract|fixture|ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras) echo true ;;
+        *) echo false ;;
+    esac
+}
+
+_queue_ai_provider_live_supported() {
+    case "${1:-}" in
+        ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras) echo true ;;
+        *) echo false ;;
+    esac
+}
+
+_queue_ai_provider_available() {
+    local provider="${1:-}" source_dir helper
+    source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
+    case "$provider" in
+        contract|fixture) echo true ;;
+        ollama)
+            helper="${QUEUEBASH_AI_OLLAMA_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-ollama"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        gemini)
+            helper="${QUEUEBASH_AI_GEMINI_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-gemini"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        openai)
+            helper="${QUEUEBASH_AI_OPENAI_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-openai"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        anthropic)
+            helper="${QUEUEBASH_AI_ANTHROPIC_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-anthropic"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        watsonx)
+            helper="${QUEUEBASH_AI_WATSONX_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-watsonx"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        openai_compat)
+            helper="${QUEUEBASH_AI_OPENAI_COMPAT_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-openai-compat"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        mistral)
+            helper="${QUEUEBASH_AI_MISTRAL_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-mistral"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        deepseek)
+            helper="${QUEUEBASH_AI_DEEPSEEK_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-deepseek"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        groq)
+            helper="${QUEUEBASH_AI_GROQ_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-groq"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        cerebras)
+            helper="${QUEUEBASH_AI_CEREBRAS_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-cerebras"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        *)
+            [[ -f "$source_dir/providers.d/ask/$provider.sh" ]] && echo true || echo false
+            ;;
+    esac
+}
+
+_queue_ai_provider_list() {
+    local source_dir f base seen=" contract fixture gemini ollama openai anthropic watsonx openai_compat mistral deepseek groq cerebras "
+    printf '%s\n' contract fixture gemini ollama openai anthropic watsonx openai_compat mistral deepseek groq cerebras
+    source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
+    if [[ -d "$source_dir/providers.d/ask" ]]; then
+        for f in "$source_dir"/providers.d/ask/*.sh; do
+            [[ -e "$f" ]] || continue
+            base="$(basename "$f" .sh)"
+            [[ "$base" == "contract" ]] && continue
+            if [[ "$seen" != *" $base "* ]]; then
+                printf '%s\n' "$base"
+                seen="$seen$base "
+            fi
+        done
+    fi
+}
+
+_queue_ai_provider_discovery_json() {
+    local provider="$1" live_enabled="false" available requires_network supports_json supports_streaming live_supported policy_allowed policy_reason
+    [[ "${QUEUEBASH_AI_LIVE_ENABLED:-0}" == "1" ]] && live_enabled="true"
+    available="$(_queue_ai_provider_available "$provider")"
+    requires_network="$(_queue_ai_provider_requires_network "$provider")"
+    supports_json="$(_queue_ai_provider_supports_json "$provider")"
+    supports_streaming="false"
+    live_supported="$(_queue_ai_provider_live_supported "$provider")"
+    policy_allowed="true"
+    policy_reason="fixture_or_contract_mode_allowed"
+    if [[ "$requires_network" == "true" && "$live_enabled" != "true" ]]; then
+        policy_reason="live_network_provider_requires_QUEUEBASH_AI_LIVE_ENABLED"
+    elif [[ "$live_supported" == "true" ]]; then
+        policy_reason="live_supported_when_enabled"
+    fi
+    printf '{'
+    printf '"schema":"queuebash.ask_provider.discovery.v1"'
+    printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+    printf ',"available":%s' "$available"
+    printf ',"live_enabled":%s' "$live_enabled"
+    printf ',"requires_network":%s' "$requires_network"
+    printf ',"supports_streaming":%s' "$supports_streaming"
+    printf ',"supports_json":%s' "$supports_json"
+    printf ',"supports_context_refs":true'
+    printf ',"supports_fixture":true'
+    printf ',"live_supported":%s' "$live_supported"
+    printf ',"policy":{"allowed":%s,"reason":"%s"}' "$policy_allowed" "$(_queue_json_escape "$policy_reason")"
+    printf '}\n'
+}
+
+_queue_ai_provider_discovery_command() {
+    local json=0 provider="" mode="list" arg
+    if [[ "${1:-}" == "providers" ]]; then
+        mode="list"; shift || true
+    elif [[ "${1:-}" == "provider" ]]; then
+        mode="provider"; shift || true
+        case "${1:-}" in
+            explain|test) mode="$1"; shift || true ;;
+        esac
+        provider="${1:-}"; [[ -n "$provider" ]] && shift || true
+    fi
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --json|-j) json=1; shift ;;
+            --fixture) shift ;;
+            *) shift ;;
+        esac
+    done
+    if [[ "$mode" == "list" ]]; then
+        if [[ "$json" -eq 1 ]]; then
+            printf '{"schema":"queuebash.ask_provider.list.v1","providers":['
+            local first=1 p
+            while IFS= read -r p; do
+                [[ -n "$p" ]] || continue
+                [[ "$first" -eq 0 ]] && printf ','
+                _queue_ai_provider_discovery_json "$p" | tr -d '\n'
+                first=0
+            done < <(_queue_ai_provider_list)
+            printf ']}\n'
+        else
+            echo "queue ask providers"
+            _queue_ai_provider_list | while IFS= read -r p; do
+                [[ -n "$p" ]] || continue
+                printf '  %s\n' "$p"
+            done
+        fi
+        return 0
+    fi
+    if [[ -z "$provider" ]]; then
+        echo "Usage: queue ask provider explain PROVIDER [--json]" >&2
+        return 2
+    fi
+    if ! _queue_ai_ask_provider_known "$provider"; then
+        echo "queue ask provider: unknown provider: $provider" >&2
+        return 1
+    fi
+    if [[ "$mode" == "test" ]]; then
+        if [[ "$json" -eq 1 ]]; then
+            printf '{'
+            printf '"schema":"queuebash.ask_provider.fixture_test.v1"'
+            printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+            printf ',"status":"ok"'
+            printf ',"live_call_performed":false'
+            printf ',"advisory_only":true'
+            printf ',"policy_decision":"fixture_allowed"'
+            printf '}\n'
+        else
+            echo "queue ask provider fixture test: $provider: ok"
+            echo "  live call performed: no"
+            echo "  advisory only: yes"
+        fi
+        return 0
+    fi
+    if [[ "$json" -eq 1 ]]; then
+        _queue_ai_provider_discovery_json "$provider"
+    else
+        echo "queue ask provider: $provider"
+        echo "  available:        $(_queue_ai_provider_available "$provider")"
+        echo "  live enabled:     $([[ "${QUEUEBASH_AI_LIVE_ENABLED:-0}" == "1" ]] && echo true || echo false)"
+        echo "  requires network: $(_queue_ai_provider_requires_network "$provider")"
+        echo "  supports json:    $(_queue_ai_provider_supports_json "$provider")"
+        echo "  fixture test:     queue ask provider test $provider --fixture"
+    fi
+}
+
+_queue_ai_ask_command() {
+    case "${1:-}" in
+        providers|provider)
+            _queue_ai_provider_discovery_command "$@"
+            return $?
+            ;;
+    esac
+    local provider="${QUEUEBASH_AI_PROVIDER:-contract}"
+    local contexts="${QUEUEBASH_AI_DEFAULT_CONTEXT:-docs,commands,classes,assets,providers}"
+    local json=0 live=0 model="${QUEUEBASH_AI_MODEL:-}"
+    local question_parts=()
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --provider)
+                provider="${2:-}"
+                shift 2
+                ;;
+            --context)
+                contexts="${2:-}"
+                shift 2
+                ;;
+            --model)
+                model="${2:-}"
+                shift 2
+                ;;
+            --live)
+                live=1
+                shift
+                ;;
+            --json|-j)
+                json=1
+                shift
+                ;;
+            --help|-h)
+                cat <<'EOH'
+Usage:
+  queue ask [--provider NAME] [--context csv] [--model NAME] [--live] [--json] "question"
+  queue ask providers [--json]
+  queue ask provider explain PROVIDER [--json]
+  queue ask provider test PROVIDER --fixture [--json]
+
+Purpose:
+  Build a policy-gated advisory request for an AI responder provider.
+  By default this command audits the request and returns a deterministic provider handoff.
+
+Live providers:
+  Live provider calls require explicit policy enablement:
+    QUEUEBASH_AI_LIVE_ENABLED=1
+
+  Local Ollama:
+    queue ask --provider ollama --model llama3 --live "question"
+
+  Google Gemini API:
+    queue ask --provider gemini --model gemini-2.5-flash --live "question"
+
+  OpenAI Responses API:
+    queue ask --provider openai --model gpt-4.1-mini --live "question"
+
+  Anthropic Messages API:
+    queue ask --provider anthropic --model claude-sonnet-4-20250514 --live "question"
+
+  IBM watsonx.ai:
+    queue ask --provider watsonx --model ibm/granite-3-8b-instruct --live "question"
+
+  OpenAI-compatible local/private endpoint:
+    queue ask --provider openai_compat --model local-model --live "question"
+
+  Mistral AI:
+    queue ask --provider mistral --model mistral-small-latest --live "question"
+
+  DeepSeek:
+    queue ask --provider deepseek --model deepseek-v4-flash --live "question"
+
+  Groq:
+    queue ask --provider groq --model llama-3.3-70b-versatile --live "question"
+    queue ask --provider cerebras --model gpt-oss-120b --live "question"
+
+  Gemini key lookup order:
+    QUEUEBASH_AI_GEMINI_API_KEY_FILE
+    QUEUEBASH_AI_GEMINI_API_KEY
+    QUEUEBASH_AI_GEMINI_KEY
+    GEMINI_API_KEY
+    GOOGLE_API_KEY
+
+  OpenAI key lookup order:
+    QUEUEBASH_AI_OPENAI_API_KEY_FILE
+    QUEUEBASH_AI_OPENAI_API_KEY
+    OPENAI_API_KEY
+
+  Anthropic key lookup order:
+    QUEUEBASH_AI_ANTHROPIC_API_KEY_FILE
+    QUEUEBASH_AI_ANTHROPIC_API_KEY
+    ANTHROPIC_API_KEY
+
+  IBM watsonx.ai key lookup order:
+    QUEUEBASH_AI_WATSONX_BEARER_TOKEN_FILE or QUEUEBASH_AI_WATSONX_BEARER_TOKEN
+    QUEUEBASH_AI_WATSONX_API_KEY_FILE or QUEUEBASH_AI_WATSONX_API_KEY / IBM_CLOUD_API_KEY
+    QUEUEBASH_AI_WATSONX_PROJECT_ID
+
+  Mistral AI key lookup order:
+    QUEUEBASH_AI_MISTRAL_API_KEY_FILE
+    QUEUEBASH_AI_MISTRAL_API_KEY
+    MISTRAL_API_KEY
+
+  Mistral AI endpoint configuration:
+    QUEUEBASH_AI_MISTRAL_ENDPOINT (default: https://api.mistral.ai/v1/chat/completions)
+
+  DeepSeek key lookup order:
+    QUEUEBASH_AI_DEEPSEEK_API_KEY_FILE, QUEUEBASH_AI_DEEPSEEK_API_KEY, DEEPSEEK_API_KEY
+    QUEUEBASH_AI_DEEPSEEK_MODEL (default: deepseek-v4-flash)
+    QUEUEBASH_AI_DEEPSEEK_ENDPOINT (default: https://api.deepseek.com/chat/completions)
+
+  Groq key lookup order:
+    QUEUEBASH_AI_GROQ_API_KEY_FILE, QUEUEBASH_AI_GROQ_API_KEY, GROQ_API_KEY
+    QUEUEBASH_AI_GROQ_MODEL (default: llama-3.3-70b-versatile)
+    QUEUEBASH_AI_GROQ_ENDPOINT (default: https://api.groq.com/openai/v1/chat/completions)
+    QUEUEBASH_AI_CEREBRAS_MODEL (default: gpt-oss-120b)
+    QUEUEBASH_AI_CEREBRAS_ENDPOINT (default: https://api.cerebras.ai/v1/chat/completions)
+
+  OpenAI-compatible endpoint configuration:
+    QUEUEBASH_AI_OPENAI_COMPAT_ENDPOINT (default: http://127.0.0.1:8000/v1/chat/completions)
+    QUEUEBASH_AI_OPENAI_COMPAT_API_KEY_FILE or QUEUEBASH_AI_OPENAI_COMPAT_API_KEY (optional for local endpoints)
+
+Important:
+  queue ask is advisory only. It cannot approve, submit, cancel, sign, override,
+  patch, or execute jobs. Provider output is data and is never evaluated as shell.
+
+Default contexts:
+  docs,commands,classes,assets,providers
+
+Additional safe implementation context:
+  tests,implementation_tests
+
+Optional contexts requiring explicit policy/env allowance:
+  queue_status                              require QUEUEBASH_AI_ALLOW_QUEUE_STATUS=1
+  job_status                                require QUEUEBASH_AI_ALLOW_JOB_STATUS=1
+  job_metadata                              require QUEUEBASH_AI_ALLOW_JOB_METADATA=1
+  job_tail                                  require QUEUEBASH_AI_ALLOW_JOB_TAIL=1
+  policies,policy_definitions,policy_details require QUEUEBASH_AI_ALLOW_POLICY_DETAILS=1
+  profile_details                            require QUEUEBASH_AI_ALLOW_POLICY_DETAILS=1
+
+Default queue/job context is redacted. Command payloads and stdout/stderr are not
+included unless a separately gated job_tail context is explicitly allowed.
+EOH
+                return 0
+                ;;
+            --)
+                shift
+                question_parts+=("$@")
+                break
+                ;;
+            *)
+                question_parts+=("$1")
+                shift
+                ;;
+        esac
+    done
+    local question="${question_parts[*]}"
+    if [[ -z "$question" ]]; then
+        echo "Usage: queue ask [--provider NAME] [--context csv] [--model NAME] [--live] [--json] \"question\"" >&2
+        return 2
+    fi
+    if [[ "${QUEUEBASH_AI_ASK_ENABLED:-1}" == "0" ]]; then
+        _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "ai_ask_disabled" "$contexts" "" "$contexts" 0
+        echo "queue ask: blocked by policy: ai_ask_disabled" >&2
+        return 1
+    fi
+
+    local safety_record safety_category safety_severity safety_decision safety_reporter_event safety_answer
+    safety_record="$(_queue_ai_safety_classify_text "$question")"
+    IFS='|' read -r safety_category safety_severity safety_decision safety_reporter_event <<< "$safety_record"
+
+    if [[ "${safety_category:-benign}" == "destructive_operation" ]]; then
+        safety_answer="$(_queue_ai_high_risk_operation_response_text "$question")"
+        _queue_ai_safety_event_write "$provider" "$question" "$safety_category" "${safety_severity:-high}" "${safety_decision:-govern_continue_safe_help}" "${safety_reporter_event:-advisory_high_risk_operation}" false false "advisory_high_risk_operation"
+        _queue_ai_audit_write "$provider" "$question" "allow" "governed" "ai_high_risk_operation" "$contexts" "$contexts" "" "${#safety_answer}" "" 0 true false ""
+        if [[ "$json" -eq 1 ]]; then
+            printf '{'
+            printf '"schema":"queuebash.ai_advisory.high_risk_response.v1"'
+            printf ',"operation":"ai.ask"'
+            printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+            printf ',"category":"%s"' "$(_queue_json_escape "$safety_category")"
+            printf ',"severity":"%s"' "$(_queue_json_escape "${safety_severity:-high}")"
+            printf ',"policy_decision":"%s"' "$(_queue_json_escape "${safety_decision:-govern_continue_safe_help}")"
+            printf ',"reporter_event":"%s"' "$(_queue_json_escape "${safety_reporter_event:-advisory_high_risk_operation}")"
+            printf ',"ticket_requested":false'
+            printf ',"ticket_created":false'
+            printf ',"provider_execution":"governed_local_high_risk_operation_advisory"'
+            printf ',"advisory_only":true'
+            printf ',"answer_markdown":"%s"' "$(_queue_json_escape "$safety_answer")"
+            printf '}\n'
+        else
+            printf '%s\n' "$safety_answer"
+        fi
+        return 0
+    fi
+
+    if [[ "${safety_category:-benign}" != "benign" ]]; then
+        safety_answer="$(_queue_ai_safety_response_text "$question" "$safety_category")"
+        _queue_ai_safety_event_write "$provider" "$question" "$safety_category" "${safety_severity:-high}" "${safety_decision:-refuse_continue_safe_help}" "${safety_reporter_event:-ai_safety_alert}" false false
+        _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "ai_safety_${safety_category}" "$contexts" "" "$contexts" 0
+        if [[ "$json" -eq 1 ]]; then
+            printf '{'
+            printf '"schema":"queuebash.ai_advisory.safety_response.v1"'
+            printf ',"operation":"ai.ask"'
+            printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+            printf ',"category":"%s"' "$(_queue_json_escape "$safety_category")"
+            printf ',"severity":"%s"' "$(_queue_json_escape "${safety_severity:-high}")"
+            printf ',"policy_decision":"%s"' "$(_queue_json_escape "${safety_decision:-refuse_continue_safe_help}")"
+            printf ',"reporter_event":"%s"' "$(_queue_json_escape "${safety_reporter_event:-ai_safety_alert}")"
+            printf ',"ticket_requested":false'
+            printf ',"ticket_created":false'
+            printf ',"provider_execution":"blocked_by_local_safety_classifier"'
+            printf ',"advisory_only":true'
+            printf ',"answer_markdown":"%s"' "$(_queue_json_escape "$safety_answer")"
+            printf '}\n'
+        else
+            printf '%s\n' "$safety_answer"
+        fi
+        return 1
+    fi
+
+    local IFS=','
+    local requested_list=($contexts)
+    unset IFS
+    local allowed=() denied=() requested_clean=() ctx
+    for ctx in "${requested_list[@]}"; do
+        ctx="${ctx// /}"
+        [[ -z "$ctx" ]] && continue
+        requested_clean+=("$ctx")
+        if _queue_ai_context_allowed "$ctx"; then
+            allowed+=("$ctx")
+        else
+            denied+=("$ctx")
+        fi
+    done
+
+    local requested_s allowed_s denied_s qhash bundle_hash subject ts response_len provider_execution
+    local dynamic_context_text dynamic_context_hash job_ids_s job_context_collected queue_status_collected tail_included
+    requested_s="${requested_clean[*]}"
+    allowed_s="${allowed[*]}"
+    denied_s="${denied[*]}"
+    qhash="$(printf '%s' "$question" | sha256sum | awk '{print $1}')"
+    subject="${QUEUEBASH_SUBMITTER:-$(id -un 2>/dev/null || echo unknown)}"
+    ts="$(_queue_now_iso 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+    response_len=0
+    provider_execution="not_implemented_contract_only"
+    job_ids_s="$(_queue_ai_detect_job_ids "$question" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+
+    if [[ "$provider" == "fixture" && "$live" -eq 0 ]]; then
+        local source_dir helper tmpdir req_file resp_file helper_rc provider_timeout response_schema
+        source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
+        helper="$source_dir/providers.d/ask/fixture.sh"
+        if [[ ! -x "$helper" ]]; then
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "fixture_provider_missing" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" 0 false false ""
+            echo "queue ask: fixture provider helper missing" >&2
+            return 1
+        fi
+        tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/queue-ai-fixture.XXXXXX")" || return 1
+        req_file="$tmpdir/request.json"
+        resp_file="$tmpdir/response.json"
+        {
+            printf '{'
+            printf '"schema":"queuebash.ask_provider.request.v1"'
+            printf ',"timestamp":"%s"' "$(_queue_json_escape "$ts")"
+            printf ',"operation":"ai.ask"'
+            printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+            printf ',"provider":"fixture"'
+            [[ -n "$model" ]] && printf ',"model":"%s"' "$(_queue_json_escape "$model")"
+            printf ',"question":"%s"' "$(_queue_json_escape "$question")"
+            printf ',"question_sha256":"%s"' "$(_queue_json_escape "$qhash")"
+            printf ',"question_redacted":"%s"' "$(_queue_json_escape "$(_queue_ai_redact_question "$question")")"
+            printf ',"context_requested":"%s"' "$(_queue_json_escape "$requested_s")"
+            printf ',"context_allowed":"%s"' "$(_queue_json_escape "$allowed_s")"
+            printf ',"context_denied":"%s"' "$(_queue_json_escape "$denied_s")"
+            printf ',"job_ids_detected":"%s"' "$(_queue_json_escape "$job_ids_s")"
+            printf ',"live_requested":false'
+            printf ',"redactions_applied":true'
+            printf ',"advisory_only":true'
+            printf '}\n'
+        } > "$req_file"
+        provider_timeout="${QUEUEBASH_ASK_PROVIDER_TIMEOUT_SECONDS:-10}"
+        if command -v timeout >/dev/null 2>&1; then
+            timeout "$provider_timeout" "$helper" --request-json "$req_file" --output-json "$resp_file"
+            helper_rc=$?
+        else
+            "$helper" --request-json "$req_file" --output-json "$resp_file"
+            helper_rc=$?
+        fi
+        if [[ "$helper_rc" -ne 0 || ! -s "$resp_file" ]]; then
+            rm -rf "$tmpdir"
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "fixture_provider_failed_or_timed_out" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" 0 false false ""
+            echo "queue ask: fixture provider failed or timed out" >&2
+            return 1
+        fi
+        response_len="$(wc -c < "$resp_file" | tr -d '[:space:]')"
+        if ! grep -q '"schema":"queuebash.ask_provider.response.v1"' "$resp_file"; then
+            rm -rf "$tmpdir"
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "fixture_provider_bad_schema" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" 0 false false ""
+            echo "queue ask: fixture provider returned bad schema" >&2
+            return 1
+        fi
+        _queue_ai_audit_write "$provider" "$question" "allow" "answered" "fixture_provider" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" 0 false false ""
+        if [[ "$json" -eq 1 ]]; then
+            cat "$resp_file"
+            printf '\n'
+        else
+            echo "Fixture ask provider response. No live provider call was performed."
+        fi
+        rm -rf "$tmpdir"
+        return 0
+    fi
+
+    dynamic_context_text="$(_queue_ai_build_dynamic_context "$question" "$allowed_s" "$denied_s")"
+    dynamic_context_hash="$(printf '%s' "$dynamic_context_text" | sha256sum | awk '{print $1}')"
+    bundle_hash="$(printf '%s|%s|%s|%s|%s' "$provider" "$requested_s" "$allowed_s" "$denied_s" "$dynamic_context_hash" | sha256sum | awk '{print $1}')"
+    job_context_collected="$(printf '%s\n' "$dynamic_context_text" | awk -F': ' '/job_context_collected:/ {v=$2} END {print v+0}')"
+    queue_status_collected="$(printf '%s\n' "$dynamic_context_text" | awk -F': ' '/queue_status_collected:/ {v=$2} END {print v+0}')"
+    tail_included="$(printf '%s\n' "$dynamic_context_text" | awk -F': ' '/tail_included:/ {v=$2} END {if (v=="true") print "true"; else print "false"}')"
+
+    if [[ "$live" -eq 1 ]]; then
+        provider_execution="live_provider_requested"
+        if [[ "${QUEUEBASH_AI_LIVE_ENABLED:-0}" != "1" ]]; then
+            _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_ai_provider_not_enabled" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+            echo "queue ask: blocked by policy: live_ai_provider_not_enabled" >&2
+            echo "hint: export QUEUEBASH_AI_LIVE_ENABLED=1 or prefix the command with QUEUEBASH_AI_LIVE_ENABLED=1" >&2
+            return 1
+        fi
+        if [[ "$provider" != "ollama" && "$provider" != "gemini" && "$provider" != "openai" && "$provider" != "anthropic" && "$provider" != "watsonx" && "$provider" != "openai_compat" && "$provider" != "mistral" && "$provider" != "deepseek" && "$provider" != "groq" && "$provider" != "cerebras" ]]; then
+            _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_provider_not_supported" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+            echo "queue ask: blocked by policy: live_provider_not_supported: $provider" >&2
+            return 1
+        fi
+        local helper tmpdir req_file resp_file helper_rc helper_name provider_reason success_reason default_model
+        if [[ "$provider" == "ollama" ]]; then
+            helper="${QUEUEBASH_AI_OLLAMA_HELPER:-}"
+            helper_name="queue-ai-ask-ollama"
+            default_model="llama3"
+            success_reason="live_ollama_provider"
+        elif [[ "$provider" == "gemini" ]]; then
+            helper="${QUEUEBASH_AI_GEMINI_HELPER:-}"
+            helper_name="queue-ai-ask-gemini"
+            default_model="${QUEUEBASH_AI_GEMINI_MODEL:-gemini-2.5-flash}"
+            success_reason="live_gemini_provider"
+        elif [[ "$provider" == "openai" ]]; then
+            helper="${QUEUEBASH_AI_OPENAI_HELPER:-}"
+            helper_name="queue-ai-ask-openai"
+            default_model="${QUEUEBASH_AI_OPENAI_MODEL:-gpt-4.1-mini}"
+            success_reason="live_openai_provider"
+        elif [[ "$provider" == "anthropic" ]]; then
+            helper="${QUEUEBASH_AI_ANTHROPIC_HELPER:-}"
+            helper_name="queue-ai-ask-anthropic"
+            default_model="${QUEUEBASH_AI_ANTHROPIC_MODEL:-claude-sonnet-4-20250514}"
+            success_reason="live_anthropic_provider"
+        elif [[ "$provider" == "watsonx" ]]; then
+            helper="${QUEUEBASH_AI_WATSONX_HELPER:-}"
+            helper_name="queue-ai-ask-watsonx"
+            default_model="${QUEUEBASH_AI_WATSONX_MODEL:-ibm/granite-3-8b-instruct}"
+            success_reason="live_watsonx_provider"
+        elif [[ "$provider" == "mistral" ]]; then
+            helper="${QUEUEBASH_AI_MISTRAL_HELPER:-}"
+            helper_name="queue-ai-ask-mistral"
+            default_model="${QUEUEBASH_AI_MISTRAL_MODEL:-mistral-small-latest}"
+            success_reason="live_mistral_provider"
+        elif [[ "$provider" == "deepseek" ]]; then
+            helper="${QUEUEBASH_AI_DEEPSEEK_HELPER:-}"
+            helper_name="queue-ai-ask-deepseek"
+            default_model="${QUEUEBASH_AI_DEEPSEEK_MODEL:-deepseek-v4-flash}"
+            success_reason="live_deepseek_provider"
+        elif [[ "$provider" == "groq" ]]; then
+            helper="${QUEUEBASH_AI_GROQ_HELPER:-}"
+            helper_name="queue-ai-ask-groq"
+            default_model="${QUEUEBASH_AI_GROQ_MODEL:-llama-3.3-70b-versatile}"
+            success_reason="live_groq_provider"
+        elif [[ "$provider" == "cerebras" ]]; then
+            helper="${QUEUEBASH_AI_CEREBRAS_HELPER:-}"
+            helper_name="queue-ai-ask-cerebras"
+            default_model="${QUEUEBASH_AI_CEREBRAS_MODEL:-gpt-oss-120b}"
+            success_reason="live_cerebras_provider"
+        else
+            helper="${QUEUEBASH_AI_OPENAI_COMPAT_HELPER:-}"
+            helper_name="queue-ai-ask-openai-compat"
+            default_model="${QUEUEBASH_AI_OPENAI_COMPAT_MODEL:-local-model}"
+            success_reason="live_openai_compat_provider"
+        fi
+        if [[ -z "$helper" ]]; then
+            local source_dir
+            source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
+            if [[ -x "$source_dir/bin/$helper_name" ]]; then
+                helper="$source_dir/bin/$helper_name"
+            else
+                helper="$(command -v "$helper_name" 2>/dev/null || true)"
+            fi
+        fi
+        if [[ -z "$helper" || ! -x "$helper" ]]; then
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "${provider}_helper_missing" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+            echo "queue ask: $provider helper missing" >&2
+            return 1
+        fi
+        tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/queue-ai-ask.XXXXXX")" || return 1
+        req_file="$tmpdir/request.json"
+        resp_file="$tmpdir/response.json"
+        {
+            printf '{'
+            printf '"schema":"queuebash.ai_advisory.request.v1"'
+            printf ',"timestamp":"%s"' "$(_queue_json_escape "$ts")"
+            printf ',"operation":"ai.ask"'
+            printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+            printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+            printf ',"model":"%s"' "$(_queue_json_escape "${model:-$default_model}")"
+            printf ',"question":"%s"' "$(_queue_json_escape "$question")"
+            printf ',"question_sha256":"%s"' "$(_queue_json_escape "$qhash")"
+            printf ',"question_redacted":"%s"' "$(_queue_json_escape "$(_queue_ai_redact_question "$question")")"
+            printf ',"context_requested":"%s"' "$(_queue_json_escape "$requested_s")"
+            printf ',"context_allowed":"%s"' "$(_queue_json_escape "$allowed_s")"
+            printf ',"context_denied":"%s"' "$(_queue_json_escape "$denied_s")"
+            printf ',"context_bundle_sha256":"%s"' "$(_queue_json_escape "$bundle_hash")"
+            printf ',"dynamic_context_sha256":"%s"' "$(_queue_json_escape "$dynamic_context_hash")"
+            printf ',"dynamic_context_text":"%s"' "$(_queue_json_escape "$dynamic_context_text")"
+            printf ',"job_ids_detected":"%s"' "$(_queue_json_escape "$job_ids_s")"
+            printf ',"job_context_collected":%s' "${job_context_collected:-0}"
+            printf ',"queue_status_collected":%s' "${queue_status_collected:-0}"
+            printf ',"tail_included":%s' "$tail_included"
+            printf ',"redactions_applied":true'
+            printf ',"advisory_only":true'
+            printf '}\n'
+        } > "$req_file"
+        if "$helper" --request-json "$req_file" --output-json "$resp_file"; then
+            helper_rc=0
+        else
+            helper_rc=$?
+        fi
+        if [[ "$helper_rc" -ne 0 || ! -s "$resp_file" ]]; then
+            provider_reason="${provider}_provider_failed"
+            if [[ -s "$resp_file" ]]; then
+                provider_reason="$(python3 - "$resp_file" <<'PY' 2>/dev/null || printf 'provider_failed'
+import json,sys
+try:
+    j=json.load(open(sys.argv[1]))
+    print(j.get('reason') or j.get('decision') or 'provider_failed')
+except Exception:
+    print('provider_failed')
+PY
+)"
+            fi
+            rm -rf "$tmpdir"
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "$provider_reason" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+            echo "queue ask: $provider provider failed: $provider_reason" >&2
+            return 1
+        fi
+        response_len="$(python3 - "$resp_file" <<'PY' 2>/dev/null || echo 0
+import json,sys
+j=json.load(open(sys.argv[1]))
+print(len(j.get('answer_markdown','')))
+PY
+)"
+        _queue_ai_audit_write "$provider" "$question" "allow" "answered" "$success_reason" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+        if [[ "$json" -eq 1 ]]; then
+            cat "$resp_file"
+            printf '\n'
+        else
+            python3 - "$resp_file" <<'PY'
+import json,sys
+j=json.load(open(sys.argv[1]))
+print(j.get('answer_markdown',''))
+PY
+        fi
+        rm -rf "$tmpdir"
+        return 0
+    fi
+
+    _queue_ai_audit_write "$provider" "$question" "allow" "handoff" "contract_only_no_live_provider_call" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{'
+        printf '"schema":"queuebash.ai_advisory.request.v1"'
+        printf ',"timestamp":"%s"' "$(_queue_json_escape "$ts")"
+        printf ',"operation":"ai.ask"'
+        printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+        printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+        [[ -n "$model" ]] && printf ',"model":"%s"' "$(_queue_json_escape "$model")"
+        printf ',"question_sha256":"%s"' "$(_queue_json_escape "$qhash")"
+        printf ',"question_redacted":"%s"' "$(_queue_json_escape "$(_queue_ai_redact_question "$question")")"
+        printf ',"context_requested":"%s"' "$(_queue_json_escape "$requested_s")"
+        printf ',"context_allowed":"%s"' "$(_queue_json_escape "$allowed_s")"
+        printf ',"context_denied":"%s"' "$(_queue_json_escape "$denied_s")"
+        printf ',"context_bundle_sha256":"%s"' "$(_queue_json_escape "$bundle_hash")"
+        printf ',"dynamic_context_sha256":"%s"' "$(_queue_json_escape "$dynamic_context_hash")"
+        printf ',"dynamic_context_text":"%s"' "$(_queue_json_escape "$dynamic_context_text")"
+        printf ',"job_ids_detected":"%s"' "$(_queue_json_escape "$job_ids_s")"
+        printf ',"job_context_collected":%s' "${job_context_collected:-0}"
+        printf ',"queue_status_collected":%s' "${queue_status_collected:-0}"
+        printf ',"tail_included":%s' "$tail_included"
+        printf ',"redactions_applied":true'
+        printf ',"advisory_only":true'
+        printf ',"provider_execution":"%s"' "$(_queue_json_escape "$provider_execution")"
+        printf '}\n'
+    else
+        echo "queue ask advisory request"
+        echo "  provider:         $provider"
+        [[ -n "$model" ]] && echo "  model:            $model"
+        echo "  operation:        ai.ask"
+        echo "  advisory only:    yes"
+        echo "  question_sha256:  $qhash"
+        echo "  context allowed:  ${allowed_s:-none}"
+        echo "  context denied:   ${denied_s:-none}"
+        echo "  job ids detected: ${job_ids_s:-none}"
+        echo "  job context:      ${job_context_collected:-0} collected"
+        echo "  queue status:     ${queue_status_collected:-0} collected"
+        echo "  tail included:    $tail_included"
+        echo "  context bundle:   $bundle_hash"
+        echo "  provider call:    not implemented in this contract release"
+        echo "  audit log:        $(_queue_ai_audit_log_path)"
+    fi
+}
+
+_queue_help() {
+    cat <<'EOF'
+Usage:
+  queue [--dryrun] <command...>
+  queue submit <name> [--dryrun] [--priority N|-p N] [--on-success <cmd...>] [--on-retry-failure <cmd...>] [--on-failure <cmd...>] -- <command...>
+
+  queue list [--state all|pending|running|paused|done|failed|pol_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
+  queue ls   [--state all|pending|running|paused|done|failed|pol_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
+  queue find <text>
+  queue show <qid|exact-job-name> [--tail N|--full]
+  queue cleared [--json] [--state csv] [--limit N] [--since DATE]
+  queue tail <qid|exact-job-name>
+  queue pids <qid|exact-job-name>
+  queue metrics <qid|exact-job-name>
+  queue explain <qid|exact-job-name>
+  queue deps <qid|exact-job-name>
+  queue waiting
+  queue hooks <qid|exact-job-name>
+
+  queue onsuccess <qid|exact-job-name> -- <command...>
+  queue on-success <qid|exact-job-name> -- <command...>
+  queue onok <qid|exact-job-name> -- <command...>
+  queue onfailure <qid|exact-job-name> -- <command...>
+  queue on-failure <qid|exact-job-name> -- <command...>
+  queue onfail <qid|exact-job-name> -- <command...>
+
+  queue priority <qid|exact-job-name> <priority>
+  queue dynamic-prio <qid|exact-job-name> <priority> [--force] [--dryrun]
+  queue prio     <qid|exact-job-name> <priority> [--force]
+
+  queue pause   <qid|exact-job-name> [--force] [--dryrun]
+  queue unpause <qid|exact-job-name> [--dryrun]
+  queue resume  <qid|exact-job-name> [--dryrun]
+  queue release <qid|exact-job-name> [--dryrun]
+
+  queue delete   <qid|exact-job-name> [--force] [--dryrun]
+  queue rm       <qid|exact-job-name> [--force] [--dryrun]
+  queue undelete <qid|exact-job-name> [pending|done|failed] [--force]
+  queue restore  <qid|exact-job-name> [pending|done|failed] [--force] [--dryrun]
+
+  queue health [--fix] [--deep]
+  queue compress-logs
+  queue clean-logs [--dryrun] [--older-than AGE] [--state STATE] [--force]
+  queue stats [--name exact-job-name] [--today]
+  queue watch [--interval SEC]
+  queue events [--tail N]
+
+  queue draft list
+  queue draft show <draft-id>
+  queue draft create <name> [options] [--after-success QID] [--on-success <cmd...>] -- <command...>
+  queue draft create-from-job <qid>
+  queue draft submit <draft-id>
+  queue draft ready|abandon <draft-id>
+
+  queue run [--workers N] [--detach] [--dryrun]
+  queue sentinel [--once] [--interval SEC] [--detach]
+  queue system-daemon [--once] [--interval SEC] [--detach] [--min-workers N]
+  queue start [--workers N]
+
+  queue clear done [--dryrun]
+  queue clear failed [--dryrun]
+  queue clear paused [--dryrun]
+  queue clear deleted [--dryrun]
+  queue clear all [--dryrun]
+
+  queue env list
+  queue env show NAME [--json]
+  queue env validate NAME [--json]
+
+  queue ask [--provider NAME] [--context csv] [--json] "question"
+  queue ask providers [--json]
+  queue ask provider explain PROVIDER [--json]
+  queue remote list|show SERVICE|SERVICE health|queue status|job explain JOBID
+  queue remote-admin --actor ACTOR validate|config|client|acl|secret|audit ...
+  queue acl help|check|explain|set|remove
+  queue key-provider help|lookup|registry|register|revoke|rotate
+
+  queue limits
+  queue version
+  queue help
+
+Matching rules:
+  Exact QID                 -> one job
+  Unique QID prefix         -> one job
+  Ambiguous QID prefix      -> refused unless the command supports --force
+  Exact job name            -> group operation for priority/show/hooks/pause/delete/undelete
+  Job-name prefix/substr    -> never used for mutating commands
+
+Runtime PID tracking:
+  Running jobs store RUN_PID, RUN_PGID, and RUN_STARTED_AT in the job file.
+  queue pids <job> shows the recorded PID and any live child processes.
+  queue cancel/kill use RUN_PGID where safe to signal the process group.
+
+Health/recovery:
+  queue health reports queue integrity, dead worker PID files, and stale running jobs.
+  queue sentinel runs a cheap control-plane loop: policy gate, stale-worker cleanup, stale-running repair, and deadline escalation only.
+  queue system-daemon is the root multi-user control loop; it delegates per-user queue daemons and never runs user jobs as root.
+  queue health --fix creates missing directories, removes dead worker records, and moves stale running jobs to interrupted.
+
+Structured audit:
+  State transitions and operator actions append JSONL records to ~/.queuebash/events.jsonl.
+  queue stats summarizes queue states; queue events shows recent audit records.
+  queue ask appends AI advisory audit records to ~/.queuebash/logs/ai-advisory.audit.jsonl by default.
+
+States:
+  pending   waiting to run
+  running   currently claimed by a worker
+  paused    held; workers will not run it
+  done      completed successfully
+  failed    completed with non-zero exit
+  interrupted worker/session died while job was running
+  cancelled operator cancelled or killed
+  deleted   marked deleted; can be undeleted
+
+Batch 2:
+  --retries N and --backoff SEC automatically requeue transient failures.
+  --cpu PCT and --mem SIZE request systemd-run resource limits when available.
+
+Priority:
+  Higher number runs first.
+  Suggested: 100 urgent, 50 high, 10 normal/default, 0 low.
+  Exact job name updates all jobs with that exact name.
+
+Log compression:
+  Completed job logs are gzipped by default: QUEUEBASH_GZIP_LOGS=1.
+  Set QUEUEBASH_GZIP_LOGS=0 to keep completed logs as plain .log files.
+  queue show/tail read .log and .log.gz automatically.
+
+Log cap enforcement:
+  Default max log size is QUEUEBASH_MAX_LOG_SIZE_BYTES or 50MB.
+  Default overflow policy is stderr-only: stdout is suppressed at the first cap,
+  stderr continues until the next cap, and both streams are drained so the child
+  process does not receive a broken pipe.
+  Use --log-overflow kill for strict termination behaviour.
+  Use --allow-large-log or --max-log-size SIZE when huge logs are intentional.
+
+Log safety:
+  queue submit accepts --max-log-size SIZE and --log-overflow stderr-only|kill|allow.
+  Default is QUEUEBASH_MAX_LOG_SIZE_BYTES or 52428800 bytes.
+
+Execution summaries:
+  Completed jobs append EXIT_CODE, DURATION_SECONDS, LOG_BYTES, and EXEC_FINISHED_AT.
+
+Dry run:
+  queue --dryrun <command...> previews a mutating action without changing files.
+  Most mutating commands also accept --dryrun after the command or at the end.
+
+Cancellation semantics:
+  queue cancel/kill move jobs to cancelled and do NOT run ON_FAILURE.
+  ON_FAILURE is only for a command that exits non-zero by itself.
+  Future ON_CANCEL support should be separate from ON_FAILURE.
+
+Hooks:
+  Hooks run after the main job has moved to done or failed.
+  Use command + arguments, not a single quoted executable name.
+
+Examples:
+  queue submit unzip001 --priority 50 -- unzip ../file.zip
+
+  queue submit ingest_tblisi -- \
+    python forensic_helper.py --ingest ./dir --yaml tblisi.yaml
+
+  queue onsuccess ingest_tblisi -- echo complete
+  queue onfailure ingest_tblisi -- echo failed
+  queue hooks ingest_tblisi
+
+  queue list --state pending
+  queue list --state paused
+  queue list --name tblisi
+  queue list --filter unzip
+
+  queue show unzip001
+  queue tail unzip001
+  queue pids unzip001
+  queue stats
+  queue events --tail 20
+  queue ask --provider watson --context docs,commands,classes "How do I run a GDPR-safe overnight job?"
+  queue priority unzip001 100
+
+  queue pause unzip001
+  queue unpause unzip001
+
+  queue delete unzip001
+  queue undelete unzip001
+  queue resubmit failed_job_name
+  queue reevaluate [--all|QID] [--dryrun]
+  queue backup [create] [FILE.tar.gz] [--force]
+  queue backup restore FILE.tar.gz --to DIRECTORY [--force]
+  queue clear deleted
+
+  queue run --workers 4
+
+Queue manager:
+  queuemgr
+  queuemgr --state pending
+  queuemgr --name tblisi
+  queuemgr --filter unzip
+
+  Inside queuemgr:
+    r     run one worker in foreground
+    rd    dryrun one worker
+    r4    run four workers in foreground
+    rd4   dryrun four workers
+    start detached workers from the shell with: queue start --workers 4
+    sentinel control-plane loop with: queue sentinel --detach --interval 30
+
+Notes:
+  Jobs are stored in ~/.queuebash by default.
+  Set QUEUEBASH_ROOT=/some/path to use another queue root.
+
+  For shell syntax in hooks, use bash -c:
+    queue onsuccess myjob -- bash -c 'echo complete && date'
+EOF
+}
+
+# -------------------------------------------------------------------
+# Submit-time name binding for env-drop inheritance
+# -------------------------------------------------------------------
+
+_queue_job_name_from_file_source() {
+    local f="$1"
+    (
+        source "$f" >/dev/null 2>&1 || exit 1
+        printf '%s\n' "${JOB_NAME:-}"
+    )
+}
+
+_queue_find_exact_name_qids_in_state() {
+    local name="$1"
+    local state="$2"
+    local root="$(_queue_root)"
+    local f jname
+
+    shopt -s nullglob
+    for f in "$root/$state"/*.job; do
+        [[ -e "$f" ]] || continue
+        jname="$(_queue_job_name_from_file_source "$f" 2>/dev/null || true)"
+        if [[ "$jname" == "$name" ]]; then
+            basename "$f" .job
+        fi
+    done
+    shopt -u nullglob
+}
+
+_queue_bind_submit_reference_to_qid() {
+    local token="$1"
+    local root="$(_queue_root)"
+    local matches=()
+    local qid
+
+    [[ -z "$token" ]] && return 1
+
+    # Already a visible QID.
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ -f "$root/$state/$token.job" ]]; then
+            printf '%s\n' "$token"
+            return 0
+        fi
+    done
+
+    # Prefer exactly one not-yet-complete/live match. This is the common pipeline:
+    # submit producer; submit consumer --inherit-env-from producer.
+    for state in pending running paused; do
+        while IFS= read -r qid; do
+            [[ -n "$qid" ]] && matches+=( "$qid" )
+        done < <(_queue_find_exact_name_qids_in_state "$token" "$state")
+    done
+
+    if [[ "${#matches[@]}" -eq 1 ]]; then
+        printf '%s\n' "${matches[0]}"
+        return 0
+    fi
+    if [[ "${#matches[@]}" -gt 1 ]]; then
+        echo "queue submit: name '$token' matches multiple pending/running jobs; use a QID" >&2
+        return 2
+    fi
+
+    # If there is no active match, allow exactly one successful historical match.
+    while IFS= read -r qid; do
+        [[ -n "$qid" ]] && matches+=( "$qid" )
+    done < <(_queue_find_exact_name_qids_in_state "$token" "done")
+
+    if [[ "${#matches[@]}" -eq 1 ]]; then
+        printf '%s\n' "${matches[0]}"
+        return 0
+    fi
+    if [[ "${#matches[@]}" -gt 1 ]]; then
+        echo "queue submit: name '$token' matches multiple completed jobs; use a QID" >&2
+        return 2
+    fi
+
+    # No current match. Keep the original token so legacy dependency waiting can
+    # still handle producer submitted later. Env-drop inheritance will resolve at
+    # dispatch if the name becomes unique.
+    printf '%s\n' "$token"
+    return 0
+}
+
+_queue_array_contains() {
+    local needle="$1"
+    shift
+    local x
+    for x in "$@"; do
+        [[ "$x" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
+
+# -------------------------------------------------------------------
+# Module enable/disable helpers
+# -------------------------------------------------------------------
+
+_queue_module_valid_kind() {
+    case "${1:-}" in class|classes|asset|assets|cap|caps|provider|providers) return 0 ;; *) return 1 ;; esac
+}
+
+_queue_module_normal_kind() {
+    case "${1:-}" in
+        class|classes) echo class ;;
+        asset|assets) echo asset ;;
+        cap|caps) echo cap ;;
+        provider|providers) echo provider ;;
+        *) return 1 ;;
+    esac
+}
+
+_queue_module_paths() {
+    local kind="$1" name="$2" root="$(_queue_root)" active disabled
+    case "$kind" in
+        class) active="$root/classes/$name.env"; disabled="$root/classes/.disabled/$name.env" ;;
+        asset) active="$root/assets.d/$name.sh"; disabled="$root/assets.d/.disabled/$name.sh" ;;
+        cap) active="$root/caps.d/$name.sh"; disabled="$root/caps.d/.disabled/$name.sh" ;;
+        provider) active="$root/policy/providers.d/$name.env"; disabled="$root/policy/providers.d/.disabled/$name.env" ;;
+        *) return 1 ;;
+    esac
+    printf '%s\t%s\n' "$active" "$disabled"
+}
+
+_queue_module_status() {
+    local kind="$1" name="$2" paths active disabled
+    paths="$(_queue_module_paths "$kind" "$name")" || return 1
+    active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"
+    if [[ -e "$active" ]]; then echo enabled; return 0; fi
+    if [[ -e "$disabled" ]]; then echo disabled; return 0; fi
+    echo missing; return 1
+}
+
+_queue_module_disable() {
+    local kind="$(_queue_module_normal_kind "${1:-}")" name="${2:-}" force="${3:-}" paths active disabled ddir used
+    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue modules disable class|asset|cap|provider NAME [--force]" >&2; return 2; }
+    paths="$(_queue_module_paths "$kind" "$name")" || return 2
+    active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"; ddir="$(dirname "$disabled")"
+    [[ -f "$active" ]] || { [[ -f "$disabled" ]] && { echo "$kind module already disabled: $name"; return 0; }; echo "queue modules disable: not found: $kind $name" >&2; return 1; }
+    if [[ "$kind" == "asset" && "$force" != "--force" ]]; then
+        used="$(_queue_asset_family_is_used_by_classes "$name" || true)"
+        if [[ -n "$used" ]]; then
+            echo "queue modules disable: refusing to disable asset used by classes; use --force to override" >&2
+            echo "$used" >&2
+            return 3
+        fi
+    fi
+    mkdir -p "$ddir"
+    mv "$active" "$disabled" || return 1
+    echo "Disabled $kind module: $name"
+    echo "Moved to: $disabled"
+    _queue_log_event "module_disabled" "$name" "$name" "${kind}s" "path=$active disabled=$disabled" 2>/dev/null || true
+}
+
+_queue_module_enable() {
+    local kind="$(_queue_module_normal_kind "${1:-}")" name="${2:-}" paths active disabled
+    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue modules enable class|asset|cap|provider NAME" >&2; return 2; }
+    paths="$(_queue_module_paths "$kind" "$name")" || return 2
+    active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"
+    [[ ! -f "$active" ]] || { echo "$kind module already enabled: $name"; return 0; }
+    [[ -f "$disabled" ]] || { echo "queue modules enable: disabled module not found: $kind $name" >&2; return 1; }
+    case "$kind" in
+        class) _queue_class_validate_file "$name" "$disabled" || return $? ;;
+        asset) _queue_asset_replace_validate_source "$name" "$disabled" || return $? ;;
+        cap) bash -n "$disabled" || return 3 ;;
+        provider) bash -n "$disabled" || return 3 ;;
+    esac
+    mv "$disabled" "$active" || return 1
+    chmod +x "$active" 2>/dev/null || true
+    echo "Enabled $kind module: $name"
+    echo "Restored to: $active"
+    _queue_log_event "module_enabled" "$name" "$name" "${kind}s" "path=$active" 2>/dev/null || true
+}
+
+_queue_modules_list() {
+    local root="$(_queue_root)" f name
+    _queue_prune_obsolete_asset_plugins >/dev/null 2>&1 || true
+    mkdir -p \
+        "$root/classes/.disabled" \
+        "$root/assets.d/.disabled" \
+        "$root/caps.d/.disabled" \
+        "$root/policy/providers.d/.disabled"
+    for f in "$root/classes"/*.env; do [[ -f "$f" ]] && printf 'class\t%s\tenabled\t%s\n' "$(basename "$f" .env)" "$f"; done
+    for f in "$root/classes/.disabled"/*.env; do [[ -f "$f" ]] && printf 'class\t%s\tdisabled\t%s\n' "$(basename "$f" .env)" "$f"; done
+    for f in "$root/assets.d"/*.sh; do [[ -f "$f" ]] && printf 'asset\t%s\tenabled\t%s\n' "$(basename "$f" .sh)" "$f"; done
+    for f in "$root/assets.d/.disabled"/*.sh; do [[ -f "$f" ]] && printf 'asset\t%s\tdisabled\t%s\n' "$(basename "$f" .sh)" "$f"; done
+    for f in "$root/caps.d"/*.sh; do [[ -f "$f" ]] && printf 'cap\t%s\tenabled\t%s\n' "$(basename "$f" .sh)" "$f"; done
+    for f in "$root/caps.d/.disabled"/*.sh; do [[ -f "$f" ]] && printf 'cap\t%s\tdisabled\t%s\n' "$(basename "$f" .sh)" "$f"; done
+    for f in "$root/policy/providers.d"/*.env; do [[ -f "$f" ]] && printf 'provider\t%s\tenabled\t%s\n' "$(basename "$f" .env)" "$f"; done
+    for f in "$root/policy/providers.d/.disabled"/*.env; do [[ -f "$f" ]] && printf 'provider\t%s\tdisabled\t%s\n' "$(basename "$f" .env)" "$f"; done
+    return 0
+}
+
+_queue_modules_explain() {
+    local spec="${1:-}" kind name paths active disabled status
+    [[ "$spec" == *:* ]] || { echo "Usage: queue modules explain class:NAME|asset:NAME|cap:NAME|provider:NAME" >&2; return 2; }
+    kind="$(_queue_module_normal_kind "${spec%%:*}")" || { echo "queue modules explain: invalid kind: ${spec%%:*}" >&2; return 2; }
+    name="${spec#*:}"
+    paths="$(_queue_module_paths "$kind" "$name")" || return 2
+    active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"; status="$(_queue_module_status "$kind" "$name" 2>/dev/null || echo missing)"
+    echo "MODULE EXPLAIN: $kind:$name"
+    echo "kind:      $kind"
+    echo "name:      $name"
+    echo "status:    $status"
+    echo "active:    $active"
+    echo "disabled:  $disabled"
+    echo
+    case "$kind" in
+        class) [[ -f "$active" ]] && _queue_class_explain "$name" || { [[ -f "$disabled" ]] && sed 's/^/  /' "$disabled" || true; } ;;
+        asset) [[ -f "$active" ]] && _queue_asset_explain "$name" || { [[ -f "$disabled" ]] && sed 's/^/  /' "$disabled" || true; } ;;
+        cap|provider)
+            local src=""
+            if [[ -f "$active" ]]; then
+                src="$active"
+            elif [[ -f "$disabled" ]]; then
+                src="$disabled"
+            fi
+            if [[ -n "$src" ]]; then
+                echo "Contents:"
+                sed 's/^/  /' "$src" || true
+            fi
+            ;;
+    esac
+}
+
+
+
+# [AI-PATCH | 2026-05-27 22:20:00 BST]: 0.18.15: key provider registry contract.
+_queue_key_provider_known_operations_text() {
+    cat <<'EOF'
+profile.approve
+profile.sign
+profile.verify
+authorisation.generate
+authorisation.verify
+code.sign
+code.verify
+trust-provider.add
+trust-provider.revoke
+trust-provider.verify
+key.lookup
+key.delegate
+key.revoke
+key.rotate
+policy.override
+module.configure
+ai.ask
+EOF
+}
+
+_queue_key_provider_help() {
+    cat <<'EOF'
+Usage:
+  queue key-provider help
+  queue key-provider operations
+  queue key-provider status [--json]
+  queue key-provider lookup SIGNER OPERATION RESOURCE [--json]
+  queue key-provider explain SIGNER OPERATION RESOURCE [--json]
+  queue key-provider registry [--json]
+  queue key-provider register SIGNER OPERATION RESOURCE PUBLIC_KEY_REF [--status active|revoked] [--delegation NAME] [--reason TEXT]
+  queue key-provider revoke SIGNER OPERATION RESOURCE [--reason TEXT]
+  queue key-provider rotate SIGNER OPERATION RESOURCE NEW_PUBLIC_KEY_REF [--reason TEXT]
+
+Contract:
+  Providers answer key lookup, signer delegation, revocation, and rotation questions.
+  Core enforces decisions; providers supply normalized data only and never shell.
+  Missing, malformed, or failed provider output fails closed for privileged operations.
+
+File provider:
+  QUEUEBASH_KEY_PROVIDER=file
+  QUEUEBASH_FILE_KEY_REGISTRY=$HOME/.queuebash/policy/keys/key_registry.tsv
+  QUEUEBASH_FILE_KEY_DEFAULT=deny
+EOF
+}
+
+_queue_key_provider_registry_path() {
+    printf '%s\n' "${QUEUEBASH_FILE_KEY_REGISTRY:-$(_queue_root)/policy/keys/key_registry.tsv}"
+}
+
+_queue_key_provider_active() {
+    case "${QUEUEBASH_KEY_PROVIDER:-}" in
+        file|file_key|file-key) return 0 ;;
+        "") return 1 ;;
+        *) return 2 ;;
+    esac
+}
+
+_queue_key_provider_safe_field() {
+    local v="${1:-}"
+    [[ -n "$v" ]] || return 1
+    [[ "$v" != *$'\t'* && "$v" != *$'\n'* && "$v" != *$'\r'* ]]
+}
+
+_queue_key_provider_json() {
+    local signer="${1:-}" operation="${2:-}" resource="${3:-}" decision="${4:-error}" reason="${5:-no_key_provider_active}"
+    local provider="${6:-${QUEUEBASH_KEY_PROVIDER:-contract}}" public_key_ref="${7:-}" status="${8:-unknown}" revoked="${9:-true}"
+    local delegation="${10:-}" evidence_json="${11:-[]}" fail_closed="${12:-true}" ttl_seconds="${13:-0}" cache_policy="${14:-no-store}" contract_only="${15:-false}"
+    printf '{'
+    printf '"schema":"queuebash.key_lookup_response.v1"'
+    printf ',"timestamp":"%s"' "$(_queue_json_escape "$(_queue_now_iso)")"
+    printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+    printf ',"signer":"%s"' "$(_queue_json_escape "$signer")"
+    printf ',"operation":"%s"' "$(_queue_json_escape "$operation")"
+    printf ',"resource":"%s"' "$(_queue_json_escape "$resource")"
+    printf ',"decision":"%s"' "$(_queue_json_escape "$decision")"
+    printf ',"reason":"%s"' "$(_queue_json_escape "$reason")"
+    printf ',"public_key_ref":"%s"' "$(_queue_json_escape "$public_key_ref")"
+    printf ',"status":"%s"' "$(_queue_json_escape "$status")"
+    printf ',"revoked":%s' "$revoked"
+    printf ',"delegation":"%s"' "$(_queue_json_escape "$delegation")"
+    printf ',"evidence":%s' "${evidence_json:-[]}"
+    printf ',"ttl_seconds":%s' "${ttl_seconds:-0}"
+    printf ',"cache_policy":"%s"' "$(_queue_json_escape "$cache_policy")"
+    printf ',"fail_closed":%s' "$fail_closed"
+    printf ',"contract_only":%s' "$contract_only"
+    printf '}\n'
+}
+
+_queue_key_provider_file_registry_rows_json() {
+    local file="$(_queue_key_provider_registry_path)" line_no=0 line signer op res pub status delegation reason first=1
+    printf '['
+    [[ -f "$file" ]] || { printf ']'; return 0; }
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_no=$((line_no + 1))
+        [[ -z "${line//[[:space:]]/}" || "${line:0:1}" == "#" ]] && continue
+        IFS=$'\t' read -r signer op res pub status delegation reason extra <<< "$line"
+        [[ -n "${signer:-}" && -n "${op:-}" && -n "${res:-}" && -n "${pub:-}" && -n "${status:-}" ]] || continue
+        [[ "$first" -eq 0 ]] && printf ','
+        first=0
+        printf '{"line":%s,"signer":"%s","operation":"%s","resource":"%s","public_key_ref":"%s","status":"%s","delegation":"%s","reason":"%s"}' \
+            "$line_no" "$(_queue_json_escape "$signer")" "$(_queue_json_escape "$op")" "$(_queue_json_escape "$res")" "$(_queue_json_escape "$pub")" "$(_queue_json_escape "$status")" "$(_queue_json_escape "${delegation:-}")" "$(_queue_json_escape "${reason:-}")"
+    done < "$file"
+    printf ']'
+}
+
+_queue_key_provider_file_lookup() {
+    local signer="${1:-}" operation="${2:-}" resource="${3:-}" json="${4:-0}"
+    local file line line_no=0 best_score=-1 best_line=0 best_signer best_op best_res best_pub best_status best_delegation best_reason malformed=0
+    file="$(_queue_key_provider_registry_path)"
+    if [[ ! -f "$file" ]]; then
+        _queue_key_provider_json "$signer" "$operation" "$resource" "error" "file_key_registry_not_found" "file" "" "missing" true "" "[{\"policy_file\":\"$(_queue_json_escape "$file")\"}]" true 0 "no-store" false
+        return 1
+    fi
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_no=$((line_no + 1))
+        [[ -z "${line//[[:space:]]/}" || "${line:0:1}" == "#" ]] && continue
+        local r_signer r_op r_res r_pub r_status r_delegation r_reason r_extra score=0
+        IFS=$'\t' read -r r_signer r_op r_res r_pub r_status r_delegation r_reason r_extra <<< "$line"
+        if [[ -n "${r_extra:-}" || -z "${r_signer:-}" || -z "${r_op:-}" || -z "${r_res:-}" || -z "${r_pub:-}" || -z "${r_status:-}" ]]; then
+            malformed=1; break
+        fi
+        case "$r_status" in active|revoked|rotated|expired|disabled) ;; *) malformed=1; break ;; esac
+        [[ "$r_signer" == "$signer" || "$r_signer" == "*" ]] || continue
+        [[ "$r_op" == "$operation" || "$r_op" == "*" ]] || continue
+        [[ "$r_res" == "$resource" || "$r_res" == "*" ]] || continue
+        [[ "$r_signer" == "$signer" ]] && score=$((score+4))
+        [[ "$r_op" == "$operation" ]] && score=$((score+2))
+        [[ "$r_res" == "$resource" ]] && score=$((score+1))
+        if [[ "$score" -gt "$best_score" ]]; then
+            best_score="$score"; best_line="$line_no"; best_signer="$r_signer"; best_op="$r_op"; best_res="$r_res"; best_pub="$r_pub"; best_status="$r_status"; best_delegation="${r_delegation:-}"; best_reason="${r_reason:-}"
+        fi
+    done < "$file"
+    if [[ "$malformed" -eq 1 ]]; then
+        _queue_key_provider_json "$signer" "$operation" "$resource" "error" "file_key_registry_malformed" "file" "" "malformed" true "" "[{\"policy_file\":\"$(_queue_json_escape "$file")\",\"line\":$line_no}]" true 0 "no-store" false
+        return 1
+    fi
+    if [[ "$best_score" -lt 0 ]]; then
+        _queue_key_provider_json "$signer" "$operation" "$resource" "deny" "no matching key trust rule" "file" "" "not_found" true "" "[{\"policy_file\":\"$(_queue_json_escape "$file")\"}]" true 0 "no-store" false
+        return 1
+    fi
+    local decision="allow" fail_closed=false revoked=false
+    case "$best_status" in
+        active) decision="allow"; fail_closed=false; revoked=false ;;
+        revoked|rotated|expired|disabled) decision="deny"; fail_closed=true; revoked=true ;;
+    esac
+    _queue_key_provider_json "$signer" "$operation" "$resource" "$decision" "${best_reason:-matched file key registry}" "file" "$best_pub" "$best_status" "$revoked" "$best_delegation" "[{\"policy_file\":\"$(_queue_json_escape "$file")\",\"line\":$best_line,\"matched_signer\":\"$(_queue_json_escape "$best_signer")\",\"matched_operation\":\"$(_queue_json_escape "$best_op")\",\"matched_resource\":\"$(_queue_json_escape "$best_res")\"}]" "$fail_closed" 0 "no-store" false
+    [[ "$decision" == "allow" ]]
+}
+
+_queue_key_provider_lookup() {
+    local signer="" operation="" resource="" json=0
+    signer="${1:-}"; operation="${2:-}"; resource="${3:-}"; shift 3 2>/dev/null || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --json|-j) json=1; shift ;;
+            *) echo "queue key-provider lookup: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$signer" && -n "$operation" && -n "$resource" ]] || { echo "Usage: queue key-provider lookup SIGNER OPERATION RESOURCE [--json]" >&2; return 2; }
+    case "${QUEUEBASH_KEY_PROVIDER:-}" in
+        file|file_key|file-key) _queue_key_provider_file_lookup "$signer" "$operation" "$resource" "$json" ;;
+        "") _queue_key_provider_json "$signer" "$operation" "$resource" "error" "no_key_provider_active" "contract" "" "unknown" true "" "[]" true 0 "no-store" true; return 1 ;;
+        *) _queue_key_provider_json "$signer" "$operation" "$resource" "error" "unsupported_key_provider" "${QUEUEBASH_KEY_PROVIDER}" "" "unknown" true "" "[]" true 0 "no-store" false; return 1 ;;
+    esac
+}
+
+_queue_key_provider_status() {
+    local json=0; [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]] && json=1
+    local provider="${QUEUEBASH_KEY_PROVIDER:-}" file="$(_queue_key_provider_registry_path)"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.key_provider_status.v1","provider":"%s","file_registry":"%s","active":%s,"contract_only":false}\n' "$(_queue_json_escape "${provider:-none}")" "$(_queue_json_escape "$file")" "$([[ "$provider" == "file" || "$provider" == "file_key" || "$provider" == "file-key" ]] && echo true || echo false)"
+    else
+        echo "key provider: ${provider:-none}"
+        echo "file registry: $file"
+        [[ -f "$file" ]] && echo "registry exists: yes" || echo "registry exists: no"
+    fi
+}
+
+_queue_key_provider_registry() {
+    local json=0; [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]] && json=1
+    local file="$(_queue_key_provider_registry_path)"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.key_registry.v1","provider":"file","policy_file":"%s","entries":' "$(_queue_json_escape "$file")"
+        _queue_key_provider_file_registry_rows_json
+        printf '}\n'
+    else
+        echo "file key registry: $file"
+        [[ -f "$file" ]] && sed -n '1,200p' "$file" || echo "not found"
+    fi
+}
+
+_queue_key_provider_file_mutate() {
+    local action="$1" signer="$2" operation="$3" resource="$4" public_key_ref="${5:-}" status="${6:-active}" delegation="${7:-}" reason="${8:-manual update}"
+    local file dir tmp bak line now
+    [[ "${QUEUEBASH_KEY_PROVIDER:-}" == "file" || "${QUEUEBASH_KEY_PROVIDER:-}" == "file_key" || "${QUEUEBASH_KEY_PROVIDER:-}" == "file-key" ]] || { echo "queue key-provider $action: mutation is implemented only for provider:file" >&2; return 2; }
+    for v in "$signer" "$operation" "$resource"; do _queue_key_provider_safe_field "$v" || { echo "queue key-provider $action: invalid field" >&2; return 2; }; done
+    if [[ "$action" != "revoke" ]]; then _queue_key_provider_safe_field "$public_key_ref" || { echo "queue key-provider $action: invalid public_key_ref" >&2; return 2; }; fi
+    _queue_key_provider_safe_field "$reason" || { echo "queue key-provider $action: invalid reason" >&2; return 2; }
+    file="$(_queue_key_provider_registry_path)"; dir="$(dirname "$file")"; mkdir -p "$dir" || return 1
+    tmp="$file.tmp.$$"; bak="$file.bak.$(date +%Y%m%d%H%M%S)"
+    [[ -f "$file" ]] && cp "$file" "$bak" 2>/dev/null || true
+    if [[ -f "$file" ]]; then
+        awk -F '\t' -v s="$signer" -v o="$operation" -v r="$resource" 'BEGIN{OFS="\t"} /^#/ || NF==0 {print; next} !($1==s && $2==o && $3==r) {print}' "$file" > "$tmp" || { rm -f "$tmp"; return 1; }
+    else
+        { echo '# signer<TAB>operation<TAB>resource<TAB>public_key_ref<TAB>status<TAB>delegation<TAB>reason'; } > "$tmp"
+    fi
+    case "$action" in
+        register|rotate)
+            [[ "$action" == "rotate" ]] && status="active"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$signer" "$operation" "$resource" "$public_key_ref" "$status" "$delegation" "$reason" >> "$tmp"
+            ;;
+        revoke)
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$signer" "$operation" "$resource" "${public_key_ref:-revoked}" "revoked" "$delegation" "$reason" >> "$tmp"
+            ;;
+    esac
+    mv "$tmp" "$file" || { rm -f "$tmp"; return 1; }
+    chmod 0644 "$file" 2>/dev/null || true
+    echo "updated file key registry: $file"
+}
+
+_queue_key_provider_register_revoke_rotate() {
+    local action="$1" signer="${2:-}" operation="${3:-}" resource="${4:-}" public_key_ref="${5:-}" status="active" delegation="" reason="manual update"
+    shift 4 2>/dev/null || true
+    [[ "$action" == "revoke" ]] || shift 1 2>/dev/null || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --status) status="${2:-active}"; shift 2 ;;
+            --delegation) delegation="${2:-}"; shift 2 ;;
+            --reason) reason="${2:-}"; shift 2 ;;
+            *) echo "queue key-provider $action: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    if [[ "$action" == "revoke" ]]; then
+        [[ -n "$signer" && -n "$operation" && -n "$resource" ]] || { echo "Usage: queue key-provider revoke SIGNER OPERATION RESOURCE [--reason TEXT]" >&2; return 2; }
+        _queue_key_provider_file_mutate revoke "$signer" "$operation" "$resource" "" revoked "$delegation" "$reason"
+    else
+        [[ -n "$signer" && -n "$operation" && -n "$resource" && -n "$public_key_ref" ]] || { echo "Usage: queue key-provider $action SIGNER OPERATION RESOURCE PUBLIC_KEY_REF [--reason TEXT]" >&2; return 2; }
+        _queue_key_provider_file_mutate "$action" "$signer" "$operation" "$resource" "$public_key_ref" "$status" "$delegation" "$reason"
+    fi
+}
+
+_queue_key_provider_command() {
+    case "${1:-help}" in
+        help|--help|-h|"") _queue_key_provider_help ;;
+        operations|ops) _queue_key_provider_known_operations_text ;;
+        status) shift; _queue_key_provider_status "$@" ;;
+        lookup|check) shift; _queue_key_provider_lookup "$@" ;;
+        explain) shift; _queue_key_provider_lookup "$@" ;;
+        registry|list|ls) shift; _queue_key_provider_registry "$@" ;;
+        register|add|set) shift; _queue_key_provider_register_revoke_rotate register "$@" ;;
+        revoke) shift; _queue_key_provider_register_revoke_rotate revoke "$@" ;;
+        rotate) shift; _queue_key_provider_register_revoke_rotate rotate "$@" ;;
+        *) echo "Usage: queue key-provider help|operations|status|lookup|explain|registry|register|revoke|rotate" >&2; return 2 ;;
+    esac
+}
+
+# [AI-PATCH | 2026-05-27 21:14:00 BST]: 0.18.13: enterprise ACL/provider contract command surface.
+_queue_acl_known_operations_text() {
+    cat <<'EOF'
+job.submit
+job.cancel
+job.delete
+queue.clear
+queue.health.fix
+profile.approve
+profile.sign
+profile.verify
+trust-provider.add
+trust-provider.revoke
+class.manage
+policy.override
+module.configure
+dev.extract
+dev.patch
+ai.ask
+ai.context.queue_status
+ai.context.job_metadata
+EOF
+}
+
+_queue_acl_operation_known() {
+    local op="${1:-}"
+    [[ -n "$op" ]] || return 1
+    _queue_acl_known_operations_text | grep -Fx -- "$op" >/dev/null 2>&1
+}
+
+_queue_acl_decision_json() {
+    local subject="${1:-}" operation="${2:-}" resource="${3:-}" decision="${4:-error}" reason="${5:-no_acl_provider_active}"
+    local provider="${6:-${QUEUEBASH_ACL_PROVIDER:-contract}}"
+    local evidence_json="${7:-[]}"
+    local fail_closed="${8:-true}"
+    local contract_only="${9:-false}"
+    local ttl_seconds="${10:-0}"
+    local cache_policy="${11:-no-store}"
+    printf '{'
+    printf '"schema":"queuebash.acl_decision.v1"'
+    printf ',"timestamp":"%s"' "$(_queue_json_escape "$(_queue_now_iso)")"
+    printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+    printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+    printf ',"operation":"%s"' "$(_queue_json_escape "$operation")"
+    printf ',"resource":"%s"' "$(_queue_json_escape "$resource")"
+    printf ',"decision":"%s"' "$(_queue_json_escape "$decision")"
+    printf ',"reason":"%s"' "$(_queue_json_escape "$reason")"
+    printf ',"evidence":%s' "${evidence_json:-[]}"
+    printf ',"ttl_seconds":%s' "${ttl_seconds:-0}"
+    printf ',"cache_policy":"%s"' "$(_queue_json_escape "$cache_policy")"
+    printf ',"fail_closed":%s' "${fail_closed:-true}"
+    printf ',"contract_only":%s' "${contract_only:-false}"
+    printf '}\n'
+}
+
+_queue_acl_file_policy_path() {
+    if [[ -n "${QUEUEBASH_FILE_ACL_POLICY:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_FILE_ACL_POLICY"
+        return 0
+    fi
+    printf '%s/policy/acl/file_acl.tsv\n' "$(_queue_root)"
+}
+
+_queue_acl_provider_active() {
+    case "${QUEUEBASH_ACL_PROVIDER:-}" in
+        file|file_acl) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_queue_acl_tsv_field_valid() {
+    case "${1:-}" in
+        ''|*$'\t'*|*$'\n'*|*$'\r'*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+_queue_acl_file_rule_json() {
+    local policy_file="$1" line_no="$2"
+    printf '[{"type":"file_acl","policy_file":"%s","line":%s}]' "$(_queue_json_escape "$policy_file")" "$line_no"
+}
+
+_queue_acl_file_check() {
+    local subject="$1" operation="$2" resource="$3" json="$4"
+    local policy_file default_decision best_score=-1 best_line=0 best_subject='' best_operation='' best_resource='' best_decision='' best_reason=''
+    local line line_no=0 rule_subject rule_operation rule_resource rule_decision rule_reason extra score
+    policy_file="$(_queue_acl_file_policy_path)"
+    default_decision="${QUEUEBASH_FILE_ACL_DEFAULT:-deny}"
+
+    if [[ ! -f "$policy_file" ]]; then
+        if [[ "$json" -eq 1 ]]; then
+            _queue_acl_decision_json "$subject" "$operation" "$resource" "error" "file_acl_policy_missing" "file" "$(printf '[{"type":"file_acl","policy_file":"%s"}]' "$(_queue_json_escape "$policy_file")")" true false 0 no-store
+        else
+            echo "ACL decision: error"
+            echo "provider:  file"
+            echo "reason:    file_acl_policy_missing"
+            echo "policy:    $policy_file"
+            echo "fail:      closed"
+        fi
+        return 3
+    fi
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_no=$((line_no + 1))
+        case "$line" in
+            ''|'#'*) continue ;;
+        esac
+        IFS=$'\t' read -r rule_subject rule_operation rule_resource rule_decision rule_reason extra <<< "$line"
+        if [[ -n "${extra:-}" || -z "${rule_subject:-}" || -z "${rule_operation:-}" || -z "${rule_resource:-}" || -z "${rule_decision:-}" || -z "${rule_reason:-}" ]]; then
+            if [[ "$json" -eq 1 ]]; then
+                _queue_acl_decision_json "$subject" "$operation" "$resource" "error" "file_acl_policy_malformed" "file" "$(_queue_acl_file_rule_json "$policy_file" "$line_no")" true false 0 no-store
+            else
+                echo "ACL decision: error"
+                echo "provider:  file"
+                echo "reason:    file_acl_policy_malformed"
+                echo "policy:    $policy_file"
+                echo "line:      $line_no"
+                echo "fail:      closed"
+            fi
+            return 3
+        fi
+        case "$rule_decision" in allow|deny|error) ;; *)
+            if [[ "$json" -eq 1 ]]; then
+                _queue_acl_decision_json "$subject" "$operation" "$resource" "error" "file_acl_policy_malformed" "file" "$(_queue_acl_file_rule_json "$policy_file" "$line_no")" true false 0 no-store
+            else
+                echo "ACL decision: error"
+                echo "provider:  file"
+                echo "reason:    file_acl_policy_malformed"
+                echo "policy:    $policy_file"
+                echo "line:      $line_no"
+                echo "fail:      closed"
+            fi
+            return 3 ;;
+        esac
+
+        [[ "$rule_subject" == "$subject" || "$rule_subject" == "*" ]] || continue
+        [[ "$rule_operation" == "$operation" || "$rule_operation" == "*" ]] || continue
+        [[ "$rule_resource" == "$resource" || "$rule_resource" == "*" ]] || continue
+
+        score=0
+        [[ "$rule_subject" == "$subject" ]] && score=$((score + 4))
+        [[ "$rule_operation" == "$operation" ]] && score=$((score + 2))
+        [[ "$rule_resource" == "$resource" ]] && score=$((score + 1))
+        if [[ "$score" -gt "$best_score" ]]; then
+            best_score="$score"
+            best_line="$line_no"
+            best_subject="$rule_subject"
+            best_operation="$rule_operation"
+            best_resource="$rule_resource"
+            best_decision="$rule_decision"
+            best_reason="$rule_reason"
+        fi
+    done < "$policy_file"
+
+    if [[ "$best_score" -lt 0 ]]; then
+        if [[ "$default_decision" == "allow" ]]; then
+            best_decision="allow"
+            best_reason="file_acl_default_allow"
+        else
+            best_decision="deny"
+            best_reason="no_matching_file_acl_rule"
+        fi
+        if [[ "$json" -eq 1 ]]; then
+            _queue_acl_decision_json "$subject" "$operation" "$resource" "$best_decision" "$best_reason" "file" "$(printf '[{"type":"file_acl","policy_file":"%s","matched":false}]' "$(_queue_json_escape "$policy_file")")" true false 0 no-store
+        else
+            echo "ACL decision: $best_decision"
+            echo "provider:  file"
+            echo "subject:   $subject"
+            echo "operation: $operation"
+            echo "resource:  $resource"
+            echo "reason:    $best_reason"
+            echo "policy:    $policy_file"
+            echo "fail:      closed"
+        fi
+        [[ "$best_decision" == "allow" ]] && return 0 || return 1
+    fi
+
+    local fail_closed=true
+    [[ "$best_decision" == "allow" ]] && fail_closed=false
+    if [[ "$json" -eq 1 ]]; then
+        _queue_acl_decision_json "$subject" "$operation" "$resource" "$best_decision" "$best_reason" "file" "$(_queue_acl_file_rule_json "$policy_file" "$best_line")" "$fail_closed" false 0 no-store
+    else
+        echo "ACL decision: $best_decision"
+        echo "provider:  file"
+        echo "subject:   $subject"
+        echo "operation: $operation"
+        echo "resource:  $resource"
+        echo "reason:    $best_reason"
+        echo "policy:    $policy_file"
+        echo "line:      $best_line"
+        echo "matched:   $best_subject $best_operation $best_resource"
+        echo "fail:      $([[ "$fail_closed" == true ]] && echo closed || echo open-for-allow)"
+    fi
+    [[ "$best_decision" == "allow" ]] && return 0
+    [[ "$best_decision" == "deny" ]] && return 1
+    return 3
+}
+
+_queue_acl_file_mutate() {
+    local action="$1" operation="$2" subject="$3" resource="$4" decision="$5" reason="$6"
+    local policy_file dir tmp backup line_no=0 line rule_subject rule_operation rule_resource rule_decision rule_reason extra removed=0
+    policy_file="$(_queue_acl_file_policy_path)"
+    dir="$(dirname "$policy_file")"
+    if [[ -z "$policy_file" || "$policy_file" == "/" || "$policy_file" == *$'\n'* ]]; then
+        echo "queue acl $action: invalid file ACL policy path" >&2
+        return 2
+    fi
+    mkdir -p "$dir" || { echo "queue acl $action: cannot create $dir" >&2; return 1; }
+    [[ -e "$policy_file" ]] || : > "$policy_file"
+    [[ -w "$policy_file" && -w "$dir" ]] || { echo "queue acl $action: policy path is not writable: $policy_file" >&2; return 1; }
+    tmp="$(mktemp "$dir/.file_acl.XXXXXX")" || return 1
+    backup="$policy_file.bak.$(date +%Y%m%d%H%M%S)"
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_no=$((line_no + 1))
+        case "$line" in
+            ''|'#'*) printf '%s\n' "$line" >> "$tmp"; continue ;;
+        esac
+        IFS=$'\t' read -r rule_subject rule_operation rule_resource rule_decision rule_reason extra <<< "$line"
+        if [[ -n "${extra:-}" || -z "${rule_subject:-}" || -z "${rule_operation:-}" || -z "${rule_resource:-}" || -z "${rule_decision:-}" || -z "${rule_reason:-}" ]]; then
+            rm -f "$tmp"
+            echo "queue acl $action: refusing to edit malformed policy $policy_file at line $line_no" >&2
+            return 3
+        fi
+        if [[ "$rule_subject" == "$subject" && "$rule_operation" == "$operation" && "$rule_resource" == "$resource" ]]; then
+            removed=1
+            [[ "$action" == "remove" ]] && continue
+            printf '%s\t%s\t%s\t%s\t%s\n' "$subject" "$operation" "$resource" "$decision" "$reason" >> "$tmp"
+            continue
+        fi
+        printf '%s\n' "$line" >> "$tmp"
+    done < "$policy_file"
+
+    if [[ "$action" == "set" && "$removed" -eq 0 ]]; then
+        printf '%s\t%s\t%s\t%s\t%s\n' "$subject" "$operation" "$resource" "$decision" "$reason" >> "$tmp"
+    fi
+    cp -p "$policy_file" "$backup" 2>/dev/null || cp "$policy_file" "$backup" 2>/dev/null || true
+    mv "$tmp" "$policy_file"
+    echo "queue acl $action: file provider policy updated"
+    echo "policy:  $policy_file"
+    echo "backup:  $backup"
+    echo "subject: $subject"
+    echo "op:      $operation"
+    echo "resource:$resource"
+    [[ "$action" == "set" ]] && echo "decision:$decision"
+    return 0
+}
+
+_queue_acl_command_help() {
+    cat <<'EOF'
+queue acl - enterprise ACL/provider decision contract
+
+Usage:
+  queue acl check SUBJECT OPERATION RESOURCE [--json]
+  queue acl explain SUBJECT OPERATION RESOURCE [--json]
+  queue acl operations
+  queue acl set module provider:NAME OPERATION SUBJECT [RESOURCE] [--decision allow|deny] [--reason TEXT]
+  queue acl remove module provider:NAME OPERATION SUBJECT [RESOURCE]
+
+File provider configuration:
+  QUEUEBASH_ACL_PROVIDER=file
+  QUEUEBASH_FILE_ACL_POLICY="$HOME/.queuebash/policy/acl/file_acl.tsv"
+  QUEUEBASH_FILE_ACL_DEFAULT=deny
+
+File policy format:
+  subject<TAB>operation<TAB>resource<TAB>decision<TAB>reason
+
+Purpose:
+  Normalise privileged operation checks as:
+    Can subject X perform operation Y on resource Z in context C?
+
+Provider decision contract:
+  allow | deny | error
+  reason
+  evidence
+  ttl/cache policy
+
+Design rules:
+  bashqueues core enforces decisions.
+  Providers supply normalized data, never shell.
+  Missing, malformed, or provider-error responses fail closed for privileged operations.
+  Single-user installs may remain file-backed and require no enterprise provider.
+EOF
+}
+
+_queue_acl_check() {
+    local subject="${1:-}" operation="${2:-}" resource="${3:-}" json=0 reason decision="error"
+    shift 3 2>/dev/null || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --json|-j) json=1; shift ;;
+            *) echo "Usage: queue acl check SUBJECT OPERATION RESOURCE [--json]" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$subject" && -n "$operation" && -n "$resource" ]] || { echo "Usage: queue acl check SUBJECT OPERATION RESOURCE [--json]" >&2; return 2; }
+    if ! _queue_acl_operation_known "$operation"; then
+        reason="unknown_operation"
+        if [[ "$json" -eq 1 ]]; then
+            _queue_acl_decision_json "$subject" "$operation" "$resource" "$decision" "$reason" "${QUEUEBASH_ACL_PROVIDER:-contract}" "[]" true true 0 no-store
+        else
+            echo "ACL decision: $decision"
+            echo "subject:   $subject"
+            echo "operation: $operation"
+            echo "resource:  $resource"
+            echo "reason:    $reason"
+            echo "fail:      closed"
+        fi
+        return 3
+    fi
+    if _queue_acl_provider_active; then
+        _queue_acl_file_check "$subject" "$operation" "$resource" "$json"
+        return "$?"
+    fi
+    reason="no_acl_provider_active"
+    if [[ "$json" -eq 1 ]]; then
+        _queue_acl_decision_json "$subject" "$operation" "$resource" "$decision" "$reason" "${QUEUEBASH_ACL_PROVIDER:-contract}" "[]" true true 0 no-store
+    else
+        echo "ACL decision: $decision"
+        echo "subject:   $subject"
+        echo "operation: $operation"
+        echo "resource:  $resource"
+        echo "reason:    $reason"
+        echo "contract:  queuebash.acl_decision.v1"
+        echo "note:      no concrete ACL provider is active; privileged checks fail closed."
+    fi
+    return 3
+}
+
+_queue_acl_explain() {
+    local subject="${1:-}" operation="${2:-}" resource="${3:-}" json=0
+    shift 3 2>/dev/null || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in --json|-j) json=1; shift ;; *) echo "Usage: queue acl explain SUBJECT OPERATION RESOURCE [--json]" >&2; return 2 ;; esac
+    done
+    [[ -n "$subject" && -n "$operation" && -n "$resource" ]] || { echo "Usage: queue acl explain SUBJECT OPERATION RESOURCE [--json]" >&2; return 2; }
+    _queue_acl_check "$subject" "$operation" "$resource" ${json:+--json}
+}
+
+_queue_acl_set_remove() {
+    local action="$1" scope="${2:-}" target="${3:-}" operation="${4:-}" subject="${5:-}" resource="*" decision="allow" reason="local file ACL rule"
+    shift 5 2>/dev/null || true
+    if [[ "${1:-}" != --* && -n "${1:-}" ]]; then
+        resource="$1"
+        shift
+    fi
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --resource) resource="${2:-*}"; shift 2 ;;
+            --decision) decision="${2:-allow}"; shift 2 ;;
+            --reason) reason="${2:-}"; shift 2 ;;
+            *) echo "Usage: queue acl set|remove module provider:NAME OPERATION SUBJECT [RESOURCE] [--decision allow|deny] [--reason TEXT]" >&2; return 2 ;;
+        esac
+    done
+    [[ "$scope" == "module" && "$target" == provider:* && -n "$operation" && -n "$subject" ]] || {
+        echo "Usage: queue acl set|remove module provider:NAME OPERATION SUBJECT [RESOURCE]" >&2
+        return 2
+    }
+    if ! _queue_acl_operation_known "$operation"; then
+        echo "queue acl $action: unknown normalized operation: $operation" >&2
+        return 2
+    fi
+    case "$decision" in allow|deny) ;; *) echo "queue acl set: decision must be allow or deny" >&2; return 2 ;; esac
+    _queue_acl_tsv_field_valid "$subject" || { echo "queue acl $action: invalid subject" >&2; return 2; }
+    _queue_acl_tsv_field_valid "$operation" || { echo "queue acl $action: invalid operation" >&2; return 2; }
+    _queue_acl_tsv_field_valid "$resource" || { echo "queue acl $action: invalid resource" >&2; return 2; }
+    _queue_acl_tsv_field_valid "$reason" || { echo "queue acl $action: invalid reason" >&2; return 2; }
+    if [[ "$target" != "provider:file" && "$target" != "provider:file_acl" ]]; then
+        cat <<EOF
+queue acl $action: provider ACL contract handoff
+module:    $target
+operation: $operation
+subject:   $subject
+resource:  $resource
+
+Only the local file provider is mutable in 0.18.15.
+Provider modules must implement this as normalized data, never shell.
+EOF
+        return 3
+    fi
+    if ! _queue_acl_provider_active; then
+        echo "queue acl $action: file ACL provider is not active; set QUEUEBASH_ACL_PROVIDER=file" >&2
+        return 3
+    fi
+    _queue_acl_file_mutate "$action" "$operation" "$subject" "$resource" "$decision" "$reason"
+}
+
+_queue_acl_command() {
+    case "${1:-help}" in
+        help|--help|-h|"") _queue_acl_command_help ;;
+        operations|ops) _queue_acl_known_operations_text ;;
+        check) shift; _queue_acl_check "$@" ;;
+        explain) shift; _queue_acl_explain "$@" ;;
+        set|add) shift; _queue_acl_set_remove set "$@" ;;
+        remove|rm|delete) shift; _queue_acl_set_remove remove "$@" ;;
+        *) echo "Usage: queue acl help|operations|check|explain|set|remove" >&2; return 2 ;;
+    esac
+}
+
+_queue_module_help() {
+    local topic="${1:-}"
+    case "$topic" in
+        ""|module|modules)
+            cat <<'EOF'
+queue module - standard extension contract
+
+Usage:
+  queue module list [--json]
+  queue module explain class:NAME|asset:NAME|cap:NAME|provider:NAME
+  queue module help [class|asset|cap|provider|kind:NAME]
+  queue module configure provider NAME [--show|--path|--set KEY=VALUE ...]
+  queue module policy provider NAME
+  queue module acl set|remove KIND NAME OPERATION SUBJECT
+  queue acl check SUBJECT OPERATION RESOURCE [--json]
+  queue acl set module provider:NAME OPERATION SUBJECT
+  queue acl remove module provider:NAME OPERATION SUBJECT
+  queue module enable class|asset|cap|provider NAME
+  queue module disable class|asset|cap|provider NAME [--force]
+  queue module refresh class|asset|cap <directory>
+
+Kinds:
+  class     execution class definitions
+  asset     preflight/resource policy plugins
+  cap       runtime capability plugins
+  provider  enterprise/local provider configuration modules
+
+ACL note:
+  queue module acl is a command-surface handoff. Where the ACL subsystem is
+  available, it should be equivalent to queue acl set/remove module ... .
+EOF
+            ;;
+        provider|providers)
+            cat <<'EOF'
+Provider modules
+
+Provider modules declare how bashqueues reaches external governance systems.
+They are data/configuration modules, not executable policy rows.
+
+Default single-user installations do not need provider configuration.
+Enterprise installations can add provider modules for Microsoft, LDAP, PAM/NSS,
+IBM, PKI, Vault/HSM, or internal policy APIs.
+
+Canonical locations:
+  user queue root:    ~/.queuebash/policy/providers.d/NAME.env
+  system policy root: /etc/queuebash/policy/providers.d/NAME.env
+
+Commands:
+  queue module configure provider NAME --set KEY=VALUE
+  queue module configure provider NAME --show
+  queue module policy provider NAME
+EOF
+            ;;
+        class|classes|asset|assets|cap|caps)
+            echo "queue module help: '$topic' modules use list/explain/enable/disable/refresh."
+            echo "Example: queue module explain ${topic%%s}:NAME"
+            ;;
+        *:*)
+            _queue_modules_explain "$topic"
+            ;;
+        *)
+            echo "queue module help: unknown topic: $topic" >&2
+            return 2
+            ;;
+    esac
+}
+
+_queue_module_configure() {
+    local kind="$(_queue_module_normal_kind "${1:-}")" name="${2:-}"
+    [[ "$kind" == "provider" && -n "$name" ]] || { echo "Usage: queue module configure provider NAME [--show|--path|--set KEY=VALUE ...]" >&2; return 2; }
+    shift 2
+    local paths active disabled dir show=0 path_only=0 pair key value tmp
+    paths="$(_queue_module_paths provider "$name")" || return 2
+    active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"; dir="$(dirname "$active")"
+    mkdir -p "$dir"
+
+    if [[ "$#" -eq 0 ]]; then
+        echo "provider: $name"
+        echo "path:     $active"
+        echo "status:   $(_queue_module_status provider "$name" 2>/dev/null || echo missing)"
+        echo "usage:    queue module configure provider $name --set KEY=VALUE [--set KEY=VALUE ...]"
+        return 0
+    fi
+
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --show) show=1; shift ;;
+            --path) path_only=1; shift ;;
+            --set)
+                pair="${2:-}"
+                [[ "$pair" == *=* ]] || { echo "queue module configure: --set requires KEY=VALUE" >&2; return 2; }
+                key="${pair%%=*}"; value="${pair#*=}"
+                [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "queue module configure: invalid key: $key" >&2; return 2; }
+                touch "$active"
+                tmp="${active}.tmp.$$"
+                awk -v k="$key" 'BEGIN{found=0} $0 ~ "^" k "=" {next} {print} END{}' "$active" > "$tmp"
+                printf '%s=%q\n' "$key" "$value" >> "$tmp"
+                mv "$tmp" "$active"
+                shift 2 ;;
+            *) echo "Usage: queue module configure provider NAME [--show|--path|--set KEY=VALUE ...]" >&2; return 2 ;;
+        esac
+    done
+    if [[ "$path_only" -eq 1 ]]; then
+        echo "$active"
+    elif [[ "$show" -eq 1 ]]; then
+        [[ -f "$active" ]] && sed -n '1,200p' "$active" || true
+    else
+        echo "Configured provider module: $name"
+        echo "Path: $active"
+    fi
+}
+
+_queue_module_policy() {
+    local kind="$(_queue_module_normal_kind "${1:-}")" name="${2:-}" paths active disabled
+    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue module policy class|asset|cap|provider NAME" >&2; return 2; }
+    paths="$(_queue_module_paths "$kind" "$name")" || return 2
+    active="${paths%%$'\t'*}"; disabled="${paths#*$'\t'}"
+    echo "MODULE POLICY: $kind:$name"
+    echo "status: $(_queue_module_status "$kind" "$name" 2>/dev/null || echo missing)"
+    echo "active: $active"
+    echo "disabled: $disabled"
+    echo
+    case "$kind" in
+        provider)
+            cat <<'EOF'
+provider policy contract:
+  - provider output is normalized data, never shell
+  - malformed provider output fails closed
+  - command-operation ACLs should resolve through the ACL provider
+  - single-user installs may remain file-backed and require no enterprise backplate
+  - enterprise installs may delegate to Microsoft, LDAP, PAM/NSS, IBM, PKI or Vault/HSM
+EOF
+            ;;
+        class|asset|cap)
+            echo "module policy is derived from the class/asset/cap definition and any mandatory provider or ACL policy."
+            echo "Use: queue module explain $kind:$name"
+            ;;
+    esac
+}
+
+_queue_module_acl() {
+    local action="${1:-}" kind="${2:-}" name="${3:-}" operation="${4:-}" subject="${5:-}"
+    case "$action" in set|remove|delete|rm) ;; *) echo "Usage: queue module acl set|remove KIND NAME OPERATION SUBJECT" >&2; return 2 ;; esac
+    [[ -n "$kind" && -n "$name" && -n "$operation" && -n "$subject" ]] || { echo "Usage: queue module acl set|remove KIND NAME OPERATION SUBJECT" >&2; return 2; }
+    kind="$(_queue_module_normal_kind "$kind")" || { echo "queue module acl: invalid kind" >&2; return 2; }
+    cat <<EOF
+queue module acl: operation ACL handoff
+action:    $action
+resource:  module:$kind:$name
+operation: $operation
+subject:   $subject
+
+This command surface is reserved for the ACL subsystem. It is equivalent to:
+  queue acl $action module $kind:$name $operation $subject
+
+No ACL backend is active in this build, so no policy was changed.
+EOF
+    return 3
+}
+
+# [AI-PATCH | 2026-05-27 17:45:21 BST]: 0.18.5: centralise module/provider command surface.
+_queue_module_command() {
+    case "${1:-list}" in
+        list|"")
+            if [[ "${2:-}" == "--json" || "${1:-}" == "--json" ]]; then
+                _queue_modules_list_json
+            else
+                _queue_modules_list | sort
+            fi
+            ;;
+        explain|show) shift; _queue_modules_explain "$@" ;;
+        help) shift; _queue_module_help "$@" ;;
+        configure|config) shift; _queue_module_configure "$@" ;;
+        policy|policies) shift; _queue_module_policy "$@" ;;
+        acl) shift; _queue_module_acl "$@" ;;
+        enable) shift; _queue_module_enable "$@" ;;
+        disable) shift; _queue_module_disable "$@" ;;
+        refresh)
+            local kind="${2:-}" dir="${3:-}"
+            case "$kind" in
+                class|classes) _queue_classes_refresh "$dir" ;;
+                asset|assets) _queue_asset_refresh_from_dir "$dir" ;;
+                cap|caps) _queue_cap_refresh "$dir" ;;
+                provider|providers) echo "queue modules refresh provider: provider modules are configuration; use queue module configure provider NAME" >&2; return 2 ;;
+                *) echo "Usage: queue modules refresh class|asset|cap <directory>" >&2; return 2 ;;
+            esac
+            ;;
+        *) echo "Usage: queue module list|help|explain|configure|policy|acl|enable|disable|refresh" >&2; return 2 ;;
+    esac
+}
+
+
+_queue_pol_blocked_reevaluate() {
+    local target="" local_dryrun=0 root f id state reason moved=0 checked=0
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --all) target=""; shift ;;
+            --dryrun|-n) local_dryrun=1; shift ;;
+            *) target="$1"; shift ;;
+        esac
+    done
+    root="$(_queue_root)"
+    local files=()
+    if [[ -n "$target" ]]; then
+        while IFS= read -r f; do
+            state="$(_queue_state_for_job_path "$f" "$root")"
+            [[ "$state" == "pol_blocked" || "$state" == "policy_blocked" ]] && files+=("$f")
+        done < <(_queue_find_jobs "$target")
+    else
+        for f in "$root/pol_blocked"/*.job "$root/policy_blocked"/*.job; do
+            [[ -e "$f" ]] && files+=("$f")
+        done
+    fi
+    if [[ "${#files[@]}" -eq 0 ]]; then
+        echo "queue reevaluate: no pol_blocked jobs matched${target:+: $target}" >&2
+        return 1
+    fi
+    for f in "${files[@]}"; do
+        id="$(basename "$f" .job)"
+        checked=$((checked + 1))
+        if _queue_job_policy_execution_check "$f" >/dev/null 2>&1; then
+            if [[ "$local_dryrun" -eq 1 ]]; then
+                echo "DRYRUN: would requeue $id from $(_queue_state_for_job_path "$f" "$root") -> pending"
+            else
+                {
+                    echo "REEVALUATED_AT=$(printf '%q' "$(_queue_now_iso)")"
+                    echo "REEVALUATED_FROM=$(printf '%q' "$(_queue_state_for_job_path "$f" "$root")")"
+                    echo "STATE=$(printf '%q' pending)"
+                } >> "$f"
+                _queue_move_to_pending_bucket "$f" "$id" "$root"
+                local requeued_path
+                requeued_path="$(_queue_job_pending_path_by_id "$id" "$root" 2>/dev/null || true)"
+                _queue_log_event "pol_blocked_reevaluated" "$id" "$(_queue_job_name "$requeued_path" 2>/dev/null || echo -)" "pending" "result=requeued"
+                echo "Requeued $id -> pending"
+            fi
+            moved=$((moved + 1))
+        else
+            reason="$(_queue_job_policy_execution_check "$f" 2>&1 >/dev/null || true)"
+            echo "Still pol_blocked: $id"
+            [[ -n "$reason" ]] && printf '  %s
+' "$reason" | head -3
+        fi
+    done
+    echo "Reevaluated $checked pol_blocked job(s); requeued $moved."
+}
+
+_queue_backup_create() {
+    local out="" force=0 root running_count ts
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --force|-f) force=1; shift ;;
+            --output|-o) out="${2:-}"; shift 2 ;;
+            --quiesce) shift ;;
+            *) [[ -z "$out" ]] && out="$1" || { echo "queue backup: unexpected argument: $1" >&2; return 2; }; shift ;;
+        esac
+    done
+    root="$(_queue_root)"
+    ts="$(date +%Y%m%d_%H%M%S 2>/dev/null || date +%s)"
+    [[ -n "$out" ]] || out="$PWD/bashqueues-backup-${ts}.tar.gz"
+    running_count="$(find "$root/running" -maxdepth 1 -name '*.job' -type f 2>/dev/null | wc -l | tr -d ' ')"
+    if [[ "$running_count" != "0" && "$force" -ne 1 ]]; then
+        echo "queue backup: $running_count running job(s); stop workers or use --force for a best-effort snapshot" >&2
+        return 1
+    fi
+    mkdir -p "$(dirname "$out")" || return 1
+    tar -C "$(dirname "$root")" -czf "$out" "$(basename "$root")" || return 1
+    echo "Backup written: $out"
+    echo "Queue root:     $root"
+    _queue_log_event "backup_created" "backup" "backup" "admin" "path=$out root=$root force=$force" 2>/dev/null || true
+}
+
+
+_queue_dev_usage() {
+    cat <<'EOF_USAGE'
+Usage:
+  queue dev functions [--file FILE] [--json] [prefix]
+  queue dev locate FUNCTION [--json]
+  queue dev extract FUNCTION [--file FILE] [--json]
+  queue dev scope [--json] [--prefix PREFIX]
+  queue dev patch --file FILE --function FUNCTION --source SOURCE [--json] [--no-syntax-check]
+  queue dev splice --file FILE (--after TEXT|--before TEXT|--replace TEXT --with TEXT) [--insert TEXT] [--dry-run] [--json]
+  queue dev test [--run] [--name NAME] [--timeout SEC] [--json] -- COMMAND...
+  queue dev test result JOBID [--root DIR] [--json]
+  queue dev test qbtest --file FILE [--function NAME] [--language bash|python] [--timeout SEC] [--list] [--json] [--keep]
+  queue dev test qbtest --help | -h | --h
+  queue dev comment --file FILE --function FUNCTION --message TEXT [--changelog] [--json]
+  queue dev diff --file FILE [--function FUNCTION] [--json]
+  queue dev strip --file FILE --function FUNCTION [--json]
+  queue dev symbols --file FILE [--function FUNCTION] [--json]
+  queue dev symbols --function FUNCTION [--json]
+  queue dev flow --file FILE [--function FUNCTION] [--json]
+  queue dev flow --function FUNCTION [--json]
+  queue dev scratchpad help|init|import|add|task|attempt|evidence|done|reject|fail|bump-fail|list|delete|next|export|explain
+  queue dev attempt begin --text TEXT [--tag TAG...] [--based-on ITEM_ID...] [--json]
+  queue dev attempt end ATTEMPT_ID --status STATUS [--text TEXT] [--json]
+  queue dev evidence record --attempt ATTEMPT_ID --text TEXT [--file FILE...] [--command COMMAND] [--status STATUS] [--json]
+  queue dev context [--json] [--tag TAG] [--kind KIND] [--status STATUS] [--limit N] [--full-corpus]
+  queue dev think --text TEXT [--subject SUBJECT] [--tag TAG...] [--authority AUTHORITY] [--json]
+  queue dev handover [--json] [--since ITEM_ID] [--tag TAG] [--full-corpus]
+  queue dev files begin|finish|add|remove|list|changed|scan|path
+  queue dev patchset create --output ZIP [--registry FILE] [--json]
+  queue dev patchset inspect --patchset ZIP [--target DIR] [--json]
+  queue dev validate [--json] [--quick] [--timeout SEC] [--file FILE...]
+  queue dev scope-check [--json] [--allow GLOB...] [--deny GLOB...] [--file FILE...]
+
+Developer/metaprogramming helpers for deterministic Bash introspection and safe
+function replacement. Intended for dogfood/AI-assisted maintenance; normal queue
+operations do not depend on these commands. comment/diff/strip use the .bak files
+created by queue dev patch for function-level memory, context, and rollback.
+symbols provides a lightweight static symbol table for variables, constants,
+string literals, and function membership. flow provides a static execution-path
+graph of function calls and shell control nodes for AI-assisted impact analysis.
+splice provides constrained anchored text transformations with dry-run, idempotency,
+JSON diagnostics, and atomic writes. It treats content as text only. test submits
+real DEV_TEST_RUNNER jobs in an isolated harness queue root and returns a bounded
+queuebash.dev_test_result.v1 status without wiring results into scratchpad. files records
+edit-session baselines, purposes, file checksums, function checksums, and changed-file
+state. patchset creates a minimal changed-files zip with diffs, manifest, and guarded
+merge/apply scripts using old file/function MD5 preconditions for multistream work.
+attempt and evidence create a bounded development-attempt ledger under the queue root,
+linking validation evidence to named attempts without granting acceptance authority.
+context, think, and handover provide bounded working-set context loading,
+auditable planning notes, and reviewer-friendly handover summaries without dumping
+or requiring the AI to know the full scratchpad corpus by default. validate and
+scope-check provide bounded pre-merge gates that report development-test and
+changed-file scope outcomes without creating acceptance records.
+EOF_USAGE
+}
+
+_queue_dev_valid_function_name() {
+    [[ "${1:-}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
+}
+
+_queue_dev_json_bool() {
+    case "${1:-0}" in 1|true|yes|on) printf 'true' ;; *) printf 'false' ;; esac
+}
+
+_queue_dev_function_location() {
+    local fn="$1" out old_extdebug=0
+    _queue_dev_valid_function_name "$fn" || return 2
+    shopt -q extdebug && old_extdebug=1 || old_extdebug=0
+    shopt -s extdebug
+    out="$(declare -F "$fn" 2>/dev/null || true)"
+    [[ "$old_extdebug" -eq 1 ]] || shopt -u extdebug
+    [[ -n "$out" ]] || return 1
+    printf '%s\n' "$out"
+}
+
+_queue_dev_locate() {
+    local fn="${1:-}" json=0 out name line file
+    shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in --json|-j) json=1; shift ;; *) echo "queue dev locate: unexpected argument: $1" >&2; return 2 ;; esac
+    done
+    [[ -n "$fn" ]] || { echo "Usage: queue dev locate FUNCTION [--json]" >&2; return 2; }
+    _queue_dev_valid_function_name "$fn" || { echo "queue dev locate: invalid function name: $fn" >&2; return 2; }
+    out="$(_queue_dev_function_location "$fn" 2>/dev/null || true)"
+    [[ -n "$out" ]] || { echo "queue dev locate: function not found: $fn" >&2; return 1; }
+    read -r name line file <<< "$out"
+    if [[ "$json" -eq 1 ]]; then
+        [[ "$line" =~ ^[0-9]+$ ]] || line=0
+        printf '{"function":"%s","file":"%s","line_start":%s}\n' \
+            "$(_queue_json_escape "$name")" "$(_queue_json_escape "$file")" "$line"
+    else
+        printf '%s\t%s\t%s\n' "$name" "$line" "$file"
+    fi
+}
+
+_queue_dev_extract() {
+    local fn="${1:-}" json=0 body file="" tmp=""
+    shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            --file) file="${2:-}"; shift 2 ;;
+            --file=*) file="${1#--file=}"; shift ;;
+            *) echo "queue dev extract: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$fn" ]] || { echo "Usage: queue dev extract FUNCTION [--file FILE] [--json]" >&2; return 2; }
+    _queue_dev_valid_function_name "$fn" || { echo "queue dev extract: invalid function name: $fn" >&2; return 2; }
+    if [[ -n "$file" ]]; then
+        [[ -f "$file" ]] || { echo "queue dev extract: target file not found: $file" >&2; return 1; }
+        tmp="$(mktemp "${TMPDIR:-/tmp}/queue-dev-extract.XXXXXX")" || return 1
+        if ! _queue_dev_file_extract_to "$file" "$fn" "$tmp" >/dev/null; then
+            rm -f -- "$tmp"
+            echo "queue dev extract: function not found: $fn in $file" >&2
+            return 1
+        fi
+        body="$(cat "$tmp")"
+        rm -f -- "$tmp"
+    else
+        body="$(declare -f "$fn" 2>/dev/null || true)"
+    fi
+    [[ -n "$body" ]] || { echo "queue dev extract: function not found: $fn" >&2; return 1; }
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"function":"%s","file":"%s","body":"%s"}\n' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "${file:-runtime}")" "$(_queue_json_escape "$body")"
+    else
+        printf '%s\n' "$body"
+    fi
+}
+
+_queue_dev_functions() {
+    local json=0 prefix="" file="" fn out name lineno src first=0
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            --file) file="${2:-}"; shift 2 ;;
+            --file=*) file="${1#--file=}"; shift ;;
+            *) [[ -z "$prefix" ]] && prefix="$1" || { echo "queue dev functions: unexpected argument: $1" >&2; return 2; }; shift ;;
+        esac
+    done
+    if [[ -n "$file" ]]; then
+        [[ -f "$file" ]] || { echo "queue dev functions: target file not found: $file" >&2; return 1; }
+        if [[ "$json" -eq 1 ]]; then
+            printf '{"functions":['
+            while IFS=$'\t' read -r fn lineno src; do
+                [[ -n "$fn" ]] || continue
+                [[ -n "$prefix" && "$fn" != "$prefix"* ]] && continue
+                _queue_json_comma first
+                printf '{"function":"%s","file":"%s","line_start":%s}' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "${lineno:-0}"
+            done < <(python3 - "$file" <<'PYDEV_FUNCTIONS_FILE'
+import re, sys, pathlib
+file=sys.argv[1]
+text=pathlib.Path(file).read_text().splitlines()
+pat1=re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*(?:\{|$)')
+pat2=re.compile(r'^\s*function\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*(?:\{|$)')
+seen=set()
+for i,line in enumerate(text,1):
+    m=pat1.match(line) or pat2.match(line)
+    if not m: continue
+    name=m.group(1)
+    if name in seen: continue
+    seen.add(name)
+    print(f'{name}\t{i}\t{file}')
+PYDEV_FUNCTIONS_FILE
+            )
+            printf ']}\n'
+        else
+            python3 - "$file" <<'PYDEV_FUNCTIONS_FILE'
+import re, sys, pathlib
+file=sys.argv[1]
+text=pathlib.Path(file).read_text().splitlines()
+pat1=re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*(?:\{|$)')
+pat2=re.compile(r'^\s*function\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*(?:\{|$)')
+seen=set()
+for i,line in enumerate(text,1):
+    m=pat1.match(line) or pat2.match(line)
+    if not m: continue
+    name=m.group(1)
+    if name in seen: continue
+    seen.add(name)
+    print(f'{name}\t{i}\t{file}')
+PYDEV_FUNCTIONS_FILE
+        fi
+        return 0
+    fi
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"functions":['
+        while IFS= read -r fn; do
+            [[ -n "$fn" ]] || continue
+            [[ -n "$prefix" && "$fn" != "$prefix"* ]] && continue
+            out="$(_queue_dev_function_location "$fn" 2>/dev/null || true)"
+            [[ -n "$out" ]] || continue
+            read -r name lineno src <<< "$out"
+            [[ "$lineno" =~ ^[0-9]+$ ]] || lineno=0
+            _queue_json_comma first
+            printf '{"function":"%s","file":"%s","line_start":%s}' "$(_queue_json_escape "$name")" "$(_queue_json_escape "$src")" "$lineno"
+        done < <(compgen -A function | sort)
+        printf ']}\n'
+    else
+        while IFS= read -r fn; do
+            [[ -n "$fn" ]] || continue
+            [[ -n "$prefix" && "$fn" != "$prefix"* ]] && continue
+            out="$(_queue_dev_function_location "$fn" 2>/dev/null || true)"
+            [[ -n "$out" ]] || continue
+            read -r name lineno src <<< "$out"
+            printf '%s\t%s\t%s\n' "$name" "$lineno" "$src"
+        done < <(compgen -A function | sort)
+    fi
+}
+
+
+_queue_dev_scope() {
+    local json=0 prefix="QUEUEBASH_" arg first=0 name decl value typ
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            --prefix) prefix="${2:-}"; shift 2 ;;
+            *) echo "queue dev scope: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"prefix":"%s","globals":{' "$(_queue_json_escape "$prefix")"
+        while IFS='=' read -r name value; do
+            [[ -n "$name" ]] || continue
+            [[ -n "$prefix" && "$name" != "$prefix"* ]] && continue
+            decl="$(declare -p "$name" 2>/dev/null || true)"
+            [[ -n "$decl" ]] || continue
+            typ="string"
+            [[ "$decl" == declare\ -a* ]] && typ="array"
+            [[ "$decl" == declare\ -A* ]] && typ="assoc_array"
+            _queue_json_comma first
+            printf '"%s":{"type":"%s","value":"%s"}' \
+                "$(_queue_json_escape "$name")" "$(_queue_json_escape "$typ")" "$(_queue_json_escape "${!name}")"
+        done < <(compgen -v | sort | sed 's/$/=/')
+        printf '}}\n'
+    else
+        while IFS= read -r name; do
+            [[ -n "$prefix" && "$name" != "$prefix"* ]] && continue
+            declare -p "$name" 2>/dev/null || true
+        done < <(compgen -v | sort)
+    fi
+}
+
+
+_queue_dev_file_range() {
+    local file="$1" fn="$2"
+    python3 - "$file" "$fn" <<'PYDEV_RANGE'
+import re, sys, pathlib
+file, fn = sys.argv[1:3]
+try:
+    text = pathlib.Path(file).read_text()
+except Exception as e:
+    print(f'read failed: {e}', file=sys.stderr)
+    sys.exit(2)
+lines = text.splitlines(True)
+pat1 = re.compile(r'^(\s*)' + re.escape(fn) + r'\s*\(\s*\)\s*(\{)?\s*(?:#.*)?$')
+pat2 = re.compile(r'^(\s*)function\s+' + re.escape(fn) + r'(?:\s*\(\s*\))?\s*(\{)?\s*(?:#.*)?$')
+start = None
+for i, line in enumerate(lines):
+    if pat1.match(line) or pat2.match(line):
+        start = i
+        break
+if start is None:
+    print(f'function not found: {fn}', file=sys.stderr)
+    sys.exit(3)
+
+
+def remove_quoted(line):
+    out=[]; sq=dq=esc=False; i=0
+    while i < len(line):
+        ch=line[i]
+        if esc:
+            esc=False; out.append(' '); i+=1; continue
+        if ch=='\\' and not sq:
+            esc=True; out.append(' '); i+=1; continue
+        if ch=="'" and not dq:
+            sq=not sq; out.append(' '); i+=1; continue
+        if ch=='"' and not sq:
+            dq=not dq; out.append(' '); i+=1; continue
+        out.append(' ' if (sq or dq) else ch)
+        i+=1
+    return ''.join(out)
+
+def brace_delta(line):
+    delta = 0
+    sq = dq = esc = False
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if esc:
+            esc = False; i += 1; continue
+        if ch == '\\' and not sq:
+            esc = True; i += 1; continue
+        if ch == "'" and not dq:
+            sq = not sq; i += 1; continue
+        if ch == '"' and not sq:
+            dq = not dq; i += 1; continue
+        if ch == '#' and not sq and not dq:
+            break
+        if not sq and not dq:
+            if ch == '{': delta += 1
+            elif ch == '}': delta -= 1
+        i += 1
+    return delta
+
+depth = 0
+seen_open = False
+end = None
+for i in range(start, len(lines)):
+    d = brace_delta(lines[i])
+    if d > 0:
+        seen_open = True
+    depth += d
+    if seen_open and depth <= 0:
+        end = i
+        break
+if end is None:
+    print(f'function end not found: {fn}', file=sys.stderr)
+    sys.exit(4)
+print(f'{start+1}\t{end+1}')
+PYDEV_RANGE
+}
+
+_queue_dev_file_extract_to() {
+    local file="$1" fn="$2" out="$3"
+    python3 - "$file" "$fn" "$out" <<'PYDEV_EXTRACT_FILE'
+import re, sys, pathlib
+file, fn, out = sys.argv[1:4]
+text = pathlib.Path(file).read_text()
+lines = text.splitlines(True)
+pat1 = re.compile(r'^(\s*)' + re.escape(fn) + r'\s*\(\s*\)\s*(\{)?\s*(?:#.*)?$')
+pat2 = re.compile(r'^(\s*)function\s+' + re.escape(fn) + r'(?:\s*\(\s*\))?\s*(\{)?\s*(?:#.*)?$')
+start = None
+for i, line in enumerate(lines):
+    if pat1.match(line) or pat2.match(line):
+        start = i
+        break
+if start is None:
+    print(f'function not found: {fn}', file=sys.stderr)
+    sys.exit(3)
+
+def brace_delta(line):
+    delta = 0
+    sq = dq = esc = False
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if esc:
+            esc = False; i += 1; continue
+        if ch == '\\' and not sq:
+            esc = True; i += 1; continue
+        if ch == "'" and not dq:
+            sq = not sq; i += 1; continue
+        if ch == '"' and not sq:
+            dq = not dq; i += 1; continue
+        if ch == '#' and not sq and not dq:
+            break
+        if not sq and not dq:
+            if ch == '{': delta += 1
+            elif ch == '}': delta -= 1
+        i += 1
+    return delta
+
+depth = 0
+seen_open = False
+end = None
+for i in range(start, len(lines)):
+    d = brace_delta(lines[i])
+    if d > 0:
+        seen_open = True
+    depth += d
+    if seen_open and depth <= 0:
+        end = i
+        break
+if end is None:
+    print(f'function end not found: {fn}', file=sys.stderr)
+    sys.exit(4)
+pathlib.Path(out).write_text(''.join(lines[start:end+1]))
+print(f'{start+1}\t{end+1}')
+PYDEV_EXTRACT_FILE
+}
+
+_queue_dev_latest_backup() {
+    local file="$1" dir base cand latest=""
+    dir="$(dirname -- "$file")"
+    base="$(basename -- "$file")"
+    shopt -s nullglob
+    for cand in "$dir/$base".bak.*; do
+        [[ -f "$cand" ]] || continue
+        case "$(basename -- "$cand")" in *.bak.comment.*|*.dev.lock) continue ;; esac
+        if [[ -z "$latest" || "$cand" -nt "$latest" ]]; then
+            latest="$cand"
+        fi
+    done
+    shopt -u nullglob
+    [[ -n "$latest" ]] || return 1
+    printf '%s\n' "$latest"
+}
+
+_queue_dev_lock() {
+    local target_file="$1" lock_file timeout_s
+    [[ -n "$target_file" ]] || { echo "queue dev: lock target required" >&2; return 2; }
+    if [[ "${QUEUEBASH_DEV_LOCK_HELD:-0}" == "1" ]]; then
+        return 0
+    fi
+    if ! command -v flock >/dev/null 2>&1; then
+        echo "queue dev: flock is required for mutating dev operations" >&2
+        return 1
+    fi
+    lock_file="${target_file}.dev.lock"
+    timeout_s="${QUEUEBASH_DEV_LOCK_TIMEOUT:-10}"
+    eval "exec 9>\"$lock_file\""
+    if ! flock -w "$timeout_s" 9; then
+        echo "queue dev: timeout acquiring lock on $target_file" >&2
+        exec 9>&- || true
+        return 1
+    fi
+}
+
+_queue_dev_unlock() {
+    if [[ "${QUEUEBASH_DEV_LOCK_HELD:-0}" == "1" ]]; then
+        return 0
+    fi
+    flock -u 9 2>/dev/null || true
+    exec 9>&- 2>/dev/null || true
+}
+
+_queue_dev_prune_backups() {
+    local target_file="$1" keep_count n=0 cand
+    keep_count="${QUEUEBASH_DEV_MAX_BACKUPS:-20}"
+    [[ "$keep_count" =~ ^[0-9]+$ ]] || keep_count=20
+    (( keep_count > 0 )) || keep_count=20
+    shopt -s nullglob
+    while IFS= read -r cand; do
+        [[ -n "$cand" && -f "$cand" ]] || continue
+        n=$((n + 1))
+        if (( n > keep_count )); then
+            rm -f -- "$cand" 2>/dev/null || true
+        fi
+    done < <(ls -1t "${target_file}.bak."* 2>/dev/null || true)
+    shopt -u nullglob
+}
+
+_queue_dev_backup_verify() {
+    local source_file="$1" backup_file="$2"
+    cp -p -- "$source_file" "$backup_file" || return 1
+    [[ -s "$backup_file" ]] || { rm -f -- "$backup_file" 2>/dev/null || true; return 1; }
+    case "$source_file" in
+        *.sh|*/queuebash.sh|*/install-system.sh|*/install.sh|*/uninstall.sh|*/publish_to_github.sh|*/queuemgr.sh)
+            bash -n "$backup_file" >/dev/null 2>/dev/null || { rm -f -- "$backup_file" 2>/dev/null || true; return 1; }
+            ;;
+    esac
+}
+
+_queue_dev_comment() {
+    local file="" fn="" message="" changelog=1 json=0 ts tmp line_start line_end backup range locked=0
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --file) file="${2:-}"; shift 2 ;;
+            --function) fn="${2:-}"; shift 2 ;;
+            --message) message="${2:-}"; shift 2 ;;
+            --changelog) changelog=1; shift ;;
+            --no-changelog) changelog=0; shift ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) _queue_dev_usage; return 0 ;;
+            *) echo "queue dev comment: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$file" && -n "$fn" && -n "$message" ]] || { echo "Usage: queue dev comment --file FILE --function FUNCTION --message TEXT [--changelog|--no-changelog] [--json]" >&2; return 2; }
+    _queue_dev_valid_function_name "$fn" || { echo "queue dev comment: invalid function name: $fn" >&2; return 2; }
+    [[ -f "$file" ]] || { echo "queue dev comment: target file not found: $file" >&2; return 1; }
+
+    _queue_dev_lock "$file" || return 1
+    locked=1
+
+    if ! range="$(_queue_dev_file_range "$file" "$fn")"; then
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        echo "queue dev comment: function not found: $fn" >&2
+        return 1
+    fi
+    IFS=$'\t' read -r line_start line_end <<< "$range"
+    ts="$(TZ=Europe/London date +'%Y-%m-%d %H:%M:%S %Z')"
+    tmp="${file}.devcomment.$$"
+    backup="${file}.bak.comment.$(date +%Y%m%d%H%M%S).$$"
+    if ! _queue_dev_backup_verify "$file" "$backup"; then
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        echo "queue dev comment: backup verification failed: $backup" >&2
+        return 1
+    fi
+    python3 - "$file" "$tmp" "$line_start" "$ts" "$message" <<'PYDEV_COMMENT'
+import sys, pathlib
+file, out, start, ts, msg = sys.argv[1:6]
+start = int(start)
+lines = pathlib.Path(file).read_text().splitlines(True)
+comment = f"# [AI-PATCH | {ts}]: {msg}\n"
+idx = max(0, start - 1)
+if idx > 0 and lines[idx-1] == comment:
+    pathlib.Path(out).write_text(''.join(lines))
+else:
+    pathlib.Path(out).write_text(''.join(lines[:idx]) + comment + ''.join(lines[idx:]))
+PYDEV_COMMENT
+    if ! bash -n "$tmp" >/dev/null 2>"${tmp}.syntax.err"; then
+        [[ "$json" -eq 1 ]] && printf '{"status":"error","function":"%s","file":"%s","message":"syntax check failed","stderr":"%s"}\n' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "$(_queue_json_escape "$(cat "${tmp}.syntax.err" 2>/dev/null)")" || { echo "queue dev comment: syntax check failed; target not changed" >&2; cat "${tmp}.syntax.err" >&2 2>/dev/null || true; }
+        rm -f -- "$tmp" "${tmp}.syntax.err" 2>/dev/null || true
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        return 1
+    fi
+    if ! mv -- "$tmp" "$file"; then
+        cp -p -- "$backup" "$file" 2>/dev/null || true
+        rm -f -- "$tmp" "${tmp}.syntax.err" 2>/dev/null || true
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        return 1
+    fi
+    rm -f -- "${tmp}.syntax.err" 2>/dev/null || true
+    _queue_dev_prune_backups "$file"
+    [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+
+    if [[ "$changelog" -eq 1 ]]; then
+        local changelog_file="CHANGELOG.md"
+        if [[ ! -f "$changelog_file" ]]; then
+            changelog_file="$(dirname "$file")/CHANGELOG.md"
+        fi
+        if [[ ! -f "$changelog_file" ]]; then
+            changelog_file="CHANGELOG.md"
+            printf '# Changelog\n' > "$changelog_file"
+        fi
+        printf '\n- %s — AI-PATCH %s in `%s`: %s\n' "$ts" "$fn" "$file" "$message" >> "$changelog_file"
+    fi
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"status":"commented","function":"%s","file":"%s","line_start":%s,"backup":"%s","timestamp":"%s","changelog":%s}\n' \
+            "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "${line_start:-0}" "$(_queue_json_escape "$backup")" "$(_queue_json_escape "$ts")" "$(_queue_dev_json_bool "$changelog")"
+    else
+        echo "commented: $fn in $file"
+        echo "backup:    $backup"
+        [[ "$changelog" -eq 1 ]] && echo "changelog: appended"
+    fi
+}
+
+_queue_dev_diff() {
+    local file="" fn="" json=0 backup="" before after diff_file lines_added lines_removed status="unchanged"
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --file) file="${2:-}"; shift 2 ;;
+            --function) fn="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) _queue_dev_usage; return 0 ;;
+            *) echo "queue dev diff: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$file" ]] || { echo "Usage: queue dev diff --file FILE [--function FUNCTION] [--json]" >&2; return 2; }
+    [[ -f "$file" ]] || { echo "queue dev diff: target file not found: $file" >&2; return 1; }
+    backup="$(_queue_dev_latest_backup "$file" 2>/dev/null || true)"
+    [[ -n "$backup" ]] || { echo "queue dev diff: no backup found for $file" >&2; return 1; }
+    before="${file}.devdiff.before.$$"; after="${file}.devdiff.after.$$"; diff_file="${file}.devdiff.$$"
+    if [[ -n "$fn" ]]; then
+        _queue_dev_valid_function_name "$fn" || { echo "queue dev diff: invalid function name: $fn" >&2; return 2; }
+        _queue_dev_file_extract_to "$backup" "$fn" "$before" >/dev/null || { echo "queue dev diff: function not found in backup: $fn" >&2; rm -f -- "$before" "$after" "$diff_file"; return 1; }
+        _queue_dev_file_extract_to "$file" "$fn" "$after" >/dev/null || { echo "queue dev diff: function not found in live file: $fn" >&2; rm -f -- "$before" "$after" "$diff_file"; return 1; }
+    else
+        cp -- "$backup" "$before"; cp -- "$file" "$after"
+    fi
+    diff -u --label "backup:$backup" --label "live:$file" "$before" "$after" > "$diff_file" || true
+    lines_added="$(grep -E '^\+[^+]' "$diff_file" | wc -l | tr -d ' ')"
+    lines_removed="$(grep -E '^-[^-]' "$diff_file" | wc -l | tr -d ' ')"
+    if [[ "${lines_added:-0}" != "0" || "${lines_removed:-0}" != "0" ]]; then status="modified"; fi
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"file":"%s","backup":"%s","function":"%s","status":"%s","lines_added":%s,"lines_removed":%s,"diff_summary":"%s"}\n' \
+            "$(_queue_json_escape "$file")" "$(_queue_json_escape "$backup")" "$(_queue_json_escape "$fn")" "$status" "${lines_added:-0}" "${lines_removed:-0}" "$(_queue_json_escape "$(cat "$diff_file")")"
+    else
+        cat "$diff_file"
+    fi
+    rm -f -- "$before" "$after" "$diff_file" 2>/dev/null || true
+}
+
+_queue_dev_strip() {
+    local file="" fn="" json=0 backup="" src tmp status=0 patch_json="" range line_start locked=0
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --file) file="${2:-}"; shift 2 ;;
+            --function) fn="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) _queue_dev_usage; return 0 ;;
+            *) echo "queue dev strip: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$file" && -n "$fn" ]] || { echo "Usage: queue dev strip --file FILE --function FUNCTION [--json]" >&2; return 2; }
+    _queue_dev_valid_function_name "$fn" || { echo "queue dev strip: invalid function name: $fn" >&2; return 2; }
+    [[ -f "$file" ]] || { echo "queue dev strip: target file not found: $file" >&2; return 1; }
+
+    _queue_dev_lock "$file" || return 1
+    locked=1
+
+    backup="$(_queue_dev_latest_backup "$file" 2>/dev/null || true)"
+    if [[ -z "$backup" ]]; then
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        echo "queue dev strip: no backup found for $file" >&2
+        return 1
+    fi
+    src="${file}.devstrip.source.$$"
+    if ! _queue_dev_file_extract_to "$backup" "$fn" "$src" >/dev/null; then
+        rm -f -- "$src"
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        echo "queue dev strip: function not found in backup: $fn" >&2
+        return 1
+    fi
+    if [[ "$json" -eq 1 ]]; then
+        patch_json="$(QUEUEBASH_DEV_LOCK_HELD=1 _queue_dev_patch --file "$file" --function "$fn" --source "$src" --json)" || status=$?
+    else
+        QUEUEBASH_DEV_LOCK_HELD=1 _queue_dev_patch --file "$file" --function "$fn" --source "$src" || status=$?
+    fi
+    rm -f -- "$src" 2>/dev/null || true
+    if [[ "$status" -ne 0 ]]; then
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        [[ "$json" -eq 1 ]] && printf '%s\n' "$patch_json"
+        return "$status"
+    fi
+    # Prune immediately adjacent AI-PATCH comments left above the restored function.
+    if range="$(_queue_dev_file_range "$file" "$fn")"; then
+        IFS=$'\t' read -r line_start _ <<< "$range"
+        tmp="${file}.devstrip.$$"
+        python3 - "$file" "$tmp" "$line_start" <<'PYDEV_STRIP_COMMENT'
+import sys, pathlib
+file, out, start = sys.argv[1:4]
+start = int(start)
+lines = pathlib.Path(file).read_text().splitlines(True)
+idx = start - 2
+while idx >= 0 and lines[idx].startswith('# [AI-PATCH'):
+    del lines[idx]
+    idx -= 1
+pathlib.Path(out).write_text(''.join(lines))
+PYDEV_STRIP_COMMENT
+        if bash -n "$tmp" >/dev/null 2>/dev/null; then mv -- "$tmp" "$file"; else rm -f -- "$tmp"; fi
+    fi
+    _queue_dev_prune_backups "$file"
+    [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"status":"stripped","function":"%s","file":"%s","restored_from":"%s","locked":true,"atomic":true}\n' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "$(_queue_json_escape "$backup")"
+    else
+        echo "stripped: $fn in $file"
+        echo "restored_from: $backup"
+    fi
+}
+
+_queue_dev_patch() {
+    local file="" fn="" source="" json=0 syntax_check=1 backup="" tmp status=0 message="patched" locked=0 lock_was_held=0
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --file) file="${2:-}"; shift 2 ;;
+            --function) fn="${2:-}"; shift 2 ;;
+            --source) source="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --no-syntax-check) syntax_check=0; shift ;;
+            --help|-h) _queue_dev_usage; return 0 ;;
+            *) echo "queue dev patch: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$file" && -n "$fn" && -n "$source" ]] || { echo "Usage: queue dev patch --file FILE --function FUNCTION --source SOURCE [--json]" >&2; return 2; }
+    _queue_dev_valid_function_name "$fn" || { echo "queue dev patch: invalid function name: $fn" >&2; return 2; }
+    [[ -f "$file" ]] || { echo "queue dev patch: target file not found: $file" >&2; return 1; }
+    [[ -f "$source" ]] || { echo "queue dev patch: source file not found: $source" >&2; return 1; }
+
+    lock_was_held="${QUEUEBASH_DEV_LOCK_HELD:-0}"
+    _queue_dev_lock "$file" || return 1
+    [[ "$lock_was_held" == "1" ]] || locked=1
+
+    tmp="${file}.devpatch.$$"
+    backup="${file}.bak.$(date +%Y%m%d%H%M%S).$$"
+
+    if ! python3 - "$file" "$fn" "$source" "$tmp" <<'PYDEV_PATCH'
+import re, sys, pathlib
+file, fn, source, out = sys.argv[1:5]
+text = pathlib.Path(file).read_text()
+new = pathlib.Path(source).read_text()
+if not new.endswith('\n'):
+    new += '\n'
+lines = text.splitlines(True)
+pat1 = re.compile(r'^(\s*)' + re.escape(fn) + r'\s*\(\s*\)\s*(\{)?\s*(?:#.*)?$')
+pat2 = re.compile(r'^(\s*)function\s+' + re.escape(fn) + r'(?:\s*\(\s*\))?\s*(\{)?\s*(?:#.*)?$')
+start = None
+for i, line in enumerate(lines):
+    if pat1.match(line) or pat2.match(line):
+        start = i
+        break
+if start is None:
+    print(f'function not found: {fn}', file=sys.stderr)
+    sys.exit(3)
+
+def brace_delta(line):
+    delta = 0
+    sq = dq = esc = False
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if esc:
+            esc = False; i += 1; continue
+        if ch == '\\' and not sq:
+            esc = True; i += 1; continue
+        if ch == "'" and not dq:
+            sq = not sq; i += 1; continue
+        if ch == '"' and not sq:
+            dq = not dq; i += 1; continue
+        if ch == '#' and not sq and not dq:
+            break
+        if not sq and not dq:
+            if ch == '{': delta += 1
+            elif ch == '}': delta -= 1
+        i += 1
+    return delta
+
+depth = 0
+seen_open = False
+end = None
+for i in range(start, len(lines)):
+    d = brace_delta(lines[i])
+    if d > 0:
+        seen_open = True
+    depth += d
+    if seen_open and depth <= 0:
+        end = i
+        break
+if end is None:
+    print(f'function end not found: {fn}', file=sys.stderr)
+    sys.exit(4)
+patched = ''.join(lines[:start]) + new + ''.join(lines[end+1:])
+pathlib.Path(out).write_text(patched)
+print(f'{start+1}\t{end+1}')
+PYDEV_PATCH
+    then
+        status=$?; message="patch construction failed"
+        [[ "$json" -eq 1 ]] && printf '{"status":"error","function":"%s","file":"%s","message":"%s"}\n' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "$(_queue_json_escape "$message")"
+        rm -f -- "$tmp" "${tmp}.range" 2>/dev/null || true
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        return "$status"
+    fi > "${tmp}.range"
+
+    if [[ "$syntax_check" -eq 1 ]]; then
+        if ! bash -n "$tmp" >/dev/null 2>"${tmp}.syntax.err"; then
+            message="syntax check failed"
+            if [[ "$json" -eq 1 ]]; then
+                printf '{"status":"error","function":"%s","file":"%s","message":"%s","stderr":"%s"}\n' \
+                    "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "$(_queue_json_escape "$message")" "$(_queue_json_escape "$(cat "${tmp}.syntax.err" 2>/dev/null)")"
+            else
+                echo "queue dev patch: syntax check failed; target not changed: $file" >&2
+                cat "${tmp}.syntax.err" >&2 2>/dev/null || true
+            fi
+            rm -f -- "$tmp" "${tmp}.range" "${tmp}.syntax.err" 2>/dev/null || true
+            [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+            return 1
+        fi
+    fi
+
+    if ! _queue_dev_backup_verify "$file" "$backup"; then
+        rm -f -- "$tmp" "${tmp}.range" "${tmp}.syntax.err" 2>/dev/null || true
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        [[ "$json" -eq 1 ]] && printf '{"status":"error","function":"%s","file":"%s","message":"backup verification failed"}\n' "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" || echo "queue dev patch: backup verification failed: $backup" >&2
+        return 1
+    fi
+    if ! mv -- "$tmp" "$file"; then
+        cp -p -- "$backup" "$file" 2>/dev/null || true
+        rm -f -- "$tmp" "${tmp}.range" 2>/dev/null || true
+        [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+        return 1
+    fi
+    local line_start line_end
+    IFS=$'\t' read -r line_start line_end < "${tmp}.range" || true
+    rm -f -- "${tmp}.range" "${tmp}.syntax.err" 2>/dev/null || true
+    _queue_dev_prune_backups "$file"
+    [[ "$locked" -eq 1 ]] && _queue_dev_unlock
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"status":"patched","function":"%s","file":"%s","line_start":%s,"line_end":%s,"backup":"%s","syntax_checked":%s,"atomic":true,"locked":true}\n' \
+            "$(_queue_json_escape "$fn")" "$(_queue_json_escape "$file")" "${line_start:-0}" "${line_end:-0}" "$(_queue_json_escape "$backup")" "$(_queue_dev_json_bool "$syntax_check")"
+    else
+        echo "patched: $fn in $file"
+        echo "backup:  $backup"
+        [[ "$syntax_check" -eq 1 ]] && echo "syntax:  ok"
+    fi
+}
+
+
+_queue_dev_symbols() {
+    local file="" fn="" json=0 scope="" tmp="" source_kind="file"
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --file) file="${2:-}"; shift 2 ;;
+            --function) fn="${2:-}"; shift 2 ;;
+            --scope) scope="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) _queue_dev_usage; return 0 ;;
+            *) echo "queue dev symbols: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    if [[ -n "$scope" ]]; then
+        file="$scope"
+        source_kind="scope"
+    fi
+    if [[ -n "$fn" ]]; then
+        _queue_dev_valid_function_name "$fn" || { echo "queue dev symbols: invalid function name: $fn" >&2; return 2; }
+    fi
+    if [[ -n "$file" ]]; then
+        [[ -f "$file" ]] || { echo "queue dev symbols: target file not found: $file" >&2; return 1; }
+        if [[ -n "$fn" ]]; then
+            tmp="${TMPDIR:-/tmp}/queue-dev-symbols-${fn}-$$.sh"
+            _queue_dev_file_extract_to "$file" "$fn" "$tmp" >/dev/null || { rm -f -- "$tmp"; echo "queue dev symbols: function not found in file: $fn" >&2; return 1; }
+            file="$tmp"
+            source_kind="file_function"
+        fi
+    elif [[ -n "$fn" ]]; then
+        tmp="${TMPDIR:-/tmp}/queue-dev-symbols-${fn}-$$.sh"
+        declare -f "$fn" > "$tmp" || { rm -f -- "$tmp"; echo "queue dev symbols: function not loaded: $fn" >&2; return 1; }
+        file="$tmp"
+        source_kind="loaded_function"
+    else
+        echo "Usage: queue dev symbols --file FILE [--function FUNCTION] [--json]" >&2
+        return 2
+    fi
+
+    local out status=0 old_errexit=0
+    case $- in *e*) old_errexit=1; set +e ;; esac
+    out="$(python3 - "$file" "$fn" "$source_kind" <<'PYDEV_SYMBOLS'
+import json, re, sys, pathlib
+path, requested_function, source_kind = sys.argv[1:4]
+try:
+    text = pathlib.Path(path).read_text()
+except Exception as exc:
+    print(json.dumps({"status":"error","message":f"read failed: {exc}"}))
+    sys.exit(0)
+lines = text.splitlines(True)
+
+def mask_heredocs(src_lines):
+    masked=[]; tag=None
+    hd_re = re.compile(r'<<-?\s*([\"\']?)([A-Za-z_][A-Za-z0-9_]*)\1')
+    for line in src_lines:
+        if tag is not None:
+            if line.strip() == tag:
+                tag = None
+                masked.append(line)
+            else:
+                masked.append('\n')
+            continue
+        masked.append(line)
+        m = hd_re.search(line)
+        if m:
+            tag = m.group(2)
+    return masked
+
+analysis_lines = mask_heredocs(lines)
+
+def strip_comment(line):
+    out=[]; sq=dq=esc=False; i=0
+    while i < len(line):
+        ch=line[i]
+        if esc:
+            out.append(ch); esc=False; i+=1; continue
+        if ch=='\\' and not sq:
+            out.append(ch); esc=True; i+=1; continue
+        if ch=="'" and not dq:
+            sq=not sq; out.append(ch); i+=1; continue
+        if ch=='"' and not sq:
+            dq=not dq; out.append(ch); i+=1; continue
+        if ch=='#' and not sq and not dq:
+            break
+        out.append(ch); i+=1
+    return ''.join(out)
+
+def brace_delta(line):
+    line=strip_comment(line)
+    delta=0; sq=dq=esc=False; i=0
+    while i < len(line):
+        ch=line[i]
+        if esc:
+            esc=False; i+=1; continue
+        if ch=='\\' and not sq:
+            esc=True; i+=1; continue
+        if ch=="'" and not dq:
+            sq=not sq; i+=1; continue
+        if ch=='"' and not sq:
+            dq=not dq; i+=1; continue
+        if not sq and not dq:
+            if ch=='{': delta += 1
+            elif ch=='}': delta -= 1
+        i+=1
+    return delta
+
+fn_start_re = re.compile(r'^\s*(?:function\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\{.*)?|([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*(?:\{.*)?)$')
+functions=[]
+i=0
+while i < len(analysis_lines):
+    raw=strip_comment(analysis_lines[i]).rstrip('\n')
+    m=fn_start_re.match(raw)
+    if m and not raw.lstrip().startswith(('if ', 'for ', 'while ', 'until ', 'case ', 'select ')):
+        name=(m.group(1) or m.group(2)); start=i; depth=0; seen=('{' in raw); end=None
+        j=i
+        while j < len(analysis_lines):
+            d=brace_delta(analysis_lines[j])
+            if d>0: seen=True
+            depth += d
+            if seen and depth <= 0:
+                end=j; break
+            j += 1
+        if end is not None:
+            functions.append({"name":name,"line_start":start+1,"line_end":end+1})
+            i=end+1
+            continue
+    i += 1
+
+def current_function(lineno):
+    for f in functions:
+        if f["line_start"] <= lineno <= f["line_end"]:
+            return f["name"]
+    return None
+
+assign_re = re.compile(r'(^|[;\s])([A-Za-z_][A-Za-z0-9_]*)\s*(\+?=)')
+local_re = re.compile(r'\b(local|declare|typeset|readonly|export)\b\s+([^#;]+)')
+ref_re = re.compile(r'\$\{?([A-Za-z_][A-Za-z0-9_]*)')
+str_re = re.compile("""(?P<q>[\"'])(?P<v>(?:\\\\.|(?!\\1).)*)(?P=q)""")
+name_re = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)(?:\+?=|$)')
+variables={}; strings=[]
+
+def var(name):
+    return variables.setdefault(name, {"definitions":[],"references":[],"defined_in":[],"referenced_in":[],"scope":"unknown","constant":False})
+
+def add_unique(lst, val):
+    if val not in lst:
+        lst.append(val)
+
+for idx, original in enumerate(analysis_lines, start=1):
+    code=strip_comment(original).rstrip('\n')
+    func=current_function(idx)
+    for lm in local_re.finditer(code):
+        kind=lm.group(1); rest=lm.group(2)
+        parts=[p for p in re.split(r'\s+', rest.strip()) if p and not p.startswith('-')]
+        for part in parts:
+            nm=name_re.match(part)
+            if not nm: continue
+            name=nm.group(1); rec=var(name)
+            rec["definitions"].append({"line":idx,"function":func,"kind":kind})
+            add_unique(rec["defined_in"], func or "global")
+            if kind == 'local':
+                rec["scope"] = "local" if rec["scope"] in ("unknown","local") else "mixed"
+            elif func is None:
+                rec["scope"] = "global" if rec["scope"] in ("unknown","global") else "mixed"
+            if kind == 'readonly' or name.isupper():
+                rec["constant"] = True
+    for am in assign_re.finditer(code):
+        name=am.group(2)
+        rec=var(name)
+        rec["definitions"].append({"line":idx,"function":func,"kind":"assignment"})
+        add_unique(rec["defined_in"], func or "global")
+        if func is None:
+            rec["scope"] = "global" if rec["scope"] in ("unknown","global") else "mixed"
+        else:
+            rec["scope"] = "global-write" if rec["scope"] in ("unknown","global-write") else rec["scope"]
+        if name.isupper(): rec["constant"] = True
+    for rm in ref_re.finditer(code):
+        name=rm.group(1); rec=var(name)
+        rec["references"].append({"line":idx,"function":func})
+        add_unique(rec["referenced_in"], func or "global")
+    for sm in str_re.finditer(code):
+        val=sm.group('v')
+        if val:
+            strings.append({"line":idx,"function":func,"quote":sm.group('q'),"value":val})
+for rec in variables.values():
+    if rec["scope"] == "unknown":
+        rec["scope"] = "referenced-only"
+constants={k:v for k,v in variables.items() if v.get("constant")}
+result={
+    "status":"ok",
+    "file": str(pathlib.Path(path)),
+    "source_kind": source_kind,
+    "function": requested_function or None,
+    "functions": functions,
+    "variables": dict(sorted(variables.items())),
+    "constants": dict(sorted(constants.items())),
+    "strings": strings,
+}
+print(json.dumps(result, separators=(",",":")))
+PYDEV_SYMBOLS
+)" || status=$?
+    rm -f -- "$tmp" 2>/dev/null || true
+    [[ "$status" -eq 0 ]] || { printf '%s\n' "$out"; return "$status"; }
+    if [[ "$json" -eq 1 ]]; then
+        printf '%s\n' "$out"
+    elif command -v jq >/dev/null 2>&1; then
+        printf '%s\n' "$out" | jq .
+    else
+        printf '%s\n' "$out"
+    fi
+}
+
+
+_queue_dev_flow() {
+    local file="" fn="" json=0 tmp="" source_kind="file"
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --file) file="${2:-}"; shift 2 ;;
+            --function) fn="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) _queue_dev_usage; return 0 ;;
+            *) echo "queue dev flow: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    if [[ -n "$fn" ]]; then
+        _queue_dev_valid_function_name "$fn" || { echo "queue dev flow: invalid function name: $fn" >&2; return 2; }
+    fi
+    if [[ -n "$file" ]]; then
+        [[ -f "$file" ]] || { echo "queue dev flow: target file not found: $file" >&2; return 1; }
+        if [[ -n "$fn" ]]; then
+            _queue_dev_file_extract_to "$file" "$fn" /dev/null >/dev/null || { echo "queue dev flow: function not found in file: $fn" >&2; return 1; }
+            source_kind="file_function"
+        fi
+    elif [[ -n "$fn" ]]; then
+        tmp="${TMPDIR:-/tmp}/queue-dev-flow-${fn}-$$.sh"
+        declare -f "$fn" > "$tmp" || { rm -f -- "$tmp"; echo "queue dev flow: function not loaded: $fn" >&2; return 1; }
+        file="$tmp"
+        source_kind="loaded_function"
+    else
+        echo "Usage: queue dev flow --file FILE [--function FUNCTION] [--json]" >&2
+        return 2
+    fi
+
+    local out status=0 old_errexit=0
+    case $- in *e*) old_errexit=1; set +e ;; esac
+    out="$(python3 - "$file" "$fn" "$source_kind" <<'PYDEV_FLOW'
+import json, re, sys, pathlib
+path, requested_function, source_kind = sys.argv[1:4]
+try:
+    text = pathlib.Path(path).read_text()
+except Exception as exc:
+    print(json.dumps({"status":"error","message":f"read failed: {exc}"}))
+    sys.exit(0)
+lines = text.splitlines(True)
+
+def mask_heredocs(src_lines):
+    masked=[]; tag=None
+    hd_re = re.compile(r'<<-?\s*([\"\']?)([A-Za-z_][A-Za-z0-9_]*)\1')
+    for line in src_lines:
+        if tag is not None:
+            if line.strip() == tag:
+                tag = None
+                masked.append(line)
+            else:
+                masked.append('\n')
+            continue
+        masked.append(line)
+        m = hd_re.search(line)
+        if m:
+            tag = m.group(2)
+    return masked
+
+analysis_lines = mask_heredocs(lines)
+
+def strip_comment(line):
+    out=[]; sq=dq=esc=False; cmd_depth=0; i=0
+    while i < len(line):
+        ch=line[i]
+        nxt=line[i+1] if i+1 < len(line) else ''
+        if esc:
+            out.append(ch); esc=False; i+=1; continue
+        if ch=='\\' and not sq:
+            out.append(ch); esc=True; i+=1; continue
+        if not sq and ch=='$' and nxt=='(':
+            cmd_depth += 1; out.append(ch); out.append(nxt); i+=2; continue
+        if not sq and cmd_depth > 0 and ch==')':
+            cmd_depth -= 1; out.append(ch); i+=1; continue
+        if ch=="'" and not dq:
+            sq=not sq; out.append(ch); i+=1; continue
+        if ch=='"' and not sq:
+            # Quotes inside command substitution do not terminate the outer parse.
+            dq=not dq; out.append(ch); i+=1; continue
+        if ch=='#' and not sq and not dq:
+            break
+        out.append(ch); i+=1
+    return ''.join(out)
+
+
+def remove_quoted(line):
+    out=[]; sq=dq=esc=False; i=0
+    while i < len(line):
+        ch=line[i]
+        if esc:
+            esc=False; out.append(' '); i+=1; continue
+        if ch=='\\' and not sq:
+            esc=True; out.append(' '); i+=1; continue
+        if ch=="'" and not dq:
+            sq=not sq; out.append(' '); i+=1; continue
+        if ch=='"' and not sq:
+            dq=not dq; out.append(' '); i+=1; continue
+        out.append(' ' if (sq or dq) else ch)
+        i+=1
+    return ''.join(out)
+
+def brace_delta(line):
+    line=strip_comment(line)
+    delta=0; sq=dq=esc=False; i=0
+    while i < len(line):
+        ch=line[i]
+        if esc:
+            esc=False; i+=1; continue
+        if ch=='\\' and not sq:
+            esc=True; i+=1; continue
+        if ch=="'" and not dq:
+            sq=not sq; i+=1; continue
+        if ch=='"' and not sq:
+            dq=not dq; i+=1; continue
+        if not sq and not dq:
+            if ch=='{': delta += 1
+            elif ch=='}': delta -= 1
+        i+=1
+    return delta
+
+fn_start_re = re.compile(r'^\s*(?:function\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\{.*)?|([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*(?:\{.*)?)$')
+functions=[]
+i=0
+while i < len(analysis_lines):
+    raw=strip_comment(analysis_lines[i]).rstrip('\n')
+    m=fn_start_re.match(raw)
+    if m and not raw.lstrip().startswith(('if ', 'for ', 'while ', 'until ', 'case ', 'select ')):
+        name=(m.group(1) or m.group(2)); start=i; depth=0; seen=('{' in raw); end=None
+        j=i
+        while j < len(analysis_lines):
+            d=brace_delta(analysis_lines[j])
+            if d>0: seen=True
+            depth += d
+            if seen and depth <= 0:
+                end=j; break
+            j += 1
+        if end is not None:
+            functions.append({"id":name,"label":name,"kind":"function","line_start":start+1,"line_end":end+1})
+            i=end+1
+            continue
+    i += 1
+
+known={f['id'] for f in functions}
+if requested_function:
+    requested_ranges=[(f['line_start'], f['line_end']) for f in functions if f['id']==requested_function]
+else:
+    requested_ranges=[]
+
+def current_function(lineno):
+    for f in functions:
+        if f['line_start'] <= lineno <= f['line_end']:
+            return f['id']
+    return None
+
+def in_scope(lineno):
+    if not requested_ranges:
+        return True
+    return any(a <= lineno <= b for a,b in requested_ranges)
+
+call_token_re = re.compile(r'(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)(?=\s*(?:\(|\s|;|&&|\|\||\||&|$))')
+branch_re = re.compile(r'^\s*(if|elif|else|case|for|while|until|select)\b')
+case_pat_re = re.compile(r'^\s*([^#;][^)]{0,120})\)')
+return_re = re.compile(r'(^|[;\s])(return|exit)\b\s*([0-9]+)?')
+nodes={f['id']:f for f in functions if (not requested_function or f['id']==requested_function)}
+edges=[]; seen_edges=set(); branches=[]
+
+def add_node(nid, label, kind, line):
+    nodes.setdefault(nid, {"id":nid,"label":label,"kind":kind,"line_start":line,"line_end":line})
+
+def add_edge(src,dst,kind,line,label=None):
+    key=(src,dst,kind,line,label or '')
+    if key in seen_edges:
+        return
+    seen_edges.add(key)
+    item={"from":src,"to":dst,"kind":kind,"line":line}
+    if label:
+        item['label']=label
+    edges.append(item)
+
+for idx, original in enumerate(analysis_lines, start=1):
+    if not in_scope(idx):
+        continue
+    code=strip_comment(original).strip()
+    if not code:
+        continue
+    func=current_function(idx)
+    if not func:
+        continue
+    bm=branch_re.match(code)
+    if bm:
+        bkind=bm.group(1)
+        bid=f"{func}:L{idx}:{bkind}"
+        add_node(bid, f"{bkind} @ L{idx}", "branch", idx)
+        add_edge(func,bid,"branch",idx,bkind)
+        branches.append({"id":bid,"function":func,"kind":bkind,"line":idx,"text":code[:240]})
+    cm=case_pat_re.match(code)
+    if cm and not fn_start_re.match(code):
+        bid=f"{func}:L{idx}:case-pattern"
+        add_node(bid, f"case {cm.group(1).strip()} @ L{idx}", "branch", idx)
+        add_edge(func,bid,"case-pattern",idx,cm.group(1).strip())
+        branches.append({"id":bid,"function":func,"kind":"case-pattern","line":idx,"text":code[:240]})
+    for rm in return_re.finditer(code):
+        kind=rm.group(2); codeval=rm.group(3) or ''
+        rid=f"{func}:L{idx}:{kind}{codeval}"
+        add_node(rid, f"{kind} {codeval}".strip()+f" @ L{idx}", "terminal", idx)
+        add_edge(func,rid,"terminal",idx,(kind+' '+codeval).strip())
+    code_tokens=remove_quoted(code)
+    for m in call_token_re.finditer(code_tokens):
+        callee=m.group(1)
+        # Avoid treating a function declaration line as a call.
+        if fn_start_re.match(code):
+            continue
+        if callee == func:
+            add_edge(func,callee,"recursive-call",idx)
+        elif callee in known and callee != func:
+            add_edge(func,callee,"call",idx)
+
+callee_map={}
+for e in edges:
+    if e['kind'] in ('call','recursive-call'):
+        callee_map.setdefault(e['from'], [])
+        if e['to'] not in callee_map[e['from']]:
+            callee_map[e['from']].append(e['to'])
+for f in nodes.values():
+    if f.get('kind') == 'function':
+        f['callees']=sorted(callee_map.get(f['id'], []))
+
+result={
+    "status":"ok",
+    "file": str(pathlib.Path(path)),
+    "source_kind": source_kind,
+    "function": requested_function or None,
+    "nodes": sorted(nodes.values(), key=lambda n:(n.get('line_start',0), n.get('id',''))),
+    "edges": sorted(edges, key=lambda e:(e.get('line',0), e.get('from',''), e.get('to',''), e.get('kind',''))),
+    "branches": branches,
+    "summary": {
+        "functions": sum(1 for n in nodes.values() if n.get('kind')=='function'),
+        "branches": len(branches),
+        "edges": len(edges),
+        "calls": sum(1 for e in edges if e.get('kind') in ('call','recursive-call')),
+        "terminals": sum(1 for n in nodes.values() if n.get('kind')=='terminal'),
+    }
+}
+print(json.dumps(result, separators=(",",":")))
+PYDEV_FLOW
+)" || status=$?
+    rm -f -- "$tmp" 2>/dev/null || true
+    [[ "$status" -eq 0 ]] || { printf '%s\n' "$out"; return "$status"; }
+    if [[ "$json" -eq 1 ]]; then
+        printf '%s\n' "$out"
+    elif command -v jq >/dev/null 2>&1; then
+        printf '%s\n' "$out" | jq .
+    else
+        printf '%s\n' "$out"
+    fi
+}
+
+
+_queue_dev_splice() {
+    local file="" mode="" after="" before="" replace="" with="" insert="" if_missing="" if_present="" json=0 dry_run=0 all=0
+    local after_file="" before_file="" replace_file="" with_file="" insert_file=""
+    local with_supplied=0 insert_supplied=0
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --file) file="${2:-}"; shift 2 ;;
+            --after) after="${2:-}"; mode="${mode:+$mode,}after"; shift 2 ;;
+            --before) before="${2:-}"; mode="${mode:+$mode,}before"; shift 2 ;;
+            --replace) replace="${2:-}"; mode="${mode:+$mode,}replace"; shift 2 ;;
+            --with) with="${2:-}"; with_supplied=1; shift 2 ;;
+            --insert) insert="${2:-}"; insert_supplied=1; shift 2 ;;
+            --after-file) after_file="${2:-}"; mode="${mode:+$mode,}after_file"; shift 2 ;;
+            --before-file) before_file="${2:-}"; mode="${mode:+$mode,}before_file"; shift 2 ;;
+            --replace-file) replace_file="${2:-}"; mode="${mode:+$mode,}replace_file"; shift 2 ;;
+            --with-file) with_file="${2:-}"; with_supplied=1; shift 2 ;;
+            --insert-file) insert_file="${2:-}"; insert_supplied=1; shift 2 ;;
+            --if-missing) if_missing="${2:-}"; shift 2 ;;
+            --if-present) if_present="${2:-}"; shift 2 ;;
+            --dry-run|--dryrun|-n) dry_run=1; shift ;;
+            --json|-j) json=1; shift ;;
+            --all) all=1; shift ;;
+            --help|-h)
+                cat <<'USAGE'
+Usage:
+  queue dev splice --file FILE --after TEXT --insert TEXT [--if-missing TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --before TEXT --insert TEXT [--if-missing TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --replace TEXT --with TEXT [--if-present TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --after-file NEEDLE_FILE --insert-file INSERT_FILE [--if-missing TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --before-file NEEDLE_FILE --insert-file INSERT_FILE [--if-missing TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --replace-file OLD_FILE --with-file NEW_FILE [--all] [--dry-run] [--json]
+
+Constrained anchored text splicing. Operates on one file, treats inserted text as
+plain text, supports dry-run/idempotency, and writes atomically without creating
+queuebash.sh.bak.* or *.devpatch.* artifacts. File-based splice inputs are read
+inside the helper so trailing newlines are preserved exactly.
+USAGE
+                return 0 ;;
+            *) echo "queue dev splice: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+
+    [[ -n "$file" ]] || { echo "queue dev splice: --file is required" >&2; return 2; }
+    [[ -f "$file" ]] || { echo "queue dev splice: file not found: $file" >&2; return 1; }
+
+    IFS=',' read -r -a _splice_modes <<< "$mode"
+    local mode_count=0 m selected_mode=""
+    for m in "${_splice_modes[@]}"; do
+        [[ -n "$m" ]] || continue
+        mode_count=$((mode_count + 1))
+        selected_mode="$m"
+    done
+    [[ "$mode_count" -eq 1 ]] || { echo "queue dev splice: exactly one transformation mode is required" >&2; return 2; }
+
+    case "$selected_mode" in
+        after_file)
+            [[ -f "$after_file" ]] || { echo "queue dev splice: after-file not found: $after_file" >&2; return 1; }
+            selected_mode="after" ;;
+        before_file)
+            [[ -f "$before_file" ]] || { echo "queue dev splice: before-file not found: $before_file" >&2; return 1; }
+            selected_mode="before" ;;
+        replace_file)
+            [[ -f "$replace_file" ]] || { echo "queue dev splice: replace-file not found: $replace_file" >&2; return 1; }
+            selected_mode="replace" ;;
+    esac
+    if [[ -n "$insert_file" ]]; then
+        [[ -f "$insert_file" ]] || { echo "queue dev splice: insert-file not found: $insert_file" >&2; return 1; }
+    fi
+    if [[ -n "$with_file" ]]; then
+        [[ -f "$with_file" ]] || { echo "queue dev splice: with-file not found: $with_file" >&2; return 1; }
+    fi
+
+    case "$selected_mode" in
+        after)
+            [[ -n "$after" || -n "$after_file" ]] || { echo "queue dev splice: --after/--after-file is required" >&2; return 2; }
+            [[ "$insert_supplied" -eq 1 ]] || { echo "queue dev splice: --insert/--insert-file is required" >&2; return 2; } ;;
+        before)
+            [[ -n "$before" || -n "$before_file" ]] || { echo "queue dev splice: --before/--before-file is required" >&2; return 2; }
+            [[ "$insert_supplied" -eq 1 ]] || { echo "queue dev splice: --insert/--insert-file is required" >&2; return 2; } ;;
+        replace)
+            [[ -n "$replace" || -n "$replace_file" ]] || { echo "queue dev splice: --replace/--replace-file is required" >&2; return 2; }
+            [[ "$with_supplied" -eq 1 ]] || { echo "queue dev splice: --replace/--replace-file requires explicit --with/--with-file" >&2; return 2; } ;;
+        *) echo "queue dev splice: unsupported mode: $selected_mode" >&2; return 2 ;;
+    esac
+
+    local -a py_args
+    py_args=(--file "$file" --mode "$selected_mode")
+    [[ "$dry_run" -eq 1 ]] && py_args+=(--dry-run)
+    [[ "$all" -eq 1 ]] && py_args+=(--all)
+    [[ -n "$if_missing" ]] && py_args+=(--if-missing "$if_missing")
+    [[ -n "$if_present" ]] && py_args+=(--if-present "$if_present")
+    case "$selected_mode" in
+        after)
+            if [[ -n "$after_file" ]]; then py_args+=(--after-file "$after_file"); else py_args+=(--after-text "$after"); fi
+            if [[ -n "$insert_file" ]]; then py_args+=(--insert-file "$insert_file"); else py_args+=(--insert-text "$insert"); fi ;;
+        before)
+            if [[ -n "$before_file" ]]; then py_args+=(--before-file "$before_file"); else py_args+=(--before-text "$before"); fi
+            if [[ -n "$insert_file" ]]; then py_args+=(--insert-file "$insert_file"); else py_args+=(--insert-text "$insert"); fi ;;
+        replace)
+            if [[ -n "$replace_file" ]]; then py_args+=(--replace-file "$replace_file"); else py_args+=(--replace-text "$replace"); fi
+            if [[ -n "$with_file" ]]; then py_args+=(--with-file "$with_file"); else py_args+=(--with-text "$with"); fi ;;
+    esac
+
+    local out status=0 old_errexit=0
+    case $- in *e*) old_errexit=1; set +e ;; esac
+    out="$(python3 - "${py_args[@]}" <<'PYDEV_SPLICE'
+import argparse, json, os, pathlib, stat, sys, tempfile
+schema = "queuebash.dev_splice_response.v1"
+parser = argparse.ArgumentParser(prog="queue dev splice helper", add_help=False)
+parser.add_argument("--file", required=True)
+parser.add_argument("--mode", required=True, choices=("after", "before", "replace"))
+parser.add_argument("--dry-run", action="store_true")
+parser.add_argument("--all", action="store_true")
+parser.add_argument("--if-missing", default="")
+parser.add_argument("--if-present", default="")
+parser.add_argument("--after-text", default=None)
+parser.add_argument("--before-text", default=None)
+parser.add_argument("--replace-text", default=None)
+parser.add_argument("--with-text", dest="with_text", default=None)
+parser.add_argument("--insert-text", default=None)
+parser.add_argument("--after-file", default=None)
+parser.add_argument("--before-file", default=None)
+parser.add_argument("--replace-file", default=None)
+parser.add_argument("--with-file", dest="with_file", default=None)
+parser.add_argument("--insert-file", default=None)
+args = parser.parse_args()
+path = args.file
+res = {"schema": schema, "file": path, "mode": args.mode, "anchor_found": False, "occurrences": 0, "changed": False, "skipped": False, "error": False, "reason": "", "dry_run": bool(args.dry_run), "bytes_before": 0, "bytes_after": 0}
+
+def emit(code=0, **updates):
+    res.update(updates)
+    print(json.dumps(res, separators=(",", ":")))
+    sys.exit(code)
+
+def read_text_pair(text_value, filename):
+    if filename is not None:
+        return pathlib.Path(filename).read_text()
+    return "" if text_value is None else text_value
+
+try:
+    p = pathlib.Path(path)
+    if not p.exists() or not p.is_file():
+        raise FileNotFoundError(path)
+    data = p.read_text()
+    res["bytes_before"] = len(data.encode())
+
+    if args.if_missing and args.if_missing in data:
+        emit(0, skipped=True, reason="already_present", bytes_after=res["bytes_before"])
+    if args.if_present and args.if_present not in data:
+        emit(0, skipped=True, reason="not_present", bytes_after=res["bytes_before"])
+
+    if args.mode == "after":
+        needle = read_text_pair(args.after_text, args.after_file)
+        insert = read_text_pair(args.insert_text, args.insert_file)
+        if needle == "":
+            emit(2, error=True, reason="empty_anchor", bytes_after=res["bytes_before"])
+        count = data.count(needle)
+        res["occurrences"] = count
+        res["anchor_found"] = count > 0
+        if count == 0:
+            emit(1, error=True, reason="anchor_missing", bytes_after=res["bytes_before"])
+        new = data.replace(needle, needle + insert, 1)
+    elif args.mode == "before":
+        needle = read_text_pair(args.before_text, args.before_file)
+        insert = read_text_pair(args.insert_text, args.insert_file)
+        if needle == "":
+            emit(2, error=True, reason="empty_anchor", bytes_after=res["bytes_before"])
+        count = data.count(needle)
+        res["occurrences"] = count
+        res["anchor_found"] = count > 0
+        if count == 0:
+            emit(1, error=True, reason="anchor_missing", bytes_after=res["bytes_before"])
+        new = data.replace(needle, insert + needle, 1)
+    else:
+        needle = read_text_pair(args.replace_text, args.replace_file)
+        with_text = read_text_pair(args.with_text, args.with_file)
+        if needle == "":
+            emit(2, error=True, reason="empty_replace_text", bytes_after=res["bytes_before"])
+        count = data.count(needle)
+        res["occurrences"] = count
+        res["anchor_found"] = count > 0
+        if count == 0:
+            emit(1, error=True, reason="replace_text_missing", bytes_after=res["bytes_before"])
+        if count > 1 and not args.all:
+            emit(1, error=True, reason="replace_text_not_unique", bytes_after=res["bytes_before"])
+        new = data.replace(needle, with_text) if args.all else data.replace(needle, with_text, 1)
+
+    res["bytes_after"] = len(new.encode())
+    if new == data:
+        emit(0, changed=False, skipped=True, reason="unchanged")
+    if args.dry_run:
+        emit(0, changed=False, skipped=False, reason="dry_run")
+
+    st = p.stat()
+    fd, tmp = tempfile.mkstemp(prefix=f".{p.name}.splice.", dir=str(p.parent))
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(new)
+        os.chmod(tmp, stat.S_IMODE(st.st_mode))
+        os.replace(tmp, path)
+    finally:
+        try:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        except Exception:
+            pass
+    emit(0, changed=True, reason="changed")
+except Exception as exc:
+    emit(1, error=True, reason=f"exception:{exc.__class__.__name__}:{exc}", bytes_after=res.get("bytes_before", 0))
+PYDEV_SPLICE
+)"
+    status=$?
+    if [[ "$out" == *'"error":true'* ]]; then
+        status=1
+    fi
+    [[ "$old_errexit" -eq 1 ]] && set -e
+    if [[ "$json" -eq 1 ]]; then
+        printf '%s\n' "$out"
+    else
+        local reason changed skipped error
+        reason="$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("reason",""))' 2>/dev/null || true)"
+        changed="$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("changed",False))' 2>/dev/null || true)"
+        skipped="$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("skipped",False))' 2>/dev/null || true)"
+        error="$(printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("error",False))' 2>/dev/null || true)"
+        if [[ "$error" == "True" ]]; then
+            echo "queue dev splice: error: $reason" >&2
+        elif [[ "$skipped" == "True" ]]; then
+            echo "queue dev splice: skipped: $reason"
+        elif [[ "$changed" == "True" ]]; then
+            echo "queue dev splice: changed: $file"
+        else
+            echo "queue dev splice: unchanged: $reason"
+        fi
+    fi
+    return "$status"
+}
+
+_queue_dev_scratchpad_path() {
+    if [[ -n "${QUEUEBASH_DEV_SCRATCHPAD:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_DEV_SCRATCHPAD"
+    else
+        printf '%s\n' "$(_queue_root)/dev/scratchpad.json"
+    fi
+}
+
+_queue_dev_scratchpad_usage() {
+    cat <<'EOF_USAGE'
+Usage:
+  queue dev scratchpad help
+  queue dev scratchpad init --project NAME [--json]
+  queue dev scratchpad import --from-tree DIR [--project NAME] [--json]
+  queue dev scratchpad add --kind KIND --authority AUTHORITY --text TEXT [--tag TAG...] [--json]
+  queue dev scratchpad task --text TEXT [--authority team_leader] [--json]
+  queue dev scratchpad attempt ITEM_ID --note TEXT [--json]
+  queue dev scratchpad evidence ITEM_ID --summary TEXT [--raw-log PATH] [--verdict VERDICT] [--json]
+  queue dev scratchpad evidence ITEM_ID --json-file result.json [--summary TEXT] [--verdict VERDICT] [--json]
+  queue dev scratchpad done ITEM_ID --note TEXT [--authority reviewer] [--json]
+  queue dev scratchpad reject ITEM_ID --note TEXT [--authority reviewer] [--json]
+  queue dev scratchpad fail ITEM_ID --note TEXT [--json]
+  queue dev scratchpad bump-fail ITEM_ID [--json]
+  queue dev scratchpad list [--json] [--status STATUS] [--kind KIND] [--tag TAG]
+  queue dev scratchpad delete ITEM_ID [--authority reviewer] [--note TEXT] [--json]
+  queue dev scratchpad status set ITEM_ID --status STATUS [--reason TEXT] [--authority reviewer] [--json]
+  queue dev scratchpad supersede OLD_ITEM_ID --by NEW_ITEM_ID [--reason TEXT] [--authority reviewer] [--json]
+  queue dev scratchpad next [--json]
+  queue dev scratchpad export [--json]
+  queue dev scratchpad explain ITEM_ID
+
+File-backed authority-stamped development scratchpad ledger. This is storage/state
+only: no prompt rendering, no AI provider calls, and no queue dev test integration.
+EOF_USAGE
+}
+
+_queue_dev_scratchpad_command() {
+    local sub="${1:-help}" path root status old_errexit=0
+    shift || true
+    case "$sub" in
+        help|--help|-h) _queue_dev_scratchpad_usage; return 0 ;;
+        init|import|add|task|attempt|evidence|done|reject|fail|bump-fail|list|delete|status|supersede|next|export|explain) ;;
+        *) echo "queue dev scratchpad: unknown subcommand: $sub" >&2; _queue_dev_scratchpad_usage >&2; return 2 ;;
+    esac
+    path="$(_queue_dev_scratchpad_path)"
+    root="$(_queue_root)"
+    case $- in *e*) old_errexit=1; set +e ;; esac
+    "${QUEUEBASH_PYTHON:-/usr/bin/python3}" - "$path" "$root" "$sub" "$@" <<'PYDEV_SCRATCHPAD'
+import argparse, datetime as _dt, json, os, pathlib, random, re, sys, tempfile, textwrap
+try:
+    import fcntl
+except Exception:  # pragma: no cover on non-POSIX
+    fcntl = None
+
+SCRATCHPAD_SCHEMA = "queuebash.dev_scratchpad.v1"
+ITEM_SCHEMA = "queuebash.dev_scratchpad_item.v1"
+WORKING_SET_SCHEMA = "queuebash.dev_scratchpad_working_set.v1"
+AUTHORITY_TYPES = {"architect", "team_leader", "reviewer", "coding_agent", "tool", "source_tree", "test_runner", "external_ai", "imported_doc"}
+CONFIDENCES = {"authoritative", "accepted", "observed", "inferred", "proposed", "rejected", "stale"}
+KINDS = {"contract", "design_goal", "architecture", "task", "attempt", "evidence", "failure", "success", "decision", "toolchain", "known_landmine", "blocker", "challenge", "done_note", "imported_fact", "think"}
+STATUSES = {"active", "pending", "in_progress", "done", "resolved", "accepted", "rejected", "stale", "proposed", "blocked", "failed", "superseded", "archived", "removed"}
+HIGH_AUTH = {"architect", "team_leader", "reviewer"}
+SUMMARY_LIMIT = 1000
+TAIL_LIMIT = 1000
+
+path = pathlib.Path(sys.argv[1])
+queue_root = pathlib.Path(sys.argv[2])
+sub = sys.argv[3]
+av = sys.argv[4:]
+
+class ScratchpadError(Exception):
+    pass
+
+def now():
+    return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+def item_id(prefix="SP"):
+    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    return f"{prefix}-{stamp}-{random.randint(1000,9999)}"
+
+def trim(text, limit=SUMMARY_LIMIT):
+    text = "" if text is None else str(text)
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"... [truncated {len(text)-limit} chars]"
+
+def authority_obj(authority, confidence=None, source="queue dev scratchpad"):
+    if ":" in authority:
+        atype, name = authority.split(":", 1)
+    else:
+        atype, name = authority, authority
+    if atype not in AUTHORITY_TYPES:
+        raise ScratchpadError(f"invalid authority type: {atype}")
+    if confidence is None:
+        confidence = "authoritative" if atype == "architect" else "accepted" if atype in {"team_leader", "reviewer"} else "observed" if atype in {"tool", "source_tree", "test_runner"} else "proposed"
+    if confidence not in CONFIDENCES:
+        raise ScratchpadError(f"invalid confidence: {confidence}")
+    return {"type": atype, "name": name or atype, "source": source, "confidence": confidence}
+
+def new_ledger(project=""):
+    t = now()
+    return {"schema": SCRATCHPAD_SCHEMA, "project": project, "created_at": t, "updated_at": t, "items": [], "meta": {"authority_types": sorted(AUTHORITY_TYPES), "confidence": sorted(CONFIDENCES), "kind": sorted(KINDS), "status": sorted(STATUSES)}}
+
+def validate_ledger(d):
+    if not isinstance(d, dict) or d.get("schema") != SCRATCHPAD_SCHEMA or not isinstance(d.get("items"), list):
+        raise ScratchpadError(f"malformed scratchpad: expected {SCRATCHPAD_SCHEMA} with items list")
+    return d
+
+def load(required=False):
+    if not path.exists():
+        if required:
+            raise ScratchpadError(f"scratchpad not found: {path}")
+        return new_ledger()
+    try:
+        data = json.loads(path.read_text())
+    except Exception as exc:
+        raise ScratchpadError(f"malformed scratchpad: {exc}")
+    return validate_ledger(data)
+
+def write_atomic(data):
+    data["updated_at"] = now()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    with open(lock_path, "w") as lock:
+        if fcntl is not None:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+        try:
+            with os.fdopen(fd, "w") as fh:
+                json.dump(data, fh, indent=2, sort_keys=True)
+                fh.write("\n")
+            os.replace(tmp, path)
+        finally:
+            try:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+            except Exception:
+                pass
+            if fcntl is not None:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+def emit(obj=None, json_mode=False, human=""):
+    if json_mode:
+        print(json.dumps(obj, separators=(",", ":"), sort_keys=True))
+    else:
+        print(human if human else json.dumps(obj, indent=2, sort_keys=True))
+
+def parser_base():
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("--json", action="store_true")
+    return p
+
+def make_item(kind, text, authority="coding_agent", status="active", tags=None, confidence=None, source_type="command", source_ref="", parent_id="", extra=None):
+    if kind not in KINDS:
+        raise ScratchpadError(f"invalid kind: {kind}")
+    if status not in STATUSES:
+        raise ScratchpadError(f"invalid status: {status}")
+    t = now()
+    item = {
+        "id": item_id("SP"),
+        "schema": ITEM_SCHEMA,
+        "kind": kind,
+        "status": status,
+        "authority": authority_obj(authority, confidence),
+        "text": trim(text),
+        "tags": list(tags or []),
+        "created_at": t,
+        "updated_at": t,
+        "provenance": {"source_type": source_type, "source_ref": source_ref},
+        "counters": {"success": 0, "failure": 0},
+    }
+    if parent_id:
+        item["parent_id"] = parent_id
+    if extra:
+        item.update(extra)
+    return item
+
+def find_item(data, iid):
+    for it in data.get("items", []):
+        if it.get("id") == iid:
+            return it
+    raise ScratchpadError(f"item not found: {iid}")
+
+def touch_item(it):
+    it["updated_at"] = now()
+
+def append_item(data, item):
+    data.setdefault("items", []).append(item)
+    return item
+
+def read_top_heading(file):
+    p = pathlib.Path(file)
+    if not p.exists():
+        return "absent"
+    for line in p.read_text(errors="replace").splitlines():
+        if line.startswith("#"):
+            return line.strip()
+    return "present:no-heading"
+
+def import_facts(tree, project=""):
+    tree = pathlib.Path(tree).resolve()
+    if not tree.exists() or not tree.is_dir():
+        raise ScratchpadError(f"from-tree not found or not a directory: {tree}")
+    facts = []
+    qb = tree / "queuebash.sh"
+    version = "unknown"
+    if qb.exists():
+        m = re.search(r'^QUEUEBASH_VERSION="([^"]+)"', qb.read_text(errors="replace"), re.M)
+        if m:
+            version = m.group(1)
+    facts.append(("toolchain", f"QUEUEBASH_VERSION={version}", ["import", "version"]))
+    facts.append(("imported_fact", f"README top release heading: {read_top_heading(tree/'README.md')}", ["import", "README"]))
+    facts.append(("imported_fact", f"CHANGELOG top release heading: {read_top_heading(tree/'CHANGELOG.md')}", ["import", "CHANGELOG"]))
+    for rel in ["queuebash.sh", "README.md", "CHANGELOG.md", "tests", "assets.d/net_usage.sh", "caps.d/net_usage.sh"]:
+        exists = (tree / rel).exists()
+        facts.append(("imported_fact", f"{rel}: {'present' if exists else 'absent'}", ["import", "presence", rel]))
+    if qb.exists():
+        text = qb.read_text(errors="replace")
+        m = re.search(r'_queue_dev_usage\(\).*?cat <<\'EOF\'\n(.*?)\nEOF', text, re.S)
+        usage = m.group(1) if m else ""
+        commands = []
+        for line in usage.splitlines():
+            s = line.strip()
+            if s.startswith("queue dev "):
+                commands.append(s)
+        facts.append(("toolchain", "current dev tooling command list: " + "; ".join(commands[:50]), ["import", "queue-dev-usage"]))
+        facts.append(("imported_fact", f"scratchpad command present in source: {'queue dev scratchpad' in text}", ["import", "scratchpad"]))
+    return [make_item(kind=k, text=t, authority="source_tree", status="active", tags=tags, confidence="observed", source_type="tree", source_ref=str(tree)) for k, t, tags in facts]
+
+def parse_common(args):
+    json_mode = False
+    if "--json" in args:
+        args = [a for a in args if a != "--json"]
+        json_mode = True
+    return args, json_mode
+
+def get_opt(args, name, default="", required=False, multi=False):
+    vals = []
+    out = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == name:
+            if i + 1 >= len(args):
+                raise ScratchpadError(f"{name} requires a value")
+            vals.append(args[i+1]); i += 2
+        elif a.startswith(name + "="):
+            vals.append(a.split("=",1)[1]); i += 1
+        else:
+            out.append(a); i += 1
+    if required and not vals:
+        raise ScratchpadError(f"{name} is required")
+    return (vals if multi else (vals[-1] if vals else default)), out
+
+def command_init(args):
+    args, jm = parse_common(args)
+    project, args = get_opt(args, "--project", required=True)
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = new_ledger(project)
+    write_atomic(data)
+    emit({"schema": SCRATCHPAD_SCHEMA, "status": "ok", "path": str(path), "project": project}, jm, f"scratchpad initialised: {path}")
+
+def command_import(args):
+    args, jm = parse_common(args)
+    from_tree, args = get_opt(args, "--from-tree", required=True)
+    project, args = get_opt(args, "--project", default="")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(False)
+    if project:
+        data["project"] = project
+    items = import_facts(from_tree, project)
+    for it in items:
+        append_item(data, it)
+    write_atomic(data)
+    emit({"schema": SCRATCHPAD_SCHEMA, "status": "ok", "imported": len(items), "path": str(path), "items": [it["id"] for it in items]}, jm, f"imported {len(items)} observed fact(s) into {path}")
+
+def command_add(args, default_kind=None):
+    args, jm = parse_common(args)
+    kind, args = get_opt(args, "--kind", default=default_kind or "", required=default_kind is None)
+    authority, args = get_opt(args, "--authority", default="coding_agent")
+    text, args = get_opt(args, "--text", required=True)
+    tags, args = get_opt(args, "--tag", multi=True)
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(False)
+    it = append_item(data, make_item(kind, text, authority=authority, tags=tags))
+    write_atomic(data)
+    emit({"schema": ITEM_SCHEMA, "status": "ok", "item": it}, jm, f"added {kind}: {it['id']}")
+
+def command_task(args):
+    args, jm = parse_common(args)
+    text, args = get_opt(args, "--text", required=True)
+    authority, args = get_opt(args, "--authority", default="team_leader")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(False)
+    it = append_item(data, make_item("task", text, authority=authority, status="active", tags=["active-task"]))
+    write_atomic(data)
+    emit({"schema": ITEM_SCHEMA, "status": "ok", "item": it}, jm, f"added task: {it['id']}")
+
+def command_child(args, kind):
+    args, jm = parse_common(args)
+    if not args:
+        raise ScratchpadError("ITEM_ID is required")
+    iid, args = args[0], args[1:]
+    note_name = "--summary" if kind == "evidence" else "--note"
+    note, args = get_opt(args, note_name, default="")
+    authority, args = get_opt(args, "--authority", default="tool" if kind == "evidence" else "coding_agent" if kind in {"attempt", "failure"} else "reviewer")
+    verdict, args = get_opt(args, "--verdict", default="")
+    raw_log, args = get_opt(args, "--raw-log", default="")
+    json_file, args = get_opt(args, "--json-file", default="")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(True)
+    parent = find_item(data, iid)
+    extra = {}
+    if kind == "evidence":
+        if json_file:
+            jp = pathlib.Path(json_file)
+            if not jp.exists():
+                raise ScratchpadError(f"json-file not found: {json_file}")
+            try:
+                payload = json.loads(jp.read_text())
+            except Exception as exc:
+                raise ScratchpadError(f"json-file is not valid JSON: {exc}")
+            extra["json_file"] = str(jp)
+            extra["json_schema"] = payload.get("schema", "") if isinstance(payload, dict) else ""
+            if not note:
+                note = f"JSON evidence imported from {jp.name}"
+        if raw_log:
+            extra["raw_log_path"] = raw_log
+            rp = pathlib.Path(raw_log)
+            if rp.exists() and rp.is_file():
+                tail = rp.read_text(errors="replace")[-TAIL_LIMIT:]
+                extra["raw_log_tail"] = trim(tail, TAIL_LIMIT)
+        if verdict:
+            extra["verdict"] = verdict
+        if not note:
+            raise ScratchpadError("--summary is required for evidence unless --json-file is supplied")
+    elif not note:
+        raise ScratchpadError(f"{note_name} is required")
+    child = make_item(kind, note, authority=authority, status="active", tags=[kind], parent_id=iid, extra=extra)
+    append_item(data, child)
+    if kind == "failure":
+        parent.setdefault("counters", {}).setdefault("failure", 0)
+        parent["counters"]["failure"] += 1
+        touch_item(parent)
+    write_atomic(data)
+    emit({"schema": ITEM_SCHEMA, "status": "ok", "item": child, "parent_id": iid}, jm, f"added {kind} for {iid}: {child['id']}")
+
+def command_status(args, action):
+    args, jm = parse_common(args)
+    if not args:
+        raise ScratchpadError("ITEM_ID is required")
+    iid, args = args[0], args[1:]
+    note, args = get_opt(args, "--note", default="")
+    authority, args = get_opt(args, "--authority", default="reviewer")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(True)
+    it = find_item(data, iid)
+    it["status"] = {"done": "done", "reject": "rejected", "fail": "blocked"}[action]
+    touch_item(it)
+    kind = {"done": "done_note", "reject": "decision", "fail": "failure"}[action]
+    text = note or f"{action} {iid}"
+    child = append_item(data, make_item(kind, text, authority=authority, status="active" if action != "reject" else "rejected", tags=[action], parent_id=iid))
+    if action == "done":
+        it.setdefault("counters", {}).setdefault("success", 0)
+        it["counters"]["success"] += 1
+    if action == "fail":
+        it.setdefault("counters", {}).setdefault("failure", 0)
+        it["counters"]["failure"] += 1
+    write_atomic(data)
+    emit({"schema": ITEM_SCHEMA, "status": "ok", "item_id": iid, "new_status": it["status"], "note_id": child["id"]}, jm, f"{iid}: {it['status']}")
+
+def require_high_authority(authority, action):
+    auth = authority_obj(authority)
+    if auth.get("type") not in HIGH_AUTH:
+        raise ScratchpadError(f"{action} requires architect, team_leader, or reviewer authority")
+    return auth
+
+def lifecycle_note(data, iid, authority, text, tags, status="active", replacement_id=""):
+    extra = {}
+    if replacement_id:
+        extra["superseded_by"] = replacement_id
+    return append_item(data, make_item("decision", text, authority=authority, status=status, tags=tags, parent_id=iid, extra=extra))
+
+def command_lifecycle_status(args):
+    args, jm = parse_common(args)
+    if not args or args[0] != "set":
+        raise ScratchpadError("Usage: queue dev scratchpad status set ITEM_ID --status STATUS [--reason TEXT] [--authority reviewer] [--json]")
+    args = args[1:]
+    if not args:
+        raise ScratchpadError("ITEM_ID is required")
+    iid, args = args[0], args[1:]
+    new_status, args = get_opt(args, "--status", required=True)
+    reason, args = get_opt(args, "--reason", default="")
+    note, args = get_opt(args, "--note", default="")
+    authority, args = get_opt(args, "--authority", default="reviewer")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    if new_status not in STATUSES:
+        raise ScratchpadError(f"invalid status: {new_status}")
+    require_high_authority(authority, "scratchpad status set")
+    data = load(True)
+    it = find_item(data, iid)
+    old_status = it.get("status", "")
+    it["status"] = new_status
+    touch_item(it)
+    text = reason or note or f"status changed for {iid}: {old_status} -> {new_status}"
+    child = lifecycle_note(data, iid, authority, text, ["lifecycle", "status-set", new_status])
+    write_atomic(data)
+    emit({"schema": "queuebash.dev_workflow.scratchpad_status.v1", "status": "ok", "item_id": iid, "old_status": old_status, "new_status": new_status, "note_id": child["id"]}, jm, f"{iid}: {old_status} -> {new_status}")
+
+def command_supersede(args):
+    args, jm = parse_common(args)
+    if not args:
+        raise ScratchpadError("Usage: queue dev scratchpad supersede OLD_ITEM_ID --by NEW_ITEM_ID [--reason TEXT] [--authority reviewer] [--json]")
+    old_id, args = args[0], args[1:]
+    new_id, args = get_opt(args, "--by", required=True)
+    reason, args = get_opt(args, "--reason", default="")
+    note, args = get_opt(args, "--note", default="")
+    authority, args = get_opt(args, "--authority", default="reviewer")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    require_high_authority(authority, "scratchpad supersede")
+    if old_id == new_id:
+        raise ScratchpadError("cannot supersede an item by itself")
+    data = load(True)
+    old = find_item(data, old_id)
+    new = find_item(data, new_id)
+    old_status = old.get("status", "")
+    old["status"] = "superseded"
+    old["superseded_by"] = new_id
+    old.setdefault("relations", {})["superseded_by"] = new_id
+    touch_item(old)
+    new.setdefault("relations", {}).setdefault("supersedes", [])
+    if old_id not in new["relations"]["supersedes"]:
+        new["relations"]["supersedes"].append(old_id)
+    touch_item(new)
+    text = reason or note or f"{old_id} superseded by {new_id}"
+    child = lifecycle_note(data, old_id, authority, text, ["lifecycle", "supersede"], replacement_id=new_id)
+    write_atomic(data)
+    emit({"schema": "queuebash.dev_workflow.supersede.v1", "status": "ok", "item_id": old_id, "old_status": old_status, "new_status": "superseded", "superseded_by": new_id, "note_id": child["id"]}, jm, f"{old_id}: superseded by {new_id}")
+
+def command_bump_fail(args):
+    args, jm = parse_common(args)
+    if len(args) != 1:
+        raise ScratchpadError("Usage: queue dev scratchpad bump-fail ITEM_ID [--json]")
+    data = load(True)
+    it = find_item(data, args[0])
+    it.setdefault("counters", {}).setdefault("failure", 0)
+    it["counters"]["failure"] += 1
+    touch_item(it)
+    write_atomic(data)
+    emit({"schema": ITEM_SCHEMA, "status": "ok", "item_id": it["id"], "failure": it["counters"]["failure"]}, jm, f"{it['id']}: failure={it['counters']['failure']}")
+
+def build_next(data):
+    active = [it for it in data.get("items", []) if it.get("status") not in {"done", "resolved", "accepted", "rejected", "stale", "superseded", "archived", "removed"}]
+    tasks = [it for it in active if it.get("kind") == "task"]
+    current_task = tasks[-1] if tasks else None
+    current_id = current_task.get("id") if current_task else ""
+    include = []
+    for it in active:
+        kind = it.get("kind")
+        atype = it.get("authority", {}).get("type")
+        if kind in {"contract", "known_landmine", "toolchain"} and atype in HIGH_AUTH | {"source_tree", "tool"}:
+            include.append(it)
+        elif current_id and (it.get("id") == current_id or it.get("parent_id") == current_id):
+            include.append(it)
+    attempts = [it for it in include if it.get("kind") == "attempt"]
+    keep_attempt_ids = set()
+    if attempts:
+        keep_attempt_ids.add(attempts[0].get("id"))
+        keep_attempt_ids.add(attempts[-1].get("id"))
+    pruned = []
+    for it in include:
+        if it.get("kind") == "attempt" and it.get("id") not in keep_attempt_ids:
+            continue
+        pruned.append(it)
+    return {"schema": WORKING_SET_SCHEMA, "project": data.get("project", ""), "generated_at": now(), "current_task_id": current_id, "counters": current_task.get("counters", {}) if current_task else {}, "items": pruned, "full_item_count": len(data.get("items", [])), "pruned_item_count": len(pruned)}
+
+def summarize_item(it):
+    text = str(it.get("text", "")).replace("\n", " ")
+    if len(text) > 100:
+        text = text[:100] + "..."
+    return {
+        "id": it.get("id", ""),
+        "kind": it.get("kind", ""),
+        "status": it.get("status", ""),
+        "authority": it.get("authority", {}).get("type", ""),
+        "confidence": it.get("authority", {}).get("confidence", ""),
+        "tags": it.get("tags", []),
+        "created_at": it.get("created_at", ""),
+        "updated_at": it.get("updated_at", ""),
+        "parent_id": it.get("parent_id", ""),
+        "text": text,
+    }
+
+def command_list(args):
+    args, jm = parse_common(args)
+    all_items = "--all" in args
+    if all_items:
+        args = [a for a in args if a != "--all"]
+    status_filter, args = get_opt(args, "--status", default="")
+    kind_filter, args = get_opt(args, "--kind", default="")
+    tag_filter, args = get_opt(args, "--tag", default="")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(True)
+    items = list(data.get("items", []))
+    if not status_filter and not all_items:
+        items = [it for it in items if it.get("status") not in {"done", "resolved", "accepted", "rejected", "stale", "superseded", "archived", "removed"}]
+    if status_filter:
+        items = [it for it in items if it.get("status") == status_filter]
+    if kind_filter:
+        items = [it for it in items if it.get("kind") == kind_filter]
+    if tag_filter:
+        items = [it for it in items if tag_filter in it.get("tags", [])]
+    summary = [summarize_item(it) for it in items]
+    if jm:
+        emit({"schema": SCRATCHPAD_SCHEMA, "status": "ok", "count": len(summary), "items": summary}, True)
+    else:
+        for it in summary:
+            parent = f" parent={it['parent_id']}" if it.get("parent_id") else ""
+            print(f"{it['id']} {it['kind']} {it['status']} {it['authority']} tags={','.join(it.get('tags', []))}{parent}")
+            if it.get("text"):
+                print(f"  {it['text']}")
+        if not summary:
+            print("no scratchpad items matched")
+
+def command_delete(args):
+    args, jm = parse_common(args)
+    if not args:
+        raise ScratchpadError("Usage: queue dev scratchpad delete ITEM_ID [--authority reviewer] [--note TEXT] [--json]")
+    iid, args = args[0], args[1:]
+    authority, args = get_opt(args, "--authority", default="reviewer")
+    note, args = get_opt(args, "--note", default="")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    auth = authority_obj(authority)
+    if auth.get("type") not in HIGH_AUTH:
+        raise ScratchpadError("delete requires architect, team_leader, or reviewer authority")
+    data = load(True)
+    it = find_item(data, iid)
+    if it.get("authority", {}).get("type") in HIGH_AUTH and auth.get("type") == "coding_agent":
+        raise ScratchpadError("coding_agent cannot delete high-authority scratchpad items")
+    it["status"] = "removed"
+    touch_item(it)
+    deletion_note = note or f"removed scratchpad item {iid}"
+    child = append_item(data, make_item("decision", deletion_note, authority=authority, status="active", tags=["delete", "removed"], parent_id=iid))
+    write_atomic(data)
+    emit({"schema": ITEM_SCHEMA, "status": "ok", "item_id": iid, "new_status": "removed", "note_id": child["id"]}, jm, f"{iid}: removed")
+
+def command_next(args):
+    args, jm = parse_common(args)
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    ws = build_next(load(True))
+    emit(ws, jm, json.dumps(ws, indent=2, sort_keys=True))
+
+def command_export(args):
+    args, jm = parse_common(args)
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(True)
+    emit(data, True if jm else False, json.dumps(data, indent=2, sort_keys=True))
+
+def command_explain(args):
+    args, jm = parse_common(args)
+    if jm:
+        raise ScratchpadError("explain is human-readable; use export --json for JSON")
+    if len(args) != 1:
+        raise ScratchpadError("Usage: queue dev scratchpad explain ITEM_ID")
+    data = load(True)
+    it = find_item(data, args[0])
+    lines = [f"Scratchpad item: {it.get('id')}", f"kind:       {it.get('kind')}", f"status:     {it.get('status')}", f"authority:  {it.get('authority',{}).get('type')} / {it.get('authority',{}).get('name')} / {it.get('authority',{}).get('confidence')}", f"created:    {it.get('created_at')}", f"updated:    {it.get('updated_at')}"]
+    if it.get("parent_id"):
+        lines.append(f"parent:     {it.get('parent_id')}")
+    lines += ["", "Text:", textwrap.indent(it.get("text", ""), "  ")]
+    if it.get("raw_log_path"):
+        lines.append(f"raw_log:    {it.get('raw_log_path')}")
+    if it.get("verdict"):
+        lines.append(f"verdict:    {it.get('verdict')}")
+    print("\n".join(lines))
+
+def main():
+    try:
+        if sub == "init": command_init(av)
+        elif sub == "import": command_import(av)
+        elif sub == "add": command_add(av)
+        elif sub == "task": command_task(av)
+        elif sub == "attempt": command_child(av, "attempt")
+        elif sub == "evidence": command_child(av, "evidence")
+        elif sub == "done": command_status(av, "done")
+        elif sub == "reject": command_status(av, "reject")
+        elif sub == "fail": command_status(av, "fail")
+        elif sub == "bump-fail": command_bump_fail(av)
+        elif sub == "list": command_list(av)
+        elif sub == "delete": command_delete(av)
+        elif sub == "status": command_lifecycle_status(av)
+        elif sub == "supersede": command_supersede(av)
+        elif sub == "next": command_next(av)
+        elif sub == "export": command_export(av)
+        elif sub == "explain": command_explain(av)
+        else: raise ScratchpadError(f"unsupported subcommand: {sub}")
+    except ScratchpadError as exc:
+        jm = "--json" in av
+        if jm:
+            print(json.dumps({"schema": SCRATCHPAD_SCHEMA, "status": "error", "error": str(exc)}, separators=(",", ":"), sort_keys=True))
+        else:
+            print(f"queue dev scratchpad: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+main()
+PYDEV_SCRATCHPAD
+    status=$?
+    [[ "$old_errexit" -eq 1 ]] && set -e
+    return "$status"
+}
+
+
+_queue_dev_test_usage() {
+    cat <<'USAGE'
+Usage:
+  queue dev test [--run] [--name NAME] [--timeout SEC] [--json] -- COMMAND...
+  queue dev test result JOBID [--root DIR] [--json]
+
+Submit and optionally run a real DEV_TEST_RUNNER job in an isolated harness
+QUEUEBASH_ROOT. The tested command is executed through normal queue submit and a
+bounded worker pass; results are reported as queuebash.dev_test_result.v1.
+qbtest scans base64 QBTEST comment blocks embedded near functions and runs decoded
+Bash or Python snippets with bounded execution.
+USAGE
+}
+
+_queue_dev_test_counts_json() {
+    local root="${1:-}" state count first=1
+    [[ -n "$root" ]] || root="$(_queue_root)"
+    printf '{'
+    for state in pending running done failed pol_blocked policy_blocked paused interrupted cancelled deleted; do
+        [[ "$first" -eq 1 ]] || printf ','
+        first=0
+        if [[ -d "$root/$state" ]]; then
+            count="$(find "$root/$state" -maxdepth 3 -type f -name '*.job' 2>/dev/null | wc -l | tr -d ' ')"
+        else
+            count=0
+        fi
+        printf '"%s":%s' "$state" "${count:-0}"
+    done
+    printf '}\n'
+}
+
+_queue_dev_test_find_job_file() {
+    local root="${1:-}" job_id="${2:-}" state f
+    [[ -n "$root" && -n "$job_id" ]] || return 1
+    for state in done failed pol_blocked policy_blocked cancelled interrupted deleted running paused pending; do
+        if [[ "$state" == "pending" ]]; then
+            f="$(find "$root/pending" -maxdepth 3 -type f -name "$job_id.job" 2>/dev/null | head -n 1 || true)"
+        else
+            f="$root/$state/$job_id.job"
+        fi
+        [[ -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
+    done
+    return 1
+}
+
+_queue_dev_test_result_json() {
+    local root="${1:-}" job_id="${2:-}" before_json="${3:-}" after_json="${4:-}" job_file="" log_file=""
+    [[ -n "$root" && -n "$job_id" ]] || return 2
+    [[ -n "$before_json" ]] || before_json='{}'
+    [[ -n "$after_json" ]] || after_json="$(_queue_dev_test_counts_json "$root")"
+    job_file="$(_queue_dev_test_find_job_file "$root" "$job_id" 2>/dev/null || true)"
+    python3 - "$root" "$job_id" "$job_file" "$before_json" "$after_json" <<'PYDEVTEST_RESULT'
+import gzip, json, shlex, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+job_id = sys.argv[2]
+job_file = Path(sys.argv[3]) if sys.argv[3] else None
+try:
+    before = json.loads(sys.argv[4] or '{}')
+except Exception:
+    before = {}
+try:
+    after = json.loads(sys.argv[5] or '{}')
+except Exception:
+    after = {}
+fields = {}
+state = "missing"
+if job_file and job_file.exists():
+    state = job_file.parent.name
+    if state.startswith("p") and job_file.parent.parent.name == "pending":
+        state = "pending"
+    for line in job_file.read_text(errors="replace").splitlines():
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        try:
+            parts = shlex.split(val)
+            fields[key] = parts[0] if parts else ""
+        except Exception:
+            fields[key] = val.strip().strip("'").strip('"')
+exit_raw = fields.get("EXIT_CODE", "")
+try:
+    exit_code = int(exit_raw) if exit_raw != "" else None
+except Exception:
+    exit_code = None
+if state == "done" and (exit_code is None or exit_code == 0):
+    status = "pass"
+elif state == "failed" and exit_code in (124, 137, 143):
+    status = "timeout"
+elif state == "failed":
+    status = "fail"
+elif state in ("pending", "running", "paused", "cancelled", "interrupted", "deleted"):
+    status = state
+elif state in ("pol_blocked", "policy_blocked"):
+    status = "policy_blocked"
+else:
+    status = "infrastructure_error"
+log_path = fields.get("LOG_PATH", "")
+if not log_path:
+    for cand in (root / "logs" / f"{job_id}.log", root / "logs" / f"{job_id}.log.gz"):
+        if cand.exists():
+            log_path = str(cand)
+            break
+log_tail = ""
+if log_path:
+    p = Path(log_path)
+    try:
+        if p.suffix == ".gz":
+            log_text = gzip.open(p, "rt", errors="replace").read()
+        else:
+            log_text = p.read_text(errors="replace")
+        log_tail = "\n".join(log_text.splitlines()[-40:])[-4000:]
+    except Exception as exc:
+        log_tail = f"<unable to read log: {exc}>"
+if status == "pass":
+    diagnostic = "test passed"
+elif status == "fail":
+    diagnostic = f"test failed with exit code {exit_code}"
+elif status == "timeout":
+    diagnostic = "test timed out"
+elif status == "infrastructure_error":
+    diagnostic = "test job not found"
+else:
+    diagnostic = f"test is {status}"
+out = {
+    "schema": "queuebash.dev_test_result.v1",
+    "harness_root": str(root),
+    "created_job_id": job_id,
+    "job_id": job_id,
+    "job_file": str(job_file) if job_file else "",
+    "class": fields.get("JOB_CLASS", "DEV_TEST_RUNNER"),
+    "queue_state": state,
+    "status": status,
+    "exit_code": exit_code,
+    "timed_out": status == "timeout",
+    "duration_seconds": fields.get("DURATION_SECONDS", ""),
+    "log_file": log_path,
+    "log_tail": log_tail,
+    "before": before,
+    "after": after,
+    "diagnostic": diagnostic,
+}
+print(json.dumps(out, separators=(",", ":"), sort_keys=True))
+PYDEVTEST_RESULT
+}
+
+_queue_dev_test_result_command() {
+    local job_id="${1:-}" root="" json=0 out
+    [[ -n "$job_id" ]] || { echo "queue dev test result: missing JOBID" >&2; return 2; }
+    shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --root) root="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) _queue_dev_test_usage; return 0 ;;
+            *) echo "queue dev test result: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$root" ]] || root="$(_queue_root)"
+    out="$(_queue_dev_test_result_json "$root" "$job_id")" || return "$?"
+    if [[ "$json" -eq 1 ]]; then
+        printf '%s\n' "$out"
+    else
+        python3 -c 'import json,sys; d=json.load(sys.stdin); print(f"Dev test {d.get(chr(106)+chr(111)+chr(98)+chr(95)+chr(105)+chr(100),"")}: {d.get("status","")} state={d.get("queue_state","")} exit={d.get("exit_code","")}\nHarness: {d.get("harness_root","")}\nLog: {d.get("log_file","")}")' <<<"$out"
+    fi
+}
+
+_queue_dev_test_make_harness() {
+    local harness_root="$1" here="$2"
+    mkdir -p "$harness_root"/{pending,running,done,failed,pol_blocked,policy_blocked,paused,interrupted,cancelled,deleted,logs,workers,classes,assets.d,caps.d,reporters.d,policies.d,outputs,helpers,streams}
+    if [[ -f "$here/classes/DEV_TEST_RUNNER.env" ]]; then
+        cp "$here/classes/DEV_TEST_RUNNER.env" "$harness_root/classes/DEV_TEST_RUNNER.env"
+    else
+        cat >"$harness_root/classes/DEV_TEST_RUNNER.env" <<'EOF_DEV_TEST_CLASS'
+CLASS_ALLOW_PARALLEL=1
+CLASS_MAX_CONCURRENT=2
+CLASS_DEFAULT_RUNNER=direct
+CLASS_DEFAULT_SANDBOX_LEVEL=off
+CLASS_DEFAULT_MAX_LOG_SIZE_BYTES=1048576
+CLASS_DEFAULT_LOG_OVERFLOW_POLICY=stderr-only
+EOF_DEV_TEST_CLASS
+    fi
+    if [[ -f "$here/classes/DEFAULT.env" ]]; then
+        cp "$here/classes/DEFAULT.env" "$harness_root/classes/DEFAULT.env"
+    else
+        cat >"$harness_root/classes/DEFAULT.env" <<'EOF_DEFAULT_CLASS'
+CLASS_ALLOW_PARALLEL=1
+CLASS_MAX_CONCURRENT=0
+CLASS_DEFAULT_RUNNER=direct
+EOF_DEFAULT_CLASS
+    fi
+    mkdir -p "$harness_root/empty-source"/{classes,envs.d,assets.d,caps.d,reporters.d,policies.d}
+}
+
+_queue_dev_test_qbtest_command() {
+    local file="" function="" language="" timeout_sec=30 json=0 list_only=0 keep=0
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --file|-f) file="${2:-}"; shift 2 ;;
+            --function) function="${2:-}"; shift 2 ;;
+            --language|--lang) language="${2:-}"; shift 2 ;;
+            --timeout) timeout_sec="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --list) list_only=1; shift ;;
+            --keep) keep=1; shift ;;
+            --help|-h|--h)
+                cat <<'USAGE_QBTEST'
+Usage:
+  queue dev test qbtest --file FILE [--function NAME] [--language bash|python] [--timeout SEC] [--list] [--json] [--keep]
+  queue dev test qbtest --help | -h | --h
+
+Run embedded function tests stored as base64 comment blocks. In help/docs, the
+example markers are deliberately escaped with EXAMPLE_ so the live scanner does
+not execute documentation as a real test:
+  # EXAMPLE_QBTEST:BEGIN name=queue-now-example function=_queue_now language=bash
+  # EXAMPLE_QBTEST:B64
+  # <base64-encoded test snippet>
+  # EXAMPLE_QBTEST:END
+
+Bash snippets are sourced after the target file so they can call the function.
+Python snippets run after importing the target module; globals include module,
+target, QBTEST_SOURCE_FILE, and QBTEST_FUNCTION.
+
+To filter to one function, use --function NAME. A bare positional function name
+after --file is rejected so accidental argument drift remains visible.
+USAGE_QBTEST
+                return 0 ;;
+            --*) echo "queue dev test qbtest: unexpected argument: $1" >&2; return 2 ;;
+            *)
+                if [[ -n "$file" && -z "$function" ]]; then
+                    echo "queue dev test qbtest: unexpected argument: $1" >&2
+                    echo "queue dev test qbtest: did you mean --function $1 ?" >&2
+                else
+                    echo "queue dev test qbtest: unexpected argument: $1" >&2
+                fi
+                return 2 ;;
+        esac
+    done
+    [[ -n "$file" ]] || { echo "queue dev test qbtest: --file is required" >&2; return 2; }
+    [[ -f "$file" ]] || { echo "queue dev test qbtest: file not found: $file" >&2; return 1; }
+    [[ "$timeout_sec" =~ ^[0-9]+$ && "$timeout_sec" -gt 0 ]] || { echo "queue dev test qbtest: --timeout must be a positive integer" >&2; return 2; }
+    python3 - "$file" "$function" "$language" "$timeout_sec" "$json" "$list_only" "$keep" <<'PYDEV_QBTEST'
+import argparse, base64, datetime, hashlib, json, os, pathlib, re, shlex, subprocess, sys, tempfile, time
+source = pathlib.Path(sys.argv[1]).resolve()
+filter_function = sys.argv[2]
+filter_language = sys.argv[3].lower()
+timeout_sec = int(sys.argv[4])
+json_mode = sys.argv[5] == '1'
+list_only = sys.argv[6] == '1'
+keep = sys.argv[7] == '1'
+SCHEMA='queuebash.dev_qbtest_result.v1'
+
+def now():
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+
+def strip_marker(line):
+    s=line.strip()
+    if s.startswith('#'):
+        s=s[1:].strip()
+    elif s.startswith('//'):
+        s=s[2:].strip()
+    return s
+
+def parse_meta(s):
+    meta={}
+    try:
+        parts=shlex.split(s)
+    except Exception:
+        parts=s.split()
+    name_parts=[]
+    for p in parts:
+        if '=' in p:
+            k,v=p.split('=',1); meta[k.strip().lower().replace('-','_')]=v.strip()
+        else:
+            name_parts.append(p)
+    if name_parts and 'name' not in meta:
+        meta['name']=' '.join(name_parts)
+    return meta
+
+def default_language():
+    if source.suffix.lower() in ('.py', '.pyw'):
+        return 'python'
+    return 'bash'
+
+def parse_blocks(text):
+    blocks=[]; cur=None; in_b64=False
+    for lineno,line in enumerate(text.splitlines(),1):
+        mark=strip_marker(line)
+        if mark.startswith('QBTEST:BEGIN'):
+            if cur is not None:
+                cur.setdefault('errors',[]).append(f'nested QBTEST:BEGIN at line {lineno}')
+                blocks.append(cur)
+            meta=parse_meta(mark[len('QBTEST:BEGIN'):].strip())
+            cur={'index':len(blocks)+1,'line':lineno,'meta':meta,'b64_lines':[],'errors':[]}
+            in_b64=False
+            continue
+        if cur is None:
+            continue
+        if mark.startswith('QBTEST:B64'):
+            in_b64=True; continue
+        if mark.startswith('QBTEST:END'):
+            blocks.append(cur); cur=None; in_b64=False; continue
+        if in_b64:
+            cur['b64_lines'].append(mark)
+    if cur is not None:
+        cur.setdefault('errors',[]).append('missing QBTEST:END')
+        blocks.append(cur)
+    return blocks
+
+def block_id(block):
+    meta=block.get('meta',{})
+    raw='|'.join([str(source), str(block.get('line')), meta.get('name',''), meta.get('function',''), ''.join(block.get('b64_lines',[]))[:80]])
+    return 'QBTEST-'+hashlib.md5(raw.encode()).hexdigest()[:12]
+
+def decode_block(block):
+    data=''.join(block.get('b64_lines',[])).strip()
+    if not data:
+        raise ValueError('empty QBTEST:B64 payload')
+    try:
+        return base64.b64decode(data.encode(), validate=False).decode('utf-8')
+    except Exception as exc:
+        raise ValueError(f'invalid base64 payload: {exc}')
+
+def run_bash(snippet, meta, tmp):
+    test=tmp/'test.sh'; runner=tmp/'runner.sh'
+    test.write_text(snippet)
+    runner.write_text('\n'.join([
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'export QUEUEBASH_ALLOW_NONINTERACTIVE=1',
+        f'export QBTEST_SOURCE_FILE={shlex.quote(str(source))}',
+        f'export QBTEST_FUNCTION={shlex.quote(meta.get("function", filter_function))}',
+        f'source {shlex.quote(str(source))}',
+        f'source {shlex.quote(str(test))}',
+        ''
+    ]))
+    runner.chmod(0o755)
+    return subprocess.run(['bash', str(runner)], text=True, capture_output=True, timeout=timeout_sec, cwd=str(source.parent))
+
+def run_python(snippet, meta, tmp):
+    test=tmp/'test.py'; runner=tmp/'runner.py'
+    test.write_text(snippet)
+    runner.write_text(r'''
+import importlib.util, pathlib, sys, os
+source=pathlib.Path(sys.argv[1]).resolve()
+test=pathlib.Path(sys.argv[2]).resolve()
+function=sys.argv[3]
+spec=importlib.util.spec_from_file_location('qbtest_target_module', str(source))
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+target=getattr(module, function, None) if function else None
+g={'__name__':'__qbtest__','module':module,'target':target,'QBTEST_SOURCE_FILE':str(source),'QBTEST_FUNCTION':function}
+code=compile(test.read_text(), str(test), 'exec')
+exec(code, g, g)
+''')
+    return subprocess.run([sys.executable, str(runner), str(source), str(test), meta.get('function', filter_function)], text=True, capture_output=True, timeout=timeout_sec, cwd=str(source.parent))
+
+text=source.read_text(errors='replace')
+blocks=parse_blocks(text)
+selected=[]
+for b in blocks:
+    meta=b.setdefault('meta',{})
+    meta.setdefault('name', f'qbtest-{b["index"]}')
+    meta.setdefault('language', meta.get('lang') or default_language())
+    meta['language']=meta.get('language','').lower()
+    if filter_function and meta.get('function') != filter_function:
+        continue
+    if filter_language and meta.get('language') != filter_language:
+        continue
+    selected.append(b)
+results=[]
+if list_only:
+    for b in selected:
+        results.append({'id':block_id(b),'name':b['meta'].get('name',''),'function':b['meta'].get('function',''),'language':b['meta'].get('language',''),'line':b.get('line'),'status':'listed'})
+else:
+    for b in selected:
+        meta=b['meta']; tid=block_id(b)
+        rec={'id':tid,'name':meta.get('name',''),'function':meta.get('function',''),'language':meta.get('language',''),'line':b.get('line'),'status':'pending','exit_code':None,'stdout_tail':'','stderr_tail':'','duration_seconds':0}
+        if b.get('errors'):
+            rec.update({'status':'invalid','error':'; '.join(b['errors'])}); results.append(rec); continue
+        try:
+            snippet=decode_block(b)
+        except Exception as exc:
+            rec.update({'status':'invalid','error':str(exc)}); results.append(rec); continue
+        tmp_obj=tempfile.TemporaryDirectory(prefix='queuebash-qbtest.')
+        tmp=pathlib.Path(tmp_obj.name)
+        if keep:
+            tmp=pathlib.Path(tempfile.mkdtemp(prefix='queuebash-qbtest.keep.'))
+            tmp_obj=None
+        start=time.monotonic()
+        try:
+            lang=meta.get('language') or default_language()
+            if lang == 'bash': cp=run_bash(snippet, meta, tmp)
+            elif lang == 'python': cp=run_python(snippet, meta, tmp)
+            else:
+                rec.update({'status':'invalid','error':f'unsupported language: {lang}'})
+                results.append(rec); continue
+            rec['duration_seconds']=round(time.monotonic()-start,3)
+            rec['exit_code']=cp.returncode
+            rec['stdout_tail']='\n'.join(cp.stdout.splitlines()[-40:])[-4000:]
+            rec['stderr_tail']='\n'.join(cp.stderr.splitlines()[-40:])[-4000:]
+            rec['status']='pass' if cp.returncode == 0 else 'fail'
+        except subprocess.TimeoutExpired as exc:
+            rec['duration_seconds']=round(time.monotonic()-start,3)
+            rec['status']='timeout'; rec['exit_code']=124
+            rec['stdout_tail']='\n'.join((exc.stdout or '').splitlines()[-40:])[-4000:] if isinstance(exc.stdout,str) else ''
+            rec['stderr_tail']='\n'.join((exc.stderr or '').splitlines()[-40:])[-4000:] if isinstance(exc.stderr,str) else ''
+        except Exception as exc:
+            rec['duration_seconds']=round(time.monotonic()-start,3); rec['status']='infrastructure_error'; rec['error']=str(exc)
+        finally:
+            if tmp_obj is not None: tmp_obj.cleanup()
+        results.append(rec)
+counts={k:sum(1 for r in results if r.get('status')==k) for k in ['pass','fail','timeout','invalid','infrastructure_error','listed','no_match']}
+out={'schema':SCHEMA,'status':'pass' if results and all(r.get('status') in ('pass','listed') for r in results) else ('no_match' if not results else 'fail'),'source_file':str(source),'function':filter_function,'language':filter_language,'created_at':now(),'count':len(results),'counts':counts,'results':results}
+if json_mode:
+    print(json.dumps(out, sort_keys=True, separators=(',',':')))
+else:
+    print(f"queue dev test qbtest: {out['status']} {out['count']} test(s) from {source}")
+    for r in results:
+        print(f"{r.get('status')}\t{r.get('language')}\t{r.get('function')}\t{r.get('name')}\tline={r.get('line')}")
+sys.exit(0 if out['status']=='pass' else (3 if out['status']=='no_match' else 1))
+PYDEV_QBTEST
+}
+
+_queue_dev_test_command() {
+    local run=0 json=0 timeout_sec=120 name="" sub="${1:-}"
+    if [[ "$sub" == "qbtest" || "$sub" == "embedded" ]]; then
+        shift || true
+        _queue_dev_test_qbtest_command "$@"
+        return "$?"
+    fi
+    if [[ "$sub" == "result" ]]; then
+        shift || true
+        _queue_dev_test_result_command "$@"
+        return "$?"
+    fi
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --run) run=1; shift ;;
+            --json|-j) json=1; shift ;;
+            --name) name="${2:-}"; shift 2 ;;
+            --timeout) timeout_sec="${2:-}"; shift 2 ;;
+            --help|-h) _queue_dev_test_usage; return 0 ;;
+            --) shift; break ;;
+            *) echo "queue dev test: unexpected argument before --: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ "$#" -gt 0 ]] || { echo "queue dev test: missing command after --" >&2; return 2; }
+    [[ "$timeout_sec" =~ ^[0-9]+$ && "$timeout_sec" -gt 0 ]] || { echo "queue dev test: --timeout must be a positive integer" >&2; return 2; }
+
+    local here source_abs harness_root payload submitter worker before_json after_json submit_json job_id out
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    source_abs="$here/queuebash.sh"
+    [[ -f "$source_abs" ]] || source_abs="${BASH_SOURCE[0]}"
+    harness_root="$(mktemp -d "${TMPDIR:-/tmp}/queuebash-dev-test.XXXXXX")" || return 1
+    _queue_dev_test_make_harness "$harness_root" "$here" || return "$?"
+    [[ -n "$name" ]] || name="dev-test-$(basename "${1:-command}" | tr -c 'A-Za-z0-9_.-' '-')"
+    before_json="$(_queue_dev_test_counts_json "$harness_root")"
+
+    payload="$harness_root/dev-test-payload.sh"
+    {
+        printf '%s\n' '#!/usr/bin/env bash'
+        printf '%s\n' 'set +e'
+        printf '%s' 'cmd=('
+        local arg
+        for arg in "$@"; do printf ' %q' "$arg"; done
+        printf '%s\n' ' )'
+        printf '%s\n' '"${cmd[@]}"'
+        printf '%s\n' 'rc=$?'
+        printf '%s\n' 'sleep 0.2'
+        printf '%s\n' 'exit "$rc"'
+    } >"$payload"
+    chmod +x "$payload"
+
+    submitter="$harness_root/dev-test-submit.sh"
+    cat >"$submitter" <<EOF_SUBMITTER
+#!/usr/bin/env bash
+set -u
+export QUEUEBASH_ALLOW_NONINTERACTIVE=1
+export QUEUEBASH_ROOT=$(printf '%q' "$harness_root")
+export QUEUEBASH_CLASS_SOURCE_DIR=$(printf '%q' "$harness_root/classes")
+export QUEUEBASH_ENV_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/envs.d")
+export QUEUEBASH_PLUGIN_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/assets.d")
+export QUEUEBASH_CAP_PLUGIN_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/caps.d")
+export QUEUEBASH_REPORTER_PLUGIN_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/reporters.d")
+export QUEUEBASH_POLICY_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/policies.d")
+cd $(printf '%q' "$here") || exit 97
+source $(printf '%q' "$source_abs") >/dev/null || exit 98
+queue submit $(printf '%q' "$name") --class DEV_TEST_RUNNER --allow-large-log --json -- timeout $(printf '%q' "$timeout_sec") bash $(printf '%q' "$payload") > $(printf '%q' "$harness_root/submit.json")
+EOF_SUBMITTER
+    chmod +x "$submitter"
+    if ! bash "$submitter"; then
+        echo "queue dev test: harness submit failed" >&2
+        return 1
+    fi
+    submit_json="$(cat "$harness_root/submit.json" 2>/dev/null || true)"
+    job_id="$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("qid") or d.get("job_id") or d.get("id") or "")' <<<"$submit_json" 2>/dev/null || true)"
+    [[ -n "$job_id" ]] || { echo "queue dev test: submit did not return a job id" >&2; return 1; }
+
+    if [[ "$run" -eq 1 ]]; then
+        worker="$harness_root/dev-test-worker.sh"
+        local worker_limit worker_rc terminal_seen
+        worker_limit=$((timeout_sec + 4))
+        [[ "$worker_limit" -lt 4 ]] && worker_limit=4
+        [[ "$worker_limit" -gt 6 ]] && worker_limit=6
+        cat >"$worker" <<EOF_WORKER
+#!/usr/bin/env bash
+set -u
+export QUEUEBASH_ALLOW_NONINTERACTIVE=1
+export QUEUEBASH_ROOT=$(printf '%q' "$harness_root")
+export QUEUEBASH_CLASS_SOURCE_DIR=$(printf '%q' "$harness_root/classes")
+export QUEUEBASH_ENV_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/envs.d")
+export QUEUEBASH_PLUGIN_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/assets.d")
+export QUEUEBASH_CAP_PLUGIN_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/caps.d")
+export QUEUEBASH_REPORTER_PLUGIN_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/reporters.d")
+export QUEUEBASH_POLICY_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/policies.d")
+cd $(printf '%q' "$here") || exit 97
+source $(printf '%q' "$source_abs") >/dev/null || exit 98
+_queue_worker 1 >$(printf '%q' "$harness_root/worker.inner.stdout") 2>$(printf '%q' "$harness_root/worker.inner.stderr") &
+wp=\$!
+terminal_seen=0
+for ((i=0; i<$(printf '%q' "$worker_limit")*10; i++)); do
+    if [[ -f $(printf '%q' "$harness_root/done/$job_id.job") || -f $(printf '%q' "$harness_root/failed/$job_id.job") || -f $(printf '%q' "$harness_root/pol_blocked/$job_id.job") || -f $(printf '%q' "$harness_root/policy_blocked/$job_id.job") || -f $(printf '%q' "$harness_root/cancelled/$job_id.job") || -f $(printf '%q' "$harness_root/interrupted/$job_id.job") || -f $(printf '%q' "$harness_root/deleted/$job_id.job") ]]; then
+        terminal_seen=1
+        break
+    fi
+    if [[ -f $(printf '%q' "$harness_root/running/$job_id.job") ]] && grep -q '^EXIT_CODE=' $(printf '%q' "$harness_root/running/$job_id.job") 2>/dev/null; then
+        terminal_seen=1
+        break
+    fi
+    if ! kill -0 "\$wp" 2>/dev/null; then
+        break
+    fi
+    sleep 0.1
+done
+if kill -0 "\$wp" 2>/dev/null; then
+    kill -TERM "\$wp" >/dev/null 2>&1 || true
+    sleep 0.2
+    kill -KILL "\$wp" >/dev/null 2>&1 || true
+fi
+wait "\$wp" >/dev/null 2>&1 || true
+[[ "\$terminal_seen" == "1" ]] || exit 124
+exit 0
+EOF_WORKER
+        chmod +x "$worker"
+        worker_rc=0
+        # Foreground bounded harness wrapper. The worker script owns the focused
+        # one-job poll/cleanup loop, so queue dev test does not leave a detached
+        # worker or inherited descriptor after the target job reaches terminal state.
+        timeout "$((worker_limit + 1))" bash "$worker" </dev/null >"$harness_root/worker.stdout" 2>"$harness_root/worker.stderr" || worker_rc="$?"
+        terminal_seen=0
+        if [[ -f "$harness_root/done/$job_id.job" || -f "$harness_root/failed/$job_id.job" || -f "$harness_root/pol_blocked/$job_id.job" || -f "$harness_root/policy_blocked/$job_id.job" || -f "$harness_root/cancelled/$job_id.job" || -f "$harness_root/interrupted/$job_id.job" || -f "$harness_root/deleted/$job_id.job" ]]; then
+            terminal_seen=1
+        elif [[ -f "$harness_root/running/$job_id.job" ]] && grep -q '^EXIT_CODE=' "$harness_root/running/$job_id.job" 2>/dev/null; then
+            terminal_seen=1
+        fi
+
+        # If a killed/terminated worker left the job in running after the payload
+        # appended EXIT_CODE, finish the move deterministically for the harness.
+        if [[ -f "$harness_root/running/$job_id.job" ]] && grep -q '^EXIT_CODE=' "$harness_root/running/$job_id.job" 2>/dev/null; then
+            local _dev_test_ec _dev_test_dst
+            _dev_test_ec="$(sed -n 's/^EXIT_CODE=//p' "$harness_root/running/$job_id.job" | tail -n 1 | tr -d "'" )"
+            if [[ "${_dev_test_ec:-1}" == "0" ]]; then
+                _dev_test_dst="$harness_root/done/$job_id.job"
+            else
+                _dev_test_dst="$harness_root/failed/$job_id.job"
+            fi
+            mv -f "$harness_root/running/$job_id.job" "$_dev_test_dst" 2>/dev/null || true
+        fi
+
+        if [[ "$terminal_seen" != "1" ]]; then
+            printf '%s\n' "queue dev test: worker wrapper stopped before observing terminal state rc=$worker_rc" >>"$harness_root/worker.stderr"
+        fi
+    fi
+
+    after_json="$(_queue_dev_test_counts_json "$harness_root")"
+    if [[ "$run" -eq 0 ]]; then
+        out="$(python3 - "$harness_root" "$job_id" "$name" "$before_json" "$after_json" <<'PYSUBMITTED'
+import json, sys
+root, job_id, name, before_s, after_s = sys.argv[1:]
+print(json.dumps({
+ "schema":"queuebash.dev_test_result.v1",
+ "harness_root":root,
+ "created_job_id":job_id,
+ "job_id":job_id,
+ "class":"DEV_TEST_RUNNER",
+ "name":name,
+ "queue_state":"pending",
+ "status":"submitted",
+ "exit_code":None,
+ "timed_out":False,
+ "before":json.loads(before_s),
+ "after":json.loads(after_s),
+}, separators=(",",":"), sort_keys=True))
+PYSUBMITTED
+)"
+    else
+        out="$(_queue_dev_test_result_json "$harness_root" "$job_id" "$before_json" "$after_json")"
+    fi
+    if [[ "$json" -eq 1 ]]; then
+        printf '%s\n' "$out"
+    else
+        python3 -c 'import json,sys; d=json.load(sys.stdin); print(f"Dev test {d.get(chr(106)+chr(111)+chr(98)+chr(95)+chr(105)+chr(100),"")}: {d.get("status","")} state={d.get("queue_state","")} exit={d.get("exit_code","")}\nHarness: {d.get("harness_root","")}")' <<<"$out"
+    fi
+}
+_queue_dev_file_registry_path() {
+    local root
+    root="$(_queue_root)"
+    mkdir -p "$root/dev" 2>/dev/null || true
+    printf '%s\n' "$root/dev/file_registry.json"
+}
+
+_queue_dev_file_registry_command() {
+    local sub="${1:-help}" path
+    shift || true
+    path="$(_queue_dev_file_registry_path)"
+    python3 - "$path" "$sub" "$@" <<'PYDEV_FILE_REGISTRY'
+import argparse, datetime, hashlib, json, os, pathlib, re, shutil, sys, uuid
+SCHEMA="queuebash.dev_file_registry.v1"; ENTRY_SCHEMA="queuebash.dev_file_registry_entry.v1"; EVENT_SCHEMA="queuebash.dev_file_registry_event.v1"
+registry_path=pathlib.Path(sys.argv[1]); sub=sys.argv[2]; argv=sys.argv[3:]; project_root=pathlib.Path(os.getcwd()).resolve(); backup_root=registry_path.parent/"file_registry"/"backups"
+def now(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
+def relpath(path):
+    p=pathlib.Path(path); p=(project_root/p).resolve() if not p.is_absolute() else p.resolve()
+    try: return str(p.relative_to(project_root))
+    except ValueError: return str(p)
+def md5_file(path):
+    h=hashlib.md5()
+    with open(path,'rb') as f:
+        for c in iter(lambda:f.read(1024*1024), b''): h.update(c)
+    return h.hexdigest()
+def brace_delta(line):
+    delta=0; sq=dq=esc=False; i=0
+    while i<len(line):
+        ch=line[i]
+        if esc: esc=False; i+=1; continue
+        if ch=='\\' and not sq: esc=True; i+=1; continue
+        if ch=="'" and not dq: sq=not sq; i+=1; continue
+        if ch=='"' and not sq: dq=not dq; i+=1; continue
+        if ch=='#' and not sq and not dq: break
+        if not sq and not dq:
+            if ch=='{': delta+=1
+            elif ch=='}': delta-=1
+        i+=1
+    return delta
+def functions_in_text(text):
+    lines=text.splitlines(True); out=[]; seen=set()
+    p1=re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*(?:\{|$)'); p2=re.compile(r'^\s*function\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*(?:\{|$)')
+    for i,line in enumerate(lines):
+        m=p1.match(line) or p2.match(line)
+        if not m: continue
+        fn=m.group(1)
+        if fn in seen: continue
+        depth=0; opened=False; end=None
+        for j in range(i,len(lines)):
+            d=brace_delta(lines[j]); opened = opened or d>0; depth += d
+            if opened and depth<=0: end=j; break
+        if end is None: continue
+        body=''.join(lines[i:end+1]).encode(); out.append({'function':fn,'line_start':i+1,'line_end':end+1,'md5':hashlib.md5(body).hexdigest(),'size':len(body)}); seen.add(fn)
+    return out
+def function_map(path):
+    try: return {f['function']:f for f in functions_in_text(pathlib.Path(path).read_text(errors='replace'))}
+    except FileNotFoundError: return {}
+def load():
+    if not registry_path.exists(): return {'schema':SCHEMA,'created_at':now(),'updated_at':now(),'project_root':str(project_root),'entries':[],'events':[]}
+    data=json.loads(registry_path.read_text()); data.setdefault('schema',SCHEMA); data.setdefault('entries',[]); data.setdefault('events',[]); return data
+def save(data):
+    registry_path.parent.mkdir(parents=True,exist_ok=True); data['updated_at']=now(); tmp=registry_path.with_suffix(registry_path.suffix+'.tmp'); tmp.write_text(json.dumps(data,indent=2,sort_keys=True)+'\n'); tmp.replace(registry_path)
+def find_entry(data,file):
+    rp=relpath(file)
+    for e in data.get('entries',[]):
+        if e.get('relpath')==rp or e.get('path')==str(pathlib.Path(file).resolve()): return e
+    return None
+def event(data,action,entry=None,**kw):
+    ev={'schema':EVENT_SCHEMA,'id':'fev-'+uuid.uuid4().hex[:12],'action':action,'timestamp':now()}
+    if entry: ev.update({'entry_id':entry.get('id'),'relpath':entry.get('relpath')})
+    ev.update(kw); data.setdefault('events',[]).append(ev)
+def snapshot(file,functions=None):
+    p=pathlib.Path(file); p=(project_root/p).resolve() if not p.is_absolute() else p.resolve()
+    if not p.exists(): raise SystemExit(f'queue dev files: file not found: {file}')
+    fmap=function_map(p)
+    # None means full function inventory for existing-file begin/finish tracking.
+    # An explicit empty list means bounded/no function preconditions, used for
+    # new/unbaselined files unless --function was requested.
+    wanted=sorted(fmap) if functions is None else list(functions)
+    fl=[fmap[x] for x in wanted if x in fmap]
+    return {'path':str(p),'relpath':relpath(p),'size':p.stat().st_size,'md5':md5_file(p),'functions':fl}
+def emit(obj,json_mode):
+    print(json.dumps(obj,sort_keys=True,separators=(',',':')) if json_mode else f"{obj.get('status','ok')}: {obj.get('relpath') or obj.get('path') or obj.get('message','')}")
+def parser(prog):
+    ap=argparse.ArgumentParser(prog=prog); ap.add_argument('--json',action='store_true'); return ap
+def update_change(entry, functions=None):
+    base=entry.get('baseline',{})
+    if functions:
+        entry['tracked_functions']=list(functions)
+    if functions is None:
+        functions=entry.get('tracked_functions') or [f.get('function') for f in base.get('functions',[]) if f.get('function')] or None
+    cur=snapshot(entry['path'], functions)
+    old={f.get('function'):f for f in base.get('functions',[])}; new={f.get('function'):f for f in cur.get('functions',[])}
+    changed=[]
+    for fn in sorted(set(old)|set(new)):
+        if old.get(fn,{}).get('md5') != new.get(fn,{}).get('md5'):
+            changed.append({'function':fn,'old_md5':old.get(fn,{}).get('md5'),'new_md5':new.get(fn,{}).get('md5'),'old_size':old.get(fn,{}).get('size'),'new_size':new.get(fn,{}).get('size')})
+    is_changed=bool(entry.get('added')) or base.get('md5') is None or base.get('md5') != cur.get('md5') or bool(changed)
+    entry.update({'updated_at':now(),'current':cur,'changed':is_changed,'changed_functions':changed,'status':'changed' if is_changed else 'unchanged'})
+    return cur,changed
+def cmd_begin():
+    ap=parser('queue dev files begin'); ap.add_argument('--file',required=True); ap.add_argument('--purpose',required=True); ap.add_argument('--location',default=''); ap.add_argument('--function',action='append',default=[]); ns=ap.parse_args(argv)
+    data=load(); snap=snapshot(ns.file,ns.function); eid='freg-'+uuid.uuid4().hex[:12]; bfile=backup_root/eid/snap['relpath']; bfile.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(snap['path'],bfile)
+    entry=find_entry(data,snap['path']) or {'schema':ENTRY_SCHEMA,'id':eid,'created_at':now()}
+    if entry not in data['entries']: data['entries'].append(entry)
+    entry.update({'updated_at':now(),'status':'open','path':snap['path'],'relpath':snap['relpath'],'location':ns.location or snap['relpath'],'purpose':ns.purpose,'baseline':snap,'current':snap,'backup':str(bfile),'changed':False})
+    event(data,'begin',entry,purpose=ns.purpose,backup=str(bfile)); save(data); emit({'schema':ENTRY_SCHEMA,'status':'open','entry_id':entry['id'],'relpath':snap['relpath'],'md5':snap['md5'],'size':snap['size'],'backup':str(bfile)},ns.json)
+def cmd_finish():
+    ap=parser('queue dev files finish'); ap.add_argument('--file',required=True); ap.add_argument('--purpose',default=''); ap.add_argument('--function',action='append',default=[]); ns=ap.parse_args(argv)
+    data=load(); entry=find_entry(data,ns.file)
+    if not entry: raise SystemExit('queue dev files finish: file has no registry entry; use begin first')
+    if ns.purpose: entry['purpose']=ns.purpose
+    cur,changed=update_change(entry,ns.function or None); event(data,'finish',entry,changed=entry.get('changed'),changed_functions=changed); save(data); emit({'schema':ENTRY_SCHEMA,'status':entry['status'],'entry_id':entry['id'],'relpath':entry['relpath'],'old_md5':entry.get('baseline',{}).get('md5'),'new_md5':cur.get('md5'),'changed_functions':changed},ns.json)
+def cmd_add():
+    ap=parser('queue dev files add'); ap.add_argument('--file',required=True); ap.add_argument('--purpose',required=True); ap.add_argument('--location',default=''); ap.add_argument('--function',action='append',default=[]); ns=ap.parse_args(argv)
+    data=load(); snap=snapshot(ns.file,ns.function if ns.function else []); entry=find_entry(data,snap['path'])
+    if entry is None:
+        entry={'schema':ENTRY_SCHEMA,'id':'freg-'+uuid.uuid4().hex[:12],'created_at':now(),'baseline':{'path':snap['path'],'relpath':snap['relpath'],'size':0,'md5':None,'functions':[]}}
+        data['entries'].append(entry)
+    if ns.function: entry['tracked_functions']=list(ns.function)
+    old={f.get('function'):f for f in entry.get('baseline',{}).get('functions',[])}; newf={f.get('function'):f for f in snap.get('functions',[])}
+    changed=[]
+    for fn in sorted(set(old)|set(newf)):
+        if old.get(fn,{}).get('md5') != newf.get(fn,{}).get('md5'):
+            changed.append({'function':fn,'old_md5':old.get(fn,{}).get('md5'),'new_md5':newf.get(fn,{}).get('md5'),'old_size':old.get(fn,{}).get('size'),'new_size':newf.get(fn,{}).get('size')})
+    entry.update({'updated_at':now(),'status':'changed','path':snap['path'],'relpath':snap['relpath'],'location':ns.location or snap['relpath'],'purpose':ns.purpose,'current':snap,'changed':True,'added':True,'changed_functions':changed})
+    event(data,'add',entry,purpose=ns.purpose); save(data); emit({'schema':ENTRY_SCHEMA,'status':'added','entry_id':entry['id'],'relpath':snap['relpath'],'md5':snap['md5'],'size':snap['size']},ns.json)
+def cmd_remove():
+    ap=parser('queue dev files remove'); ap.add_argument('--file',required=True); ap.add_argument('--reason',default=''); ap.add_argument('--json',action='store_true'); ns=ap.parse_args(argv)
+    data=load(); entry=find_entry(data,ns.file)
+    if not entry: raise SystemExit('queue dev files remove: file not in registry')
+    entry.update({'updated_at':now(),'status':'removed','changed':False,'remove_reason':ns.reason}); event(data,'remove',entry,reason=ns.reason); save(data); emit({'schema':ENTRY_SCHEMA,'status':'removed','entry_id':entry['id'],'relpath':entry.get('relpath')},ns.json)
+def cmd_list(changed_only=False):
+    ap=parser('queue dev files list'); ap.add_argument('--all',action='store_true'); ns=ap.parse_args(argv)
+    data=load(); out=[]
+    for e in data.get('entries',[]):
+        if pathlib.Path(e.get('path','')).exists() and e.get('status') not in {'removed','archived'}:
+            try: update_change(e,None)
+            except Exception: pass
+        if not ns.all and e.get('status') in {'removed','archived'}: continue
+        if changed_only and not e.get('changed'): continue
+        out.append(e)
+    save(data)
+    if ns.json: print(json.dumps({'schema':SCHEMA,'status':'ok','registry':str(registry_path),'entries':out},sort_keys=True,separators=(',',':')))
+    else:
+        for e in out:
+            cur=e.get('current',{}); base=e.get('baseline',{})
+            print(f"{e.get('status','?')}\t{e.get('relpath','')}\tsize={cur.get('size','')}\tmd5={cur.get('md5','')}\tbase={base.get('md5','')}\tpurpose={e.get('purpose','')}")
+
+def cmd_scan():
+    ap=parser('queue dev files scan'); ap.add_argument('--all',action='store_true'); ns=ap.parse_args(argv)
+    data=load(); scanned=[]; missing=[]; changed=0; missing_baseline=0; scan_records=[]
+    for e in data.get('entries',[]):
+        if not ns.all and e.get('status') in {'removed','archived'}: continue
+        path=e.get('path','')
+        if not path or not pathlib.Path(path).exists():
+            missing.append(e.get('relpath') or path); continue
+        try:
+            update_change(e,None); scanned.append(e.get('relpath') or path)
+            if e.get('baseline',{}).get('md5') is None: missing_baseline+=1
+            if e.get('changed'): changed+=1
+            cur=e.get('current',{})
+            scan_records.append({'relpath':e.get('relpath') or path,'status':e.get('status'),'changed':bool(e.get('changed')),'md5':cur.get('md5'),'size':cur.get('size'),'baseline_md5':e.get('baseline',{}).get('md5'),'missing_baseline_md5':e.get('baseline',{}).get('md5') is None})
+        except Exception as ex:
+            missing.append((e.get('relpath') or path)+': '+str(ex))
+    event(data,'scan',None,scanned=len(scanned),changed=changed,missing=len(missing),missing_baseline_md5=missing_baseline); save(data)
+    emit({'schema':SCHEMA,'status':'ok','registry':str(registry_path),'scanned':len(scanned),'changed':changed,'missing_baseline_md5':missing_baseline,'missing':missing,'scan_records':scan_records,'entries':data.get('entries',[])},ns.json)
+def cmd_path():
+    ap=parser('queue dev files path'); ns=ap.parse_args(argv); emit({'schema':SCHEMA,'status':'ok','path':str(registry_path)},ns.json)
+try:
+    if sub in {'help','--help','-h',''}: print('Usage: queue dev files begin|finish|add|remove|list|changed|scan|path', file=sys.stderr); sys.exit(0)
+    {'path':cmd_path,'begin':cmd_begin,'finish':cmd_finish,'add':cmd_add,'remove':cmd_remove,'list':lambda:cmd_list(False),'changed':lambda:cmd_list(True),'scan':cmd_scan}[sub]()
+except KeyError:
+    print(f'queue dev files: unknown subcommand: {sub}', file=sys.stderr); sys.exit(2)
+except SystemExit: raise
+except Exception as e:
+    print(f'queue dev files: {e}', file=sys.stderr); sys.exit(1)
+PYDEV_FILE_REGISTRY
+}
+
+_queue_dev_patchset_command() {
+    local sub="${1:-}" registry="" output="" patchset="" target="" backup_dir="" json=0 check=0
+    shift || true
+    case "$sub" in
+        create)
+            while [[ "$#" -gt 0 ]]; do
+                case "${1:-}" in
+                    --output|-o) output="${2:-}"; shift 2 ;;
+                    --registry) registry="${2:-}"; shift 2 ;;
+                    --json|-j) json=1; shift ;;
+                    *) echo "queue dev patchset create: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+            [[ -n "$output" ]] || { echo "Usage: queue dev patchset create --output ZIP [--registry FILE] [--json]" >&2; return 2; }
+            [[ -n "$registry" ]] || registry="$(_queue_dev_file_registry_path)"
+            python3 - "$registry" "$output" "$json" <<'PYDEV_PATCHSET_CREATE'
+import datetime, hashlib, json, os, pathlib, shutil, subprocess, sys, tempfile, zipfile
+registry=pathlib.Path(sys.argv[1]); outzip=pathlib.Path(sys.argv[2]); json_mode=sys.argv[3]=='1'; root=pathlib.Path(os.getcwd()).resolve()
+if not registry.exists(): print(f'queue dev patchset: registry not found: {registry}', file=sys.stderr); sys.exit(1)
+data=json.loads(registry.read_text())
+def md5_file(path):
+    h=hashlib.md5()
+    with open(path,'rb') as f:
+        for c in iter(lambda:f.read(1024*1024), b''): h.update(c)
+    return h.hexdigest()
+def safe_rel(rel):
+    p=pathlib.PurePosixPath(str(rel).replace(os.sep,'/'))
+    if p.is_absolute() or '..' in p.parts: raise SystemExit(f'unsafe registry path: {rel}')
+    return str(p)
+def include_entry(e):
+    if e.get('status') in {'removed','archived'}: return False
+    base=e.get('baseline') or {}; cur=e.get('current') or {}; path=e.get('path')
+    if e.get('changed') or e.get('added') or e.get('status')=='changed': return True
+    if base.get('md5') is None and path and pathlib.Path(path).exists(): return True
+    if base.get('md5') != cur.get('md5') and cur.get('md5') is not None: return True
+    return False
+entries=[e for e in data.get('entries',[]) if include_entry(e)]
+if not entries: print('queue dev patchset: no changed registry entries', file=sys.stderr); sys.exit(1)
+manifest={'schema':'queuebash.dev_patchset.v1','created_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source_root':str(root),'registry':str(registry),'summary':{'total_entries':0,'modified_files':0,'new_or_unbaselined_files':0,'missing_baseline_backups':0,'function_preconditions':0,'scratchpad_item_merge_entries':0},'entries':[]}
+work=pathlib.Path(tempfile.mkdtemp(prefix='queue-dev-patchset.'))
+try:
+    (work/'files').mkdir(); (work/'diffs').mkdir(); (work/'baseline').mkdir(); (work/'scripts').mkdir()
+    for e in entries:
+        rel=safe_rel(e.get('relpath')); src=pathlib.Path(e.get('path'))
+        if not src.exists(): print(f'queue dev patchset: changed file missing: {src}', file=sys.stderr); sys.exit(1)
+        dest=work/'files'/rel; dest.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(src,dest)
+        backup_s=e.get('backup') or ''; backup=pathlib.Path(backup_s) if backup_s else None; diff_rel=f'diffs/{rel}.diff'; diff_path=work/diff_rel; diff_path.parent.mkdir(parents=True,exist_ok=True)
+        baseline_present=bool(backup and backup.is_file())
+        if baseline_present:
+            bdest=work/'baseline'/rel; bdest.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(backup,bdest); proc=subprocess.run(['diff','-u',str(bdest),str(dest)],text=True,capture_output=True); diff_path.write_text(proc.stdout)
+        else:
+            diff_path.write_text(f'# baseline backup missing for {rel}\n# file_old_md5={e.get("baseline",{}).get("md5")}\n')
+        base=e.get('baseline',{}); old_md5=base.get('md5'); new_md5=md5_file(src)
+        change_type='scratchpad_item_merge' if rel=='.queuebash/dev/scratchpad.json' else ('new_or_unbaselined_file' if old_md5 is None else 'modified_file')
+        if change_type=='new_or_unbaselined_file': manifest['summary']['new_or_unbaselined_files']+=1
+        elif change_type=='scratchpad_item_merge': manifest['summary']['scratchpad_item_merge_entries']+=1
+        else: manifest['summary']['modified_files']+=1
+        if not baseline_present: manifest['summary']['missing_baseline_backups']+=1
+        manifest['summary']['function_preconditions']+=len(e.get('changed_functions') or [])
+        manifest['entries'].append({'entry_id':e.get('id'),'relpath':rel,'purpose':e.get('purpose'),'change_type':change_type,'file_old_md5':old_md5,'file_new_md5':new_md5,'file_old_size':base.get('size'),'file_new_size':src.stat().st_size,'changed_functions':e.get('changed_functions',[]),'diff':diff_rel,'file':f'files/{rel}','baseline_present':baseline_present,'precondition':{'file_old_md5_required':old_md5 is not None and rel!='.queuebash/dev/scratchpad.json','allow_absent_target_for_new_file':old_md5 is None,'allow_matching_existing_new_file':old_md5 is None,'scratchpad_item_merge':rel=='.queuebash/dev/scratchpad.json'}})
+    manifest['summary']['total_entries']=len(manifest['entries'])
+    (work/'manifest.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+    (work/'review_diff.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\nhere="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"\ntarget="${1:-.}"\npython3 "$here/scripts/check_preconditions.py" "$here/manifest.json" "$target"\nfind "$here/diffs" -type f -name "*.diff" -print -exec cat {} \\;\n')
+    (work/'apply_patchset.sh').write_text(r'''#!/usr/bin/env bash
+set -euo pipefail
+usage() {
+  cat <<'USAGE'
+Usage: ./apply_patchset.sh [--help] [--check] [--json] [--backup-dir DIR] [TARGET]
+
+Checks patchset preconditions, creates a pre-apply backup manifest, then applies files.
+Scratchpad updates are merged by scratchpad item id instead of overwriting the file.
+
+Options:
+  --help, -h        Show this help without running preconditions.
+  --check          Run preconditions only; do not back up or apply files.
+  --json           Emit bounded JSON from precondition/apply phases where supported.
+  --backup-dir DIR Put pre-apply backups under DIR.
+USAGE
+}
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+target="."
+check=0
+json=0
+backup_dir=""
+while [[ "$#" -gt 0 ]]; do
+  case "${1:-}" in
+    --help|-h) usage; exit 0 ;;
+    --check) check=1; shift ;;
+    --json) json=1; shift ;;
+    --backup-dir) backup_dir="${2:-}"; shift 2 ;;
+    --) shift; break ;;
+    -*) echo "apply_patchset.sh: unknown option: $1" >&2; usage >&2; exit 2 ;;
+    *) target="$1"; shift ;;
+  esac
+done
+check_args=()
+[[ "$json" == "1" ]] && check_args+=(--json)
+python3 "$here/scripts/check_preconditions.py" "$here/manifest.json" "$target" "${check_args[@]}"
+[[ "$check" == "1" ]] && exit 0
+apply_args=()
+[[ "$json" == "1" ]] && apply_args+=(--json)
+[[ -n "$backup_dir" ]] && apply_args+=(--backup-dir "$backup_dir")
+python3 "$here/scripts/apply_files.py" "$here/manifest.json" "$target" "$here/files" "${apply_args[@]}"
+''')
+    (work/'scripts'/'check_preconditions.py').write_text(r'''#!/usr/bin/env python3
+import argparse, hashlib, json, pathlib, re, sys
+ap=argparse.ArgumentParser(); ap.add_argument('manifest'); ap.add_argument('target'); ap.add_argument('--json',action='store_true'); ns=ap.parse_args()
+manifest=pathlib.Path(ns.manifest); target=pathlib.Path(ns.target); data=json.loads(manifest.read_text())
+def md5_file(path):
+ h=hashlib.md5()
+ with open(path,'rb') as f:
+  for c in iter(lambda:f.read(1024*1024), b''): h.update(c)
+ return h.hexdigest()
+def brace_delta(line):
+ delta=0; sq=dq=esc=False; i=0
+ while i<len(line):
+  ch=line[i]
+  if esc: esc=False; i+=1; continue
+  if ch=='\\' and not sq: esc=True; i+=1; continue
+  if ch=="'" and not dq: sq=not sq; i+=1; continue
+  if ch=='"' and not sq: dq=not dq; i+=1; continue
+  if ch=='#' and not sq and not dq: break
+  if not sq and not dq:
+   if ch=='{': delta+=1
+   elif ch=='}': delta-=1
+  i+=1
+ return delta
+def funcs(path):
+ text=path.read_text(errors='replace'); lines=text.splitlines(True); out={}; p1=re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*(?:\{|$)'); p2=re.compile(r'^\s*function\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*(?:\{|$)')
+ for i,line in enumerate(lines):
+  m=p1.match(line) or p2.match(line)
+  if not m: continue
+  fn=m.group(1); depth=0; opened=False; end=None
+  for j in range(i,len(lines)):
+   d=brace_delta(lines[j]); opened=opened or d>0; depth+=d
+   if opened and depth<=0: end=j; break
+  if end is not None: out[fn]=hashlib.md5(''.join(lines[i:end+1]).encode()).hexdigest()
+ return out
+results=[]
+for e in data.get('entries',[]):
+ rel=e['relpath']; path=target/rel; old=e.get('file_old_md5'); new=e.get('file_new_md5')
+ result={'relpath':rel,'change_type':e.get('change_type'),'status':'unknown','detail':''}
+ if rel=='.queuebash/dev/scratchpad.json':
+  if not path.exists(): result.update(status='ready_scratchpad_create', detail='scratchpad absent; safe to create from patchset')
+  else: result.update(status='ready_scratchpad_item_merge', detail='scratchpad will merge by item id; file md5 drift is not an overwrite conflict')
+  results.append(result); continue
+ if old is None:
+  if not path.exists(): result.update(status='ready_new_file_absent', detail='target path absent; safe to create')
+  else:
+   cur=md5_file(path)
+   if new and cur==new: result.update(status='already_applied', detail='new/unbaselined file already present with expected md5')
+   else: result.update(status='conflict_existing_new_file', detail=f'target exists with md5 {cur}; expected absent or {new}')
+  results.append(result); continue
+ if not path.exists(): result.update(status='missing_target', detail='target file is missing'); results.append(result); continue
+ cur=md5_file(path)
+ if old and cur!=old:
+  f=funcs(path); bad=[]
+  for ch in e.get('changed_functions') or []:
+   fn=ch.get('function'); om=ch.get('old_md5')
+   if om and f.get(fn)!=om: bad.append(f"{fn}: expected {om} got {f.get(fn)}")
+  if bad: result.update(status='conflict_function_baseline', detail='; '.join(bad))
+  else: result.update(status='ready_function_baseline', detail='file md5 differs but changed-function old md5 preconditions match')
+ else: result.update(status='ready_file_baseline', detail='file baseline md5 matched')
+ results.append(result)
+summary={'total':len(results),'ready':0,'already_applied':0,'conflict':0,'missing':0,'scratchpad_item_merge':0,'requires_full_file_reconciliation':0}
+for r in results:
+ st=r['status']
+ if st.startswith('ready_'): summary['ready']+=1
+ if st.startswith('ready_scratchpad_'): summary['scratchpad_item_merge']+=1
+ elif st=='already_applied': summary['already_applied']+=1
+ elif st.startswith('conflict_'):
+  summary['conflict']+=1
+  if st in {'conflict_function_baseline','conflict_existing_new_file'}: summary['requires_full_file_reconciliation']+=1
+ elif st=='missing_target': summary['missing']+=1
+out={'schema':'queuebash.dev_patchset.preconditions.v1','status':'ok' if summary['conflict']==0 and summary['missing']==0 else 'failed','summary':summary,'results':results}
+if ns.json: print(json.dumps(out,sort_keys=True,separators=(',',':')))
+else:
+ print('Patchset precondition summary: '+', '.join(f"{k}={v}" for k,v in summary.items()))
+ for r in results: print(f"{r['status']}\t{r['relpath']}\t{r['detail']}")
+sys.exit(0 if out['status']=='ok' else 1)
+''')
+    (work/'scripts'/'apply_files.py').write_text(r'''#!/usr/bin/env python3
+import argparse, datetime, hashlib, json, pathlib, shutil, sys
+ap=argparse.ArgumentParser(); ap.add_argument('manifest'); ap.add_argument('target'); ap.add_argument('files'); ap.add_argument('--backup-dir'); ap.add_argument('--json',action='store_true'); ns=ap.parse_args()
+data=json.loads(pathlib.Path(ns.manifest).read_text()); target=pathlib.Path(ns.target); files=pathlib.Path(ns.files)
+def md5_file(path):
+ h=hashlib.md5()
+ with open(path,'rb') as f:
+  for c in iter(lambda:f.read(1024*1024), b''): h.update(c)
+ return h.hexdigest()
+def load_json(path):
+ try: return json.loads(path.read_text())
+ except Exception: return None
+def item_key(item):
+ if isinstance(item,dict):
+  return item.get('id') or item.get('item_id') or item.get('key')
+ return None
+def merge_scratchpad(dst, src):
+ incoming=load_json(src)
+ if incoming is None: raise SystemExit(f'incoming scratchpad is not valid JSON: {src}')
+ if not dst.exists():
+  dst.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(src,dst)
+  return {'mode':'created','added':len(incoming.get('items',[]) if isinstance(incoming,dict) else []),'kept':0,'conflicts':0}
+ current=load_json(dst)
+ if current is None: raise SystemExit(f'target scratchpad is not valid JSON: {dst}')
+ if not isinstance(current,dict) or not isinstance(incoming,dict):
+  raise SystemExit('scratchpad merge requires JSON objects')
+ cur_items=current.setdefault('items',[]); inc_items=incoming.get('items',[])
+ if not isinstance(cur_items,list) or not isinstance(inc_items,list):
+  raise SystemExit('scratchpad merge requires items arrays')
+ index={item_key(x):x for x in cur_items if item_key(x)}
+ added=kept=conflicts=0
+ for item in inc_items:
+  k=item_key(item)
+  if not k:
+   cur_items.append(item); added+=1; continue
+  if k not in index:
+   cur_items.append(item); index[k]=item; added+=1; continue
+  if index[k]==item:
+   kept+=1; continue
+  conflicts+=1
+  current.setdefault('merge_conflicts',[]).append({'id':k,'reason':'same scratchpad item id differs; kept target item','incoming':item})
+ current.setdefault('merge_history',[]).append({'schema':'queuebash.dev_patchset.scratchpad_merge.v1','created_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':'patchset','added':added,'kept':kept,'conflicts':conflicts})
+ dst.write_text(json.dumps(current,indent=2,sort_keys=True)+'\n')
+ return {'mode':'merged','added':added,'kept':kept,'conflicts':conflicts}
+patchset_id=data.get('created_at','patchset').replace(':','').replace('/','_')
+backup_root=pathlib.Path(ns.backup_dir) if ns.backup_dir else target/'.queuebash'/'dev'/'patchset-backups'
+stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+backup_dir=backup_root/f'{stamp}_{patchset_id}'
+backup_dir.mkdir(parents=True,exist_ok=True)
+backup_manifest={'schema':'queuebash.dev_patchset.backup_manifest.v1','created_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'target':str(target),'patchset_created_at':data.get('created_at'),'backup_dir':str(backup_dir),'entries':[]}
+applied=[]
+for e in data.get('entries',[]):
+ rel=e['relpath']; src=files/rel; dst=target/rel; before_exists=dst.exists(); rec={'relpath':rel,'existed':before_exists,'change_type':e.get('change_type'),'action':'merge_scratchpad' if rel=='.queuebash/dev/scratchpad.json' else ('replace' if before_exists else 'create')}
+ if before_exists:
+  rec['old_md5']=md5_file(dst); rec['old_size']=dst.stat().st_size
+  bpath=backup_dir/'files'/rel; bpath.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(dst,bpath); rec['backup_path']=str(bpath.relative_to(backup_dir))
+ else:
+  rec['rollback']='delete_created_file'
+ backup_manifest['entries'].append(rec)
+backup_manifest_path=backup_dir/'backup_manifest.json'
+backup_manifest_path.write_text(json.dumps(backup_manifest,indent=2,sort_keys=True)+'\n')
+for e in data.get('entries',[]):
+ rel=e['relpath']; src=files/rel; dst=target/rel; dst.parent.mkdir(parents=True,exist_ok=True)
+ if rel=='.queuebash/dev/scratchpad.json':
+  result=merge_scratchpad(dst, src); applied.append({'relpath':rel,'status':'merged_scratchpad','result':result}); continue
+ shutil.copy2(src,dst); applied.append({'relpath':rel,'status':'applied'})
+out={'schema':'queuebash.dev_patchset.apply.v1','status':'ok','backup_dir':str(backup_dir),'backup_manifest':str(backup_manifest_path),'applied':applied}
+if ns.json: print(json.dumps(out,sort_keys=True,separators=(',',':')))
+else:
+ print(f'backup_dir: {backup_dir}')
+ print(f'backup_manifest: {backup_manifest_path}')
+ for a in applied: print(f"{a['status']} {a['relpath']}")
+''')
+    for f in [work/'review_diff.sh',work/'apply_patchset.sh',work/'scripts'/'check_preconditions.py',work/'scripts'/'apply_files.py']: os.chmod(f,0o755)
+    outzip.parent.mkdir(parents=True,exist_ok=True)
+    with zipfile.ZipFile(outzip,'w',compression=zipfile.ZIP_DEFLATED) as z:
+        for path in sorted(work.rglob('*')):
+            if path.is_file(): z.write(path,path.relative_to(work).as_posix())
+finally:
+    shutil.rmtree(work,ignore_errors=True)
+if json_mode: print(json.dumps({'schema':'queuebash.dev_patchset.v1','status':'ok','output':str(outzip),'entries':len(entries),'summary':manifest['summary']},sort_keys=True,separators=(',',':')))
+else: print(f"patchset written: {outzip}\nchanged files: {len(entries)}\nnew_or_unbaselined: {manifest['summary']['new_or_unbaselined_files']}\nmissing_baseline_backups: {manifest['summary']['missing_baseline_backups']}")
+PYDEV_PATCHSET_CREATE
+            ;;
+        inspect|apply)
+            local mode="$sub"
+            while [[ "$#" -gt 0 ]]; do
+                case "${1:-}" in
+                    --patchset|-p) patchset="${2:-}"; shift 2 ;;
+                    --target) target="${2:-}"; shift 2 ;;
+                    --backup-dir) backup_dir="${2:-}"; shift 2 ;;
+                    --check) check=1; shift ;;
+                    --json|-j) json=1; shift ;;
+                    *) echo "queue dev patchset $mode: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+            [[ -n "$patchset" ]] || { echo "Usage: queue dev patchset $mode --patchset ZIP [--target DIR] [--check] [--backup-dir DIR] [--json]" >&2; return 2; }
+            python3 - "$mode" "$patchset" "${target:-}" "$check" "$backup_dir" "$json" <<'PYDEV_PATCHSET_APPLY_INSPECT'
+import json, pathlib, subprocess, sys, tempfile, zipfile, shutil
+mode=sys.argv[1]; patchset=pathlib.Path(sys.argv[2]); target=sys.argv[3] or '.'; check=sys.argv[4]=='1'; backup_dir=sys.argv[5]; json_mode=sys.argv[6]=='1'
+if not patchset.exists(): print(f'queue dev patchset {mode}: patchset not found: {patchset}', file=sys.stderr); sys.exit(1)
+work=pathlib.Path(tempfile.mkdtemp(prefix=f'queue-dev-patchset-{mode}.'))
+out={}
+try:
+    with zipfile.ZipFile(patchset) as z: z.extractall(work)
+    manifest=json.loads((work/'manifest.json').read_text())
+    cmd=[sys.executable,str(work/'scripts'/'check_preconditions.py'),str(work/'manifest.json'),target,'--json']
+    proc=subprocess.run(cmd,text=True,capture_output=True,timeout=30)
+    try: pre=json.loads(proc.stdout or '{}')
+    except Exception: pre={'status':'failed','stdout':proc.stdout,'stderr':proc.stderr,'returncode':proc.returncode}
+    schema='queuebash.dev_patchset.inspect.v1' if mode=='inspect' else 'queuebash.dev_patchset.apply.v1'
+    out={'schema':schema,'status':'ok' if proc.returncode==0 else 'precondition_failed','patchset':str(patchset),'target':target,'summary':manifest.get('summary',{}),'preconditions':pre}
+    if mode=='inspect' or check or proc.returncode!=0:
+        pass
+    else:
+        apply_cmd=[sys.executable,str(work/'scripts'/'apply_files.py'),str(work/'manifest.json'),target,str(work/'files'),'--json']
+        if backup_dir: apply_cmd += ['--backup-dir', backup_dir]
+        aproc=subprocess.run(apply_cmd,text=True,capture_output=True,timeout=30)
+        try: app=json.loads(aproc.stdout or '{}')
+        except Exception: app={'status':'failed','stdout':aproc.stdout,'stderr':aproc.stderr,'returncode':aproc.returncode}
+        out['apply']=app
+        if aproc.returncode!=0: out['status']='apply_failed'
+    if json_mode: print(json.dumps(out,sort_keys=True,separators=(',',':')))
+    else:
+        s=out.get('preconditions',{}).get('summary',{})
+        print('Patchset precondition summary: '+', '.join(f'{k}={v}' for k,v in sorted(s.items())))
+        if 'apply' in out:
+            print('Apply: '+out['apply'].get('status','unknown'))
+            print('backup_dir: '+out['apply'].get('backup_dir',''))
+            print('backup_manifest: '+out['apply'].get('backup_manifest',''))
+finally:
+    shutil.rmtree(work,ignore_errors=True)
+sys.exit(0 if out.get('status')=='ok' else 1)
+PYDEV_PATCHSET_APPLY_INSPECT
+            ;;
+        help|--help|-h|--h|"")
+            echo "Usage: queue dev patchset create --output ZIP [--registry FILE] [--json]" >&2
+            echo "       queue dev patchset inspect --patchset ZIP [--target DIR] [--json]" >&2
+            echo "       queue dev patchset apply --patchset ZIP [--target DIR] [--check] [--backup-dir DIR] [--json]" >&2
+            return 0 ;;
+        *) echo "queue dev patchset: unknown subcommand: $sub" >&2; return 2 ;;
+    esac
+}
+
+
+
+_queue_dev_attempt_store_path() {
+    if [[ -n "${QUEUEBASH_DEV_ATTEMPTS:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_DEV_ATTEMPTS"
+    else
+        printf '%s\n' "$(_queue_root)/dev/attempts.json"
+    fi
+}
+
+
+_queue_dev_attempt_command() {
+    local sub="${1:-}" path root
+    shift || true
+    path="$(_queue_dev_attempt_store_path)"
+    root="$(_queue_root)"
+    python3 - "$path" "$root" "$sub" "$@" <<'PYDEV_ATTEMPT'
+import argparse, datetime, hashlib, json, os, pathlib, random, sys, tempfile
+try:
+    import fcntl
+except Exception:
+    fcntl = None
+SCHEMA='queuebash.dev_workflow.attempt_store.v1'
+ATTEMPT_SCHEMA='queuebash.dev_workflow.attempt.v1'
+EVIDENCE_SCHEMA='queuebash.dev_workflow.evidence.v1'
+STATUSES={'active','in_progress','blocked','resolved','accepted','rejected','failed','superseded'}
+TERMINAL={'resolved','accepted','rejected','failed','superseded','blocked'}
+EVIDENCE_STATUSES={'pass','fail','warning','info','blocked','skipped'}
+path=pathlib.Path(sys.argv[1]); root=pathlib.Path(sys.argv[2]); sub=sys.argv[3] if len(sys.argv)>3 else ''; av=sys.argv[4:]
+def now(): return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+def rid(prefix): return f"{prefix}-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S-%f')}-{random.randint(1000,9999)}"
+def sha256_text(t): return 'sha256:'+hashlib.sha256((t or '').encode()).hexdigest()
+def md5_file(p):
+    h=hashlib.md5()
+    with open(p,'rb') as f:
+        for c in iter(lambda:f.read(1024*1024), b''): h.update(c)
+    return h.hexdigest()
+def new_store(): return {'schema':SCHEMA,'created_at':now(),'updated_at':now(),'attempts':[],'evidence':[]}
+def load():
+    if not path.exists(): return new_store()
+    d=json.loads(path.read_text())
+    if d.get('schema')!=SCHEMA or not isinstance(d.get('attempts'),list) or not isinstance(d.get('evidence'),list):
+        raise SystemExit(f'malformed attempt store: {path}')
+    return d
+def save(d):
+    d['updated_at']=now(); path.parent.mkdir(parents=True,exist_ok=True); lock=path.with_suffix(path.suffix+'.lock')
+    with open(lock,'w') as lf:
+        if fcntl: fcntl.flock(lf, fcntl.LOCK_EX)
+        fd,tmp=tempfile.mkstemp(prefix=path.name+'.',suffix='.tmp',dir=str(path.parent))
+        with os.fdopen(fd,'w') as f: json.dump(d,f,indent=2,sort_keys=True); f.write('\n')
+        os.replace(tmp,path)
+def find_attempt(d, aid):
+    for a in d['attempts']:
+        if a.get('attempt_id')==aid: return a
+    return None
+def emit(obj,json_mode):
+    if json_mode: print(json.dumps(obj,sort_keys=True,separators=(',',':')))
+    else:
+        print(obj.get('attempt_id') or obj.get('evidence_id') or obj.get('status','ok'))
+def cmd_begin():
+    ap=argparse.ArgumentParser(prog='queue dev attempt begin')
+    ap.add_argument('--text',required=True); ap.add_argument('--tag',action='append',default=[]); ap.add_argument('--based-on',action='append',default=[]); ap.add_argument('--authority',default='coding_agent'); ap.add_argument('--json',action='store_true')
+    ns=ap.parse_args(av); d=load(); aid=rid('DEVATTEMPT')
+    a={'schema':ATTEMPT_SCHEMA,'attempt_id':aid,'phase':'begin','status':'active','authority':ns.authority,'text':ns.text,'text_hash':sha256_text(ns.text),'tags':ns.tag,'based_on':ns.based_on,'created_at':now(),'updated_at':now(),'evidence':[],'history':[{'at':now(),'event':'begin','status':'active','authority':ns.authority}]}
+    d['attempts'].append(a); save(d); emit({'schema':ATTEMPT_SCHEMA,'status':'ok','phase':'begin','attempt_id':aid,'authority':ns.authority,'tags':ns.tag,'based_on':ns.based_on,'text_hash':a['text_hash']},ns.json)
+def cmd_end():
+    ap=argparse.ArgumentParser(prog='queue dev attempt end')
+    ap.add_argument('attempt_id'); ap.add_argument('--status',required=True); ap.add_argument('--text',default=''); ap.add_argument('--authority',default='coding_agent'); ap.add_argument('--json',action='store_true')
+    ns=ap.parse_args(av)
+    if ns.status not in TERMINAL: raise SystemExit(f'invalid terminal attempt status: {ns.status}')
+    d=load(); a=find_attempt(d,ns.attempt_id)
+    if not a: raise SystemExit(f'attempt not found: {ns.attempt_id}')
+    prev=a.get('status','active'); a['status']=ns.status; a['phase']='end'; a['result']=ns.status; a['end_text']=ns.text; a['updated_at']=now(); a.setdefault('history',[]).append({'at':now(),'event':'end','from':prev,'to':ns.status,'authority':ns.authority,'text_hash':sha256_text(ns.text) if ns.text else ''})
+    save(d); emit({'schema':ATTEMPT_SCHEMA,'status':'ok','phase':'end','attempt_id':ns.attempt_id,'previous_status':prev,'result':ns.status,'evidence':a.get('evidence',[])},ns.json)
+try:
+    if sub=='begin': cmd_begin()
+    elif sub=='end': cmd_end()
+    else:
+        print('Usage: queue dev attempt begin|end ...', file=sys.stderr); sys.exit(2)
+except SystemExit: raise
+except Exception as e:
+    print(f'queue dev attempt: {e}', file=sys.stderr); sys.exit(1)
+PYDEV_ATTEMPT
+}
+
+
+_queue_dev_evidence_command() {
+    local sub="${1:-}" path root
+    shift || true
+    path="$(_queue_dev_attempt_store_path)"
+    root="$(_queue_root)"
+    python3 - "$path" "$root" "$sub" "$@" <<'PYDEV_EVIDENCE'
+import argparse, datetime, hashlib, json, os, pathlib, random, sys, tempfile
+try:
+    import fcntl
+except Exception:
+    fcntl = None
+SCHEMA='queuebash.dev_workflow.attempt_store.v1'
+EVIDENCE_SCHEMA='queuebash.dev_workflow.evidence.v1'
+EVIDENCE_STATUSES={'pass','fail','warning','info','blocked','skipped'}
+path=pathlib.Path(sys.argv[1]); root=pathlib.Path(sys.argv[2]); sub=sys.argv[3] if len(sys.argv)>3 else ''; av=sys.argv[4:]
+def now(): return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+def rid(prefix): return f"{prefix}-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S-%f')}-{random.randint(1000,9999)}"
+def sha256_text(t): return 'sha256:'+hashlib.sha256((t or '').encode()).hexdigest()
+def md5_file(p):
+    h=hashlib.md5()
+    with open(p,'rb') as f:
+        for c in iter(lambda:f.read(1024*1024), b''): h.update(c)
+    return h.hexdigest()
+def load():
+    if not path.exists(): return {'schema':SCHEMA,'created_at':now(),'updated_at':now(),'attempts':[],'evidence':[]}
+    d=json.loads(path.read_text())
+    if d.get('schema')!=SCHEMA: raise SystemExit(f'malformed attempt store: {path}')
+    d.setdefault('attempts',[]); d.setdefault('evidence',[]); return d
+def save(d):
+    d['updated_at']=now(); path.parent.mkdir(parents=True,exist_ok=True); lock=path.with_suffix(path.suffix+'.lock')
+    with open(lock,'w') as lf:
+        if fcntl: fcntl.flock(lf, fcntl.LOCK_EX)
+        fd,tmp=tempfile.mkstemp(prefix=path.name+'.',suffix='.tmp',dir=str(path.parent))
+        with os.fdopen(fd,'w') as f: json.dump(d,f,indent=2,sort_keys=True); f.write('\n')
+        os.replace(tmp,path)
+def find_attempt(d, aid):
+    for a in d.get('attempts',[]):
+        if a.get('attempt_id')==aid: return a
+    return None
+def rel_or_abs(p):
+    try: return str(pathlib.Path(p).resolve().relative_to(root.resolve()))
+    except Exception: return str(p)
+def cmd_record():
+    ap=argparse.ArgumentParser(prog='queue dev evidence record')
+    ap.add_argument('--attempt',required=True); ap.add_argument('--text',required=True); ap.add_argument('--file',action='append',default=[]); ap.add_argument('--command',action='append',default=[]); ap.add_argument('--status',default='info'); ap.add_argument('--authority',default='test_runner'); ap.add_argument('--json',action='store_true')
+    ns=ap.parse_args(av)
+    if ns.status not in EVIDENCE_STATUSES: raise SystemExit(f'invalid evidence status: {ns.status}')
+    d=load(); a=find_attempt(d,ns.attempt)
+    if not a: raise SystemExit(f'attempt not found: {ns.attempt}')
+    files=[]
+    for f in ns.file:
+        pp=pathlib.Path(f)
+        rec={'path':str(f),'relpath':rel_or_abs(pp),'exists':pp.exists()}
+        if pp.exists() and pp.is_file(): rec.update({'size':pp.stat().st_size,'md5':md5_file(pp)})
+        files.append(rec)
+    eid=rid('DEVEVIDENCE')
+    ev={'schema':EVIDENCE_SCHEMA,'evidence_id':eid,'attempt_id':ns.attempt,'result':ns.status,'authority':ns.authority,'text':ns.text,'text_hash':sha256_text(ns.text),'commands':ns.command,'files':files,'created_at':now()}
+    d['evidence'].append(ev); a.setdefault('evidence',[]).append(eid); a['updated_at']=now(); a.setdefault('history',[]).append({'at':now(),'event':'evidence','evidence_id':eid,'result':ns.status,'authority':ns.authority})
+    save(d); print(json.dumps({'schema':EVIDENCE_SCHEMA,'status':'ok','evidence_id':eid,'attempt_id':ns.attempt,'result':ns.status,'commands':ns.command,'files':[x['relpath'] for x in files]},sort_keys=True,separators=(',',':')) if ns.json else eid)
+try:
+    if sub=='record': cmd_record()
+    else:
+        print('Usage: queue dev evidence record ...', file=sys.stderr); sys.exit(2)
+except SystemExit: raise
+except Exception as e:
+    print(f'queue dev evidence: {e}', file=sys.stderr); sys.exit(1)
+PYDEV_EVIDENCE
+}
+
+
+_queue_dev_context_command() {
+    local path root attempts files
+    path="$(_queue_dev_scratchpad_path)"
+    root="$(_queue_root)"
+    attempts="$(_queue_dev_attempt_store_path)"
+    files="$(_queue_dev_file_registry_path)"
+    python3 - "$path" "$root" "$attempts" "$files" "$@" <<'PYDEV_CONTEXT'
+import argparse, json, pathlib, re, sys
+scratch=pathlib.Path(sys.argv[1]); root=pathlib.Path(sys.argv[2]); attempts=pathlib.Path(sys.argv[3]); files=pathlib.Path(sys.argv[4]); av=sys.argv[5:]
+DEFAULT_EXCLUDE={'done','resolved','accepted','rejected','stale','superseded','archived','removed'}
+def read_json(p, default):
+    try:
+        if p.exists(): return json.loads(p.read_text())
+    except Exception as exc:
+        return {'_error':str(exc),'_path':str(p)}
+    return default
+def version():
+    q=pathlib.Path.cwd()/"queuebash.sh"
+    try:
+        m=re.search(r'^QUEUEBASH_VERSION="([^"]+)"', q.read_text(errors='replace'), re.M)
+        return m.group(1) if m else ''
+    except Exception: return ''
+def item_summary(it):
+    auth=it.get('authority',{}) if isinstance(it.get('authority'),dict) else {'type':str(it.get('authority',''))}
+    return {'id':it.get('id',''),'kind':it.get('kind',''),'status':it.get('status','active'),'authority':auth.get('type',''),'confidence':auth.get('confidence',''),'tags':it.get('tags',[]),'created_at':it.get('created_at',''),'updated_at':it.get('updated_at',''),'text':it.get('text','')[:500]}
+ap=argparse.ArgumentParser(prog='queue dev context')
+ap.add_argument('--json',action='store_true'); ap.add_argument('--tag',action='append',default=[]); ap.add_argument('--kind',action='append',default=[]); ap.add_argument('--status',action='append',default=[]); ap.add_argument('--limit',type=int,default=25); ap.add_argument('--full-corpus',action='store_true')
+ns=ap.parse_args(av)
+ledger=read_json(scratch, {'schema':'queuebash.dev_scratchpad.v1','items':[]}); warnings=[]
+if isinstance(ledger,dict) and ledger.get('_error'): warnings.append(f"scratchpad read failed: {ledger['_error']}"); ledger={'items':[]}
+items=[]
+for it in ledger.get('items',[]):
+    st=it.get('status','active')
+    if not ns.full_corpus and not ns.status and st in DEFAULT_EXCLUDE: continue
+    if ns.tag and not any(t in set(it.get('tags',[])) for t in ns.tag): continue
+    if ns.kind and it.get('kind') not in ns.kind: continue
+    if ns.status and st not in ns.status: continue
+    items.append(item_summary(it))
+items.sort(key=lambda x:x.get('updated_at') or x.get('created_at'), reverse=True)
+if not ns.full_corpus and ns.limit >= 0: items=items[:ns.limit]
+ast=read_json(attempts, {'attempts':[],'evidence':[]})
+freg=read_json(files, {'entries':[]})
+out={'schema':'queuebash.dev_workflow.context.v1','status':'ok','mode':'full_corpus' if ns.full_corpus else 'working_set','base_version':version(),'root':str(root),'filters':{'tag':ns.tag,'kind':ns.kind,'status':ns.status,'limit':ns.limit},'items':items,'counts':{'scratchpad_items':len(ledger.get('items',[])),'returned_items':len(items),'attempts':len(ast.get('attempts',[])) if isinstance(ast,dict) else 0,'file_registry_entries':len(freg.get('entries',[])) if isinstance(freg,dict) else 0},'warnings':warnings}
+if ns.json: print(json.dumps(out,sort_keys=True,separators=(',',':')))
+else:
+    print(f"queue dev context: {out['counts']['returned_items']} item(s), base={out['base_version']}")
+    for it in items: print(f"{it['id']}\t{it['kind']}\t{it['status']}\t{','.join(it.get('tags',[]))}\t{it['text'][:120]}")
+PYDEV_CONTEXT
+}
+
+_queue_dev_think_command() {
+    local path root
+    path="$(_queue_dev_scratchpad_path)"
+    root="$(_queue_root)"
+    python3 - "$path" "$root" "$@" <<'PYDEV_THINK'
+import argparse, datetime, hashlib, json, os, pathlib, random, sys, tempfile
+try:
+    import fcntl
+except Exception:
+    fcntl=None
+SCRATCHPAD_SCHEMA='queuebash.dev_scratchpad.v1'; ITEM_SCHEMA='queuebash.dev_scratchpad_item.v1'
+path=pathlib.Path(sys.argv[1]); root=pathlib.Path(sys.argv[2]); av=sys.argv[3:]
+def now(): return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+def rid(): return f"DEVTHINK-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S-%f')}-{random.randint(1000,9999)}"
+def sha(t): return 'sha256:'+hashlib.sha256((t or '').encode()).hexdigest()
+def load():
+    if not path.exists(): return {'schema':SCRATCHPAD_SCHEMA,'project':'','created_at':now(),'updated_at':now(),'items':[],'meta':{}}
+    d=json.loads(path.read_text()); d.setdefault('items',[]); return d
+def save(d):
+    d['updated_at']=now(); path.parent.mkdir(parents=True,exist_ok=True); lock=path.with_suffix(path.suffix+'.lock')
+    with open(lock,'w') as lf:
+        if fcntl: fcntl.flock(lf, fcntl.LOCK_EX)
+        fd,tmp=tempfile.mkstemp(prefix='scratchpad.',suffix='.tmp',dir=str(path.parent))
+        with os.fdopen(fd,'w') as f: json.dump(d,f,indent=2,sort_keys=True); f.write('\n')
+        os.replace(tmp,path)
+ap=argparse.ArgumentParser(prog='queue dev think')
+ap.add_argument('--text',required=True); ap.add_argument('--subject',default=''); ap.add_argument('--tag',action='append',default=[]); ap.add_argument('--authority',default='coding_agent'); ap.add_argument('--json',action='store_true')
+ns=ap.parse_args(av)
+d=load(); t=now(); iid=rid(); tags=list(dict.fromkeys(ns.tag+['think']))
+item={'id':iid,'schema':ITEM_SCHEMA,'kind':'think','status':'active','authority':{'type':ns.authority.split(':',1)[0],'name':ns.authority,'source':'queue dev think','confidence':'proposed' if ns.authority=='coding_agent' else 'observed'},'text':ns.text,'text_hash':sha(ns.text),'subject':ns.subject,'tags':tags,'created_at':t,'updated_at':t,'provenance':{'source_type':'command','source_ref':'queue dev think'},'counters':{'success':0,'failure':0}}
+d.setdefault('items',[]).append(item); save(d)
+out={'schema':'queuebash.dev_workflow.think.v1','status':'ok','item_id':iid,'kind':'think','authority':ns.authority,'subject':ns.subject,'text_hash':item['text_hash'],'tags':tags}
+print(json.dumps(out,sort_keys=True,separators=(',',':')) if ns.json else f"think recorded: {iid}")
+PYDEV_THINK
+}
+
+_queue_dev_handover_command() {
+    local spath root attempts files
+    spath="$(_queue_dev_scratchpad_path)"
+    root="$(_queue_root)"
+    attempts="$(_queue_dev_attempt_store_path)"
+    files="$(_queue_dev_file_registry_path)"
+    python3 - "$spath" "$root" "$attempts" "$files" "$@" <<'PYDEV_HANDOVER'
+import argparse, json, pathlib, re, sys
+scratch=pathlib.Path(sys.argv[1]); root=pathlib.Path(sys.argv[2]); attempts=pathlib.Path(sys.argv[3]); files=pathlib.Path(sys.argv[4]); av=sys.argv[5:]
+EXCLUDE={'done','resolved','accepted','rejected','stale','superseded','archived','removed'}
+def read_json(p, default):
+    try:
+        if p.exists(): return json.loads(p.read_text())
+    except Exception as exc:
+        return {'_error':str(exc),'_path':str(p)}
+    return default
+def version():
+    q=pathlib.Path.cwd()/"queuebash.sh"
+    try:
+        m=re.search(r'^QUEUEBASH_VERSION="([^"]+)"', q.read_text(errors='replace'), re.M)
+        return m.group(1) if m else ''
+    except Exception: return ''
+def summ(it): return {'id':it.get('id',''),'kind':it.get('kind',''),'status':it.get('status',''),'tags':it.get('tags',[]),'updated_at':it.get('updated_at',''),'text':it.get('text','')[:700]}
+ap=argparse.ArgumentParser(prog='queue dev handover')
+ap.add_argument('--json',action='store_true'); ap.add_argument('--since',default=''); ap.add_argument('--tag',action='append',default=[]); ap.add_argument('--full-corpus',action='store_true')
+ns=ap.parse_args(av)
+ledger=read_json(scratch, {'items':[]}); ast=read_json(attempts, {'attempts':[],'evidence':[]}); freg=read_json(files, {'entries':[]}); warnings=[]
+for name,obj in [('scratchpad',ledger),('attempts',ast),('file_registry',freg)]:
+    if isinstance(obj,dict) and obj.get('_error'): warnings.append(f"{name} read failed: {obj['_error']}")
+items=ledger.get('items',[]) if isinstance(ledger,dict) else []
+if ns.since:
+    seen=False; filt=[]
+    for it in items:
+        if seen: filt.append(it)
+        if it.get('id')==ns.since: seen=True
+    items=filt
+if ns.tag:
+    items=[it for it in items if any(t in set(it.get('tags',[])) for t in ns.tag)]
+if not ns.full_corpus: items=[it for it in items if it.get('status','active') not in EXCLUDE]
+deliveries=[summ(it) for it in items if it.get('kind') in {'success','done_note','decision','evidence'} or 'delivery' in it.get('tags',[]) or 'accepted' in it.get('tags',[])]
+open_tasks=[summ(it) for it in items if it.get('kind') in {'task','blocker','failure'} and it.get('status','active') not in EXCLUDE]
+landmines=[summ(it) for it in items if it.get('kind')=='known_landmine' or 'landmine' in it.get('tags',[])]
+next_items=[summ(it) for it in items if 'current-task' in it.get('tags',[]) or 'next' in it.get('tags',[]) or it.get('kind')=='design_goal']
+changed=[]
+for e in freg.get('entries',[]) if isinstance(freg,dict) else []:
+    if e.get('changed') or e.get('status')=='changed': changed.append({'relpath':e.get('relpath'),'status':e.get('status'),'purpose':e.get('purpose'),'old_md5':e.get('baseline',{}).get('md5'),'new_md5':e.get('current',{}).get('md5'),'changed_functions':e.get('changed_functions',[])})
+attempt_summary=[]
+for a in ast.get('attempts',[]) if isinstance(ast,dict) else []:
+    if ns.full_corpus or a.get('status') not in EXCLUDE:
+        attempt_summary.append({'attempt_id':a.get('attempt_id'),'status':a.get('status'),'tags':a.get('tags',[]),'evidence':a.get('evidence',[]),'text':a.get('text','')[:500]})
+out={'schema':'queuebash.dev_workflow.handover.v1','status':'ok','mode':'full_corpus' if ns.full_corpus else 'delta','base_version':version(),'root':str(root),'filters':{'since':ns.since,'tag':ns.tag},'deliveries':deliveries,'open_tasks':open_tasks,'known_landmines':landmines,'next':next_items,'changed_files':changed,'attempts':attempt_summary,'counts':{'deliveries':len(deliveries),'open_tasks':len(open_tasks),'known_landmines':len(landmines),'next':len(next_items),'changed_files':len(changed),'attempts':len(attempt_summary)},'warnings':warnings}
+if ns.json: print(json.dumps(out,sort_keys=True,separators=(',',':')))
+else:
+    print(f"queue dev handover: base={out['base_version']} tasks={len(open_tasks)} landmines={len(landmines)} changed_files={len(changed)}")
+    for x in open_tasks[:20]: print(f"TASK\t{x['id']}\t{x['text'][:120]}")
+    for x in changed[:20]: print(f"FILE\t{x.get('relpath')}\t{x.get('status')}")
+PYDEV_HANDOVER
+}
+
+
+_queue_dev_validate_command() {
+    local json=0 quick=0 timeout_sec=60 file files=()
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --json) json=1; shift ;;
+            --quick) quick=1; shift ;;
+            --timeout) timeout_sec="${2:-}"; shift 2 ;;
+            --file) files+=("${2:-}"); shift 2 ;;
+            --help|-h|--h)
+                cat <<'EOF'
+Usage: queue dev validate [--json] [--quick] [--timeout SEC] [--file FILE...]
+
+Run a bounded development validation set. This is a reporting gate only: it does
+not mutate scratchpad state and does not author acceptance decisions.
+EOF
+                return 0 ;;
+            *) echo "queue dev validate: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$timeout_sec" && "$timeout_sec" =~ ^[0-9]+$ && "$timeout_sec" -gt 0 ]] || { echo "queue dev validate: --timeout must be a positive integer" >&2; return 2; }
+    local runner="bin/queue-dev-timeout" total=0 passed=0 failed=0 name rc out tmp status r st nm code tail first
+    [[ -x "$runner" ]] || runner="timeout"
+    tmp="${TMPDIR:-/tmp}/queue-dev-validate.$$"
+    mkdir -p "$tmp" || return 1
+    local results=()
+    _queue_dev_validate_run() {
+        name="$1"; shift
+        total=$((total+1))
+        out="$tmp/${total}.out"
+        if [[ "$runner" == "timeout" ]]; then
+            timeout "$timeout_sec" "$@" >"$out" 2>&1; rc=$?
+        else
+            "$runner" --timeout "$timeout_sec" --stdout "$out" --stderr "$tmp/${total}.err" -- "$@"; rc=$?; cat "$tmp/${total}.err" >>"$out" 2>/dev/null || true
+        fi
+        if [[ "$rc" -eq 0 ]]; then
+            passed=$((passed+1)); results+=("pass|$name|$rc|$(tail -20 "$out" | tr '\n' ' ' | cut -c1-500)")
+        else
+            failed=$((failed+1)); results+=("fail|$name|$rc|$(tail -20 "$out" | tr '\n' ' ' | cut -c1-500)")
+        fi
+    }
+    _queue_dev_validate_run "bash-n-queuebash" bash -n queuebash.sh
+    [[ -x tests/dev_qbtest_static.sh ]] && _queue_dev_validate_run "dev-qbtest-static" bash tests/dev_qbtest_static.sh
+    [[ -f tests/dev_qbtest_json_contract_static.py ]] && _queue_dev_validate_run "dev-qbtest-json-contract" python3 tests/dev_qbtest_json_contract_static.py
+    if grep -q 'QBTEST:BEGIN' queuebash.sh 2>/dev/null; then
+        _queue_dev_validate_run "qbtest-queuebash" bash -lc 'source ./queuebash.sh >/dev/null 2>&1; queue dev test qbtest --file queuebash.sh --function _queue_now --json >/dev/null'
+    fi
+    if [[ "$quick" -ne 1 ]]; then
+        [[ -x tests/dev_timeout_helper_smoke.sh ]] && _queue_dev_validate_run "dev-timeout-helper-smoke" bash tests/dev_timeout_helper_smoke.sh
+        [[ -x tests/queue_dev_contract_static.sh ]] && _queue_dev_validate_run "queue-dev-contract-static" bash tests/queue_dev_contract_static.sh
+    fi
+    for file in "${files[@]}"; do
+        [[ -f "$file" ]] || { failed=$((failed+1)); total=$((total+1)); results+=("fail|file-exists:$file|2|missing file"); continue; }
+        case "$file" in
+            *.sh|*.bash|queuebash.sh) _queue_dev_validate_run "bash-n:$file" bash -n "$file" ;;
+            *.py) _queue_dev_validate_run "py-compile:$file" python3 -m py_compile "$file" ;;
+        esac
+        if grep -q 'QBTEST:BEGIN' "$file" 2>/dev/null; then
+            _queue_dev_validate_run "qbtest:$file" bash -lc "source ./queuebash.sh >/dev/null 2>&1; queue dev test qbtest --file \"$file\" --json >/dev/null"
+        fi
+    done
+    status="pass"; [[ "$failed" -eq 0 ]] || status="fail"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.dev_validate_result.v1","status":"%s","total":%s,"passed":%s,"failed":%s,"results":[' "$status" "$total" "$passed" "$failed"
+        first=1
+        for r in "${results[@]}"; do
+            IFS='|' read -r st nm code tail <<<"$r"
+            [[ "$first" -eq 1 ]] || printf ','; first=0
+            printf '{"status":"%s","name":"%s","exit_code":%s,"tail":"%s"}' "$(_queue_json_escape "$st")" "$(_queue_json_escape "$nm")" "$(_queue_json_escape "$code")" "$(_queue_json_escape "$tail")"
+        done
+        printf ']}\n'
+    else
+        printf 'queue dev validate: %s (%s passed, %s failed)\n' "$status" "$passed" "$failed"
+        for r in "${results[@]}"; do IFS='|' read -r st nm code tail <<<"$r"; printf '%s\t%s\t%s\n' "$st" "$code" "$nm"; done
+    fi
+    rm -rf "$tmp"
+    [[ "$failed" -eq 0 ]]
+}
+
+_queue_dev_scope_check_command() {
+    local json=0 f pat status first typ path checked=0 allowed_count=0
+    local allow=() deny=() files=() violations=()
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --json) json=1; shift ;;
+            --allow) allow+=("${2:-}"); shift 2 ;;
+            --deny) deny+=("${2:-}"); shift 2 ;;
+            --file) files+=("${2:-}"); shift 2 ;;
+            --help|-h|--h)
+                cat <<'EOF'
+Usage: queue dev scope-check [--json] [--allow GLOB...] [--deny GLOB...] [--file FILE...]
+
+Check a changed-file set against simple allow/deny globs. When --file is omitted,
+changed files are read from the dev file registry. This is a reporting gate only.
+EOF
+                return 0 ;;
+            *) echo "queue dev scope-check: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    if [[ "${#files[@]}" -eq 0 && -f .queuebash/dev/file_registry.json ]]; then
+        while IFS= read -r f; do [[ -n "$f" ]] && files+=("$f"); done < <(python3 - <<'EOF_PY'
+import json
+from pathlib import Path
+try:
+    data=json.loads(Path('.queuebash/dev/file_registry.json').read_text())
+except Exception:
+    data={}
+for e in data.get('entries',[]):
+    if e.get('changed') or e.get('status') in {'changed','new','added'}:
+        print(e.get('relpath') or e.get('file') or '')
+EOF_PY
+)
+    fi
+    for f in "${files[@]}"; do
+        [[ -n "$f" ]] || continue
+        checked=$((checked+1))
+        local matched_allow=0 matched_deny=0
+        if [[ "${#allow[@]}" -eq 0 ]]; then matched_allow=1; else for pat in "${allow[@]}"; do [[ "$f" == $pat ]] && matched_allow=1; done; fi
+        for pat in "${deny[@]}"; do [[ "$f" == $pat ]] && matched_deny=1; done
+        if [[ "$matched_deny" -eq 1 ]]; then violations+=("deny|$f"); elif [[ "$matched_allow" -ne 1 ]]; then violations+=("not_allowed|$f"); else allowed_count=$((allowed_count+1)); fi
+    done
+    status="pass"; [[ "${#violations[@]}" -eq 0 ]] || status="fail"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.dev_scope_check_result.v1","status":"%s","checked":%s,"allowed":%s,"violations":[' "$status" "$checked" "$allowed_count"
+        first=1
+        for v in "${violations[@]}"; do IFS='|' read -r typ path <<<"$v"; [[ "$first" -eq 1 ]] || printf ','; first=0; printf '{"type":"%s","file":"%s"}' "$(_queue_json_escape "$typ")" "$(_queue_json_escape "$path")"; done
+        printf ']}\n'
+    else
+        printf 'queue dev scope-check: %s (%s checked, %s violation(s))\n' "$status" "$checked" "${#violations[@]}"
+        for v in "${violations[@]}"; do IFS='|' read -r typ path <<<"$v"; printf '%s\t%s\n' "$typ" "$path"; done
+    fi
+    [[ "${#violations[@]}" -eq 0 ]]
+}
+
+
+_queue_dev_command() {
+    local sub="${1:-}"
+    shift || true
+    case "$sub" in
+        functions|list) _queue_dev_functions "$@" ;;
+        locate) _queue_dev_locate "$@" ;;
+        extract) _queue_dev_extract "$@" ;;
+        scope) _queue_dev_scope "$@" ;;
+        patch) _queue_dev_patch "$@" ;;
+        comment) _queue_dev_comment "$@" ;;
+        diff) _queue_dev_diff "$@" ;;
+        strip|rollback) _queue_dev_strip "$@" ;;
+        symbols) _queue_dev_symbols "$@" ;;
+        flow|graph|paths) _queue_dev_flow "$@" ;;
+        splice) _queue_dev_splice "$@" ;;
+        test) _queue_dev_test_command "$@" ;;
+        scratchpad) _queue_dev_scratchpad_command "$@" ;;
+        attempt) _queue_dev_attempt_command "$@" ;;
+        evidence) _queue_dev_evidence_command "$@" ;;
+        context) _queue_dev_context_command "$@" ;;
+        think) _queue_dev_think_command "$@" ;;
+        handover) _queue_dev_handover_command "$@" ;;
+        files|file-registry|registry) _queue_dev_file_registry_command "$@" ;;
+        patchset) _queue_dev_patchset_command "$@" ;;
+        validate) _queue_dev_validate_command "$@" ;;
+        scope-check|scopecheck) _queue_dev_scope_check_command "$@" ;;
+        help|--help|-h|"") _queue_dev_usage ;;
+        *) echo "queue dev: unknown subcommand: $sub" >&2; _queue_dev_usage >&2; return 2 ;;
+    esac
+}
+
+
+_queue_remote_helper_path() {
+    local helper="queue-remote-service-client.py" here cand
+    if command -v "$helper" >/dev/null 2>&1; then
+        command -v "$helper"
+        return 0
+    fi
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    for cand in         "$here/bin/$helper"         "$here/../bin/$helper"         "/usr/local/share/bashqueues/bin/$helper"         "$HOME/.queuebash/bin/$helper"; do
+        [[ -x "$cand" ]] && { printf '%s
+' "$cand"; return 0; }
+    done
+    return 1
+}
+
+_queue_remote_command() {
+    local helper
+    helper="$(_queue_remote_helper_path)" || {
+        echo "queue remote: helper not found: queue-remote-service-client.py" >&2
+        return 1
+    }
+    python3 "$helper" "$@"
+}
+
+_queue_remote_admin_helper_path() {
+    local helper="remote_admin_policy.sh" here cand
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    for cand in \
+        "$here/providers.d/remote_admin/$helper" \
+        "$here/../providers.d/remote_admin/$helper" \
+        "/usr/local/share/bashqueues/providers.d/remote_admin/$helper" \
+        "$HOME/.queuebash/providers.d/remote_admin/$helper"; do
+        [[ -x "$cand" ]] && { printf '%s\n' "$cand"; return 0; }
+    done
+    return 1
+}
+
+_queue_remote_admin_command() {
+    local helper
+    helper="$(_queue_remote_admin_helper_path)" || {
+        echo "queue remote-admin: helper not found: providers.d/remote_admin/remote_admin_policy.sh" >&2
+        return 1
+    }
+    "$helper" "$@"
+}
+
+_queue_backup_restore() {
+    local archive="${1:-}" to="" force=0
+    shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --to) to="${2:-}"; shift 2 ;;
+            --force|-f) force=1; shift ;;
+            *) echo "queue backup restore: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$archive" ]] || { echo "Usage: queue backup restore <archive.tar.gz> --to <directory> [--force]" >&2; return 2; }
+    [[ -f "$archive" ]] || { echo "queue backup restore: archive not found: $archive" >&2; return 1; }
+    [[ -n "$to" ]] || { echo "queue backup restore: --to is required to avoid overwriting the live queue root" >&2; return 2; }
+    if [[ -e "$to" && "$force" -ne 1 ]]; then
+        echo "queue backup restore: destination exists; use --force: $to" >&2
+        return 1
+    fi
+    rm -rf "$to"
+    mkdir -p "$to" || return 1
+    tar -C "$to" --strip-components=1 -xzf "$archive" || return 1
+    echo "Backup restored into: $to"
+}
+
+_queue_backup_command() {
+    local sub="${1:-create}"
+    shift || true
+    case "$sub" in
+        create|save) _queue_backup_create "$@" ;;
+        restore) _queue_backup_restore "$@" ;;
+        *) _queue_backup_create "$sub" "$@" ;;
+    esac
+}
+
+_queue_profile_helper_path() {
+    local helper="$1" here cand
+    [[ -n "$helper" ]] || return 1
+    if command -v "$helper" >/dev/null 2>&1; then
+        command -v "$helper"
+        return 0
+    fi
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    for cand in \
+        "$here/bin/$helper" \
+        "$here/../bin/$helper" \
+        "/usr/local/share/bashqueues/bin/$helper" \
+        "$HOME/.queuebash/bin/$helper"; do
+        [[ -x "$cand" ]] && { printf '%s\n' "$cand"; return 0; }
+    done
+    return 1
+}
+
+
+_queue_profile_class_safe_name() {
+    local name="${1:-}"
+    [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]]
+}
+
+_queue_profile_class_template () 
+{ 
+    local class="${1:-}" profile="" required="" allow_self="0" force="0";
+    local runner="systemd" sandbox="strict" caps="no-spawn-shell,no-network-tools,only-local-sockets" max_concurrent="5";
+    local root dst tmp;
+    [[ -n "$class" ]] || { 
+        echo "Usage: queue profile interrogate class-template CLASS --profile NAME [--required-signer NAME] [--allow-self-signed 0|1] [--force]" 1>&2;
+        return 2
+    };
+    shift || true;
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in 
+            --profile)
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --profile requires a value" 1>&2;
+                    return 2
+                };
+                profile="$2";
+                shift 2
+            ;;
+            --required-signer)
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --required-signer requires a value" 1>&2;
+                    return 2
+                };
+                required="$2";
+                shift 2
+            ;;
+            --allow-self-signed)
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --allow-self-signed requires 0 or 1" 1>&2;
+                    return 2
+                };
+                allow_self="$2";
+                shift 2
+            ;;
+            --runner)
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --runner requires a value" 1>&2;
+                    return 2
+                };
+                runner="$2";
+                shift 2
+            ;;
+            --sandbox)
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --sandbox requires a value" 1>&2;
+                    return 2
+                };
+                sandbox="$2";
+                shift 2
+            ;;
+            --caps)
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --caps requires a value" 1>&2;
+                    return 2
+                };
+                caps="$2";
+                shift 2
+            ;;
+            --max-concurrent)
+                [[ "$#" -ge 2 ]] || { 
+                    echo "queue profile interrogate class-template: --max-concurrent requires a value" 1>&2;
+                    return 2
+                };
+                max_concurrent="$2";
+                shift 2
+            ;;
+            --force)
+                force="1";
+                shift
+            ;;
+            *)
+                echo "queue profile interrogate class-template: unexpected argument: $1" 1>&2;
+                return 2
+            ;;
+        esac;
+    done;
+    _queue_profile_class_safe_name "$class" || { 
+        echo "queue profile interrogate class-template: invalid class name: $class" 1>&2;
+        return 2
+    };
+    _queue_profile_class_safe_name "$profile" || { 
+        echo "queue profile interrogate class-template: invalid or missing profile name: ${profile:-}" 1>&2;
+        return 2
+    };
+    case "$allow_self" in 
+        0 | 1 | yes | no | true | false | on | off)
+
+        ;;
+        *)
+            echo "queue profile interrogate class-template: invalid --allow-self-signed: $allow_self" 1>&2;
+            return 2
+        ;;
+    esac;
+    [[ "$max_concurrent" =~ ^[0-9]+$ ]] || { 
+        echo "queue profile interrogate class-template: --max-concurrent must be numeric" 1>&2;
+        return 2
+    };
+    root="$(_queue_root)";
+    mkdir -p "$root/classes";
+    dst="$root/classes/$class.env";
+    if [[ -e "$dst" && "$force" != "1" ]]; then
+        echo "queue profile interrogate class-template: class already exists: $dst" 1>&2;
+        echo "Use --force to replace it." 1>&2;
+        return 1;
+    fi;
+    tmp="$(mktemp "$root/classes/.${class}.XXXXXX")" || return 1;
+    { 
+        printf '# bashqueues class: %s\n' "$class";
+        printf '# Purpose:\n';
+        printf '#   Runs only when approved/signed interrogation profiles pass class preflight gates.\n';
+        printf '# Generated by: queue profile interrogate class-template\n';
+        printf '\n';
+        printf 'CLASS_ALLOW_PARALLEL=1\n';
+        printf 'CLASS_MAX_CONCURRENT=%q\n' "$max_concurrent";
+        printf 'CLASS_DEFAULT_RUNNER=%q\n' "$runner";
+        printf 'CLASS_DEFAULT_SANDBOX_LEVEL=%q\n' "$sandbox";
+        printf 'CLASS_DEFAULT_RUNTIME_CAPS=%q\n' "$caps";
+        printf 'CLASS_DEFAULT_SECCOMP_PROFILED_NAME=%q\n' "$profile";
+        printf 'CLASS_DEFAULT_SECCOMP_PROFILE_ALLOW_SELF_SIGNED=%q\n' "$allow_self";
+        printf 'CLASS_DEFAULT_SECCOMP_PROFILE_REQUIRED_SIGNER=%q\n' "$required";
+        printf 'CLASS_DEFAULT_SECCOMP_PROFILED_ENFORCE=1\n';
+        printf '\n';
+        printf 'PROFILE_NAME=%q\n' "$profile";
+        printf 'PROFILE_ALLOW_SELF_SIGNED=%q\n' "$allow_self";
+        printf 'PROFILE_REQUIRED_SIGNER=%q\n' "$required";
+        printf '\n';
+        printf 'profile_gate_args=(allow_self_signed="$PROFILE_ALLOW_SELF_SIGNED")\n';
+        printf '[[ -n "$PROFILE_REQUIRED_SIGNER" ]] && profile_gate_args+=(required_signer="$PROFILE_REQUIRED_SIGNER")\n';
+        printf '\n';
+        printf 'queue_class_shared_asset secprofile profile_verified "$PROFILE_NAME" "${profile_gate_args[@]}"\n';
+        printf 'queue_class_shared_asset netprofile profile_verified "$PROFILE_NAME" "${profile_gate_args[@]}"\n';
+        printf 'queue_class_shared_asset fileprofile profile_verified "$PROFILE_NAME" "${profile_gate_args[@]}"\n'
+    } > "$tmp" || { 
+        rm -f "$tmp";
+        return 1
+    };
+    if ! bash -n "$tmp"; then
+        rm -f "$tmp";
+        return 1;
+    fi;
+    mv -f "$tmp" "$dst" || { 
+        rm -f "$tmp";
+        return 1
+    };
+    echo "Created secure profiled class: $class";
+    echo "class file: $dst";
+    echo "profile: $profile";
+    echo "allow_self_signed: $allow_self";
+    echo "required_signer: ${required:-any-non-self-signed-signer}"
+}
+
+# [AI-PATCH | 2026-05-27 00:21:43 BST]: 0.17.94: add class-template dispatch for secure profiled class gates
+_queue_profile_command() {
+    local family="${1:-}"; shift || true
+    case "$family" in
+        interrogate|interrogation|behaviour|behavior)
+            local sub="${1:-run}"; shift || true
+            case "$sub" in
+                run)
+                    local helper; helper="$(_queue_profile_helper_path queue-interrogate)" || { echo "queue profile interrogate run: helper not found: queue-interrogate" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" run "$@"
+                    ;;
+                repeat|campaign)
+                    local helper; helper="$(_queue_profile_helper_path queue-interrogate)" || { echo "queue profile interrogate repeat: helper not found: queue-interrogate" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" repeat "$@"
+                    ;;
+                compile)
+                    local helper; helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate compile: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" compile "$@"
+                    ;;
+                merge)
+                    local helper; helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate merge: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" merge "$@"
+                    ;;
+                diff-runs|drift)
+                    local helper; helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate diff-runs: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" diff-runs "$@"
+                    ;;
+                approve|sign)
+                    local helper; helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate approve: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" approve "$@"
+                    ;;
+                verify)
+                    local helper; helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate verify: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" verify "$@"
+                    ;;
+                explain|review)
+                    local helper; helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate explain: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" explain "$@"
+                    ;;
+                show)
+                    local helper; helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate show: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" show "$@"
+                    ;;
+                diff)
+                    local helper; helper="$(_queue_profile_helper_path queue-interrogate-compile)" || { echo "queue profile interrogate diff: helper not found: queue-interrogate-compile" >&2; return 1; }
+                    QUEUEBASH_ROOT="$(_queue_root)" "$helper" diff "$@"
+                    ;;
+                class-template|class)
+                    _queue_profile_class_template "$@"
+                    ;;
+                *)
+                    echo "Usage: queue profile interrogate run|repeat NAME -- command | compile DIR --name NAME | merge CAMPAIGN --name NAME | diff-runs CAMPAIGN | explain NAME | approve NAME | verify NAME | class-template CLASS --profile NAME | show NAME | diff NAME DIR" >&2
+                    return 2
+                    ;;
+            esac
+            ;;
+        syscalls|syscall)
+            _queue_profile_command interrogate "$@"
+            ;;
+        *)
+            cat >&2 <<'USAGE'
+Usage:
+  queue profile interrogate run NAME [--pre-arm-delay SEC] -- command [args...]
+  queue profile interrogate repeat NAME --count N [--pre-arm-delay SEC] -- command [args...]
+  queue profile interrogate compile PROFILE_DIR --name NAME
+  queue profile interrogate merge CAMPAIGN_DIR --name NAME
+  queue profile interrogate diff-runs CAMPAIGN_DIR
+  queue profile interrogate explain NAME [--json]
+  queue profile interrogate approve NAME [--kind seccomp|net|file|all] [--signing-key KEY] [--accept-warnings] [--accept-risk]
+  queue profile interrogate verify NAME [--kind seccomp|net|file|all] [--allow-self-signed 0|1] [--required-signer NAME]
+  queue profile interrogate class-template CLASS --profile NAME [--required-signer NAME] [--allow-self-signed 0|1] [--force]
+  queue profile interrogate show NAME
+  queue profile interrogate diff NAME PROFILE_DIR
+USAGE
+            return 2
+            ;;
+    esac
+}
+
+
+
+# Profile multi-signature contract (0.18.16).
+#
+# This command family deliberately publishes and validates contract data only.
+# It does not migrate legacy signed profiles and it does not perform live
+# cryptographic signature verification yet.  Later packages can bind this
+# contract to key-provider lookup, signer delegation, and profile approval
+# enforcement.
+_queue_profile_multisig_help() {
+    cat <<'HELP'
+Usage:
+  queue profile-signature help
+  queue profile-signature schema
+  queue profile-signature roles
+  queue profile-signature verify PROFILE_DIR [--policy FILE] [--json]
+  queue profile-signature explain PROFILE_DIR [--policy FILE] [--json]
+  queue profile-signature required-policy-example
+
+Profile multi-signature contract:
+  Sidecar: PROFILE_DIR/signatures.json
+  Schema:  queuebash.profile_signatures.v1
+  Result:  queuebash.profile_signature_verification.v1
+
+Signer namespaces:
+  self:NAME
+  team:NAME
+  org:NAME
+  external:NAME
+  trusted-ca:NAME
+
+Roles:
+  author reviewer approver countersigner issuer auditor
+
+This release is contract-first. It validates the sidecar structure, signer
+namespaces, signature metadata, and optional required-role policy. It does not
+force migration of existing profiles or perform cryptographic verification.
+HELP
+}
+
+_queue_profile_multisig_roles() {
+    cat <<'EOF'
+author
+reviewer
+approver
+countersigner
+issuer
+auditor
+EOF
+}
+
+_queue_profile_multisig_policy_example() {
+    cat <<'EOF'
+# queuebash profile multi-signature required-signer policy
+# Format: profile_glob<TAB>role<TAB>signer_pattern<TAB>required<TAB>reason
+# signer_pattern may be an exact signer such as org:bashqueues or a namespace
+# wildcard such as team:* or trusted-ca:*.
+*	author	self:*	required	profile must have an author signature
+*	reviewer	team:security-review	required	security team review required
+prod-*	approver	org:bashqueues	required	production profiles require org approval
+vendor-*	countersigner	org:bashqueues	required	external vendor signatures need local countersign
+EOF
+}
+
+_queue_profile_multisig_schema() {
+    cat <<'EOF'
+{
+  "schema": "queuebash.profile_signatures.v1",
+  "profile": "PROFILE_NAME",
+  "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "signatures": [
+    {
+      "signer": "self:operator",
+      "role": "author",
+      "alg": "ed25519",
+      "public_key_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "signature_b64": "ZmFrZS1zaWduYXR1cmU=",
+      "signed_at": "2026-05-27T12:00:00Z",
+      "key_provider_ref": "file:self:operator:profile.sign:PROFILE_NAME"
+    },
+    {
+      "signer": "team:security-review",
+      "role": "reviewer",
+      "alg": "ed25519",
+      "public_key_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "signature_b64": "ZmFrZS1yZXZpZXctc2lnbmF0dXJl",
+      "signed_at": "2026-05-27T12:30:00Z"
+    }
+  ]
+}
+EOF
+}
+
+_queue_profile_multisig_verify() {
+    local profile_dir="${1:-}" policy_file="" json=0 explain=0
+    shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --policy) policy_file="${2:-}"; shift 2 ;;
+            --json) json=1; shift ;;
+            --explain) explain=1; shift ;;
+            *) echo "queue profile-signature verify: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$profile_dir" ]] || { echo "Usage: queue profile-signature verify PROFILE_DIR [--policy FILE] [--json]" >&2; return 2; }
+
+    local sidecar="$profile_dir/signatures.json"
+    local profile_name
+    profile_name="$(basename "$profile_dir")"
+
+    # 0.18.17 is the first practical file verifier.  It validates the
+    # signatures.json structure, applies required-signer TSV policy, and
+    # consults the key-provider registry contract for every signer.  It still
+    # deliberately leaves cryptographic signature verification disabled until a
+    # later package wires an approved verifier/provider path.
+    python3 - "$sidecar" "$policy_file" "$profile_name" "$json" "$explain" <<'PYSIGVERIFY'
+import fnmatch, json, os, re, sys
+sidecar, policy_file, profile_name, json_mode, explain_mode = sys.argv[1:6]
+json_mode = json_mode == "1"
+allowed_roles = {"author", "reviewer", "approver", "countersigner", "issuer", "auditor"}
+allowed_ns = {"self", "team", "org", "external", "trusted-ca"}
+allowed_alg = {"ed25519", "rsa-pss-sha256", "ecdsa-p256-sha256", "sha256-manifest"}
+hex64 = re.compile(r"^[A-Fa-f0-9]{64}$")
+b64ish = re.compile(r"^[A-Za-z0-9+/=_-]+$")
+safe_field = re.compile(r"^[A-Za-z0-9_@.:/+=, -]+$")
+
+KEY_PROVIDER = os.environ.get("QUEUEBASH_KEY_PROVIDER", "")
+KEY_REGISTRY = os.environ.get("QUEUEBASH_FILE_KEY_REGISTRY") or os.path.join(os.environ.get("QUEUEBASH_ROOT", os.path.expanduser("~/.queuebash")), "policy", "keys", "key_registry.tsv")
+
+
+def _bool(v):
+    return bool(v)
+
+
+def result(decision, reason, fail_closed=True, **extra):
+    d = {
+        "schema": "queuebash.profile_signature_verification.v1",
+        "decision": decision,
+        "reason": reason,
+        "profile": profile_name,
+        "sidecar": sidecar,
+        "policy_file": policy_file,
+        "fail_closed": bool(fail_closed),
+        "contract_only": False,
+        "file_verifier": True,
+        "cryptographic_verification_performed": False,
+        "cryptographic_verification_status": "not_performed",
+        "migration_required": False,
+        "key_provider_consulted": extra.pop("key_provider_consulted", False),
+        "key_provider": KEY_PROVIDER or "none",
+    }
+    d.update(extra)
+    if json_mode:
+        print(json.dumps(d, sort_keys=True, separators=(",", ":")))
+    else:
+        print(f"profile multi-signature: {decision}")
+        print(f"reason: {reason}")
+        print(f"profile: {profile_name}")
+        print("file verifier: true")
+        print("cryptographic verification: not performed")
+        print(f"key provider: {d.get('key_provider')}")
+        if extra.get("signers"):
+            print("signers:")
+            for signer in extra["signers"]:
+                kp = signer.get("key_provider_decision", "unknown")
+                print(f"  {signer.get('signer','?')} role={signer.get('role','?')} alg={signer.get('alg','?')} key={kp}")
+        if extra.get("missing_required"):
+            print("missing required signatures:")
+            for m in extra["missing_required"]:
+                print(f"  role={m.get('role')} signer_pattern={m.get('signer_pattern')} reason={m.get('reason')}")
+        if extra.get("key_provider_failures"):
+            print("key provider failures:")
+            for k in extra["key_provider_failures"]:
+                print(f"  signer={k.get('signer')} decision={k.get('decision')} reason={k.get('reason')}")
+        if extra.get("errors"):
+            print("errors:")
+            for e in extra["errors"]:
+                print(f"  {e}")
+    return 0 if decision == "allow" else 1
+
+
+def key_provider_json(signer, operation, resource, decision, reason, provider, public_key_ref="", key_status="unknown", revoked=True, evidence=None, fail_closed=True, contract_only=False):
+    return {
+        "schema": "queuebash.key_lookup_response.v1",
+        "signer": signer,
+        "operation": operation,
+        "resource": resource,
+        "decision": decision,
+        "reason": reason,
+        "provider": provider,
+        "public_key_ref": public_key_ref,
+        "key_status": key_status,
+        "revoked": bool(revoked),
+        "evidence": evidence or [],
+        "ttl_seconds": 0,
+        "cache_policy": "no-store",
+        "fail_closed": bool(fail_closed),
+        "contract_only": bool(contract_only),
+    }
+
+
+def file_key_lookup(signer, operation, resource):
+    file = KEY_REGISTRY
+    if not os.path.exists(file):
+        return key_provider_json(signer, operation, resource, "error", "file_key_registry_not_found", "file", evidence=[{"policy_file": file}], fail_closed=True)
+    best = None
+    best_score = -1
+    try:
+        with open(file, "r", encoding="utf-8") as f:
+            for lineno, raw in enumerate(f, 1):
+                line = raw.rstrip("\n")
+                if not line.strip() or line.lstrip().startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) != 7:
+                    return key_provider_json(signer, operation, resource, "error", "file_key_registry_malformed", "file", evidence=[{"policy_file": file, "line": lineno}], fail_closed=True)
+                r_signer, r_op, r_res, r_pub, r_status, r_delegation, r_reason = parts
+                if not all([r_signer, r_op, r_res, r_pub, r_status]) or r_status not in {"active", "revoked", "rotated", "expired", "disabled"}:
+                    return key_provider_json(signer, operation, resource, "error", "file_key_registry_malformed", "file", evidence=[{"policy_file": file, "line": lineno}], fail_closed=True)
+                if r_signer not in (signer, "*") or r_op not in (operation, "*") or r_res not in (resource, "*"):
+                    continue
+                score = (4 if r_signer == signer else 0) + (2 if r_op == operation else 0) + (1 if r_res == resource else 0)
+                if score > best_score:
+                    best_score = score
+                    best = (lineno, r_signer, r_op, r_res, r_pub, r_status, r_delegation, r_reason)
+    except OSError:
+        return key_provider_json(signer, operation, resource, "error", "file_key_registry_unreadable", "file", evidence=[{"policy_file": file}], fail_closed=True)
+    if best is None:
+        return key_provider_json(signer, operation, resource, "deny", "no matching key trust rule", "file", key_status="not_found", evidence=[{"policy_file": file}], fail_closed=True)
+    lineno, r_signer, r_op, r_res, r_pub, r_status, r_delegation, r_reason = best
+    if r_status == "active":
+        return key_provider_json(signer, operation, resource, "allow", r_reason or "matched file key registry", "file", public_key_ref=r_pub, key_status=r_status, revoked=False, evidence=[{"policy_file": file, "line": lineno, "matched_signer": r_signer, "matched_operation": r_op, "matched_resource": r_res}], fail_closed=False)
+    return key_provider_json(signer, operation, resource, "deny", r_reason or f"key status {r_status}", "file", public_key_ref=r_pub, key_status=r_status, revoked=True, evidence=[{"policy_file": file, "line": lineno, "matched_signer": r_signer, "matched_operation": r_op, "matched_resource": r_res}], fail_closed=True)
+
+
+def key_lookup(signer, operation, resource):
+    if KEY_PROVIDER in {"file", "file_key", "file-key"}:
+        return file_key_lookup(signer, operation, resource)
+    if KEY_PROVIDER == "":
+        return key_provider_json(signer, operation, resource, "error", "no_key_provider_active", "contract", key_status="unknown", evidence=[], fail_closed=True, contract_only=True)
+    return key_provider_json(signer, operation, resource, "error", "unsupported_key_provider", KEY_PROVIDER, key_status="unknown", evidence=[], fail_closed=True)
+
+
+if not os.path.exists(sidecar):
+    sys.exit(result("error", "profile_signatures_sidecar_missing", True))
+try:
+    with open(sidecar, "r", encoding="utf-8") as f:
+        data = json.load(f)
+except json.JSONDecodeError:
+    sys.exit(result("error", "profile_signatures_json_invalid", True))
+except OSError:
+    sys.exit(result("error", "profile_signatures_sidecar_unreadable", True))
+
+errors = []
+if data.get("schema") != "queuebash.profile_signatures.v1":
+    errors.append("schema_mismatch")
+artifact = data.get("artifact_sha256", "")
+if not hex64.match(str(artifact)):
+    errors.append("artifact_sha256_invalid")
+sigs = data.get("signatures")
+if not isinstance(sigs, list) or not sigs:
+    errors.append("signatures_missing_or_empty")
+
+seen = []
+roles = set()
+for idx, sig in enumerate(sigs if isinstance(sigs, list) else []):
+    if not isinstance(sig, dict):
+        errors.append(f"signature_{idx}_not_object")
+        continue
+    signer = str(sig.get("signer", ""))
+    role = str(sig.get("role", ""))
+    alg = str(sig.get("alg", ""))
+    pk = str(sig.get("public_key_sha256", ""))
+    sb = str(sig.get("signature_b64", ""))
+    signed_at = str(sig.get("signed_at", ""))
+    ns = signer.split(":", 1)[0] if ":" in signer else ""
+    if ns not in allowed_ns or ":" not in signer or signer.endswith(":"):
+        errors.append(f"signature_{idx}_signer_namespace_invalid")
+    if role not in allowed_roles:
+        errors.append(f"signature_{idx}_role_invalid")
+    if alg not in allowed_alg:
+        errors.append(f"signature_{idx}_alg_invalid")
+    if not hex64.match(pk):
+        errors.append(f"signature_{idx}_public_key_sha256_invalid")
+    if not sb or not b64ish.match(sb):
+        errors.append(f"signature_{idx}_signature_b64_invalid")
+    if not signed_at or "T" not in signed_at:
+        errors.append(f"signature_{idx}_signed_at_invalid")
+    seen.append({"signer": signer, "role": role, "alg": alg, "public_key_sha256": pk})
+    roles.add((signer, role))
+
+if errors:
+    sys.exit(result("error", "profile_signatures_contract_invalid", True, errors=errors, signers=seen, signature_count=len(seen)))
+
+missing = []
+policy_rules = []
+if policy_file:
+    try:
+        with open(policy_file, "r", encoding="utf-8") as f:
+            for lineno, raw in enumerate(f, 1):
+                line = raw.rstrip("\n")
+                if not line or line.lstrip().startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 5:
+                    sys.exit(result("error", "profile_signature_policy_malformed", True, policy_line=lineno, signers=seen))
+                pg, role, signer_pattern, required, reason = parts[:5]
+                if role not in allowed_roles:
+                    sys.exit(result("error", "profile_signature_policy_malformed", True, policy_line=lineno, policy_error="invalid_role", signers=seen))
+                if required != "required":
+                    continue
+                if not fnmatch.fnmatch(profile_name, pg):
+                    continue
+                policy_rules.append({"line": lineno, "role": role, "signer_pattern": signer_pattern, "reason": reason})
+    except OSError:
+        sys.exit(result("error", "profile_signature_policy_unreadable", True, signers=seen))
+    for rule in policy_rules:
+        role = rule["role"]
+        pattern = rule["signer_pattern"]
+        if not any(sig_role == role and fnmatch.fnmatch(signer, pattern) for signer, sig_role in roles):
+            missing.append(rule)
+
+if missing:
+    sys.exit(result("deny", "required_signature_missing", True, signers=seen, missing_required=missing, required_policy_count=len(policy_rules), signature_count=len(seen)))
+
+lookup_failures = []
+lookup_records = []
+for signer in seen:
+    lookup = key_lookup(signer["signer"], "profile.sign", profile_name)
+    signer["key_provider_decision"] = lookup.get("decision")
+    signer["key_provider_reason"] = lookup.get("reason")
+    signer["public_key_ref"] = lookup.get("public_key_ref", "")
+    lookup_records.append(lookup)
+    if lookup.get("decision") != "allow":
+        lookup_failures.append({
+            "signer": signer["signer"],
+            "role": signer["role"],
+            "decision": lookup.get("decision"),
+            "reason": lookup.get("reason"),
+            "provider": lookup.get("provider"),
+        })
+
+if lookup_failures:
+    sys.exit(result("deny", "key_provider_trust_not_satisfied", True, signers=seen, key_provider_lookups=lookup_records, key_provider_failures=lookup_failures, key_provider_consulted=True, required_policy_count=len(policy_rules), signature_count=len(seen)))
+
+sys.exit(result("allow", "profile_signatures_file_verifier_valid", False, signers=seen, key_provider_lookups=lookup_records, key_provider_consulted=True, required_policy_count=len(policy_rules), signature_count=len(seen)))
+PYSIGVERIFY
+}
+
+_queue_profile_multisig_command() {
+    local sub="${1:-help}"
+    shift || true
+    case "$sub" in
+        help|-h|--help) _queue_profile_multisig_help ;;
+        schema|example) _queue_profile_multisig_schema ;;
+        roles|signer-roles) _queue_profile_multisig_roles ;;
+        required-policy-example|policy-example) _queue_profile_multisig_policy_example ;;
+        verify) _queue_profile_multisig_verify "$@" ;;
+        explain) _queue_profile_multisig_verify "$@" --explain ;;
+        *) echo "Usage: queue profile-signature help|schema|roles|verify|explain|required-policy-example" >&2; return 2 ;;
+    esac
+}
+
+queue() {
+    local dryrun=0
+
+    if [[ "${1:-}" == "--dryrun" || "${1:-}" == "-n" ]]; then
+        dryrun=1
+        shift
+    fi
+
+    # User queue selection is deliberately exact and must happen before
+    # _queue_init/root capture. Otherwise `queue user hc3 list` can still
+    # initialise and read the previous/root queue.
+    case "${1:-}" in
+        --queue-user|--user-queue)
+            [[ "$#" -ge 2 ]] || { echo "Usage: queue ${1:---queue-user} USER [command] [args...]" >&2; return 2; }
+            _queue_select_user_queue "$2" || return "$?"
+            shift 2
+            if [[ "$#" -eq 0 ]]; then
+                _queue_init
+                echo "selected user: $(_queue_selected_user_for_display)"
+                echo "queue root:    $(_queue_root)"
+                [[ -n "${QUEUEBASH_SELECTED_ROOT:-}" ]] && echo "selected root: ${QUEUEBASH_SELECTED_ROOT}"
+                echo "root owner:    $(_queue_root_owner_user 2>/dev/null || echo unknown)"
+                return 0
+            fi
+            ;;
+        user)
+            [[ "$#" -ge 2 ]] || { echo "Usage: queue user USER [command] [args...]" >&2; return 2; }
+            _queue_select_user_queue "$2" || return "$?"
+            shift 2
+            if [[ "$#" -eq 0 ]]; then
+                _queue_init
+                echo "selected user: $(_queue_selected_user_for_display)"
+                echo "queue root:    $(_queue_root)"
+                [[ -n "${QUEUEBASH_SELECTED_ROOT:-}" ]] && echo "selected root: ${QUEUEBASH_SELECTED_ROOT}"
+                echo "root owner:    $(_queue_root_owner_user 2>/dev/null || echo unknown)"
+                return 0
+            fi
+            ;;
+    esac
+
+    _queue_init
+
+    local root="$(_queue_root)"
+    local cmd="${1:-}"
+    shift || true
+
+    _queue_guard_foreign_user_queue_eval "$cmd" "${1:-}" "$cmd" "$@" || return "$?"
+
+    case "$cmd" in
+
+        limits|limit-check)
+            local do_probe=0
+            local probe_cpu=50
+            local probe_mem=256M
+
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --probe) do_probe=1; shift ;;
+                    --cpu) probe_cpu="${2:-50}"; shift 2 ;;
+                    --mem|--memory) probe_mem="${2:-256M}"; shift 2 ;;
+                    *) shift ;;
+                esac
+            done
+
+            echo "systemd-run: $(command -v systemd-run 2>/dev/null || echo missing)"
+            echo "XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-}"
+            if _queue_systemd_user_service_supported; then
+                echo "resource limits: available via systemd-run --user --pipe --wait --collect"
+                if [[ "$do_probe" -eq 1 ]]; then
+                    echo
+                    _queue_systemd_probe "$probe_cpu" "$probe_mem"
+                    return "$?"
+                fi
+                return 0
+            else
+                echo "resource limits: NOT available in this shell/session"
+                echo "CPU_LIMIT/MEM_LIMIT will be recorded and warned, but not enforced."
+                return 1
+            fi
+            ;;
+
+
+        ask|ai-ask|advisory|advise)
+            _queue_ai_ask_command "$@"
+            ;;
+
+        remote|remote-queue|rq)
+            _queue_remote_command "$@"
+            ;;
+
+        remote-admin|remote_admin|remote-admin-policy)
+            _queue_remote_admin_command "$@"
+            ;;
+
+        acl|access-control)
+            _queue_acl_command "$@"
+            ;;
+
+        key-provider|keyprovider|trust-provider|trustprovider)
+            _queue_key_provider_command "$@"
+            ;;
+
+        profile-signature|profile-signatures|profile-sig|profile-multisig|multisig)
+            _queue_profile_multisig_command "$@"
+            ;;
+
+        version|--version|-V)
+            echo "queuebash $QUEUEBASH_VERSION"
+            ;;
+
+        dev|developer)
+            _queue_dev_command "$@"
+            ;;
+        queue-user|queue-owner)
+            echo "selected user: $(_queue_selected_user_for_display)"
+            echo "queue root:    $(_queue_root)"
+            [[ -n "${QUEUEBASH_SELECTED_ROOT:-}" ]] && echo "selected root: ${QUEUEBASH_SELECTED_ROOT}"
+            echo "root owner:    $(_queue_root_owner_user 2>/dev/null || echo unknown)"
+            ;;
+
+        queue-users)
+            if [[ "$(id -u 2>/dev/null || echo 99999)" != "0" ]]; then
+                id -un
+            else
+                getent passwd | awk -F: '$3 >= 1000 && $6 ~ /^\/home\// {print $1 "\t" $6 "/.queuebash"}' | sort
+            fi
+            ;;
+
+        reevaluate|re-evaluate|recheck|policy-reevaluate|pol-block-reevaluate)
+            _queue_pol_blocked_reevaluate "$@"
+            ;;
+
+        backup)
+            _queue_backup_command "$@"
+            ;;
+
+        keygen)
+            _queue_authorisation_keygen "$@"
+            ;;
+        code|codesign|code-signing)
+            _queue_code_command "$@"
+            ;;
+        plugins)
+            case "${1:-verify}" in
+                verify|check) shift || true; _queue_code_verify_command "$@" ;;
+                audit|components|inventory) shift || true; _queue_code_audit_command "$@" ;;
+                *) echo "Usage: queue plugins verify|audit [--tree DIR] [--mode off|warn|enforce] [--json]" >&2; return 2 ;;
+            esac
+            ;;
+        keys)
+            case "${1:-list}" in
+                list|ls|"") if [[ "${1:-}" == "--json" || "${1:-}" == "-j" || "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then _queue_authorisation_keys_list_json; else _queue_authorisation_keys_list; fi ;;
+                show) shift; _queue_authorisation_keys_show "${1:-}" ;;
+                *) echo "Usage: queue keys list|show NAME" >&2; return 2 ;;
+            esac
+            ;;
+        authorise|authorize)
+            _queue_authorise_job "$@"
+            ;;
+        authorisation|authorization|auth)
+            case "${1:-list}" in
+                generate|gen|new) shift; _queue_authorisation_generate "$@" ;;
+                job|stamp|authorise|authorize) shift; _queue_authorise_job "$@" ;;
+                list|ls|"") if [[ "${1:-}" == "--json" || "${1:-}" == "-j" || "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then _queue_authorisation_list_json; else _queue_authorisation_list; fi ;;
+                policy|trust|trusted) _queue_authorisation_policy_show ;;
+                show)
+                    shift
+                    local acode="${1:-}" afile
+                    [[ -n "$acode" ]] || { echo "Usage: queue authorisation show CODE" >&2; return 2; }
+                    afile="$(_queue_authorisation_file "$acode")" || { echo "queue authorisation show: invalid code" >&2; return 2; }
+                    [[ -f "$afile" ]] || { echo "queue authorisation show: not found: $acode" >&2; return 1; }
+                    sed -n '1,120p' "$afile"
+                    echo "AUTHORISATION_FILE_INTEGRITY=$(_queue_authorisation_file_status "$afile" 2>/dev/null || true)"
+                    ;;
+                *) echo "Usage: queue authorisation generate|job|list|show|policy" >&2; return 2 ;;
+            esac
+            ;;
+        generate)
+            case "${1:-}" in
+                authorisation|authorization|auth) shift; _queue_authorisation_generate "$@" ;;
+                key|keys) shift; _queue_authorisation_keygen "$@" ;;
+                *) echo "Usage: queue generate authorisation --admin ADMIN --user USER -- <command> | queue generate key authorisation NAME" >&2; return 2 ;;
+            esac
+            ;;
+
+        cron|crontab|cron-bridge)
+            _queue_cron_command "$@"
+            ;;
+        global|globals)
+            _queue_global_command "$@"
+            ;;
+        env|envs|environment|environments)
+            _queue_env_command "$@"
+            ;;
+        profile|profiles)
+            _queue_profile_command "$@"
+            ;;
+        draft|drafts)
+            _queue_draft_command "$@"
+            ;;
+        help|--help|-h|"")
+            _queue_help
+            ;;
+
+
+        submit-in|in)
+            local delay_spec="$1"
+            [[ -z "$delay_spec" ]] && { echo "Usage: queue submit-in <delay> <name> [options] -- <command...>" >&2; return 2; }
+            shift
+
+            local delay_seconds
+            delay_seconds="$(_queue_parse_delay_seconds "$delay_spec")" || {
+                echo "queue submit-in: invalid delay '$delay_spec' (use e.g. 30s, 10m, 2h, 1d, 1h30m)" >&2
+                return 2
+            }
+
+            QUEUEBASH_SUBMIT_NOT_BEFORE_EPOCH="$(( $(_queue_now_epoch) + delay_seconds ))" \
+            QUEUEBASH_SUBMIT_SCHEDULE_LABEL="in $delay_spec" \
+                queue submit "$@"
+            ;;
+
+        submit-at|at)
+            local at_spec="$1"
+            [[ -z "$at_spec" ]] && { echo "Usage: queue submit-at <time> <name> [options] -- <command...>" >&2; return 2; }
+            shift
+
+            local at_epoch
+            at_epoch="$(_queue_parse_at_epoch "$at_spec")" || {
+                echo "queue submit-at: invalid time '$at_spec' (use e.g. 23:30 or '2026-05-22 23:30')" >&2
+                return 2
+            }
+
+            QUEUEBASH_SUBMIT_NOT_BEFORE_EPOCH="$at_epoch" \
+            QUEUEBASH_SUBMIT_SCHEDULE_LABEL="at $at_spec" \
+                queue submit "$@"
+            ;;
+
+        submit|submit-in|submit-at|in|at)
+            local priority=10
+            local retries_max=0
+            local retry_backoff=0
+            local cpu_limit=""
+            local mem_limit=""
+            local runner="${QUEUEBASH_RUNNER:-auto}"
+            local sandbox_level="${QUEUEBASH_SANDBOX_LEVEL:-off}"
+            local seccomp_profile="${QUEUEBASH_SECCOMP_PROFILE:-}"
+            local sandbox_explicit=0
+            local seccomp_explicit=0
+            [[ -n "${QUEUEBASH_SANDBOX_LEVEL+x}" ]] && sandbox_explicit=1
+            [[ -n "${QUEUEBASH_SECCOMP_PROFILE+x}" ]] && seccomp_explicit=1
+            local seccomp_allow="${QUEUEBASH_SECCOMP_ALLOW:-}"
+            local exception_sandbox_override=""
+            local exception_seccomp_allow=""
+            local exception_drop_cap=""
+            local exception_add_port=""
+            local security_reason=""
+            local authorisation_code=""
+            local max_log_size="${QUEUEBASH_MAX_LOG_SIZE_BYTES:-52428800}"
+            local allow_large_log=0
+            local log_overflow_policy="${QUEUEBASH_LOG_OVERFLOW_POLICY:-stderr-only}"
+            local depends_after_success=()
+            local inherit_env_from=()
+            local job_class=""
+            local deps_join=""
+            local not_before_epoch="${QUEUEBASH_SUBMIT_NOT_BEFORE_EPOCH:-0}"
+            local schedule_label="${QUEUEBASH_SUBMIT_SCHEDULE_LABEL:-}"
+            local local_dryrun="$dryrun"
+            local json_output=0
+            local name="$1"
+            shift || true
+
+            if [[ -z "$name" ]]; then
+                echo "Usage: queue submit <name> [--priority N|-p N] [--max-log-size SIZE] [--retries N] [--backoff SEC] [--cpu PCT] [--mem SIZE] [--on-success <cmd...>] [--on-retry-failure <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
+                return 2
+            fi
+
+            local on_success=()
+            local on_failure=()
+            local on_retry_failure=()
+
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --dryrun|-n)
+                        local_dryrun=1
+                        shift
+                        ;;
+                    --json|-j)
+                        json_output=1
+                        shift
+                        ;;
+                    --priority|-p)
+                        [[ -z "$2" ]] && { echo "queue submit: --priority needs a value" >&2; return 2; }
+                        priority="$2"
+                        shift 2
+                        ;;
+                    --retries)
+                        [[ -z "$2" ]] && { echo "queue submit: --retries needs a value" >&2; return 2; }
+                        retries_max="$2"
+                        shift 2
+                        ;;
+                    --backoff|--retry-delay)
+                        [[ -z "$2" ]] && { echo "queue submit: --backoff needs a value" >&2; return 2; }
+                        retry_backoff="$2"
+                        shift 2
+                        ;;
+                    --cpu)
+                        [[ -z "$2" ]] && { echo "queue submit: --cpu needs a value" >&2; return 2; }
+                        cpu_limit="$2"
+                        shift 2
+                        ;;
+                    --mem|--memory)
+                        [[ -z "$2" ]] && { echo "queue submit: --mem needs a value" >&2; return 2; }
+                        mem_limit="$2"
+                        shift 2
+                        ;;
+                    --max-log-size)
+                        [[ -z "$2" ]] && { echo "queue submit: --max-log-size needs a value" >&2; return 2; }
+                        max_log_size="$(_queue_parse_size_to_bytes "$2")"
+                        [[ "$max_log_size" -gt 0 ]] || { echo "queue submit: invalid --max-log-size: $2" >&2; return 2; }
+                        shift 2
+                        ;;
+                    --allow-large-log|--no-log-cap)
+                        allow_large_log=1
+                        max_log_size=0
+                        log_overflow_policy="allow"
+                        shift
+                        ;;
+                    --log-overflow|--log-overflow-policy)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a value: stderr-only|kill|allow" >&2; return 2; }
+                        case "$2" in
+                            stderr-only|stderr|drain) log_overflow_policy="stderr-only" ;;
+                            kill) log_overflow_policy="kill" ;;
+                            allow) log_overflow_policy="allow"; allow_large_log=1; max_log_size=0 ;;
+                            *) echo "queue submit: invalid $1: $2" >&2; return 2 ;;
+                        esac
+                        shift 2
+                        ;;
+                    --after-success|--after|--depends-on)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a QID or exact job name" >&2; return 2; }
+                        depends_after_success+=( "$2" )
+                        shift 2
+                        ;;
+                    --inherit-env-from|--inherit-env)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a source job QID/name" >&2; return 2; }
+
+                        local _raw_inherit _inherit_dep _bound_ref
+                        IFS=',' read -r -a _raw_inherit <<< "$2"
+
+                        for _inherit_dep in "${_raw_inherit[@]}"; do
+                            [[ -z "$_inherit_dep" ]] && continue
+                            _bound_ref="$(_queue_bind_submit_reference_to_qid "$_inherit_dep")" || return 2
+
+                            inherit_env_from+=( "$_bound_ref" )
+
+                            # Env inheritance implies after-success dependency.
+                            # Bind to QID when possible to avoid historical name ambiguity.
+                            if ! _queue_array_contains "$_bound_ref" "${depends_after_success[@]}"; then
+                                depends_after_success+=( "$_bound_ref" )
+                            fi
+                        done
+                        shift 2
+                        ;;
+                    --class|--queue-class)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a class name" >&2; return 2; }
+                        job_class="$2"
+                        shift 2
+                        ;;
+                    --runner)
+                        [[ -z "$2" ]] && { echo "queue submit: --runner needs a value: auto|systemd|direct" >&2; return 2; }
+                        runner="$2"
+                        shift 2
+                        ;;
+                    --sandbox)
+                        [[ -z "$2" ]] && { echo "queue submit: --sandbox needs a value: off|network-none|restrict-egress|strict" >&2; return 2; }
+                        case "$2" in
+                            off|none) sandbox_level="off" ;;
+                            network-none|restrict-egress|strict) sandbox_level="$2" ;;
+                            *) echo "queue submit: invalid --sandbox: $2" >&2; return 2 ;;
+                        esac
+                        sandbox_explicit=1
+                        shift 2
+                        ;;
+                    --seccomp|--seccomp-profile)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a value: off|docker-default|strict" >&2; return 2; }
+                        case "$2" in
+                            off|none|docker-default|strict) seccomp_profile="$2" ;;
+                            *) echo "queue submit: invalid $1: $2" >&2; return 2 ;;
+                        esac
+                        seccomp_explicit=1
+                        shift 2
+                        ;;
+                    --sandbox-override)
+                        [[ -z "$2" ]] && { echo "queue submit: --sandbox-override needs a value" >&2; return 2; }
+                        case "$2" in
+                            off|none) exception_sandbox_override="off" ;;
+                            network-none|restrict-egress|strict) exception_sandbox_override="$2" ;;
+                            *) echo "queue submit: invalid --sandbox-override: $2" >&2; return 2 ;;
+                        esac
+                        shift 2
+                        ;;
+                    --seccomp-allow)
+                        [[ -z "$2" ]] && { echo "queue submit: --seccomp-allow needs a systemd syscall group such as @debug" >&2; return 2; }
+                        exception_seccomp_allow="${exception_seccomp_allow:+$exception_seccomp_allow }$2"
+                        shift 2
+                        ;;
+                    --drop-cap)
+                        [[ -z "$2" ]] && { echo "queue submit: --drop-cap needs a runtime cap name" >&2; return 2; }
+                        exception_drop_cap="${exception_drop_cap:+$exception_drop_cap,}$2"
+                        shift 2
+                        ;;
+                    --add-port)
+                        [[ -z "$2" ]] && { echo "queue submit: --add-port needs a port or range" >&2; return 2; }
+                        exception_add_port="${exception_add_port:+$exception_add_port,}$2"
+                        shift 2
+                        ;;
+                    --reason)
+                        [[ -z "$2" ]] && { echo "queue submit: --reason needs text" >&2; return 2; }
+                        security_reason="$2"
+                        shift 2
+                        ;;
+                    --authorisation|--authorization)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a code" >&2; return 2; }
+                        authorisation_code="$2"
+                        shift 2
+                        ;;
+                    --on-success)
+                        shift
+                        on_success=()
+                        while [[ "$#" -gt 0 && "$1" != "--on-failure" && "$1" != "--priority" && "$1" != "-p" && "$1" != "--" ]]; do
+                            on_success+=( "$1" )
+                            shift
+                        done
+                        ;;
+                    --on-retry-failure|--on-attempt-failure)
+                        shift
+                        on_retry_failure=()
+                        while [[ "$#" -gt 0 && "$1" != "--on-success" && "$1" != "--on-failure" && "$1" != "--on-retry-failure" && "$1" != "--on-attempt-failure" && "$1" != "--priority" && "$1" != "-p" && "$1" != "--" ]]; do
+                            on_retry_failure+=( "$1" )
+                            shift
+                        done
+                        ;;
+                    --on-failure)
+                        shift
+                        on_failure=()
+                        while [[ "$#" -gt 0 && "$1" != "--on-success" && "$1" != "--on-retry-failure" && "$1" != "--on-attempt-failure" && "$1" != "--priority" && "$1" != "-p" && "$1" != "--" ]]; do
+                            on_failure+=( "$1" )
+                            shift
+                        done
+                        ;;
+                    --)
+                        shift
+                        break
+                        ;;
+                    *)
+                        echo "queue submit: unexpected argument before -- : $1" >&2
+                        echo "Usage: queue submit <name> [--priority N|-p N] [--retries N] [--backoff SEC] [--cpu PCT] [--mem SIZE] [--on-success <cmd...>] [--on-retry-failure <cmd...>] [--on-failure <cmd...>] -- <command...>" >&2
+                        return 2
+                        ;;
+                esac
+            done
+
+            [[ "$#" -eq 0 ]] && { echo "queue submit: missing main command" >&2; return 2; }
+            [[ "$priority" =~ ^-?[0-9]+$ ]] || priority=10
+            [[ "$retries_max" =~ ^[0-9]+$ ]] || retries_max=0
+            [[ "$retry_backoff" =~ ^[0-9]+$ ]] || retry_backoff=0
+
+            local dep
+            for dep in "${depends_after_success[@]}"; do
+                if [[ "$dep" == "$name" ]]; then
+                    echo "queue submit: job cannot depend on itself: $name" >&2
+                    return 2
+                fi
+            done
+
+            if [[ -z "$security_reason" && -n "${QUEUEBASH_SUBMIT_REASON_DEFAULT:-}" ]]; then
+                security_reason="$QUEUEBASH_SUBMIT_REASON_DEFAULT"
+            fi
+
+            local submit_user="${QUEUEBASH_SELECTED_USER:-$(id -un 2>/dev/null || echo unknown)}"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE=""
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL=""
+            QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE=""
+            _queue_submit_policy_check "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$submit_user" "$security_reason" "$authorisation_code" "$sandbox_level" "$seccomp_profile" "$exception_sandbox_override" "$exception_seccomp_allow" "$exception_drop_cap" "$exception_add_port" "$sandbox_explicit" "$seccomp_explicit" "$@" || return $?
+            if [[ -z "$authorisation_code" && -n "${QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE:-}" ]]; then
+                authorisation_code="$QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE"
+            fi
+
+            local id="$(_queue_id)"
+            local job
+            job="$(_queue_pending_path_for_priority "$id" "$priority" "$root")"
+
+            if [[ "$local_dryrun" -eq 1 ]]; then
+                if [[ "$json_output" -eq 1 ]]; then
+                    _queue_submit_json_result "dryrun" "$id" "$name" "pending" "$priority" "$job" "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$(printf '%q ' "$@" | sed 's/[[:space:]]*$//')" true
+                    return 0
+                fi
+                echo "DRYRUN: would submit job:"
+                echo "  id:       $id"
+                echo "  name:     $name"
+                echo "  priority: $priority"
+                echo "  retries:  $retries_max"
+                echo "  backoff:  $retry_backoff"
+                echo "  cpu:      $cpu_limit"
+                echo "  mem:      $mem_limit"
+                echo "  maxlog:   $max_log_size"
+                echo "  largelog: $allow_large_log"
+                echo "  runner:   $runner"
+                echo "  sandbox:  ${sandbox_level:-}"
+                if [[ "${#depends_after_success[@]}" -gt 0 ]]; then
+                    printf "  after-success:"
+                    printf " %q" "${depends_after_success[@]}"
+                    printf "\n"
+                fi
+                if [[ "${not_before_epoch:-0}" =~ ^[0-9]+$ && "${not_before_epoch:-0}" -gt 0 ]]; then
+                    echo "  scheduled: $(date -d "@$not_before_epoch" -Is 2>/dev/null || echo "$not_before_epoch") ${schedule_label:+($schedule_label)}"
+                fi
+                echo "  state:    pending"
+                echo "  jobfile:  $job"
+                printf "  command:"
+                printf " %q" "$@"
+                printf "\n"
+                if [[ "${#on_success[@]}" -gt 0 ]]; then
+                    printf "  on-success:"
+                    printf " %q" "${on_success[@]}"
+                    printf "\n"
+                fi
+                if [[ "${#on_failure[@]}" -gt 0 ]]; then
+                    printf "  on-failure:"
+                    printf " %q" "${on_failure[@]}"
+                    printf "\n"
+                fi
+                if [[ "${#on_retry_failure[@]}" -gt 0 ]]; then
+                    printf "  on-retry-failure:"
+                    printf " %q" "${on_retry_failure[@]}"
+                    printf "\n"
+                fi
+                return 0
+            fi
+
+            mkdir -p -- "$(dirname "$job")"
+
+            {
+                printf 'JOB_ID=%q\n' "$id"
+                printf 'JOB_NAME=%q\n' "$name"
+                printf 'PRIORITY=%q\n' "$priority"
+                printf 'RETRIES_MAX=%q\n' "$retries_max"
+                printf 'RETRIES_DONE=%q\n' "0"
+                printf 'RETRY_BACKOFF=%q\n' "$retry_backoff"
+                printf 'RETRY_NOT_BEFORE_EPOCH=%q\n' "0"
+                printf 'NOT_BEFORE_EPOCH=%q\n' "$not_before_epoch"
+                [[ -n "$schedule_label" ]] && printf 'SCHEDULE_LABEL=%q\n' "$schedule_label"
+                printf 'CPU_LIMIT=%q\n' "$cpu_limit"
+                printf 'MEM_LIMIT=%q\n' "$mem_limit"
+                printf 'MAX_LOG_SIZE_BYTES=%q\n' "$max_log_size"
+                printf 'ALLOW_LARGE_LOG=%q\n' "$allow_large_log"
+                printf 'LOG_OVERFLOW_POLICY=%q\n' "$log_overflow_policy"
+                printf 'RUNNER=%q\n' "$runner"
+                printf 'SANDBOX_LEVEL=%q\n' "$sandbox_level"
+                printf 'SECURITY_SANDBOX_EXPLICIT=%q\n' "$sandbox_explicit"
+                [[ -n "$seccomp_profile" ]] && printf 'SECCOMP_PROFILE=%q\n' "$seccomp_profile"
+                printf 'SECURITY_SECCOMP_EXPLICIT=%q\n' "$seccomp_explicit"
+                [[ -n "$seccomp_allow" ]] && printf 'SECCOMP_ALLOW=%q\n' "$seccomp_allow"
+                [[ -n "$exception_sandbox_override" ]] && printf 'EXCEPTION_SANDBOX_OVERRIDE=%q\n' "$exception_sandbox_override"
+                [[ -n "$exception_seccomp_allow" ]] && printf 'EXCEPTION_SECCOMP_ALLOW=%q\n' "$exception_seccomp_allow"
+                [[ -n "$exception_drop_cap" ]] && printf 'EXCEPTION_DROP_CAP=%q\n' "$exception_drop_cap"
+                [[ -n "$exception_add_port" ]] && printf 'EXCEPTION_ADD_PORT=%q\n' "$exception_add_port"
+                [[ -n "$security_reason" ]] && printf 'SECURITY_EXCEPTION_REASON=%q\n' "$security_reason"
+                if [[ -n "$authorisation_code" ]]; then
+                    _auth_norm="$(_queue_authorisation_normalise_code "$authorisation_code" 2>/dev/null || printf '%s' "$authorisation_code")"
+                    printf 'SECURITY_AUTHORISATION_CODE=%q\n' "$_auth_norm"
+                fi
+                printf 'JOB_CLASS=%q\n' "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}"
+                if [[ "${#depends_after_success[@]}" -gt 0 ]]; then
+                    deps_join="${depends_after_success[*]}"
+                    printf 'DEPENDS_AFTER_SUCCESS=%q\n' "$deps_join"
+                fi
+                if [[ "${#inherit_env_from[@]}" -gt 0 ]]; then
+                    printf 'INHERIT_ENV_FROM=%q\n' "${inherit_env_from[*]}"
+                fi
+                printf 'SUBMITTED_AT=%q\n' "$(_queue_now_iso)"
+                printf 'PWD_AT_SUBMIT=%q\n' "$PWD"
+
+                printf 'COMMAND=('
+                printf ' %q' "$@"
+                printf ' )\n'
+
+                printf 'ON_SUCCESS=('
+                printf ' %q' "${on_success[@]}"
+                printf ' )\n'
+
+                printf 'ON_FAILURE=('
+                printf ' %q' "${on_failure[@]}"
+                printf ' )\n'
+
+                printf 'ON_RETRY_FAILURE=('
+                printf ' %q' "${on_retry_failure[@]}"
+                printf ' )\n'
+            } > "$job"
+
+            _queue_append_class_defaults_to_job_file "$job" "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$id" "$name"
+            _queue_append_policy_snapshot_to_job_file "$job"
+
+            if [[ "$json_output" -eq 1 ]]; then
+                _queue_submit_json_result "submitted" "$id" "$name" "pending" "$priority" "$job" "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$(_queue_job_command "$job" 2>/dev/null || true)" false
+            else
+                echo "Submitted $id : $name priority=$priority"
+                if [[ "${not_before_epoch:-0}" =~ ^[0-9]+$ && "${not_before_epoch:-0}" -gt 0 ]]; then
+                    echo "  scheduled for: $(date -d "@$not_before_epoch" -Is 2>/dev/null || echo "$not_before_epoch") ${schedule_label:+($schedule_label)}"
+                fi
+            fi
+            _queue_log_event "submitted" "$id" "$name" "pending" "priority=$priority"
+
+            if [[ "${#on_success[@]}" -gt 0 ]]; then
+                printf "  on-success:"
+                printf " %q" "${on_success[@]}"
+                printf "\n"
+            fi
+
+            if [[ "${#on_failure[@]}" -gt 0 ]]; then
+                printf "  on-failure:"
+                printf " %q" "${on_failure[@]}"
+                printf "\n"
+            fi
+
+            if [[ "${#on_retry_failure[@]}" -gt 0 ]]; then
+                printf "  on-retry-failure:"
+                printf " %q" "${on_retry_failure[@]}"
+                printf "\n"
+            fi
+            ;;
+
+        list|ls)
+            local filter_state="all"
+            local filter_name=""
+            local filter_text=""
+            local json_output=0
+            local jobs=()
+
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --state|-s)
+                        filter_state="$2"
+                        shift 2
+                        ;;
+                    --name|-n)
+                        filter_name="$2"
+                        shift 2
+                        ;;
+                    --filter|-f)
+                        filter_text="$2"
+                        shift 2
+                        ;;
+                    --json|-j)
+                        json_output=1
+                        shift
+                        ;;
+                    *)
+                        break
+                        ;;
+                esac
+            done
+
+            local state f id name pri line
+            for state in pending running paused done failed pol_blocked interrupted cancelled deleted; do
+                [[ "$filter_state" != "all" && "$filter_state" != "$state" ]] && continue
+
+                if [[ "$state" == "pending" ]]; then
+                    while IFS= read -r f; do
+                        [[ -e "$f" ]] || continue
+
+                        id="$(basename "$f" .job)"
+                        name="$(_queue_job_name "$f")"
+                        pri="$(_queue_job_pri "$f")"
+                        line="$(_queue_job_command "$f")"
+
+                        [[ -n "$filter_name" && "$name" != *"$filter_name"* ]] && continue
+                        [[ -n "$filter_text" && "$id $state $pri $name $line" != *"$filter_text"* ]] && continue
+
+                        jobs+=( "$f" )
+                    done < <(_queue_pending_job_files "$root")
+                else
+                    for f in "$root/$state"/*.job; do
+                        [[ -e "$f" ]] || continue
+
+                        id="$(basename "$f" .job)"
+                        name="$(_queue_job_name "$f")"
+                        pri="$(_queue_job_pri "$f")"
+                        line="$(_queue_job_command "$f")"
+
+                        [[ -n "$filter_name" && "$name" != *"$filter_name"* ]] && continue
+                        [[ -n "$filter_text" && "$id $state $pri $name $line" != *"$filter_text"* ]] && continue
+
+                        jobs+=( "$f" )
+                    done
+                fi
+            done
+
+            if [[ "$json_output" -eq 1 ]]; then
+                _queue_print_job_table_json "${jobs[@]}"
+            else
+                _queue_print_job_table "${jobs[@]}"
+            fi
+            ;;
+
+        find)
+            local text="$1"
+            [[ -z "$text" ]] && { echo "Usage: queue find <text>" >&2; return 2; }
+            queue list --filter "$text"
+            ;;
+
+
+
+
+
+        scheduled|schedule)
+            local f any=0
+            while IFS= read -r f; do
+                [[ -e "$f" ]] || continue
+                if ! _queue_job_schedule_due "$f"; then
+                    any=1
+                    echo "=============================================================================="
+                    echo "Job: $(basename "$f" .job)  Name: $(_queue_job_name "$f")"
+                    echo "Schedule: $(_queue_job_schedule_status "$f")"
+                    echo "Dependencies:"
+                    _queue_job_dependencies_status "$f" | sed 's/^/  /'
+                fi
+            done < <(_queue_pending_job_files "$root")
+            [[ "$any" -eq 0 ]] && echo "No pending jobs are waiting on schedule."
+            return 0
+            ;;
+
+
+        waiting|blocked)
+            local f any=0
+            while IFS= read -r f; do
+                [[ -e "$f" ]] || continue
+                _queue_job_dependencies_satisfied "$f" && continue
+                any=1
+                echo "=============================================================================="
+                echo "Job: $(basename "$f" .job)  Name: $(_queue_job_name "$f")"
+                echo "Dependencies:"
+                _queue_job_dependencies_status "$f" | sed 's/^/  /'
+            done < <(_queue_pending_job_files "$root")
+            [[ "$any" -eq 0 ]] && echo "No pending jobs are waiting on dependencies."
+            return 0
+            ;;
+
+
+        deps|dependencies)
+            local target="$1"
+            [[ -z "$target" ]] && { echo "Usage: queue deps <qid-or-exact-job-name>" >&2; return 2; }
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue deps: no such QID or exact job name: $target" >&2; return 1; }
+
+            local shown=0
+            for f in "${matches[@]}"; do
+                echo "=============================================================================="
+                echo "Job: $(basename "$f" .job)  State: $(_queue_state_for_job_path "$f" "$root")  Name: $(_queue_job_name "$f")"
+                echo "Dependencies:"
+                _queue_job_dependencies_status "$f" | sed 's/^/  /'
+                shown=$((shown + 1))
+            done
+            echo "Shown dependencies for $shown job(s)."
+            ;;
+
+
+        duplicate-qids|dups)
+            _queue_duplicate_qids_report
+            ;;
+
+        legacy-manager|legacy-queuemgr)
+            echo "queue: legacy manager has been removed; use: queue mgr" >&2
+            return 2
+            ;;
+
+        asset-hint)
+            _queue_asset_hints_print "${1:-}"
+            ;;
+        asset-hints)
+            _queue_asset_hints_print
+            ;;
+
+        panel|qpanel|manager-panel)
+            _queue_manager_entry panel "$@"
+            ;;
+
+        mgr|manager|qm|queuemgr)
+            if [[ "$#" -eq 0 || "${1:-}" == "panel" ]]; then
+                _queue_manager_entry panel "${@:2}"
+            else
+                _queue_manager_entry "$@"
+            fi
+            ;;
+
+        dispatch-trace|trace-dispatch)
+            _queue_dispatch_trace_show "${1:-120}"
+            ;;
+
+        exception|exceptions)
+            _queue_exception_command "$@"
+            ;;
+
+        history|hist)
+            _queue_job_history "$@"
+            ;;
+
+        explain)
+            local target="" json_output=0 explain_tail=20
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --json|-j) json_output=1; shift ;;
+                    --tail|-n) explain_tail="${2:-20}"; shift 2 ;;
+                    *) if [[ -z "$target" ]]; then target="$1"; shift; else echo "queue explain: unexpected argument: $1" >&2; return 2; fi ;;
+                esac
+            done
+            [[ -z "$target" ]] && { echo "Usage: queue explain <qid-or-exact-job-name> [--json] [--tail N]" >&2; return 2; }
+            if [[ "$json_output" -eq 1 ]]; then
+                _queue_status_job "$target" --json --tail "$explain_tail"
+                return "$?"
+            fi
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue explain: no such QID or exact job name: $target" >&2; return 1; }
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 ]]; then
+                echo "queue explain: ambiguous QID prefix: $target" >&2
+                _queue_print_matches "${matches[@]}"
+                return 2
+            fi
+            local explained=0
+            for f in "${matches[@]}"; do
+                _queue_explain_job "$f"
+                explained=$((explained + 1))
+                if [[ "$explained" -lt "${#matches[@]}" ]]; then
+                    echo
+                fi
+            done
+            echo
+            echo "Explained $explained job(s)."
+            ;;
+
+
+        status|stat)
+            if [[ "${1:-}" == "job" ]]; then shift; fi
+            _queue_status_job "$@"
+            ;;
+
+        cleared|clearance|clearances)
+            if [[ "${1:-}" == "list" ]]; then shift; fi
+            _queue_cleared_jobs_list "$@"
+            ;;
+
+        audit)
+            case "${1:-}" in
+                cleared|clearance|clearances)
+                    shift
+                    if [[ "${1:-}" == "list" ]]; then shift; fi
+                    _queue_cleared_jobs_list "$@"
+                    ;;
+                *) echo "Usage: queue audit cleared [--json] [--state csv] [--limit N] [--since DATE]" >&2; return 2 ;;
+            esac
+            ;;
+
+        show)
+            local target="$1"
+            shift || true
+            local show_full=0
+            local show_tail=120
+
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --full) show_full=1; shift ;;
+                    --tail|-n) show_tail="${2:-120}"; shift 2 ;;
+                    *) shift ;;
+                esac
+            done
+
+            [[ -z "$target" ]] && { echo "Usage: queue show <qid-or-exact-job-name> [--tail N|--full]" >&2; return 2; }
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue show: no such QID or exact job name: $target" >&2; return 1; }
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 ]]; then
+                echo "queue show: ambiguous QID prefix: $target" >&2
+                _queue_print_matches "${matches[@]}"
+                return 2
+            fi
+
+            local shown=0
+            local id state log_path
+            for f in "${matches[@]}"; do
+                id="$(basename "$f" .job)"
+                state="$(_queue_state_for_job_path "$f" "$root")"
+                echo "=============================================================================="
+                echo "JOB: $id   STATE: $state"
+                echo "=============================================================================="
+                echo "=== $f ==="
+                cat "$f"
+
+                log_path="$(_queue_log_existing_path "$id")"
+                if [[ -f "$log_path" ]]; then
+                    echo
+                    echo "=== log: $log_path ==="
+                    if [[ "$show_full" -eq 1 ]]; then
+                        _queue_log_cat "$log_path"
+                    else
+                        _queue_log_tail "$log_path" "$show_tail"
+                        echo
+                        echo "=== showing last $show_tail lines; use queue show $id --full for complete log ==="
+                    fi
+                fi
+
+                shown=$((shown + 1))
+            done
+            echo
+            echo "Shown $shown job(s)."
+            ;;
+
+        tail|follow)
+            local lines="${QUEUEBASH_TAIL_LINES:-40}"
+            local follow=1
+            local from_start=0
+            local target=""
+
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --tail|-n)
+                        [[ -z "${2:-}" ]] && { echo "queue tail: $1 requires a line count" >&2; return 2; }
+                        lines="$2"
+                        shift 2
+                        ;;
+                    --no-follow|--no-f|--once)
+                        follow=0
+                        shift
+                        ;;
+                    --follow|-f)
+                        follow=1
+                        shift
+                        ;;
+                    --from-start|--full|--cat)
+                        from_start=1
+                        shift
+                        ;;
+                    --help|-h)
+                        cat <<'EOF'
+Usage:
+  queue tail <qid-or-exact-job-name> [--tail N] [--no-follow] [--from-start] [--tail N|-n N] [--no-follow] [--from-start]
+
+Defaults:
+  running job: show last 40 lines, then follow
+  completed job: show last 40 lines and return
+
+Options:
+  --tail N       number of physical log lines to show before following; default 40
+  --no-follow   show tail and return, even for running jobs
+  --from-start  show from start; follows if job is running
+EOF
+                        return 0
+                        ;;
+                    --*)
+                        echo "queue tail: unknown option: $1" >&2
+                        return 2
+                        ;;
+                    *)
+                        if [[ -z "$target" ]]; then
+                            target="$1"
+                            shift
+                        else
+                            echo "queue tail: unexpected argument: $1" >&2
+                            return 2
+                        fi
+                        ;;
+                esac
+            done
+
+            [[ -z "$target" ]] && { echo "Usage: queue tail <qid-or-exact-job-name> [--tail N] [--no-follow] [--from-start] [--tail N|-n N] [--no-follow] [--from-start]" >&2; return 2; }
+            [[ "$lines" =~ ^[0-9]+$ ]] || { echo "queue tail: --tail requires a numeric line count" >&2; return 2; }
+
+            local matches=()
+            local running_matches=()
+            local f state
+            while IFS= read -r f; do
+                matches+=( "$f" )
+                state="$(_queue_job_file_state "$f")"
+                [[ "$state" == "running" ]] && running_matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue tail: no such QID or exact job name: $target" >&2; return 1; }
+
+            local chosen=""
+            if [[ "${#running_matches[@]}" -eq 1 ]]; then
+                chosen="${running_matches[0]}"
+            elif [[ "${#running_matches[@]}" -gt 1 ]]; then
+                echo "Multiple running jobs match '$target':"
+                local i=1
+                for f in "${running_matches[@]}"; do
+                    printf "  [%d] %-40s %s\n" "$i" "$(basename "$f" .job)" "$(_queue_job_name "$f")"
+                    i=$((i + 1))
+                done
+                local choice
+                read -r -p "Select job [1-${#running_matches[@]}]: " choice
+                if [[ "$choice" =~ ^[0-9]+$ && "$choice" -ge 1 && "$choice" -le "${#running_matches[@]}" ]]; then
+                    chosen="${running_matches[$((choice - 1))]}"
+                else
+                    echo "queue tail: invalid selection" >&2
+                    return 2
+                fi
+            else
+                local exact_name_count
+                exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+                if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 ]]; then
+                    echo "queue tail: ambiguous QID prefix: $target" >&2
+                    _queue_print_matches "${matches[@]}"
+                    return 2
+                fi
+                if [[ "${#matches[@]}" -gt 1 ]]; then
+                    echo "queue tail: multiple non-running jobs named '$target'; use a QID or tail a running job" >&2
+                    _queue_print_matches "${matches[@]}"
+                    return 2
+                fi
+                chosen="${matches[0]}"
+            fi
+
+            local id
+            id="$(basename "$chosen" .job)"
+            _queue_tail_log_for_job "$chosen" "$id" "$lines" "$follow" "$from_start"
+            ;;
+
+
+
+        stream)
+            local target="${1:-}"
+            [[ -z "$target" ]] && { echo "Usage: queue stream <running-qid-or-name>" >&2; return 2; }
+            local running_matches=() f state
+            while IFS= read -r f; do state="$(_queue_job_file_state "$f")"; [[ "$state" == "running" ]] && running_matches+=( "$f" ); done < <(_queue_find_jobs "$target")
+            [[ "${#running_matches[@]}" -eq 0 ]] && { echo "queue stream: no running job matches: $target" >&2; return 1; }
+            local chosen=""
+            if [[ "${#running_matches[@]}" -eq 1 ]]; then chosen="${running_matches[0]}"; else
+                echo "Multiple running jobs match '$target':"; local i=1 choice
+                for f in "${running_matches[@]}"; do printf "  [%d] %-40s %s\n" "$i" "$(basename "$f" .job)" "$(_queue_job_name "$f")"; i=$((i+1)); done
+                read -r -p "Select job [1-${#running_matches[@]}]: " choice
+                [[ "$choice" =~ ^[0-9]+$ && "$choice" -ge 1 && "$choice" -le "${#running_matches[@]}" ]] || { echo "queue stream: invalid selection" >&2; return 2; }
+                chosen="${running_matches[$((choice-1))]}"
+            fi
+            local id fifo pidfile log oldpid
+            id="$(basename "$chosen" .job)"; fifo="$(_queue_stream_fifo_path "$id")"; pidfile="$(_queue_stream_pid_path "$id")"; log="$(_queue_log_existing_path "$id")"
+            [[ -p "$fifo" ]] || mkfifo "$fifo"
+            if [[ -f "$pidfile" ]]; then oldpid="$(cat "$pidfile" 2>/dev/null || true)"; [[ "$oldpid" =~ ^[0-9]+$ ]] && kill "$oldpid" >/dev/null 2>&1 || true; rm -f -- "$pidfile" 2>/dev/null || true; fi
+            _queue_stream_job_log_to_fifo "$id" "$log" "$fifo" "$pidfile"
+            echo "=== streaming FIFO tap: $fifo ==="
+            cat "$fifo"
+            ;;
+
+
+
+        asset-refresh)
+            local src_dir="${1:-}"
+            [[ -n "$src_dir" ]] || { echo "Usage: queue asset-refresh <directory>" >&2; return 2; }
+            _queue_asset_refresh_from_dir "$src_dir"
+            ;;
+
+        class-refresh)
+            local src_dir="${1:-}"
+            [[ -n "$src_dir" ]] || { echo "Usage: queue class-refresh <directory>" >&2; return 2; }
+            _queue_class_refresh_from_dir "$src_dir"
+            ;;
+
+
+        itsm|ticketing)
+            _queue_itsm_command "$@"
+            ;;
+
+        reporters|reporting)
+            local action="${1:-list}"
+            case "$action" in
+                list|"")
+                    if [[ "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then
+                        _queue_reporters_list_json
+                    else
+                        echo "=== queue reporter plugins ==="
+                        _queue_reporter_scan | sort
+                    fi
+                    ;;
+                *)
+                    echo "Usage: queue reporters list [--json]" >&2
+                    return 2
+                    ;;
+            esac
+            ;;
+
+        assets|facilities)
+            local action="${1:-list}"
+            case "$action" in
+                list|"")
+                    if [[ "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then
+                        _queue_assets_list_json
+                    else
+                        echo "=== queue asset facilities ==="
+                        _queue_asset_scan_facilities | sort
+                    fi
+                    ;;
+                show)
+                    local family="${2:-}"
+                    [[ -z "$family" ]] && { echo "Usage: queue assets show <family>" >&2; return 2; }
+                    local helper
+                    helper="$(_queue_asset_helper_path "$family")"
+                    [[ -f "$helper" ]] || { echo "queue assets: no helper for family: $family ($helper)" >&2; return 1; }
+                    echo "=== asset family: $family ==="
+                    echo "file: $helper"
+                    (
+                        source "$helper" >/dev/null 2>&1 || { echo "asset_contract_error: source failed"; exit 1; }
+                        if declare -F queue_asset_facilities >/dev/null 2>&1; then
+                            echo
+                            echo "Published facilities:"
+                            queue_asset_facilities
+                            echo
+                            echo "Contract check:"
+                            _queue_asset_contract_validate_loaded "$helper" strict
+                        else
+                            echo "No queue_asset_facilities publisher found."
+                            exit 1
+                        fi
+                    )
+                    ;;
+                validate)
+                    local root="$(_queue_root)"
+                    local failed=0 plugin
+                    shopt -s nullglob
+                    for plugin in "$root/assets.d"/*.sh; do
+                        [[ -f "$plugin" ]] || continue
+                        echo "=== validating asset helper: $(basename "$plugin") ==="
+                        if ! _queue_asset_contract_validate_helper "$plugin" strict; then
+                            failed=1
+                        fi
+                    done
+                    shopt -u nullglob
+                    [[ "$failed" -eq 0 ]] || return 1
+                    ;;
+                duplicates|dupes)
+                    echo "=== duplicate asset facility publishers ==="
+                    _queue_asset_scan_duplicate_publishers
+                    ;;
+                replace)
+                    local family="${2:-}"
+                    local src="${3:-}"
+                    local force=0
+                    [[ "${4:-}" == "--force" ]] && force=1
+                    [[ -n "$family" && -n "$src" ]] || { echo "Usage: queue assets replace <family> <plugin.sh> [--force]" >&2; return 2; }
+                    _queue_asset_replace_plugin "$family" "$src" "$force"
+                    ;;
+                rollback)
+                    local family="${2:-}"
+                    local backup="${3:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue assets rollback <family> [backup-file]" >&2; return 2; }
+                    _queue_asset_rollback_plugin "$family" "$backup"
+                    ;;
+                backups)
+                    _queue_asset_list_backups "${2:-}"
+                    return 0
+                    ;;
+                refresh)
+                    local src_dir="${2:-}"
+                    [[ -n "$src_dir" ]] || { echo "Usage: queue assets refresh <directory>" >&2; return 2; }
+                    _queue_asset_refresh_from_dir "$src_dir"; return "$?"
+                    ;;
+                delete|archive)
+                    local family="${2:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue assets delete <family>" >&2; return 2; }
+                    _queue_asset_delete_plugin "$family"; return "$?"
+                    ;;
+                undelete|unarchive)
+                    local family="${2:-}"; local archive="${3:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue assets undelete <family> [archive-file]" >&2; return 2; }
+                    _queue_asset_undelete_plugin "$family" "$archive"; return "$?"
+                    ;;
+                disable)
+                    local family="${2:-}"; local force="${3:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue assets disable <family> [--force]" >&2; return 2; }
+                    _queue_module_disable asset "$family" "$force"; return "$?"
+                    ;;
+                enable)
+                    local family="${2:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue assets enable <family>" >&2; return 2; }
+                    _queue_module_enable asset "$family"; return "$?"
+                    ;;
+                archives)
+                    _queue_asset_list_archives "${2:-}"; return 0
+                    ;;
+                explain)
+                    _queue_asset_explain "${2:-}"; return "$?"
+                    ;;
+                expand)
+                    echo "asset subcommands:"
+                    echo "  list show validate duplicates dupes replace rollback backups refresh delete archive undelete unarchive enable disable archives explain expand"
+                    echo
+                    echo "asset families:"
+                    local root="${QUEUEBASH_ROOT:-$HOME/.queuebash}"
+                    if [[ -d "$root/assets.d" ]]; then
+                        find "$root/assets.d" -maxdepth 1 -type f -name '*.sh' -printf '  %f\n' 2>/dev/null | sed 's/\.sh$//' | sort
+                    fi
+                    return 0
+                    ;;
+                *)
+                    echo "Usage: queue assets list|show <family>|validate|duplicates|replace <family> <plugin.sh> [--force]|rollback <family> [backup-file]|backups [family]|refresh <directory>|delete <family>|undelete <family> [archive-file]|enable <family>|disable <family> [--force]|archives [family]|explain <family|family:check>|expand" >&2
+                    return 2
+                    ;;
+            esac
+            ;;
+
+
+        cap|caps)
+            case "${1:-list}" in
+                list|facilities)
+                    if [[ "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then
+                        _queue_caps_list_json
+                    else
+                        _queue_cap_plugins_list
+                    fi
+                    ;;
+                show|explain)
+                    local family="${2:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue caps explain <family>" >&2; return 2; }
+                    _queue_modules_explain "cap:$family"
+                    ;;
+                refresh) shift; _queue_cap_refresh "$@" ;;
+                disable)
+                    local family="${2:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue caps disable <family>" >&2; return 2; }
+                    _queue_module_disable cap "$family"; return "$?"
+                    ;;
+                enable)
+                    local family="${2:-}"
+                    [[ -n "$family" ]] || { echo "Usage: queue caps enable <family>" >&2; return 2; }
+                    _queue_module_enable cap "$family"; return "$?"
+                    ;;
+                *) echo "Usage: queue caps list|explain <family>|refresh <directory>|enable <family>|disable <family>" >&2; return 2 ;;
+            esac
+            ;;
+
+        module|modules)
+            _queue_module_command "$@"
+            ;;
+
+
+        policy|policies)
+            case "${1:-list}" in
+                list|"")
+                    local kind="${2:-}" name file origin
+                    if [[ -n "$kind" ]]; then
+                        _queue_policy_valid_kind "$kind" || { echo "Usage: queue policies list [sandbox|seccomp|class-statement]" >&2; return 2; }
+                        echo "=== $kind policies ==="
+                        while IFS= read -r name; do
+                            [[ -n "$name" ]] || continue
+                            file="$(_queue_policy_file "$kind" "$name" 2>/dev/null || true)"
+                            origin="$(_queue_policy_origin "$file")"
+                            printf '%-20s %-8s %s\n' "$name" "$origin" "$file"
+                        done < <(_queue_policy_list "$kind")
+                    else
+                        queue policies list sandbox
+                        echo
+                        queue policies list seccomp
+                        echo
+                        queue policies list class-statement
+                    fi
+                    ;;
+                show|explain)
+                    local kind="${2:-}" name="${3:-}" file found_kind="" found_count=0 k
+                    if [[ -z "$kind" ]]; then
+                        _queue_policy_explain_effective_class_statement
+                        return $?
+                    elif [[ -z "$name" ]]; then
+                        # Friendly shorthand: queue policy show policyblock-test
+                        # or queue policy explain.  Prefer the active class-statement
+                        # policy for a bare explain because class-statement is the
+                        # governing site policy operators usually mean.
+                        name="$kind"
+                        kind=""
+                        for k in class-statement sandbox seccomp; do
+                            if _queue_policy_file "$k" "$name" >/dev/null 2>&1; then
+                                found_kind="$k"
+                                found_count=$((found_count + 1))
+                            fi
+                        done
+                        if [[ "$found_count" -eq 1 ]]; then
+                            kind="$found_kind"
+                        else
+                            echo "Usage: queue policies show sandbox|seccomp|class-statement NAME" >&2
+                            echo "       queue policy explain [NAME]   # infers kind when unique; default is active class-statement" >&2
+                            return 2
+                        fi
+                    fi
+                    _queue_policy_valid_kind "$kind" || { echo "queue policies show: invalid kind: $kind" >&2; return 2; }
+                    file="$(_queue_policy_file "$kind" "$name")" || { echo "queue policies show: not found: $kind $name" >&2; return 1; }
+                    echo "=== $kind policy: $name ==="
+                    echo "origin: $(_queue_policy_origin "$file")"
+                    echo "sha256: $(_queue_policy_sha256 "$file" 2>/dev/null || echo unknown)"
+                    echo "file: $file"
+                    sed -n '1,200p' "$file"
+                    ;;
+                path)
+                    local kind="${2:-}" name="${3:-}" scope="auto" file
+                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies path sandbox|seccomp|class-statement NAME [--shared|--personal]" >&2; return 2; }
+                    shift 3 || true
+                    while [[ "$#" -gt 0 ]]; do
+                        case "$1" in
+                            --shared|--site|--admin|--etc) scope="shared"; shift ;;
+                            --personal|--queue|--user) scope="personal"; shift ;;
+                            *) echo "queue policies path: unknown option: $1" >&2; return 2 ;;
+                        esac
+                    done
+                    file="$(_queue_policy_edit_target_file "$scope" "$kind" "$name")" || { echo "queue policies path: invalid target" >&2; return 2; }
+                    echo "$file"
+                    ;;
+
+                edit|editor)
+                    local kind="${2:-}" name="${3:-}" scope="auto" file src editor origin
+                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies edit sandbox|seccomp|class-statement NAME [--shared|--personal]" >&2; return 2; }
+                    shift 3 || true
+                    while [[ "$#" -gt 0 ]]; do
+                        case "$1" in
+                            --shared|--site|--admin|--etc) scope="shared"; shift ;;
+                            --personal|--queue|--user) scope="personal"; shift ;;
+                            *) echo "queue policies edit: unknown option: $1" >&2; return 2 ;;
+                        esac
+                    done
+                    _queue_policy_valid_kind "$kind" || { echo "queue policies edit: invalid kind: $kind" >&2; return 2; }
+                    _queue_policy_valid_name "$name" || { echo "queue policies edit: invalid policy name: $name" >&2; return 2; }
+                    file="$(_queue_policy_edit_target_file "$scope" "$kind" "$name")" || { echo "queue policies edit: invalid target" >&2; return 2; }
+                    if [[ "$(_queue_policy_origin "$file")" == "shared" && "$(id -u 2>/dev/null || echo 1)" != "0" ]]; then
+                        echo "queue policies edit: shared policy editing requires root: $file" >&2
+                        return 1
+                    fi
+                    mkdir -p "$(dirname "$file")"
+                    if [[ ! -f "$file" ]]; then
+                        if src="$(_queue_policy_file "$kind" "$name" 2>/dev/null)" && [[ -f "$src" ]]; then
+                            cp "$src" "$file"
+                        else
+                            _queue_policy_emit_template "$kind" "$name" > "$file"
+                        fi
+                    fi
+                    origin="$(_queue_policy_origin "$file")"
+                    echo "Editing $origin policy: $file" >&2
+                    editor="${VISUAL:-${EDITOR:-vi}}"
+                    "$editor" "$file"
+                    ;;
+                create|new)
+                    local kind="${2:-}" name="${3:-}" from="" scope="auto" file src
+                    [[ -n "$kind" && -n "$name" ]] || { echo "Usage: queue policies create sandbox|seccomp|class-statement NAME [--from EXISTING] [--shared|--personal]" >&2; return 2; }
+                    shift 3 || true
+                    while [[ "$#" -gt 0 ]]; do
+                        case "$1" in
+                            --from) from="${2:-}"; shift 2 ;;
+                            --shared|--site|--admin|--etc) scope="shared"; shift ;;
+                            --personal|--queue|--user) scope="personal"; shift ;;
+                            *) echo "queue policies create: unknown option: $1" >&2; return 2 ;;
+                        esac
+                    done
+                    _queue_policy_valid_kind "$kind" || { echo "queue policies create: invalid kind: $kind" >&2; return 2; }
+                    _queue_policy_valid_name "$name" || { echo "queue policies create: invalid policy name: $name" >&2; return 2; }
+                    file="$(_queue_policy_edit_target_file "$scope" "$kind" "$name")" || { echo "queue policies create: invalid target" >&2; return 2; }
+                    if [[ "$(_queue_policy_origin "$file")" == "shared" && "$(id -u 2>/dev/null || echo 1)" != "0" ]]; then
+                        echo "queue policies create: shared policy creation requires root: $file" >&2
+                        return 1
+                    fi
+                    mkdir -p "$(dirname "$file")"
+                    [[ ! -e "$file" ]] || { echo "queue policies create: already exists: $file" >&2; return 1; }
+                    if [[ -n "$from" ]]; then
+                        src="$(_queue_policy_file "$kind" "$from")" || { echo "queue policies create: source policy not found: $kind $from" >&2; return 1; }
+                        cp "$src" "$file"
+                        sed -i "s/^QUEUEBASH_POLICY_NAME=.*/QUEUEBASH_POLICY_NAME=$name/" "$file" 2>/dev/null || true
+                    else
+                        _queue_policy_emit_template "$kind" "$name" > "$file"
+                    fi
+                    echo "Created $(_queue_policy_origin "$file") policy: $file"
+                    ;;
+                *)
+                    echo "Usage: queue policies list [sandbox|seccomp|class-statement]|show KIND NAME|path KIND NAME [--shared|--personal]|edit KIND NAME [--shared|--personal]|create KIND NAME [--from EXISTING] [--shared|--personal]" >&2
+                    return 2
+                    ;;
+            esac
+            ;;
+
+        class|classes)
+            local action="${1:-list}"
+            local root="$(_queue_root)"
+            case "$action" in
+                list|"")
+                    mkdir -p "$root/classes"
+                    if [[ "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then
+                        _queue_classes_list_json
+                    else
+                        echo "=== queue classes ==="
+                        _queue_class_list_names
+                    fi
+                    ;;
+                show|cat)
+                    local cname="${2:-}"
+                    [[ -z "$cname" ]] && { echo "Usage: queue class show <class>" >&2; return 2; }
+                    local cfile
+                    cfile="$(_queue_class_file "$cname")"
+                    [[ -f "$cfile" ]] || { echo "queue class: not found: $cname ($cfile)" >&2; return 1; }
+                    echo "=== class: $cname ==="
+                    echo "file: $cfile"
+                    cat "$cfile"
+                    ;;
+                init|new)
+                    local cname="${2:-}"
+                    [[ -z "$cname" ]] && { echo "Usage: queue class init <class>" >&2; return 2; }
+                    _queue_class_valid_name "$cname" || { echo "queue class: invalid class name: $cname" >&2; return 2; }
+                    local cfile
+                    cfile="$root/classes/$cname.env"
+                    [[ -e "$cfile" ]] && { echo "queue class: already exists: $cfile" >&2; return 1; }
+                    cat > "$cfile" <<'EOF'
+# bashqueues class definition
+CLASS_ALLOW_PARALLEL=1
+CLASS_MAX_CONCURRENT=0
+EOF
+                    echo "Created $cfile"
+                    ;;
+                edit)
+                    local cname="${2:-}"
+                    [[ -z "$cname" ]] && { echo "Usage: queue class edit <class>" >&2; return 2; }
+                    local cfile
+                    cfile="$(_queue_class_file "$cname")"
+                    [[ -f "$cfile" ]] || { echo "queue class: not found: $cname ($cfile)" >&2; return 1; }
+                    "${EDITOR:-vi}" "$cfile"
+                    _queue_class_validate_file "$(basename "$cfile" .env)" "$cfile"
+                    ;;
+                validate)
+                    local cname="${2:-}"
+                    if [[ -n "$cname" ]]; then
+                        local cfile
+                        cfile="$(_queue_class_file "$cname")"
+                        [[ -f "$cfile" ]] || { echo "queue class: not found: $cname ($cfile)" >&2; return 1; }
+                        _queue_class_validate_file "$(basename "$cfile" .env)" "$cfile"
+                    else
+                        local failed=0 cf
+                        shopt -s nullglob
+                        for cf in "$root/classes"/*.env; do echo "=== validating class: $(basename "$cf" .env) ==="; _queue_class_validate_file "$(basename "$cf" .env)" "$cf" || failed=1; done
+                        shopt -u nullglob
+                        [[ "$failed" -eq 0 ]] || return 1
+                    fi
+                    ;;
+                replace) local cname="${2:-}" src="${3:-}" force=0; [[ "${4:-}" == "--force" ]] && force=1; [[ -n "$cname" && -n "$src" ]] || { echo "Usage: queue class replace <class> <file.env> [--force]" >&2; return 2; }; _queue_class_replace "$cname" "$src" "$force" ;;
+                refresh) local src_dir="${2:-}"; [[ -n "$src_dir" ]] || { echo "Usage: queue class refresh <directory>" >&2; return 2; }; _queue_class_refresh_from_dir "$src_dir" ;;
+                rollback) local cname="${2:-}" backup="${3:-}"; [[ -n "$cname" ]] || { echo "Usage: queue class rollback <class> [backup-file]" >&2; return 2; }; _queue_class_rollback "$cname" "$backup" ;;
+                backups) _queue_class_backups "${2:-}" ;;
+                delete|archive) local cname="${2:-}"; [[ -n "$cname" ]] || { echo "Usage: queue class delete <class>" >&2; return 2; }; _queue_class_delete "$cname" ;;
+                undelete|unarchive) local cname="${2:-}" archive="${3:-}"; [[ -n "$cname" ]] || { echo "Usage: queue class undelete <class> [archive-file]" >&2; return 2; }; _queue_class_undelete "$cname" "$archive" ;;
+                disable) local cname="${2:-}"; [[ -n "$cname" ]] || { echo "Usage: queue classes disable <class>" >&2; return 2; }; _queue_module_disable class "$cname" ;;
+                enable) local cname="${2:-}"; [[ -n "$cname" ]] || { echo "Usage: queue classes enable <class>" >&2; return 2; }; _queue_module_enable class "$cname" ;;
+                archives) _queue_class_archives "${2:-}" ;;
+                explain) _queue_class_explain "${2:-}" ;;
+                expand) echo "class subcommands:"; echo "  list show init edit validate replace refresh rollback backups delete archive undelete unarchive enable disable archives explain expand"; echo; echo "classes:"; _queue_class_list_names | sed 's/^/  /' ;;
+                *) echo "Usage: queue class list|show <class>|init <class>|edit <class>|validate [class]|replace <class> <file.env> [--force]|refresh <directory>|rollback <class> [backup-file]|backups [class]|delete <class>|undelete <class> [archive-file]|enable <class>|disable <class>|archives [class]|explain <class>|expand" >&2; return 2 ;;
+            esac
+            ;;
+
+        claims|resources)
+            local root="$(_queue_root)"
+            echo "=== class claims ==="
+            find "$root/claims/classes" -mindepth 1 -maxdepth 1 -type d -name '*.claim' -printf '%f\n' 2>/dev/null | sort
+            echo
+            echo "=== asset claims ==="
+            find "$root/claims/assets" -mindepth 1 -maxdepth 1 -type d -name '*.claim' -printf '%f\n' 2>/dev/null | sort
+            ;;
+
+
+
+
+        compress-logs|gzip-logs)
+            echo "Bulk-compressing completed done/failed logs..."
+            _queue_compress_completed_logs
+            echo "Done."
+            ;;
+
+
+        health)
+            _queue_health_report "$@"
+            ;;
+
+        stats)
+            local filter_name=""
+            local today=0
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --name|-n) filter_name="$2"; shift 2 ;;
+                    --today) today=1; shift ;;
+                    *) shift ;;
+                esac
+            done
+
+            local today_prefix
+            today_prefix="$(date +%Y-%m-%d)"
+
+            echo "=== Queue statistics ==="
+            [[ -n "$filter_name" ]] && echo "name: $filter_name"
+            [[ "$today" -eq 1 ]] && echo "submitted: today ($today_prefix)"
+            echo "------------------------"
+
+            local state f name submitted count total=0
+            # policy_blocked is a legacy compatibility state.  The canonical
+            # policy-blocked state is pol_blocked, so do not expose a separate
+            # policy_blocked statistic here.
+            for state in pending running paused done failed pol_blocked interrupted cancelled deleted; do
+                count=0
+                if [[ "$state" == "pending" ]]; then
+                    while IFS= read -r f; do
+                        [[ -f "$f" ]] || continue
+                        name="$(_queue_job_name "$f")"
+                        submitted="$(_queue_job_field_fast "$f" SUBMITTED_AT 2>/dev/null || true)"
+                        [[ -n "$filter_name" && "$name" != "$filter_name" ]] && continue
+                        [[ "$today" -eq 1 && "$submitted" != "$today_prefix"* ]] && continue
+                        count=$((count + 1))
+                    done < <(_queue_pending_job_files "$root")
+                else
+                    for f in "$root/$state"/*.job; do
+                        [[ -e "$f" ]] || continue
+                        name="$(_queue_job_name "$f")"
+                        submitted="$(_queue_job_field_fast "$f" SUBMITTED_AT 2>/dev/null || true)"
+                        [[ -n "$filter_name" && "$name" != "$filter_name" ]] && continue
+                        [[ "$today" -eq 1 && "$submitted" != "$today_prefix"* ]] && continue
+                        count=$((count + 1))
+                    done
+                fi
+                total=$((total + count))
+                printf "%-10s %6d\n" "$state:" "$count"
+            done
+            printf "%-10s %6d\n" "total:" "$total"
+            ;;
+
+        events)
+            local n=20
+            if [[ "${1:-}" == "--tail" || "${1:-}" == "-n" ]]; then
+                n="$2"
+            fi
+            [[ "$n" =~ ^[0-9]+$ ]] || n=20
+            if [[ -f "$root/events.jsonl" ]]; then
+                tail -n "$n" "$root/events.jsonl"
+            else
+                echo "queue events: no events.jsonl yet"
+            fi
+            ;;
+
+
+
+        unit|metrics|metric)
+            local target="$1"
+            [[ -z "$target" ]] && { echo "Usage: queue metrics <qid-or-exact-job-name>" >&2; return 2; }
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue metrics: no such QID or exact job name: $target" >&2; return 1; }
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 ]]; then
+                echo "queue metrics: ambiguous QID prefix: $target" >&2
+                _queue_print_matches "${matches[@]}"
+                return 2
+            fi
+            if [[ "${#matches[@]}" -gt 1 ]]; then
+                echo "queue metrics: multiple jobs named '$target'; use a QID" >&2
+                _queue_print_matches "${matches[@]}"
+                return 2
+            fi
+
+            _queue_show_systemd_metrics_for_job "${matches[0]}"
+            ;;
+
+
+        pids|pid|ps)
+            local target="$1"
+            [[ -z "$target" ]] && { echo "Usage: queue pids <qid-or-exact-job-name>" >&2; return 2; }
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue pids: no such QID or exact job name: $target" >&2; return 1; }
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 ]]; then
+                echo "queue pids: ambiguous QID prefix: $target" >&2
+                _queue_print_matches "${matches[@]}"
+                return 2
+            fi
+
+            local shown=0
+            local id name run_pid run_pgid unit mainpid effective
+            for f in "${matches[@]}"; do
+                id="$(basename "$f" .job)"
+                name="$(_queue_job_name "$f")"
+                run_pid="$(_queue_job_var_value "$f" RUN_PID)"
+                run_pgid="$(_queue_job_var_value "$f" RUN_PGID)"
+                unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+                effective="$(_queue_job_effective_pid "$f" 2>/dev/null || true)"
+
+                echo "=============================================================================="
+                echo "Job: $id"
+                echo "Name: $name"
+                echo "Recorded RUN_PID: ${run_pid:-}"
+                echo "Recorded RUN_PGID: ${run_pgid:-}"
+                echo "Run started: $(_queue_job_var_value "$f" RUN_STARTED_AT)"
+
+                if [[ -n "$unit" ]]; then
+                    echo "Systemd unit: $unit"
+                    if _queue_systemd_unit_active "$unit"; then
+                        mainpid="$(_queue_systemd_unit_mainpid "$unit")"
+                        echo "Systemd unit is active."
+                        echo "Systemd MainPID: $mainpid"
+                        if [[ -n "$mainpid" && "$mainpid" != "0" ]]; then
+                            ps -o pid,ppid,pgid,stat,etime,pcpu,pmem,comm,args -p "$mainpid" 2>/dev/null || true
+                        fi
+                    else
+                        echo "Systemd unit is not active."
+                    fi
+                elif [[ -n "$run_pid" && -d "/proc/$run_pid" ]]; then
+                    echo
+                    ps -o pid,ppid,pgid,stat,etime,pcpu,pmem,comm,args -p "$run_pid" 2>/dev/null || true
+                    if [[ -n "$run_pgid" ]]; then
+                        echo
+                        echo "Process group $run_pgid:"
+                        ps -o pid,ppid,pgid,stat,etime,pcpu,pmem,comm,args -g "$run_pgid" 2>/dev/null || true
+                    fi
+                else
+                    echo
+                    echo "No live RUN_PID or active systemd unit found."
+                fi
+
+                shown=$((shown + 1))
+            done
+            echo "Shown PID info for $shown job(s)."
+            ;;
+
+
+        hooks|hook)
+            local target="$1"
+            [[ -z "$target" ]] && { echo "Usage: queue hooks <qid-or-exact-job-name>" >&2; return 2; }
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue hooks: no matching job: $target" >&2; return 1; }
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 ]]; then
+                echo "queue hooks: ambiguous QID prefix: $target" >&2
+                _queue_print_matches "${matches[@]}"
+                return 2
+            fi
+
+            for f in "${matches[@]}"; do
+                local id state name
+                id="$(basename "$f" .job)"
+                state="$(_queue_state_for_job_path "$f" "$root")"
+                name="$(_queue_job_name "$f")"
+                echo "Job: $id  State: $state  Name: $name"
+                echo "on-success: $(_queue_job_array_summary "$f" ON_SUCCESS)"
+                echo "on-failure: $(_queue_job_array_summary "$f" ON_FAILURE)"
+            done
+            ;;
+
+        onsuccess|on-success|onok|on-ok|onfailure|on-failure|onfail|on-fail)
+            local hookvar
+            local local_dryrun="$dryrun"
+            if [[ "$1" == "--dryrun" || "$1" == "-n" ]]; then
+                local_dryrun=1
+                shift
+            fi
+            case "$cmd" in
+                onsuccess|on-success|onok|on-ok) hookvar="ON_SUCCESS" ;;
+                *) hookvar="ON_FAILURE" ;;
+            esac
+
+            local target="$1"
+            shift || true
+
+            if [[ "$1" == "--dryrun" || "$1" == "-n" ]]; then
+                local_dryrun=1
+                shift
+            fi
+
+            if [[ -z "$target" || "$1" != "--" ]]; then
+                echo "Usage: queue $cmd <qid-or-exact-job-name> -- <command...>" >&2
+                echo "Use an empty command after -- to clear."
+                return 2
+            fi
+            shift
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue $cmd: no matching job: $target" >&2; return 1; }
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 ]]; then
+                echo "queue $cmd: ambiguous QID prefix: $target" >&2
+                _queue_print_matches "${matches[@]}"
+                return 2
+            fi
+
+            local changed=0
+            for f in "${matches[@]}"; do
+                if [[ "$local_dryrun" -eq 1 ]]; then
+                    printf "DRYRUN: would set %s for %s to:" "$hookvar" "$(basename "$f" .job)"
+                    printf " %q" "$@"
+                    printf "\n"
+                else
+                    _queue_set_job_array "$f" "$hookvar" "$@"
+                    echo "Updated $hookvar for $(basename "$f" .job)"
+                fi
+                changed=$((changed + 1))
+            done
+            if [[ "$local_dryrun" -eq 1 ]]; then
+                echo "DRYRUN: would update $changed job(s)."
+            else
+                if [[ "$local_dryrun" -eq 1 ]]; then
+                echo "DRYRUN: would update $changed job(s)."
+            else
+                echo "Updated $changed job(s)."
+            fi
+            fi
+            ;;
+
+        priority|prio|dynamic-prio)
+            local local_dryrun="$dryrun"
+            local target="$1"
+            local new_priority="$2"
+            local force=0
+            [[ "${3:-}" == "--force" || "${3:-}" == "-f" ]] && force=1
+            [[ "${3:-}" == "--dryrun" || "${3:-}" == "-n" ]] && local_dryrun=1
+            [[ "${4:-}" == "--dryrun" || "${4:-}" == "-n" ]] && local_dryrun=1
+            [[ "${4:-}" == "--force" || "${4:-}" == "-f" ]] && force=1
+
+            if [[ -z "$target" || -z "$new_priority" ]]; then
+                echo "Usage: queue priority <qid-or-exact-job-name> <priority> [--force]" >&2
+                echo "Exact job name updates all jobs with that exact name." >&2
+                return 2
+            fi
+
+            [[ "$new_priority" =~ ^-?[0-9]+$ ]] || { echo "queue priority: priority must be an integer" >&2; return 2; }
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue priority: no such QID or exact job name: $target" >&2; return 1; }
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "$exact_name_count" -eq 0 && "${#matches[@]}" -gt 1 && "$force" -ne 1 ]]; then
+                echo "queue priority: ambiguous QID prefix: $target" >&2
+                echo "matches:" >&2
+                _queue_print_matches "${matches[@]}"
+                echo "Use a fuller QID or --force." >&2
+                return 2
+            fi
+
+            local changed=0
+            for f in "${matches[@]}"; do
+                local id
+                id="$(basename "$f" .job)"
+                if [[ "$local_dryrun" -eq 1 ]]; then
+                    echo "DRYRUN: would set priority for $id to $new_priority"
+                else
+                    if grep -q '^PRIORITY=' "$f"; then
+                        sed -i "s/^PRIORITY=.*/PRIORITY=$new_priority/" "$f"
+                    else
+                        sed -i "/^JOB_NAME=/a PRIORITY=$new_priority" "$f"
+                    fi
+                    _queue_rebucket_pending_job "$f" "$new_priority" "$root"
+                    echo "Priority for $id set to $new_priority"
+                fi
+                changed=$((changed + 1))
+            done
+            echo "Updated $changed job(s)."
+            ;;
+
+
+        cancel|kill)
+            local local_dryrun="$dryrun"
+            local target="$1"
+            shift || true
+            local sig="TERM"
+            local force=0
+
+            [[ "$cmd" == "kill" ]] && sig="KILL"
+
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --signal|-s) sig="$2"; shift 2 ;;
+                    --dryrun|-n) local_dryrun=1; shift ;;
+                    --force|-f) force=1; shift ;;
+                    *) echo "queue $cmd: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+
+            [[ -z "$target" ]] && { echo "Usage: queue $cmd <qid-or-exact-job-name> [--signal SIG] [--dryrun]" >&2; return 2; }
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue $cmd: no matching job: $target" >&2; return 1; }
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "${#matches[@]}" -gt 1 && "$exact_name_count" -eq 0 && "$force" -ne 1 ]]; then
+                echo "queue $cmd: ambiguous QID prefix: $target" >&2
+                _queue_print_matches "${matches[@]}"
+                echo "Use a fuller QID or --force." >&2
+                return 2
+            fi
+
+            local moved=0
+            for f in "${matches[@]}"; do
+                local id state dest run_pid run_pgid name self_pgid signal_target unit systemd_targeted
+                id="$(basename "$f" .job)"
+                state="$(_queue_job_file_state "$f")"
+                name="$(_queue_job_name "$f")"
+                dest="$root/cancelled/$id.job"
+                run_pid="$(grep '^RUN_PID=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+                run_pgid="$(grep '^RUN_PGID=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null)"
+                self_pgid="$(ps -o pgid= -p $$ 2>/dev/null | tr -d '[:space:]')"
+                unit="$(_queue_job_systemd_unit "$f" 2>/dev/null || true)"
+                systemd_targeted=0
+
+                if [[ "$state" == "cancelled" ]]; then
+                    echo "Already cancelled $id"
+                    continue
+                fi
+
+                signal_target=""
+                if [[ "$state" == "running" ]]; then
+                    if [[ -n "$run_pgid" && "$run_pgid" != "$self_pgid" && "$run_pgid" != "0" ]]; then
+                        signal_target="-$run_pgid"
+                    elif [[ -n "$run_pid" ]]; then
+                        signal_target="$run_pid"
+                    fi
+                fi
+
+                if [[ "$local_dryrun" -eq 1 ]]; then
+                    if [[ "$state" == "running" ]]; then
+                        if [[ -n "$unit" ]]; then
+                            echo "DRYRUN: would signal $sig to systemd unit $unit for job $id ($name), then move running -> cancelled"
+                        else
+                            echo "DRYRUN: would signal $sig to job $id ($name), target=${signal_target:-none}, RUN_PID=$run_pid RUN_PGID=$run_pgid, then move running -> cancelled"
+                        fi
+                    else
+                        echo "DRYRUN: would move $id ($name) from $state -> cancelled without signalling"
+                    fi
+                    moved=$((moved + 1))
+                    continue
+                fi
+
+                if [[ "$state" == "running" ]]; then
+                    if [[ -n "$unit" ]]; then
+                        _queue_systemd_kill_unit_tree "$unit" "$sig" || true
+                        systemd_targeted=1
+                    fi
+
+                    if [[ "$systemd_targeted" -eq 1 ]]; then
+                        # For systemd jobs, RUN_PID is the systemd-run client and RUN_PGID can
+                        # be the queue worker's process group. Do not PGID-fallback by default.
+                        :
+                    elif [[ -n "$signal_target" ]]; then
+                        echo "Fallback: sending -$sig to $signal_target for $id ($name)"
+                        kill "-$sig" "$signal_target" 2>/dev/null || true
+                    else
+                        echo "queue $cmd: running job $id has no safe SYSTEMD_UNIT/RUN_PID/RUN_PGID target; moving record only" >&2
+                    fi
+                fi
+
+                {
+                    echo "CANCELLED_AT=$(printf '%q' "$(_queue_now_iso)")"
+                    echo "CANCELLED_FROM=$(printf '%q' "$state")"
+                    echo "CANCEL_SIGNAL=$(printf '%q' "$sig")"
+                    [[ -n "$unit" ]] && echo "CANCEL_SYSTEMD_UNIT=$(printf '%q' "$unit")"
+                } >> "$f"
+
+                mv -f "$f" "$dest"
+                _queue_job_stream_temp_cleanup "$id"
+                _queue_log_event "cancelled" "$id" "$name" "cancelled" "from=$state signal=$sig pid=$run_pid pgid=$run_pgid unit=$unit hook=none"
+                echo "Moved $id from $state -> cancelled"
+                echo "ON_FAILURE was not run; cancellation is operator action, not program failure."
+                moved=$((moved + 1))
+            done
+
+            [[ "$moved" -gt 0 ]]
+            ;;
+
+
+        pause|hold|delete|del|rm|remove)
+            local local_dryrun="$dryrun"
+            local target="$1"
+            local force=0
+            [[ "${2:-}" == "--force" || "${2:-}" == "-f" ]] && force=1
+            [[ "${2:-}" == "--dryrun" || "${2:-}" == "-n" ]] && local_dryrun=1
+            [[ "${3:-}" == "--force" || "${3:-}" == "-f" ]] && force=1
+            [[ "${3:-}" == "--dryrun" || "${3:-}" == "-n" ]] && local_dryrun=1
+
+            [[ -z "$target" ]] && { echo "Usage: queue $cmd <qid-or-exact-job-name> [--force]" >&2; return 2; }
+
+            local matches=()
+            local f
+            while IFS= read -r f; do
+                matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue $cmd: no matching job: $target" >&2; return 1; }
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "${#matches[@]}" -gt 1 && "$exact_name_count" -eq 0 && "$force" -ne 1 ]]; then
+                echo "queue $cmd: ambiguous QID prefix: $target" >&2
+                echo "matches:" >&2
+                _queue_print_matches "${matches[@]}"
+                echo "Use a fuller QID or --force." >&2
+                return 2
+            fi
+
+            local dest_state
+            case "$cmd" in
+                pause|hold) dest_state="paused" ;;
+                *) dest_state="deleted" ;;
+            esac
+
+            local moved=0
+            for f in "${matches[@]}"; do
+                local id state dest
+                id="$(basename "$f" .job)"
+                state="$(_queue_state_for_job_path "$f" "$root")"
+                dest="$root/$dest_state/$id.job"
+
+                if [[ "$state" == "$dest_state" ]]; then
+                    echo "Already $dest_state $id"
+                    continue
+                fi
+
+                if [[ "$state" == "running" && "$force" -ne 1 ]]; then
+                    echo "queue $cmd: refusing running job $id without --force" >&2
+                    continue
+                fi
+
+                if [[ "$cmd" == pause || "$cmd" == hold ]]; then
+                    if [[ "$state" != "pending" && "$force" -ne 1 ]]; then
+                        echo "queue pause: not pausing $id in state $state without --force" >&2
+                        continue
+                    fi
+                    if [[ "$local_dryrun" -ne 1 ]]; then
+                        {
+                            echo "PAUSED_AT=$(printf '%q' "$(_queue_now_iso)")"
+                            echo "PAUSED_FROM=$(printf '%q' "$state")"
+                        } >> "$f"
+                    fi
+                else
+                    if [[ "$local_dryrun" -ne 1 ]]; then
+                        {
+                            echo "DELETED_AT=$(printf '%q' "$(_queue_now_iso)")"
+                            echo "DELETED_FROM=$(printf '%q' "$state")"
+                        } >> "$f"
+                    fi
+                fi
+
+                if [[ "$local_dryrun" -eq 1 ]]; then
+                    echo "DRYRUN: would move $id from $state -> $dest_state"
+                    [[ "$state" == "running" ]] && echo "DRYRUN WARNING: running process would not be killed; only queue record would move."
+                else
+                    mv -f "$f" "$dest"
+                    _queue_log_event "$dest_state" "$id" "$(_queue_job_name "$dest")" "$dest_state" "from=$state"
+                    echo "Moved $id from $state -> $dest_state"
+                    [[ "$state" == "running" ]] && echo "WARNING: moving running queue record does not kill the already-started process."
+                fi
+                moved=$((moved + 1))
+            done
+
+            [[ "$moved" -gt 0 ]]
+            ;;
+
+        unpause|resume|release)
+            local local_dryrun="$dryrun"
+            local target="$1"
+            [[ "${1:-}" == "--dryrun" || "${1:-}" == "-n" ]] && { local_dryrun=1; shift; target="${1:-}"; }
+            [[ "${2:-}" == "--dryrun" || "${2:-}" == "-n" ]] && local_dryrun=1
+            [[ -z "$target" ]] && { echo "Usage: queue unpause <qid-or-exact-job-name> [--dryrun]" >&2; return 2; }
+
+            local matches=()
+            local f id name
+            for f in "$root/paused"/*.job; do
+                [[ -e "$f" ]] || continue
+                id="$(basename "$f" .job)"
+                name="$(_queue_job_name "$f")"
+                if [[ "$id" == "$target" || "$name" == "$target" || "$id" == "$target"* ]]; then
+                    matches+=( "$f" )
+                fi
+            done
+
+            [[ "${#matches[@]}" -eq 0 ]] && { echo "queue unpause: no matching paused job: $target" >&2; return 1; }
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "${#matches[@]}" -gt 1 && "$exact_name_count" -eq 0 ]]; then
+                echo "queue unpause: ambiguous QID prefix: $target" >&2
+                _queue_print_matches "${matches[@]}"
+                return 2
+            fi
+
+            for f in "${matches[@]}"; do
+                id="$(basename "$f" .job)"
+                if [[ "$local_dryrun" -eq 1 ]]; then
+                    echo "DRYRUN: would unpause $id -> pending"
+                else
+                    {
+                        echo "UNPAUSED_AT=$(printf '%q' "$(_queue_now_iso)")"
+                        echo "UNPAUSED_TO=pending"
+                    } >> "$f"
+                    _queue_move_to_pending_bucket "$f" "$id" "$root"
+                    local unpaused_path
+                    unpaused_path="$(_queue_job_pending_path_by_id "$id" "$root" 2>/dev/null || true)"
+                    _queue_log_event "unpaused" "$id" "$(_queue_job_name "$unpaused_path")" "pending" "from=paused"
+                    echo "Unpaused $id -> pending"
+                fi
+            done
+            ;;
+
+        undelete|undel|restore)
+            local local_dryrun="$dryrun"
+            local target="$1"
+            shift || true
+            local restore_state="pending"
+            local force=0
+
+            [[ -z "$target" ]] && { echo "Usage: queue undelete <qid-or-exact-job-name> [pending|done|failed] [--force]" >&2; return 2; }
+
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --force|-f) force=1; shift ;;
+                    --dryrun|-n) local_dryrun=1; shift ;;
+                    pending|done|failed|cancelled) restore_state="$1"; shift ;;
+                    *) echo "queue undelete: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+
+            local matches=()
+            local f id name
+            for f in "$root/deleted"/*.job; do
+                [[ -e "$f" ]] || continue
+                id="$(basename "$f" .job)"
+                name="$(_queue_job_name "$f")"
+                if [[ "$id" == "$target" || "$name" == "$target" || "$id" == "$target"* ]]; then
+                    matches+=( "$f" )
+                fi
+            done
+
+            if [[ "${#matches[@]}" -eq 0 ]]; then
+                _queue_restore_print_non_deleted_matches "$target" || echo "queue undelete: no matching deleted job: $target" >&2
+                return 1
+            fi
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+            if [[ "${#matches[@]}" -gt 1 && "$exact_name_count" -eq 0 && "$force" -ne 1 ]]; then
+                echo "queue undelete: ambiguous QID prefix: $target" >&2
+                _queue_print_matches "${matches[@]}"
+                echo "Use a fuller QID or --force." >&2
+                return 2
+            fi
+
+            for f in "${matches[@]}"; do
+                id="$(basename "$f" .job)"
+                if [[ "$local_dryrun" -eq 1 ]]; then
+                    echo "DRYRUN: would restore $id to $restore_state"
+                else
+                    {
+                        echo "UNDELETED_AT=$(printf '%q' "$(_queue_now_iso)")"
+                        echo "UNDELETED_TO=$(printf '%q' "$restore_state")"
+                    } >> "$f"
+                    if [[ "$restore_state" == "pending" ]]; then
+                        _queue_move_to_pending_bucket "$f" "$id" "$root"
+                        local restored_path
+                        restored_path="$(_queue_job_pending_path_by_id "$id" "$root" 2>/dev/null || true)"
+                    else
+                        mv -f "$f" "$root/$restore_state/$id.job"
+                        local restored_path="$root/$restore_state/$id.job"
+                    fi
+                    _queue_log_event "undeleted" "$id" "$(_queue_job_name "$restored_path")" "$restore_state" "from=deleted"
+                    echo "Restored $id to $restore_state"
+                fi
+            done
+            ;;
+
+
+        resubmit|retry)
+            local local_dryrun="$dryrun"
+            local target="$1"
+            shift || true
+            local force=0
+            local note=""
+
+            if [[ -z "$target" ]]; then
+                echo "Usage: queue resubmit <qid-or-exact-job-name> [--force] [--dryrun] [--note TEXT]" >&2
+                echo "Resubmit clones failed/interrupted/pol_blocked job(s) into pending with new QID(s), preserving the failed originals." >&2
+                return 2
+            fi
+
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --force|-f) force=1; shift ;;
+                    --dryrun|-n) local_dryrun=1; shift ;;
+                    --note) note="$2"; shift 2 ;;
+                    *) echo "queue resubmit: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+
+            local all_matches=()
+            local matches=()
+            local f state
+            while IFS= read -r f; do
+                all_matches+=( "$f" )
+                state="$(_queue_state_for_job_path "$f" "$root")"
+                [[ "$state" == "failed" || "$state" == "interrupted" || "$state" == "pol_blocked" || "$state" == "policy_blocked" ]] && matches+=( "$f" )
+            done < <(_queue_find_jobs "$target")
+
+            if [[ "${#all_matches[@]}" -eq 0 ]]; then
+                echo "queue resubmit: no matching QID or exact job name: $target" >&2
+                return 1
+            fi
+
+            if [[ "${#matches[@]}" -eq 0 ]]; then
+                echo "queue resubmit: matching job(s) found, but none are in failed, interrupted, or pol_blocked state:" >&2
+                _queue_print_matches "${all_matches[@]}"
+                return 1
+            fi
+
+            local exact_name_count
+            exact_name_count="$(_queue_exact_name_count "$target" "${matches[@]}")"
+
+            if [[ "${#matches[@]}" -gt 1 && "$exact_name_count" -eq 0 && "$force" -ne 1 ]]; then
+                echo "queue resubmit: ambiguous QID prefix: $target" >&2
+                _queue_print_matches "${matches[@]}"
+                echo "Use a fuller QID or --force." >&2
+                return 2
+            fi
+
+            local count=0
+            local src_id new_id name pri cmdline
+            for f in "${matches[@]}"; do
+                src_id="$(basename "$f" .job)"
+                name="$(_queue_job_name "$f")"
+                pri="$(_queue_job_pri "$f")"
+                cmdline="$(grep '^COMMAND=' "$f" | sed 's/^COMMAND=( //; s/ )$//')"
+                new_id="$(_queue_id)"
+
+                if [[ "$local_dryrun" -eq 1 ]]; then
+                    echo "DRYRUN: would resubmit failed/interrupted/pol_blocked job:"
+                    echo "  from:     $src_id"
+                    echo "  new id:   $new_id"
+                    echo "  name:     $name"
+                    echo "  priority: $pri"
+                    echo "  command:  $cmdline"
+                else
+                    _queue_clone_job_to_pending "$f" "$new_id" "$note"
+                    _queue_log_event "resubmitted" "$new_id" "$name" "pending" "from=$src_id"
+                    echo "Resubmitted $src_id -> $new_id ($name)"
+                fi
+
+                count=$((count + 1))
+            done
+
+            if [[ "$local_dryrun" -eq 1 ]]; then
+                echo "DRYRUN: would resubmit $count failed/interrupted/pol_blocked job(s)."
+            else
+                echo "Resubmitted $count failed/interrupted/pol_blocked job(s)."
+            fi
+            ;;
+
+
+
+
+        watch)
+            local interval=1
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --interval|-i) interval="${2:-1}"; shift 2 ;;
+                    *) shift ;;
+                esac
+            done
+            [[ "$interval" =~ ^[0-9]+$ ]] || interval=1
+            while true; do
+                clear
+                echo "queuebash watch - $(_queue_now_iso)"
+                echo
+                queue stats
+                echo
+                echo "=== running ==="
+                queue list --state running
+                echo
+                echo "=== pending top ==="
+                queue list --state pending | head -20
+                echo
+                echo "Ctrl+C to exit. interval=${interval}s"
+                sleep "$interval"
+            done
+            ;;
+
+
+        workers|worker|jobs)
+            echo "=== queuebash worker processes ==="
+            local any=0
+            local pf pid
+            for pf in "$root/workers"/*.pid; do
+                [[ -e "$pf" ]] || continue
+                pid="$(cat "$pf" 2>/dev/null)"
+                if [[ -n "$pid" && -d "/proc/$pid" ]]; then
+                    any=1
+                    ps -o pid,ppid,pgid,stat,etime,pcpu,pmem,comm,args -p "$pid" 2>/dev/null || true
+                else
+                    rm -f "$pf"
+                fi
+            done
+            [[ "$any" -eq 0 ]] && echo "No live detached workers recorded."
+            ;;
+
+
+        system-daemon|system-supervisor|system-sentinel|all-user-daemon|multi-user-daemon)
+            _queue_system_daemon_command "$@"
+            ;;
+
+        daemon)
+            _queue_sentinel_command --min-workers 1 "$@"
+            ;;
+
+        sentinel|supervisor|supervise|scheduler)
+            _queue_sentinel_command "$@"
+            ;;
+
+        run|start)
+            local local_dryrun="$dryrun"
+            local detach=0
+            [[ "$cmd" == "start" ]] && detach=1
+            local workers=1
+            while [[ "$#" -gt 0 ]]; do
+                case "${1:-}" in
+                    --workers|-w)
+                        workers="${2:-}"
+                        shift 2
+                        ;;
+                    --detach|-d|--background)
+                        detach=1
+                        shift
+                        ;;
+                    --dryrun|-n)
+                        local_dryrun=1
+                        shift
+                        ;;
+                    --json|-j)
+                        json_output=1
+                        shift
+                        ;;
+                    *)
+                        echo "queue $cmd: unexpected argument: $1" >&2
+                        return 2
+                        ;;
+                esac
+            done
+
+            if ! [[ "$workers" =~ ^[0-9]+$ ]] || [[ "$workers" -lt 1 ]]; then
+                echo "queue run: workers must be a positive integer" >&2
+                return 2
+            fi
+
+            if [[ "$local_dryrun" -eq 1 ]]; then
+                echo "DRYRUN: would run queue with $workers worker(s)"
+                local next_job
+                next_job="$(_queue_next_job "$(_queue_epoch_now)")"
+                if [[ -n "$next_job" ]]; then
+                    echo "DRYRUN: next job would be $(basename "$next_job" .job) ($(_queue_job_name "$next_job"))"
+                else
+                    echo "DRYRUN: no pending jobs"
+                fi
+                return 0
+            fi
+
+            if [[ "$detach" -eq 1 ]]; then
+                echo "Starting queue with $workers detached worker(s)"
+                local i wp
+                for ((i=1; i<=workers; i++)); do
+                    local worker_log
+                    worker_log="$root/logs/worker_$(date +%Y%m%d_%H%M%S)_${i}_$$.log"
+                    (_queue_worker "$i") >"$worker_log" 2>&1 &
+                    wp="$!"
+                    echo "$wp" > "$root/workers/worker_${wp}.pid"
+                    echo "  worker $i pid=$wp log=$worker_log"
+                done
+                _queue_log_event "workers_started" "" "" "workers" "workers=$workers detached=1"
+                echo "Detached workers started. Use: queue workers
+  queue mgr|manager|qm"
+                return 0
+            fi
+
+            echo "Running queue with $workers worker(s) in foreground"
+            local i
+            for ((i=1; i<=workers; i++)); do
+                (_queue_worker "$i") &
+            done
+            wait
+            ;;
+
+
+        clean-logs|cleanlogs|log-clean|logs-clean)
+            _queue_clean_logs "$@"
+            ;;
+
+
+        clear)
+            local what="${1:-}"
+            local local_dryrun="$dryrun"
+            [[ "${2:-}" == "--dryrun" || "${2:-}" == "-n" ]] && local_dryrun=1
+            case "$what" in
+                done|failed|pol_blocked|paused|interrupted|cancelled|deleted)
+                    if [[ "$local_dryrun" -eq 1 ]]; then
+                        echo "DRYRUN: would archive $what jobs:"
+                        find "$root/$what" -maxdepth 1 -type f -name '*.job' -printf '  %f\n' 2>/dev/null
+                    else
+                        local f archived_count=0
+                        shopt -s nullglob
+                        for f in "$root/$what"/*.job; do
+                            [[ -f "$f" ]] || continue
+                            _queue_clearance_archive_job_file "$f" "$what" "$root"
+                            archived_count=$((archived_count + 1))
+                        done
+                        shopt -u nullglob
+                        echo "Cleared $what jobs (archived $archived_count record(s))"
+                    fi
+                    ;;
+                all)
+                    if [[ "$local_dryrun" -eq 1 ]]; then
+                        echo "DRYRUN: would archive all jobs and logs:"
+                        find "$root"/{pending,running,paused,done,failed,pol_blocked,policy_blocked,interrupted,cancelled,deleted,logs} -maxdepth 1 -type f -printf '  %p\n' 2>/dev/null
+                    else
+                        local state f archived_jobs=0 archived_logs=0
+                        shopt -s nullglob
+                        for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+                            for f in "$root/$state"/*.job; do
+                                [[ -f "$f" ]] || continue
+                                _queue_clearance_archive_job_file "$f" "$state" "$root"
+                                archived_jobs=$((archived_jobs + 1))
+                            done
+                        done
+                        for f in "$root/logs"/*.log "$root/logs"/*.log.gz; do
+                            [[ -f "$f" ]] || continue
+                            _queue_clearance_archive_log_file "$f" "$root"
+                            archived_logs=$((archived_logs + 1))
+                        done
+                        shopt -u nullglob
+                        echo "Cleared all jobs and logs (archived $archived_jobs job record(s), $archived_logs log file(s))"
+                    fi
+                    ;;
+                *) echo "Usage: queue clear done|failed|pol_blocked|paused|interrupted|cancelled|deleted|all [--dryrun]" >&2; return 2 ;;
+            esac
+            ;;
+
+        *)
+            echo "Unknown queue command: $cmd" >&2
+            _queue_help
+            return 2
+            ;;
+    esac
+}
+
+
+
+_queue_system_daemon_candidate_users() {
+    local include_root="${1:-0}" user home
+    if [[ "$include_root" == "1" && -d /root/.queuebash ]]; then
+        printf '%s\t%s\n' root /root/.queuebash
+    fi
+    getent passwd 2>/dev/null | awk -F: '$3 >= 1000 && $6 ~ /^\/home\// {print $1 "\t" $6 "/.queuebash"}' | while IFS=$'\t' read -r user home; do
+        [[ -n "$user" && -d "$home" ]] || continue
+        printf '%s\t%s\n' "$user" "$home"
+    done | sort -u
+}
+
+_queue_system_daemon_tick_user() {
+    local user="$1" qroot="$2" min_workers="$3" dry="$4" source_file
+    [[ -n "$user" && -n "$qroot" ]] || return 0
+    [[ -d "$qroot" ]] || return 0
+    source_file="${BASH_SOURCE[0]}"
+    if [[ "$dry" == "1" ]]; then
+        echo "system-daemon: would check user=$user root=$qroot min_workers=$min_workers"
+        return 0
+    fi
+    echo "system-daemon: checking user=$user root=$qroot"
+    if [[ "$user" == "$(id -un 2>/dev/null || echo root)" ]]; then
+        QUEUEBASH_ALLOW_NONINTERACTIVE=1 QUEUEBASH_ROOT="$qroot" queue daemon --once --min-workers "$min_workers"
+        return "$?"
+    fi
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u "$user" -- bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue daemon --once --min-workers %q' "$qroot" "$source_file" "$min_workers")"
+        return "$?"
+    fi
+    if command -v sudo >/dev/null 2>&1; then
+        sudo -u "$user" bash -lc "$(printf 'export QUEUEBASH_ALLOW_NONINTERACTIVE=1; export QUEUEBASH_ROOT=%q; source %q >/dev/null 2>&1; queue daemon --once --min-workers %q' "$qroot" "$source_file" "$min_workers")"
+        return "$?"
+    fi
+    echo "system-daemon: cannot switch to user=$user; runuser/sudo not found" >&2
+    return 126
+}
+
+_queue_system_daemon_tick() {
+    local min_workers="${1:-1}" include_root="${2:-0}" dry="${3:-0}" line user qroot any=0 rc=0
+    while IFS=$'\t' read -r user qroot; do
+        [[ -n "$user" ]] || continue
+        any=1
+        if ! _queue_system_daemon_tick_user "$user" "$qroot" "$min_workers" "$dry"; then
+            rc=1
+        fi
+    done < <(_queue_system_daemon_candidate_users "$include_root")
+    if [[ "$any" -eq 0 ]]; then
+        echo "system-daemon: no user queue roots found"
+    fi
+    return "$rc"
+}
+
+_queue_system_daemon_command() {
+    local interval=30 once=0 detach=0 dry=0 min_workers=1 include_root=0 pid pidfile state_dir=/var/lib/bashqueues/daemon
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --interval|-i) interval="${2:-30}"; shift 2 ;;
+            --once) once=1; shift ;;
+            --detach|-d|--background) detach=1; shift ;;
+            --min-workers|--min-worker) min_workers="${2:-1}"; shift 2 ;;
+            --include-root) include_root=1; shift ;;
+            --dryrun|-n) dry=1; shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage: queue system-daemon [--once] [--interval SEC] [--detach] [--min-workers N] [--include-root]
+       queue system-supervisor [same options]
+
+Root-only multi-user control loop.  It quickly scans known user queue roots and,
+for each queue, delegates to that queue owner to run:
+  queue daemon --once --min-workers N
+
+This does not run user jobs as root.  Each per-user sentinel performs cheap
+control-plane checks and starts at least N detached user workers only when that
+user has due/dependency-ready pending work.
+EOF
+                return 0 ;;
+            *) echo "queue system-daemon: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ "$(id -u 2>/dev/null || echo 99999)" == "0" ]] || { echo "queue system-daemon: must be run as root" >&2; return 126; }
+    [[ "$interval" =~ ^[0-9]+$ && "$interval" -ge 1 ]] || { echo "queue system-daemon: interval must be a positive integer" >&2; return 2; }
+    [[ "$min_workers" =~ ^[0-9]+$ ]] || { echo "queue system-daemon: min-workers must be a non-negative integer" >&2; return 2; }
+    if [[ "$dry" -eq 1 ]]; then
+        echo "DRYRUN: would run system-daemon interval=${interval}s once=$once detach=$detach min_workers=$min_workers include_root=$include_root"
+        _queue_system_daemon_tick "$min_workers" "$include_root" 1
+        return 0
+    fi
+    if [[ "$detach" -eq 1 ]]; then
+        mkdir -p "$state_dir" 2>/dev/null || true
+        (
+            export QUEUEBASH_SYSTEM_DAEMON=1
+            while true; do
+                _queue_system_daemon_tick "$min_workers" "$include_root" 0 || true
+                [[ "$once" -eq 1 ]] && break
+                sleep "$interval"
+            done
+        ) &
+        pid="$!"
+        pidfile="$state_dir/system_daemon_${pid}.pid"
+        printf '%s\n' "$pid" > "$pidfile" 2>/dev/null || true
+        echo "Started bashqueues system-daemon pid=$pid interval=${interval}s min_workers=$min_workers"
+        return 0
+    fi
+    if [[ "$once" -eq 1 ]]; then
+        _queue_system_daemon_tick "$min_workers" "$include_root" 0
+        return "$?"
+    fi
+    echo "Running bashqueues system-daemon interval=${interval}s min_workers=$min_workers. Ctrl+C to stop."
+    while true; do
+        _queue_system_daemon_tick "$min_workers" "$include_root" 0 || true
+        sleep "$interval"
+    done
+}
+
+_queue_sentinel_running_jobs_fix_stale() {
+    local root="$(_queue_root)" f id
+    shopt -s nullglob
+    for f in "$root"/running/*.job; do
+        [[ -f "$f" ]] || continue
+        if _queue_health_running_is_stale2 "$f"; then
+            id="$(basename "$f" .job)"
+            _queue_health_mark_interrupted "$f"
+            _queue_log_event "sentinel_interrupted_stale" "$id" "$(_queue_job_name "$root/interrupted/$id.job" 2>/dev/null || echo -)" "interrupted" "reason=stale-running-detected-by-sentinel"
+            echo "sentinel: moved stale running job to interrupted: $id"
+        fi
+    done
+    shopt -u nullglob
+}
+
+_queue_sentinel_move_pending_to_pol_blocked() {
+    local jobf="$1" reason="$2" root id dest log name now
+    root="$(_queue_root)"
+    [[ -f "$jobf" ]] || return 0
+    id="$(basename "$jobf" .job)"
+    name="$(_queue_job_name "$jobf" 2>/dev/null || echo -)"
+    dest="$root/pol_blocked/$id.job"
+    log="$root/logs/$id.log"
+    now="$(_queue_now_iso)"
+    mkdir -p "$root/pol_blocked" "$root/logs" 2>/dev/null || true
+
+    {
+        echo "=== queue job $id : $name ==="
+        echo "pol_blocked: $now"
+        echo "state: pol_blocked"
+        echo "sentinel: $$"
+        echo
+        echo "POLICY_BLOCKED"
+        echo "$reason"
+        echo
+        echo "No class claims, asset preflight checks, dynamic preflight checks, global claims, or payload launch were attempted."
+        echo "Blocked by cheap sentinel policy gate before worker dispatch."
+    } > "$log" 2>&1
+
+    {
+        printf '\n# Policy blocked by sentinel at %q\n' "$now"
+        printf 'POLICY_BLOCKED=1\n'
+        printf 'POLICY_BLOCKED_AT=%q\n' "$now"
+        printf 'POLICY_BLOCKED_BY=%q\n' "sentinel"
+        printf 'POLICY_BLOCKED_REASON=%q\n' "$reason"
+    } >> "$jobf"
+    _queue_append_summary_to_job "$jobf" 78 "$log"
+
+    if mv "$jobf" "$dest" 2>/dev/null; then
+        _queue_job_stream_temp_cleanup "$id"
+        _queue_log_event "pol_blocked" "$id" "$name" "pol_blocked" "sentinel=1"
+        echo "sentinel: pol_blocked $id"
+    fi
+}
+
+_queue_sentinel_check_pending_policy() {
+    local root="$(_queue_root)" f id reason
+    shopt -s nullglob
+    for f in "$root"/pending/*.job; do
+        [[ -f "$f" ]] || continue
+        id="$(basename "$f" .job)"
+        reason=""
+        if ! reason="$(_queue_job_policy_execution_check "$f" 2>&1)"; then
+            _queue_sentinel_move_pending_to_pol_blocked "$f" "$reason"
+        fi
+    done
+    shopt -u nullglob
+}
+
+_queue_sentinel_asset_is_deadline_spec() {
+    local spec="$1" family check target
+    eval "set -- $spec"
+    (($# >= 3)) || return 1
+    family="$1"; check="$2"; target="$3"
+    [[ "$family" == "deadline" && ( "$check" == "monitor" || "$check" == "panic" ) ]]
+}
+
+_queue_sentinel_eval_deadline_for_job() {
+    local jobf="$1" root id spec rc line helper
+    [[ -f "$jobf" ]] || return 0
+    root="$(_queue_root)"
+    id="$(basename "$jobf" .job)"
+    (
+        # Source the job before class context so JOB_* variables are available
+        # to deadline.sh helpers, but do not run class claims or normal assets.
+        JOB_ID=""; JOB_NAME=""; JOB_CLASS=""; PRIORITY=""; COMMAND=()
+        source "$jobf" >/dev/null 2>&1 || exit 0
+        _queue_class_load_for_job "$jobf" >/dev/null 2>&1 || exit 0
+        helper="$(_queue_asset_helper_path deadline)"
+        [[ -f "$helper" ]] || exit 0
+        for spec in "${QUEUE_CLASS_EXCLUSIVE_ASSET_SPECS[@]}" "${QUEUE_CLASS_SHARED_ASSET_SPECS[@]}"; do
+            [[ -n "$spec" ]] || continue
+            _queue_sentinel_asset_is_deadline_spec "$spec" || continue
+            # Deadline assets are deliberately cheap/control-plane capable.
+            # Their output may include priority escalation, fallback exception,
+            # or bounded extra-worker audit messages.
+            _queue_asset_implied_preflight_spec "$spec"
+        done
+        exit 0
+    ) 2>&1 | while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        _queue_dispatch_trace_log "sentinel" "deadline $id: $line" 2>/dev/null || true
+    done
+}
+
+_queue_sentinel_eval_deadlines() {
+    local root="$(_queue_root)" f
+    shopt -s nullglob
+    for f in "$root"/pending/*.job; do
+        [[ -f "$f" ]] || continue
+        # The sentinel should be cheap and should not evaluate deadlines for jobs
+        # that are not yet schedule/dependency eligible.
+        _queue_job_retry_due "$f" || continue
+        _queue_job_schedule_due "$f" || continue
+        _queue_job_dependencies_satisfied "$f" || continue
+        _queue_sentinel_eval_deadline_for_job "$f"
+    done
+    shopt -u nullglob
+}
+
+_queue_sentinel_live_worker_count() {
+    local root="$(_queue_root)" pf pid count=0
+    shopt -s nullglob
+    for pf in "$root"/workers/worker_*.pid; do
+        [[ -f "$pf" ]] || continue
+        pid="$(cat "$pf" 2>/dev/null || true)"
+        if [[ -n "$pid" && -d "/proc/$pid" ]]; then
+            count=$((count + 1))
+        else
+            rm -f "$pf" 2>/dev/null || true
+        fi
+    done
+    shopt -u nullglob
+    printf '%s
+' "$count"
+}
+
+_queue_sentinel_ready_pending_count() {
+    local root="$(_queue_root)" f count=0
+    shopt -s nullglob
+    for f in "$root"/pending/*.job; do
+        [[ -f "$f" ]] || continue
+        _queue_job_retry_due "$f" || continue
+        _queue_job_schedule_due "$f" || continue
+        _queue_job_dependencies_satisfied "$f" || continue
+        _queue_job_policy_execution_check "$f" >/dev/null 2>&1 || continue
+        count=$((count + 1))
+    done
+    shopt -u nullglob
+    printf '%s
+' "$count"
+}
+
+_queue_sentinel_ensure_min_workers() {
+    local min_workers="${1:-0}" root live ready need i wp
+    [[ "$min_workers" =~ ^[0-9]+$ ]] || min_workers=0
+    [[ "$min_workers" -gt 0 ]] || return 0
+    root="$(_queue_root)"
+    ready="$(_queue_sentinel_ready_pending_count 2>/dev/null || echo 0)"
+    [[ "$ready" -gt 0 ]] || return 0
+    live="$(_queue_sentinel_live_worker_count 2>/dev/null || echo 0)"
+    [[ "$live" -lt "$min_workers" ]] || return 0
+    need=$((min_workers - live))
+    mkdir -p "$root/workers" 2>/dev/null || true
+    for ((i=1; i<=need; i++)); do
+        (_queue_worker "sentinel-$i") &
+        wp="$!"
+        echo "$wp" > "$root/workers/worker_${wp}.pid" 2>/dev/null || true
+        _queue_log_event "sentinel_worker_started" "" "" "workers" "pid=$wp min_workers=$min_workers ready=$ready"
+        echo "sentinel: started worker pid=$wp ready=$ready min_workers=$min_workers"
+    done
+}
+
+_queue_sentinel_tick() {
+    local min_workers="${1:-0}"
+    _queue_init
+    _queue_health_clean_dead_workers >/dev/null 2>&1 || true
+    _queue_sentinel_running_jobs_fix_stale || true
+    _queue_sentinel_check_pending_policy || true
+    _queue_sentinel_eval_deadlines || true
+    _queue_sentinel_ensure_min_workers "$min_workers" || true
+}
+
+_queue_sentinel_command() {
+    local interval=30 once=0 detach=0 dry=0 min_workers=0 root pidfile pid
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --interval|-i) interval="${2:-30}"; shift 2 ;;
+            --once) once=1; shift ;;
+            --detach|-d|--background) detach=1; shift ;;
+            --min-workers|--min-worker) min_workers="${2:-1}"; shift 2 ;;
+            --dryrun|-n) dry=1; shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage: queue sentinel [--once] [--interval SEC] [--detach] [--min-workers N]
+       queue daemon [--interval SEC] [--detach]
+
+Runs the cheap control-plane queue sentinel. It does not run normal asset
+preflight. With --min-workers N, it also keeps at least N detached payload
+worker available whenever a due/dependency-ready pending job exists.
+It only performs inexpensive checks:
+  - remove dead detached-worker PID files
+  - mark definitely stale running jobs as interrupted
+  - apply the shared/admin policy gate to pending jobs
+  - evaluate deadline:monitor/deadline:panic assets for due, dependency-ready jobs
+
+Use queue start/run for manual payload workers. queue daemon is shorthand for
+queue sentinel --min-workers 1.
+EOF
+                return 0 ;;
+            *) echo "queue sentinel: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ "$interval" =~ ^[0-9]+$ && "$interval" -ge 1 ]] || { echo "queue sentinel: interval must be a positive integer" >&2; return 2; }
+    [[ "$min_workers" =~ ^[0-9]+$ ]] || { echo "queue sentinel: min-workers must be a non-negative integer" >&2; return 2; }
+    if [[ "$dry" -eq 1 ]]; then
+        echo "DRYRUN: would run queue sentinel interval=${interval}s once=$once detach=$detach min_workers=$min_workers"
+        return 0
+    fi
+    root="$(_queue_root)"
+    mkdir -p "$root/workers" 2>/dev/null || true
+    if [[ "$detach" -eq 1 ]]; then
+        (
+            export QUEUEBASH_SENTINEL=1
+            while true; do
+                _queue_sentinel_tick "$min_workers"
+                [[ "$once" -eq 1 ]] && break
+                sleep "$interval"
+            done
+        ) &
+        pid="$!"
+        pidfile="$root/workers/sentinel_${pid}.pid"
+        printf '%s\n' "$pid" > "$pidfile" 2>/dev/null || true
+        echo "Started queue sentinel pid=$pid interval=${interval}s min_workers=$min_workers"
+        _queue_log_event "sentinel_started" "" "" "workers" "pid=$pid interval=$interval detached=1 min_workers=$min_workers"
+        return 0
+    fi
+    export QUEUEBASH_SENTINEL=1
+    if [[ "$once" -eq 1 ]]; then
+        _queue_sentinel_tick "$min_workers"
+        return 0
+    fi
+    echo "Running queue sentinel interval=${interval}s min_workers=$min_workers. Ctrl+C to stop."
+    while true; do
+        _queue_sentinel_tick "$min_workers"
+        sleep "$interval"
+    done
+}
+
+_queue_worker_external_move_state() {
+    local id="$1"
+    local root="$(_queue_root)"
+    local state
+    for state in cancelled deleted interrupted paused done failed pol_blocked policy_blocked pending; do
+        if [[ -f "$root/$state/$id.job" ]]; then
+            printf '%s\n' "$state"
+            return 0
+        fi
+    done
+    printf '%s\n' "missing"
+}
+
+_queue_worker () 
+{ 
+    export QUEUEBASH_WORKER_ID="${worker_id:-${1:-?}}";
+    _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "entered worker loop";
+    _queue_init;
+    local worker_id="$1";
+    local root="$(_queue_root)";
+    while true; do
+        local job current_epoch;
+        current_epoch="$(_queue_epoch_now)";
+        job="$(_queue_next_job "$current_epoch" || true)";
+        [[ -n "$job" ]] || break;
+        local id;
+        id="$(basename "$job" .job)";
+        local running="$root/running/$id.job";
+        local done="$root/done/$id.job";
+        local failed="$root/failed/$id.job";
+        local policy_blocked="$root/pol_blocked/$id.job";
+        local log="$root/logs/$id.log";
+        if ! _queue_move_pending_to_running "$job" "$running" "$id" "${worker_id:-${1:-?}}"; then
+            [[ -e "$job" ]] && sleep "${QUEUEBASH_MOVE_FAIL_SLEEP:-1}";
+            continue;
+        fi;
+        if ! _queue_class_available "$running" > /dev/null 2>&1; then
+            _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "class/resource unavailable after claim $id";
+            _queue_move_to_pending_bucket "$running" "$id" "$root" 2> /dev/null || true;
+            _queue_log_event "class_blocked" "$id" "$(_queue_job_name "$(_queue_job_pending_path_by_id "$id" "$root" 2> /dev/null || true)" 2> /dev/null || echo "-")" "pending" "worker=$worker_id stage=postclaim_preflight";
+            continue;
+        fi;
+        local policy_reason="";
+        if ! policy_reason="$(_queue_job_policy_execution_check "$running" 2>&1)"; then
+            _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "policy blocked $id: $policy_reason";
+            { 
+                echo "=== queue job $id : $(_queue_job_name "$running" 2> /dev/null || echo -) ===";
+                echo "pol_blocked: $(_queue_now_iso)";
+                echo "state: pol_blocked";
+                echo "worker: $worker_id";
+                echo;
+                echo "POLICY_BLOCKED";
+                echo "$policy_reason";
+                echo;
+                echo "No class claims, asset preflight checks, dynamic preflight checks, global claims, or payload launch were attempted."
+            } > "$log" 2>&1;
+            { 
+                printf '
+# Policy blocked by worker at %q
+' "$(date -Is 2> /dev/null || date)";
+                printf 'POLICY_BLOCKED=1
+';
+                printf 'POLICY_BLOCKED_AT=%q
+' "$(date -Is 2> /dev/null || date)";
+                printf 'POLICY_BLOCKED_REASON=%q
+' "$policy_reason"
+            } >> "$running";
+            _queue_append_summary_to_job "$running" 78 "$log";
+            mkdir -p "$root/pol_blocked";
+            mv "$running" "$policy_blocked";
+            _queue_job_stream_temp_cleanup "$id";
+            _queue_log_event "pol_blocked" "$id" "$(_queue_job_name "$policy_blocked" 2> /dev/null || echo -)" "pol_blocked" "worker=$worker_id";
+            echo "[worker $worker_id] pol_blocked $id";
+            continue;
+        fi;
+        _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "claim acquire start $id";
+        if ! _queue_class_claim_job "$running" "$id"; then
+            _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "claim acquire failed $id";
+            _queue_move_to_pending_bucket "$running" "$id" "$root" 2> /dev/null || true;
+            local class_blocked_path;
+            class_blocked_path="$(_queue_job_pending_path_by_id "$id" "$root" 2> /dev/null || true)";
+            _queue_log_event "class_blocked" "$id" "$(_queue_job_name "$class_blocked_path" 2> /dev/null || echo "-")" "pending" "worker=$worker_id";
+            continue;
+        fi;
+        _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "claim acquire ok $id";
+        _queue_job_mark_cleared "$running" "$id" "${worker_id:-${1:-?}}" "$(_queue_class_for_job_file "$running" 2> /dev/null || echo DEFAULT)";
+        _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "about to run $id";
+        echo "[worker $worker_id] running $id";
+        _queue_log_event "started" "$id" "$(_queue_job_name "$running")" "running" "worker=$worker_id";
+        ( set +e;
+        source "$running";
+        cd "$PWD_AT_SUBMIT" || exit 98;
+        _queue_source_env_drop_if_requested "$running";
+        _queue_export_job_ipc_env "$JOB_ID";
+        export -f queue_output 2> /dev/null || true;
+        stream_public_fifo="$(_queue_create_stream_fifo_for_job "$JOB_ID" 2> /dev/null || true)";
+        { 
+            echo "=== queue job $JOB_ID : $JOB_NAME ===";
+            echo "started: $(_queue_now_iso)";
+            echo "pwd: $PWD";
+            echo "output_env: ${QUEUEBASH_OUTPUT_ENV:-}";
+            echo "helper_dir: ${QUEUEBASH_HELPER_DIR:-}";
+            [[ -n "${QUEUEBASH_INHERITED_ENV_FROM:-}" ]] && echo "inherited_env_from: ${QUEUEBASH_INHERITED_ENV_FROM:-}";
+            [[ -n "${QUEUEBASH_INHERITED_ENV_KEYS:-}" ]] && echo "inherited_env_keys: ${QUEUEBASH_INHERITED_ENV_KEYS:-}";
+            auto_required_file_keys="$(_queue_auto_required_file_keys_from_env | xargs echo 2> /dev/null || true)";
+            [[ -n "$auto_required_file_keys" ]] && echo "auto_required_files: $auto_required_file_keys";
+            [[ -n "${stream_public_fifo:-}" ]] && echo "stream_fifo: $stream_public_fifo";
+            printf "command:";
+            printf " %q" "${COMMAND[@]}";
+            echo;
+            echo;
+            runner_requested="${RUNNER:-${QUEUEBASH_RUNNER:-auto}}";
+            runner_planned="$(_queue_runner_for_job "$runner_requested" "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${RUN_USER:-}" || true)";
+            _queue_apply_security_exception_overlays_for_current_job;
+            { 
+                printf 'SANDBOX_LEVEL=%q\n' "${SANDBOX_LEVEL:-off}";
+                [[ -n "${RUNTIME_CAPS:-}" ]] && printf 'RUNTIME_CAPS=%q\n' "${RUNTIME_CAPS:-}";
+                [[ -n "${RUNTIME_CAP_PORTS:-}" ]] && printf 'RUNTIME_CAP_PORTS=%q\n' "${RUNTIME_CAP_PORTS:-}";
+                [[ -n "${SECCOMP_PROFILE:-}" ]] && printf 'SECCOMP_PROFILE=%q\n' "${SECCOMP_PROFILE:-}";
+                [[ -n "${SECCOMP_ALLOW:-}" ]] && printf 'SECCOMP_ALLOW=%q\n' "${SECCOMP_ALLOW:-}";
+                [[ -n "${SECCOMP_PROFILED_NAME:-}" ]] && printf 'SECCOMP_PROFILED_NAME=%q\n' "${SECCOMP_PROFILED_NAME:-}";
+                [[ -n "${SECCOMP_PROFILE_ALLOW_SELF_SIGNED:-}" ]] && printf 'SECCOMP_PROFILE_ALLOW_SELF_SIGNED=%q\n' "${SECCOMP_PROFILE_ALLOW_SELF_SIGNED:-}";
+                [[ -n "${SECCOMP_PROFILE_REQUIRED_SIGNER:-}" ]] && printf 'SECCOMP_PROFILE_REQUIRED_SIGNER=%q\n' "${SECCOMP_PROFILE_REQUIRED_SIGNER:-}";
+                [[ -n "${SECCOMP_PROFILE_ROOT:-}" ]] && printf 'SECCOMP_PROFILE_ROOT=%q\n' "${SECCOMP_PROFILE_ROOT:-}";
+                [[ -n "${SECCOMP_PROFILED_ENFORCE:-}" ]] && printf 'SECCOMP_PROFILED_ENFORCE=%q\n' "${SECCOMP_PROFILED_ENFORCE:-}"
+            } >> "$running";
+            limit_status="$(_queue_limit_status_text "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")";
+            [[ "$runner_planned" == "systemd" ]] && limit_status="systemd-run-user-service-pipe";
+            if [[ -n "${CPU_LIMIT:-}" || -n "${MEM_LIMIT:-}" ]]; then
+                echo "resource_limit_request: cpu=${CPU_LIMIT:-} mem=${MEM_LIMIT:-} runner=${runner_requested:-auto} planned=${runner_planned:-} status=$limit_status";
+                if [[ "$limit_status" != "systemd-run-user-service-pipe" ]]; then
+                    echo "WARNING: resource limits were requested but are NOT enforced in this shell/session.";
+                fi;
+            fi;
+            if [[ -n "${SANDBOX_LEVEL:-}" ]]; then
+                echo "sandbox_request: level=${SANDBOX_LEVEL:-} runner=${runner_planned:-}";
+            fi;
+            if [[ -n "${TIMEOUT:-}" ]]; then
+                echo "timeout_request: timeout=${TIMEOUT:-} effective_timeout=${effective_timeout:-none} kill_after=${KILL_AFTER:-} billing_unit=${BILLING_UNIT_SECONDS:-} billing_cycles=${BILLING_CYCLES:-} billing_grace=${BILLING_GRACE_SECONDS:-} wrapper=coreutils-timeout";
+                if ! command -v timeout > /dev/null 2>&1; then
+                    echo "WARNING: TIMEOUT requested but command 'timeout' is not available; payload launch will fail.";
+                fi;
+            fi;
+            _queue_preflight_auto_required_files;
+            preflight_rc="$?";
+            if [[ "$preflight_rc" -ne 0 ]]; then
+                echo;
+                echo "PRE_FLIGHT_REQUIRE_FILE_FAILED: exit_code=$preflight_rc";
+                exit "$preflight_rc";
+            fi;
+            runner_used="$(_queue_runner_for_job "${RUNNER:-${QUEUEBASH_RUNNER:-auto}}" "${CPU_LIMIT:-}" "${MEM_LIMIT:-}")";
+            { 
+                printf 'RUNNER_USED=%q\n' "$runner_used"
+            } >> "$running";
+            if [[ "${SECCOMP_PROFILED_ENFORCE:-}" == "1" || -n "${SECCOMP_PROFILED_NAME:-}" ]]; then
+                if [[ "$runner_used" != "systemd" ]]; then
+                    echo;
+                    echo "PROFILED_SECCOMP_BLOCKED: systemd_runner_required runner=$runner_used profile=${SECCOMP_PROFILED_NAME:-}";
+                    exit 78;
+                fi;
+                if ! SECCOMP_PROFILED_ALLOWED_SYSCALLS="$(_queue_profiled_seccomp_allowed_syscalls "${SECCOMP_PROFILED_NAME:-}" "${SECCOMP_PROFILE_ALLOW_SELF_SIGNED:-0}" "${SECCOMP_PROFILE_REQUIRED_SIGNER:-}" "${SECCOMP_PROFILE_ROOT:-}" 2>&1)"; then
+                    echo;
+                    echo "PROFILED_SECCOMP_BLOCKED: verification_failed profile=${SECCOMP_PROFILED_NAME:-}";
+                    echo "$SECCOMP_PROFILED_ALLOWED_SYSCALLS";
+                    exit 78;
+                fi;
+                export SECCOMP_PROFILED_ALLOWED_SYSCALLS;
+                printf 'SECCOMP_PROFILED_ALLOWED_SYSCALLS=%q\n' "$SECCOMP_PROFILED_ALLOWED_SYSCALLS" >> "$running";
+            fi;
+            effective_timeout="$(_queue_caps_effective_timeout_for_current_job 2> /dev/null || true)";
+            mapfile -d '' payload_cmd < <(_queue_build_payload_command "${CPU_LIMIT:-}" "${MEM_LIMIT:-}" "${PWD_AT_SUBMIT:-$PWD}" "$runner_used" "${effective_timeout:-}" "${KILL_AFTER:-}" "${SANDBOX_LEVEL:-}" "${RUN_USER:-}" "${COMMAND[@]}");
+            echo "systemd_user_bus: $(_queue_systemd_user_service_status_text)";
+            if _queue_root_running_foreign_payload_user "${RUN_USER:-}"; then
+                echo "foreign_run_user_runner_policy: root-foreign-user-auto-direct run_user=${RUN_USER:-}";
+            fi;
+            printf "launch_argv:";
+            printf " %q" "${payload_cmd[@]}";
+            printf "\n";
+            max_log_bytes="$(_queue_job_log_max_bytes "$running")";
+            log_overflow_policy="$(_queue_job_log_policy "$running")";
+            stream_logger_stdout_pid="";
+            stream_logger_stderr_pid="";
+            stream_stdout_fifo="";
+            stream_stderr_fifo="";
+            use_stream_logger=0;
+            if [[ "${ALLOW_LARGE_LOG:-0}" != "1" && "$log_overflow_policy" != "allow" && "$log_overflow_policy" != "kill" && "$max_log_bytes" =~ ^[0-9]+$ && "$max_log_bytes" -gt 0 ]]; then
+                stream_stdout_fifo="$root/logs/.${JOB_ID}.stdout.fifo";
+                stream_stderr_fifo="$root/logs/.${JOB_ID}.stderr.fifo";
+                rm -f -- "$stream_stdout_fifo" "$stream_stderr_fifo";
+                mkfifo "$stream_stdout_fifo" "$stream_stderr_fifo";
+                use_stream_logger=1;
+                _queue_stream_logger "$JOB_ID" "$running" "$log" "stdout" "$max_log_bytes" < "$stream_stdout_fifo" & stream_logger_stdout_pid="$!";
+                _queue_stream_logger "$JOB_ID" "$running" "$log" "stderr" "$max_log_bytes" < "$stream_stderr_fifo" & stream_logger_stderr_pid="$!";
+                "${payload_cmd[@]}" > "$stream_stdout_fifo" 2> "$stream_stderr_fifo" &
+            else
+                "${payload_cmd[@]}" &
+            fi;
+            cmd_pid="$!";
+            cmd_pgid="$(ps -o pgid= -p "$cmd_pid" 2> /dev/null | tr -d '[:space:]')";
+            { 
+                printf 'RUN_PID=%q\n' "$cmd_pid";
+                printf 'RUN_PGID=%q\n' "$cmd_pgid";
+                printf 'RUN_STARTED_AT=%q\n' "$(_queue_now_iso)";
+                [[ -n "${QUEUEBASH_INHERITED_ENV_FROM:-}" ]] && printf 'QUEUEBASH_INHERITED_ENV_FROM=%q\n' "$QUEUEBASH_INHERITED_ENV_FROM";
+                [[ -n "${QUEUEBASH_INHERITED_ENV_KEYS:-}" ]] && printf 'QUEUEBASH_INHERITED_ENV_KEYS=%q\n' "$QUEUEBASH_INHERITED_ENV_KEYS"
+            } >> "$running";
+            _queue_log_worker_record "$use_stream_logger" "$log" "run_pid: $cmd_pid" "run_pgid: $cmd_pgid";
+            _queue_log_event "pid_recorded" "$JOB_ID" "$JOB_NAME" "running" "pid=$cmd_pid pgid=$cmd_pgid";
+            runtime_caps_watchdog_pid="";
+            if [[ -n "${RUNTIME_CAPS:-}" ]]; then
+                _queue_log_worker_record "$use_stream_logger" "$log" "runtime_caps: ${RUNTIME_CAPS:-} interval=${RUNTIME_CAP_INTERVAL:-1} monitor=lsof/proc";
+                _queue_runtime_caps_watchdog "$running" "$log" "$cmd_pid" "$cmd_pgid" & runtime_caps_watchdog_pid="$!";
+            fi;
+            max_log_bytes="$(_queue_job_log_max_bytes "$running")";
+            log_overflow_policy="$(_queue_job_log_policy "$running")";
+            if [[ "${ALLOW_LARGE_LOG:-0}" != "1" && "$log_overflow_policy" == "kill" && "$max_log_bytes" =~ ^[0-9]+$ && "$max_log_bytes" -gt 0 ]]; then
+                _queue_log_watchdog "$JOB_ID" "$running" "$log" "$cmd_pid" "$max_log_bytes" & log_watchdog_pid="$!";
+            else
+                log_watchdog_pid="";
+            fi;
+            set +e;
+            wait "$cmd_pid";
+            rc="$?";
+            _queue_wait_stream_loggers "${stream_logger_stdout_pid:-}" "${stream_logger_stderr_pid:-}" || true;
+            [[ -n "${stream_stdout_fifo:-}" ]] && rm -f -- "$stream_stdout_fifo" 2> /dev/null || true;
+            [[ -n "${stream_stderr_fifo:-}" ]] && rm -f -- "$stream_stderr_fifo" 2> /dev/null || true;
+            if [[ -n "${log_watchdog_pid:-}" ]]; then
+                kill "$log_watchdog_pid" > /dev/null 2>&1 || true;
+                wait "$log_watchdog_pid" > /dev/null 2>&1 || true;
+            fi;
+            if [[ -n "${runtime_caps_watchdog_pid:-}" ]]; then
+                kill "$runtime_caps_watchdog_pid" > /dev/null 2>&1 || true;
+                wait "$runtime_caps_watchdog_pid" > /dev/null 2>&1 || true;
+            fi;
+            if grep -q '^RUNTIME_CAP_VIOLATED=1$' "$running" 2> /dev/null; then
+                rc=96;
+            fi;
+            _queue_record_systemd_unit_if_seen "$running" "$log" || true;
+            log_bytes_now="$(_queue_log_size_bytes "$log")";
+            max_log_bytes="$(_queue_job_log_max_bytes "$running")";
+            if [[ "$max_log_bytes" -gt 0 && "$log_bytes_now" -gt "$max_log_bytes" ]]; then
+                _queue_log_worker_record "$use_stream_logger" "$log" "" "LOG_OVERFLOW_WARNING: log size ${log_bytes_now} exceeded cap ${max_log_bytes}";
+                _queue_log_event "log_overflow_warning" "$JOB_ID" "$JOB_NAME" "running" "bytes=$log_bytes_now cap=$max_log_bytes";
+                if [[ "$log_overflow_policy" == "kill" ]] && grep -q '^LOG_OVERFLOW=1$' "$running" 2> /dev/null; then
+                    rc=97;
+                fi;
+            fi;
+            _queue_log_worker_record "$use_stream_logger" "$log" "" "finished: $(_queue_now_iso)" "exit_code: $rc";
+            exit "$rc"
+        } > "$log" 2>&1 );
+        local rc="$?";
+        if [[ "$rc" -eq 0 ]]; then
+            if [[ -f "$running" ]]; then
+                _queue_append_summary_to_job "$running" 0 "$log";
+                mv "$running" "$done";
+                _queue_job_stream_temp_cleanup "$id";
+                _queue_log_event "done" "$id" "$(_queue_job_name "$done")" "done" "exit_code=0";
+                echo "[worker $worker_id] done $id";
+                if _queue_job_has_array "$done" ON_SUCCESS; then
+                    ( source "$done";
+                    cd "$PWD_AT_SUBMIT" || exit 98;
+                    { 
+                        echo;
+                        echo "=== on-success hook for $JOB_ID ===";
+                        echo "started: $(_queue_now_iso)";
+                        printf "hook:";
+                        printf " %q" "${ON_SUCCESS[@]}";
+                        echo;
+                        "${ON_SUCCESS[@]}";
+                        hook_rc="$?";
+                        echo "hook_exit_code: $hook_rc";
+                        echo "finished: $(_queue_now_iso)"
+                    } >> "$log" 2>&1 );
+                fi;
+                _queue_maybe_gzip_completed_job_log "$id" "$done";
+            else
+                external_state="$(_queue_worker_external_move_state "$id")";
+                if [[ "$external_state" == "cancelled" ]]; then
+                    _queue_log_event "worker_observed_cancelled" "$id" "$JOB_NAME" "cancelled" "worker=$worker_id rc=0";
+                    echo "[worker $worker_id] cancelled $id (operator moved record while worker was finishing)";
+                else
+                    echo "[worker $worker_id] done $id but queue record was moved externally to $external_state; no success/failure hook run by worker";
+                fi;
+            fi;
+        else
+            if [[ -f "$running" ]]; then
+                if _queue_should_retry_failed_job "$running"; then
+                    retry_done_old="$(grep '^RETRIES_DONE=' "$running" 2> /dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2> /dev/null)";
+                    retry_done_old="${retry_done_old:-0}";
+                    retry_done_new=$((retry_done_old + 1));
+                    retry_backoff="$(grep '^RETRY_BACKOFF=' "$running" 2> /dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2> /dev/null)";
+                    retry_backoff="${retry_backoff:-0}";
+                    [[ "$retry_backoff" =~ ^[0-9]+$ ]] || retry_backoff=0;
+                    not_before=$(( $(_queue_epoch_now) + retry_backoff ));
+                    if _queue_job_has_array "$running" ON_RETRY_FAILURE; then
+                        ( source "$running";
+                        cd "$PWD_AT_SUBMIT" || exit 98;
+                        { 
+                            echo;
+                            echo "=== on-retry-failure hook for $JOB_ID ===";
+                            echo "started: $(_queue_now_iso)";
+                            printf "hook:";
+                            printf " %q" "${ON_RETRY_FAILURE[@]}";
+                            echo;
+                            "${ON_RETRY_FAILURE[@]}";
+                            hook_rc="$?";
+                            echo "hook_exit_code: $hook_rc";
+                            echo "finished: $(_queue_now_iso)"
+                        } >> "$log" 2>&1 );
+                    fi;
+                    retry_id="$(_queue_id)";
+                    _queue_clone_retry_to_pending "$running" "$retry_id" "$retry_done_new" "$not_before";
+                    _queue_append_summary_to_job "$running" "$rc" "$log";
+                    mv "$running" "$failed";
+                    _queue_job_stream_temp_cleanup "$id";
+                    _queue_log_event "retry_scheduled" "$retry_id" "$(_queue_job_name "$(_queue_job_pending_path_by_id "$retry_id" "$root" 2> /dev/null || true)")" "pending" "from=$id attempt=$retry_done_new backoff=$retry_backoff exit_code=$rc";
+                    _queue_log_event "failed_retrying" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc retry=$retry_id";
+                    echo "[worker $worker_id] failed $id rc=$rc; scheduled retry $retry_id attempt $retry_done_new after ${retry_backoff}s";
+                    _queue_maybe_gzip_completed_job_log "$id" "$failed";
+                    continue;
+                fi;
+                _queue_append_summary_to_job "$running" "$rc" "$log";
+                mv "$running" "$failed";
+                _queue_job_stream_temp_cleanup "$id";
+                _queue_log_event "failed" "$id" "$(_queue_job_name "$failed")" "failed" "exit_code=$rc";
+                echo "[worker $worker_id] failed $id rc=$rc";
+                if _queue_job_has_array "$failed" ON_FAILURE; then
+                    ( source "$failed";
+                    cd "$PWD_AT_SUBMIT" || exit 98;
+                    { 
+                        echo;
+                        echo "=== on-failure hook for $JOB_ID ===";
+                        echo "started: $(_queue_now_iso)";
+                        printf "hook:";
+                        printf " %q" "${ON_FAILURE[@]}";
+                        echo;
+                        "${ON_FAILURE[@]}";
+                        hook_rc="$?";
+                        echo "hook_exit_code: $hook_rc";
+                        echo "finished: $(_queue_now_iso)"
+                    } >> "$log" 2>&1 );
+                fi;
+                _queue_maybe_gzip_completed_job_log "$id" "$failed";
+            else
+                external_state="$(_queue_worker_external_move_state "$id")";
+                if [[ "$external_state" == "cancelled" ]]; then
+                    _queue_log_event "worker_observed_cancelled" "$id" "$JOB_NAME" "cancelled" "worker=$worker_id rc=$rc";
+                    echo "[worker $worker_id] cancelled $id (operator cancellation observed; payload rc=$rc)";
+                else
+                    echo "[worker $worker_id] failed $id rc=$rc but queue record was moved externally to $external_state; no failure hook run by worker";
+                fi;
+            fi;
+        fi;
+    done;
+    return 0
+}
+
+# Legacy text QueueManager REPL removed in 0.16.14.
+
+# -------------------------------------------------------------------
+# Completion
+# -------------------------------------------------------------------
+
+_queue_complete() {
+    COMPREPLY=()
+    local cur prev
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    local commands="--dryrun -n submit submit-at submit-in list ls find show status stat cleared clearance audit explain deps dependencies waiting blocked scheduled schedule tail stream follow class classes assets facilities reporters reporting claims resources pids pid ps metrics metric unit hooks hook onsuccess on-success onok on-ok onfailure on-failure onfail on-fail priority prio dynamic-prio pause hold unpause resume release cancel kill delete del rm remove undelete undel restore resubmit retry health stats events watch run start scheduled schedule compress-logs gzip-logs clean-logs cleanlogs log-clean logs-clean clear version --version -V backup reevaluate re-evaluate recheck policy-reevaluate help --help -h"
+
+    if [[ "$COMP_CWORD" -eq 1 ]]; then
+        COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+        return 0
+    fi
+
+    case "${COMP_WORDS[1]}" in
+        submit)
+            if [[ "$prev" == "--priority" || "$prev" == "-p" ]]; then
+                COMPREPLY=( $(compgen -W "0 1 5 10 25 50 75 100 200 --dryrun -n" -- "$cur") )
+                return 0
+            fi
+            if [[ "$prev" == "--" ]]; then
+                COMPREPLY=( $(compgen -c -- "$cur") )
+                return 0
+            fi
+            COMPREPLY=( $(compgen -W "--dryrun -n --priority -p --retries --backoff --retry-delay --cpu --mem --memory --runner --class --queue-class --after-success --after --depends-on --max-log-size --allow-large-log --no-log-cap --on-success --on-retry-failure --on-attempt-failure --on-failure --" -- "$cur") )
+            COMPREPLY+=( $(compgen -c -- "$cur") )
+            COMPREPLY+=( $(compgen -f -- "$cur") )
+            return 0
+            ;;
+
+        list|ls)
+            if [[ "$prev" == "--state" || "$prev" == "-s" ]]; then
+                COMPREPLY=( $(compgen -W "all pending running paused done failed pol_blocked interrupted cancelled deleted" -- "$cur") )
+                return 0
+            fi
+            COMPREPLY=( $(compgen -W "--state -s --name -n --filter -f" -- "$cur") )
+            COMPREPLY+=( $(compgen -W "$(_queue_job_id_and_names_for_completion)" -- "$cur") )
+            return 0
+            ;;
+
+        show|explain|deps|dependencies|waiting|blocked|scheduled|schedule|tail|follow|pids|pid|ps|metrics|metric|unit|hooks|hook|pause|hold|unpause|resume|release|cancel|kill|delete|del|rm|remove|undelete|undel|restore|resubmit|retry)
+            if [[ "$COMP_CWORD" -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "$(_queue_job_id_and_names_for_completion)" -- "$cur") )
+                return 0
+            fi
+            if [[ "$COMP_CWORD" -ge 3 ]]; then
+                COMPREPLY=( $(compgen -W "--force -f --dryrun -n pending done failed" -- "$cur") )
+                return 0
+            fi
+            ;;
+
+        onsuccess|on-success|onok|on-ok|onfailure|on-failure|onfail|on-fail)
+            if [[ "$COMP_CWORD" -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "$(_queue_job_id_and_names_for_completion)" -- "$cur") )
+                return 0
+            fi
+            if [[ "$COMP_CWORD" -eq 3 ]]; then
+                COMPREPLY=( $(compgen -W "--" -- "$cur") )
+                return 0
+            fi
+            if [[ "${COMP_WORDS[3]}" == "--" ]]; then
+                COMPREPLY=( $(compgen -c -- "$cur") )
+                COMPREPLY+=( $(compgen -f -- "$cur") )
+                return 0
+            fi
+            ;;
+
+        priority|prio|dynamic-prio)
+            if [[ "$COMP_CWORD" -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "$(_queue_job_id_and_names_for_completion)" -- "$cur") )
+                return 0
+            fi
+            if [[ "$COMP_CWORD" -eq 3 ]]; then
+                COMPREPLY=( $(compgen -W "0 1 5 10 25 50 75 100 200" -- "$cur") )
+                return 0
+            fi
+            ;;
+
+        run|start)
+            if [[ "$COMP_CWORD" -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "--workers -w --detach -d --background --dryrun -n" -- "$cur") )
+                return 0
+            fi
+            if [[ "$prev" == "--workers" ]]; then
+                COMPREPLY=( $(compgen -W "1 2 3 4 5 6 7 8 12 16" -- "$cur") )
+                return 0
+            fi
+            ;;
+
+        clear)
+            COMPREPLY=( $(compgen -W "done failed paused interrupted cancelled deleted all --dryrun -n" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    COMPREPLY=( $(compgen -f -- "$cur") )
+    return 0
+}
+
+
+
+
+_queue_asset_hint_from_helper() {
+    local facility="$1"
+    local family helper
+    family="${facility%%:*}"
+    [[ -n "$family" && "$family" != "$facility" ]] || return 1
+
+    helper="$(_queue_asset_helper_path "$family")"
+    [[ -f "$helper" ]] || return 1
+
+    (
+        source "$helper" >/dev/null 2>&1 || exit 1
+
+        local fac target params example notes desc
+
+        # Preferred contract: helper publishes exact editor hints.
+        if declare -F queue_asset_hints >/dev/null 2>&1; then
+            while IFS=$'\t' read -r fac target params example notes; do
+                [[ "$fac" == "$facility" ]] || continue
+                echo "Facility: $fac"
+                [[ -n "$target" ]] && echo "Target:   ${target#target=}"
+                [[ -n "$params" ]] && echo "Params:   ${params#params=}"
+                [[ -n "$example" ]] && { echo "Example:"; echo "  ${example#example=}"; }
+                [[ -n "$notes" ]] && { echo "Notes:"; echo "  ${notes#notes=}"; }
+                exit 0
+            done < <(queue_asset_hints)
+        fi
+
+        # Compatibility fallback for existing installed helpers that have not
+        # been refreshed since queue_asset_hints was introduced.
+        if declare -F queue_asset_facilities >/dev/null 2>&1; then
+            while IFS= read -r line; do
+                fac="${line%%[[:space:]]*}"
+                [[ "$fac" == "$facility" ]] || continue
+                desc="${line#"$fac"}"
+                desc="${desc#"${desc%%[![:space:]]*}"}"
+
+                echo "Facility: $fac"
+                echo "Target:   see helper/plugin documentation"
+                echo "Params:   key=value parameters depend on this helper"
+                echo "Example:"
+                echo "  queue_class_shared_asset ${fac%%:*} ${fac#*:} \"TARGET\" key=value"
+                [[ -n "$desc" ]] && { echo "Notes:"; echo "  $desc"; }
+                exit 0
+            done < <(queue_asset_facilities)
+        fi
+
+        exit 3
+    )
+}
+
+_queue_asset_hints_from_helpers() {
+    local root="$(_queue_root)"
+    local helper
+    shopt -s nullglob
+    for helper in "$root/assets.d"/*.sh; do
+        [[ -f "$helper" ]] || continue
+        (
+            source "$helper" >/dev/null 2>&1 || exit 0
+
+            if declare -F queue_asset_hints >/dev/null 2>&1; then
+                queue_asset_hints
+                exit 0
+            fi
+
+            # Compatibility fallback: synthesize minimal hint records from
+            # published facilities. This keeps QueueManager useful even when
+            # local helper files pre-date the hint contract.
+            if declare -F queue_asset_facilities >/dev/null 2>&1; then
+                local line fac desc family check
+                while IFS= read -r line; do
+                    fac="${line%%[[:space:]]*}"
+                    [[ "$fac" == *:* ]] || continue
+                    desc="${line#"$fac"}"
+                    desc="${desc#"${desc%%[![:space:]]*}"}"
+                    family="${fac%%:*}"
+                    check="${fac#*:}"
+                    printf '%s\ttarget=%s\tparams=%s\texample=%s\tnotes=%s\n' \
+                        "$fac" \
+                        "see helper/plugin documentation" \
+                        "key=value parameters depend on this helper" \
+                        "queue_class_shared_asset $family $check \"TARGET\" key=value" \
+                        "$desc"
+                done < <(queue_asset_facilities)
+            fi
+        )
+    done
+    shopt -u nullglob
+}
+
+_queue_asset_hints_print() {
+    local facility="${1:-}"
+    if [[ -n "$facility" ]]; then
+        if _queue_asset_hint_from_helper "$facility"; then
+            return 0
+        fi
+        echo "No published helper hint for: $facility"
+        return 1
+    fi
+
+    _queue_asset_hints_from_helpers | awk -F '\t' '
+        NF > 0 && $1 != "" {
+            printf "%-28s", $1
+            for (i=2; i<=NF; i++) {
+                if ($i ~ /^target=/) {
+                    v=$i; sub(/^target=/, "", v); printf " target=%s", v
+                }
+            }
+            printf "\n"
+        }
+    ' | sort -u
+}
+
+
+
+_queue_assets_completion_words() {
+    printf '%s\n' "list show validate duplicates dupes replace rollback backups refresh delete archive undelete unarchive enable disable archives explain expand"
+}
+
+# Shell-side class wizard helper functions.
+#
+# The Python QueueManager Class Creator is the primary interactive class editor,
+# but these helpers remain as a stable, source-able shell contract for tests,
+# fallback tooling, and non-curses environments.  They deliberately only publish
+# data and render record-format class text; they do not run the old legacy
+# QueueManager menu.
+_queue_mgr_list_facilities_compact() {
+    local root helper src_dir
+    local -a dirs=()
+
+    # Test harnesses can point QUEUEBASH_PLUGIN_SOURCE_DIR at a fixture tree.
+    if [[ -n "${QUEUEBASH_PLUGIN_SOURCE_DIR:-}" ]]; then
+        dirs+=("$QUEUEBASH_PLUGIN_SOURCE_DIR/assets.d")
+        dirs+=("$QUEUEBASH_PLUGIN_SOURCE_DIR")
+    fi
+
+    root="$(_queue_root 2>/dev/null || printf '%s' "${QUEUEBASH_ROOT:-$HOME/.queuebash}")"
+    dirs+=("$root/assets.d")
+    dirs+=("${BASH_SOURCE[0]%/*}/assets.d")
+
+    (
+        shopt -s nullglob
+        local seen_dir=""
+        for src_dir in "${dirs[@]}"; do
+            [[ -d "$src_dir" ]] || continue
+            case ":$seen_dir:" in *:"$src_dir":*) continue ;; esac
+            seen_dir="$seen_dir:$src_dir"
+
+            for helper in "$src_dir"/*.sh; do
+                [[ -f "$helper" ]] || continue
+                (
+                    source "$helper" >/dev/null 2>&1 || exit 0
+                    if declare -F queue_asset_facilities >/dev/null 2>&1; then
+                        queue_asset_facilities | awk '{print $1}'
+                    fi
+                )
+            done
+        done
+    ) | awk 'NF && $1 ~ /^[A-Za-z_][A-Za-z0-9_]*:[A-Za-z_][A-Za-z0-9_]*$/ { print $1 }' | sort -u
+}
+
+_queue_mgr_facility_family() {
+    local facility="${1:-}"
+    [[ "$facility" == *:* ]] || return 1
+    printf '%s\n' "${facility%%:*}"
+}
+
+_queue_mgr_facility_check() {
+    local facility="${1:-}"
+    [[ "$facility" == *:* ]] || return 1
+    printf '%s\n' "${facility#*:}"
+}
+
+_queue_mgr_wizard_render_preview() {
+    local class_name="${1:-}"
+    local allow_parallel="${2:-1}"
+    local max_concurrent="${3:-0}"
+    local defaults_file="${4:-}"
+    shift 4 2>/dev/null || true
+
+    [[ -n "$class_name" ]] || { echo "class wizard: class name required" >&2; return 2; }
+    _queue_class_valid_name "$class_name" || { echo "class wizard: invalid class name: $class_name" >&2; return 2; }
+    [[ "$allow_parallel" =~ ^[01]$ ]] || { echo "class wizard: CLASS_ALLOW_PARALLEL must be 0 or 1" >&2; return 2; }
+    [[ "$max_concurrent" =~ ^[0-9]+$ ]] || { echo "class wizard: CLASS_MAX_CONCURRENT must be numeric" >&2; return 2; }
+
+    printf '# bashqueues class: %s\n' "$class_name"
+    printf '#\n'
+    printf '# Generated by queue mgr class wizard helpers.\n'
+    printf '#\n'
+    printf 'CLASS_ALLOW_PARALLEL=%s\n' "$allow_parallel"
+    printf 'CLASS_MAX_CONCURRENT=%s\n' "$max_concurrent"
+
+    if [[ -n "$defaults_file" && -f "$defaults_file" ]]; then
+        local line
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            case "$line" in
+                ''|'#'*) continue ;;
+                CLASS_DEFAULT_*=*) printf '%s\n' "$line" ;;
+            esac
+        done < "$defaults_file"
+    fi
+
+    if [[ "$#" -gt 0 ]]; then
+        printf '\n'
+        local record
+        for record in "$@"; do
+            [[ -n "$record" ]] || continue
+            printf '%s\n' "$record"
+        done
+    fi
+}
+
+
+complete -F _queue_complete queue
+
+
+# Compatibility wrapper: bare `queuemgr` now routes through the panel-only QueueManager entry.
+queuemgr() {
+    queue mgr "$@"
+}
+
+_queuemgr_complete() {
+    local cur prev
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    case "$prev" in
+        --state|-s)
+            COMPREPLY=( $(compgen -W "all pending running paused done failed pol_blocked interrupted cancelled deleted" -- "$cur") )
+            return 0
+            ;;
+        --filter|-f|--name|-n)
+            COMPREPLY=( $(compgen -W "$(_queue_job_id_and_names_for_completion)" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    COMPREPLY=( $(compgen -W "--filter -f --state -s --name -n" -- "$cur") )
+    COMPREPLY+=( $(compgen -W "$(_queue_job_id_and_names_for_completion)" -- "$cur") )
+    return 0
+}
+
+complete -F _queuemgr_complete queuemgr
+
+_overfiles_complete() {
+    COMPREPLY=()
+    local cur prev
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    if [[ "$COMP_CWORD" -eq 1 ]]; then
+        COMPREPLY=( $(compgen -W "--help -h --dryrun" -- "$cur") )
+        COMPREPLY+=( $(compgen -f -- "$cur") )
+        return 0
+    fi
+
+    if [[ "$prev" == "--dryrun" ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+        return 0
+    fi
+
+    if [[ "$cur" == \{* ]]; then
+        COMPREPLY=( $(compgen -W "{1}" -- "$cur") )
+        return 0
+    fi
+
+    COMPREPLY=( $(compgen -c -- "$cur") )
+    COMPREPLY+=( $(compgen -f -- "$cur") )
+    COMPREPLY+=( $(compgen -W "{1}" -- "$cur") )
+    return 0
+}
+
+complete -o default -F _overfiles_complete overfiles
+
+_overdir_complete() {
+    COMPREPLY=()
+    local cur prev
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    if [[ "$COMP_CWORD" -eq 1 ]]; then
+        COMPREPLY=( $(compgen -W "--help -h --dryrun" -- "$cur") )
+        COMPREPLY+=( $(compgen -d -- "$cur") )
+        return 0
+    fi
+
+    if [[ "$prev" == "--dryrun" ]]; then
+        COMPREPLY=( $(compgen -d -- "$cur") )
+        return 0
+    fi
+
+    if [[ "$cur" == \{* ]]; then
+        COMPREPLY=( $(compgen -W "{1}" -- "$cur") )
+        return 0
+    fi
+
+    COMPREPLY=( $(compgen -c -- "$cur") )
+    COMPREPLY+=( $(compgen -d -- "$cur") )
+    COMPREPLY+=( $(compgen -W "{1}" -- "$cur") )
+    return 0
+}
+
+complete -o default -F _overdir_complete overdir

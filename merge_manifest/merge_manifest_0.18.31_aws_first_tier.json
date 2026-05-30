@@ -1,0 +1,23 @@
+{
+  "added": [
+    "providers.d/aws/aws_provider.sh",
+    "assets.d/aws.sh",
+    "docs/AWS_PROVIDER_CONTRACTS.md",
+    "docs/AWS_LEGAL_COMPLIANCE.md",
+    "policies.d/aws/*",
+    "classes/CLOUD_AWS_*.env",
+    "tests/fixtures/aws/*",
+    "tests/aws_provider_*",
+    "examples/cloud-resource/aws-vm-gdpr.example.json"
+  ],
+  "base": "bashqueues_0.18.30_cloud_resource_provider_contract_final_with_queue_ask_notes_repaired.zip",
+  "boundaries": [
+    "no live AWS provisioning",
+    "no queue dispatch refactor",
+    "cloud_resource remains provider-neutral",
+    "overall platform parity still not_equal_yet"
+  ],
+  "package": "aws_first_tier_cloud_platform_parity",
+  "schema": "queuebash.merge_manifest.v1",
+  "version": "0.18.31"
+}

@@ -1,0 +1,97 @@
+{
+  "schema": "queuebash.bob_merger.full_delivery.v2",
+  "created_at": "2026-05-30T10:01:19.492900+00:00",
+  "base": "bashqueues_0.18.49_BOB_MERGER_full_delivery.zip",
+  "output": "bashqueues_0.18.49_BOB_MERGER_round2_full_delivery.zip",
+  "version_policy": "QUEUEBASH_VERSION remains 0.18.49 because Bob12 and Bob11 patches are 0.18.49 runtime patches and Bob2 0.18.50 is static-test cleanup only.",
+  "applied_patchsets": [
+    "bashqueues_0.18.49_BOB12_patchset_file_registry_hardening.patchset.zip",
+    "bashqueues_0.18.50_BOB2_followup_static_version_pin_cleanup_patchset.zip",
+    "bashqueues_0.18.49_BOB11_ask_watsonx_live_provider_pack_patchset.zip"
+  ],
+  "collision_resolution": {
+    "queuebash.sh": "3-way merged Bob12 queue dev patchset hardening and Bob11 watsonx ask-provider changes; command areas are disjoint.",
+    "README.md_CHANGELOG.md": "additive release-ledger merge preserving Bob10, Bob12, and Bob11 entries.",
+    "static_tests": "resolved version-pin and ledger assertion overlap by preserving Bob12/Bob11 assertions and Bob2 0.18.49+ compatibility loosening where intended.",
+    ".queuebash/dev/scratchpad.json": "merged additively by scratchpad item id; one Bob2 follow-up item added."
+  },
+  "validation_logs": [
+    "validation_0.18.49_BOB_MERGER_round2.log",
+    "focused_tests_0.18.49_BOB_MERGER_round2.log",
+    "queue_dev_inspect_0.18.49_BOB_MERGER_round2.log",
+    "cleanup_0.18.49_BOB_MERGER_round2.log"
+  ],
+  "inventory": [
+    {
+      "manifest": "/mnt/data/merge_work/bob12/manifest.json",
+      "created_at": "2026-05-30T09:47:28.535626+00:00",
+      "entries": 19,
+      "relpaths": [
+        "CHANGELOG.md",
+        "README.md",
+        "cleanup_0.18.49_BOB12_patchset_file_registry_hardening.log",
+        "docs/QUEUE_DEV_PATCHSET_HARDENING.md",
+        "merge_manifest_0.18.49_BOB12_patchset_file_registry_hardening.json",
+        "queuebash.sh",
+        "tests/ask_anthropic_provider_static.sh",
+        "tests/ask_openai_provider_static.sh",
+        "tests/azure_provider_contracts_static.sh",
+        "tests/dev_attempt_evidence_static.sh",
+        "tests/dev_file_registry_static.sh",
+        "tests/dev_patchset_hardening_smoke.sh",
+        "tests/dev_patchset_hardening_static.sh",
+        "tests/dev_patchset_new_file_smoke.sh",
+        "tests/hybrid_onprem_provider_contracts_static.sh",
+        "tests/provider_explainability_standard_static.sh",
+        "tests/provider_family_consistency_static.sh",
+        "tests/provider_primary_source_validation_static.sh",
+        "validation_0.18.49_BOB12_patchset_file_registry_hardening.log"
+      ]
+    },
+    {
+      "manifest": "/mnt/data/merge_work/bob2f/manifest.json",
+      "created_at": "2026-05-30T09:47:04.954432+00:00",
+      "entries": 10,
+      "relpaths": [
+        "tests/aws_provider_contracts_static.sh",
+        "tests/azure_provider_contracts_static.sh",
+        "tests/cloud_resource_provider_contract_static.sh",
+        "tests/remote_queue_command_static.sh",
+        "tests/oci_governance_provider_contract_static.sh",
+        "tests/hybrid_onprem_provider_contracts_static.sh",
+        "tests/provider_family_consistency_static.sh",
+        "tests/provider_explainability_standard_static.sh",
+        "tests/provider_primary_source_validation_static.sh",
+        ".queuebash/dev/scratchpad.json"
+      ]
+    },
+    {
+      "manifest": "/mnt/data/merge_work/bob11/manifest.json",
+      "created_at": "2026-05-30T09:44:15.382379+00:00",
+      "entries": 21,
+      "relpaths": [
+        "CHANGELOG.md",
+        "README.md",
+        "docs/AI_AUDIT_LOGGING.md",
+        "docs/ASK_PROVIDER_CONTRACT.md",
+        "policies.d/ask/providers.tsv.example",
+        "queuebash.sh",
+        "tests/ask_anthropic_provider_static.sh",
+        "tests/ask_openai_provider_static.sh",
+        "tests/dev_attempt_evidence_static.sh",
+        "tests/dev_file_registry_static.sh",
+        "tests/hybrid_onprem_provider_contracts_static.sh",
+        "tests/provider_explainability_standard_static.sh",
+        "tests/provider_family_consistency_static.sh",
+        "tests/provider_primary_source_validation_static.sh",
+        "bin/queue-ai-ask-watsonx",
+        "providers.d/ask/watsonx.sh",
+        "docs/ASK_WATSONX_PROVIDER.md",
+        "policies.d/ask/watsonx.env.example",
+        "examples/providers/ai/watsonx.env.example",
+        "tests/ask_watsonx_provider_static.sh",
+        "tests/ask_watsonx_provider_smoke.sh"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "version": "0.18.40",
+  "package": "bashqueues_0.18.40_BOB10_cloud_provisioning_lifecycle_ask_provider_merged",
+  "base": "bashqueues_0.18.39_BOB10_edge_cloud_cloud_provisioning_ask_provider_merged.zip",
+  "overlay": "bashqueues_0.18.39_BOB10_cloud_provisioning_dry_run_lifecycle.zip",
+  "preserved": [
+    "ask provider contract/discovery and fixture execution",
+    "edge cloud provider contracts",
+    "cloud provisioning contract",
+    "dry-run-only cloud_provision boundary",
+    "fixture-first/no-live provider boundaries"
+  ],
+  "added": [
+    "cloud_provision lifecycle-plan",
+    "cloud_provision registry-preview",
+    "cloud provisioning lifecycle dry-run docs",
+    "cloud provisioning registry handoff docs",
+    "cloud_provision lifecycle and registry preview tests"
+  ],
+  "non_goals_preserved": [
+    "no live cloud API calls",
+    "no provider credentials required for default tests",
+    "no provisioning or destruction",
+    "no registry writes by default",
+    "no queue dispatch refactor"
+  ]
+}

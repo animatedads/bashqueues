@@ -1,0 +1,29 @@
+{
+  "schema": "queuebash.bob_merger.full_delivery.v1",
+  "version": "0.18.54",
+  "base": "bashqueues_0.18.53_BOB_MERGER_qbtest_embedded_function_tests_full_delivery.zip",
+  "applied_patchsets": [
+    "bashqueues_0.18.52_BOB11_ask_mistral_live_provider_pack_patchset.zip",
+    "bashqueues_0.18.52_BOB2_scratchpad_authority_shape_guard_patchset.zip",
+    "bashqueues_0.18.52_BOB10_azure_gcp_first_tier_platform_parity.patchset.zip"
+  ],
+  "expected_hits": [
+    "README.md ledger",
+    "CHANGELOG.md ledger",
+    "version identity",
+    ".queuebash/dev/scratchpad.json"
+  ],
+  "runtime_changes": [
+    "queue ask provider support for mistral",
+    "QUEUEBASH_VERSION=0.18.54"
+  ],
+  "non_runtime_contract_changes": [
+    "scratchpad authority-shape static guard",
+    "Azure/GCP first-tier platform parity docs/policies/tests"
+  ],
+  "cleanup_policy": {
+    "assets_d_net_usage_sh": "absent",
+    "caps_d_net_usage_sh": "present",
+    "python_cache_artifacts": "absent"
+  }
+}

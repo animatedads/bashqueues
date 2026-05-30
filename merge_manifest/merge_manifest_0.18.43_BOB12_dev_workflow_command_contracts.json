@@ -1,0 +1,36 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "version": "0.18.43",
+  "package": "BOB12_dev_workflow_command_contracts",
+  "base": "bashqueues_0.18.42_BOB12_queue_dev_contract_cleanup_merged_scratchpad_curated.zip",
+  "summary": "Contract/docs/static-tests package for proposed queue dev workflow commands without command implementation or dispatcher refactor.",
+  "changed_files": [
+    "queuebash.sh",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/QUEUE_DEV_WORKFLOW_COMMANDS.md",
+    "docs/QUEUE_DEV_WORKFLOW_SCHEMAS.md",
+    "docs/QUEUE_DEV_WORKFLOW_SECURITY_MODEL.md",
+    "schemas/dev_workflow/context.example.json",
+    "schemas/dev_workflow/think.example.json",
+    "schemas/dev_workflow/attempt_begin.example.json",
+    "schemas/dev_workflow/attempt_end.example.json",
+    "schemas/dev_workflow/evidence_record.example.json",
+    "schemas/dev_workflow/handover.example.json",
+    "schemas/dev_workflow/scratchpad_status.example.json",
+    "schemas/dev_workflow/supersede.example.json",
+    "tests/queue_dev_contract_static.sh",
+    "tests/queue_dev_workflow_contract_static.sh",
+    "tests/queue_dev_workflow_json_contract_static.py"
+  ],
+  "boundaries": [
+    "No queue dev workflow command handlers implemented in this package.",
+    "No queuebash dispatcher refactor.",
+    "No dynamic queue dev JSON probes added.",
+    "No automatic scratchpad mutation from validation.",
+    "No live provider/API work.",
+    "assets.d/net_usage.sh remains absent."
+  ],
+  "validation_log": "validation_0.18.43_BOB12_dev_workflow_command_contracts.log",
+  "cleanup_log": "cleanup_0.18.43_BOB12_dev_workflow_command_contracts.log"
+}

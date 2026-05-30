@@ -1,0 +1,37 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "version": "0.18.46",
+  "package": "bashqueues_0.18.46_BOB10_registry_handoff_dev_registry_merge.zip",
+  "base": "bashqueues_0.18.45_BOB12_dev_file_registry_patchset_export.zip",
+  "merged_input": "bashqueues_0.18.43_BOB10_cloud_provisioning_registry_handoff.zip",
+  "owner": "BOB10",
+  "summary": "Merged Bob10 cloud provisioning registry handoff into Bob12 dev file registry/patchset export base and used queue dev files/patchset tooling for release tracking.",
+  "preserved_boundaries": [
+    "no live cloud API calls",
+    "no provider credentials required",
+    "no provisioning/destruction",
+    "no queue dispatch refactor",
+    "planned registry handoff records remain non-claimable by default",
+    "Bob12 queue dev files and patchset tooling preserved"
+  ],
+  "added_files": [
+    "docs/CLOUD_PROVISIONING_REGISTRY_HANDOFF_CONTROLLED.md",
+    "tests/cloud_provision_registry_handoff_static.sh",
+    "tests/cloud_provision_registry_handoff_smoke.sh",
+    "tests/cloud_provision_registry_handoff_json_contract_static.py"
+  ],
+  "changed_files": [
+    "queuebash.sh",
+    "README.md",
+    "CHANGELOG.md",
+    "providers.d/cloud_provision/cloud_provision.sh",
+    "tests/dev_file_registry_static.sh",
+    "tests/cloud_resource_provider_contract_static.sh",
+    ".queuebash/dev/scratchpad.json"
+  ],
+  "dev_tools_used": [
+    "queue dev files begin/add/finish/list/changed",
+    "queue dev patchset create"
+  ],
+  "patchset_artifact": "bashqueues_0.18.46_BOB10_registry_handoff_dev_registry_merge.patchset.zip"
+}

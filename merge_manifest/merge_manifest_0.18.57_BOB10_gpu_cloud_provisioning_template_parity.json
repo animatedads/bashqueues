@@ -1,0 +1,38 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "release": "0.18.57_BOB10_gpu_cloud_provisioning_template_parity",
+  "base": "bashqueues_0.18.56_BOB_MERGER_groq_status_enum_full_delivery.zip",
+  "type": "patchset",
+  "changed_files": [
+    "README.md",
+    "CHANGELOG.md",
+    "queuebash.sh",
+    "docs/CLOUD_PROVISIONING_GPU_TEMPLATES.md",
+    "providers.d/cloud_infra/cloud_infra.sh",
+    "providers.d/cloud_infra/gpu_cloud_stack.sh",
+    "policies.d/cloud-infra/registry.example.json",
+    "policies.d/cloud-provision/templates.example.json",
+    "tests/fixtures/cloud_infra/registry.json",
+    "tests/fixtures/cloud_infra/registry_with_instance.json",
+    "tests/cloud_provision_gpu_templates_static.sh",
+    "tests/cloud_provision_gpu_templates_smoke.sh",
+    "tests/cloud_provision_gpu_templates_json_contract_static.py",
+    ".queuebash/dev/scratchpad.json"
+  ],
+  "boundaries": [
+    "no live cloud API calls",
+    "no provider credentials required",
+    "no Kubernetes mutation",
+    "no provisioning/destruction",
+    "no queue dispatch refactor"
+  ],
+  "validation": [
+    "bash -n",
+    "new gpu template tests",
+    "cloud_provision regressions",
+    "gpu cloud regressions",
+    "dev_qbtest tests",
+    "queue dev test qbtest"
+  ],
+  "created_at": "2026-05-30T13:29:28Z"
+}

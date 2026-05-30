@@ -1,0 +1,20 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "name": "bashqueues_0.18.28_remote_queue_service_provider_contract_oci_platform_merged",
+  "base": "bashqueues_0.18.27_internal_dev_remote_runner_bridge_exposed_api_auth_key_oci_contracts_merged",
+  "overlay": "bashqueues_0.18.28_remote_queue_service_provider_contract",
+  "version": "0.18.28",
+  "merge_rules": [
+    "Preserve accepted 0.18.27 exposed API auth key + OCI merged platform base as authority for existing files.",
+    "Add remote queue service provider contract files from 0.18.28 overlay.",
+    "Bump QUEUEBASH_VERSION to 0.18.28 because the overlay is the accepted next contract package.",
+    "Prepend 0.18.28 README/CHANGELOG sections while retaining 0.18.27 merged OCI/platform history.",
+    "Do not add live remote service implementation, generic shell endpoint, OCI live calls, provisioning, or queue dispatch refactor."
+  ],
+  "added_from_overlay": [
+    "docs/REMOTE_QUEUE_SERVICE_PROVIDER.md",
+    "examples/providers/remote-queue.env.example",
+    "tests/remote_queue_service_provider_contract_static.sh",
+    "tests/remote_queue_service_provider_json_contract_static.py"
+  ]
+}

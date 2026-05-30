@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "version": "0.18.59",
+  "base": "bashqueues_0.18.58_BOB_MERGER_remote_admin_acl_gated_policy_commands_full_delivery.zip",
+  "package": "bashqueues_0.18.59_BOB12_patchset_apply_backup_hardening.patchset.zip",
+  "summary": "Patch-only Bob12 hardening for patchset apply help/check/backup and scratchpad item-level merge.",
+  "scope": [
+    "queue dev patchset apply",
+    "generated apply_patchset.sh help/check/backup/json behaviour",
+    "pre-apply backup manifest",
+    "scratchpad item-level merge"
+  ]
+}

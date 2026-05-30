@@ -1,0 +1,28 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "version": "0.18.45",
+  "package": "BOB12_dev_file_registry_patchset_export",
+  "base": "bashqueues_0.18.44_BOB12_scratchpad_lifecycle_commands.zip",
+  "summary": "Adds queue dev file registry and guarded patch-set export for multistream development work.",
+  "changed_files": [
+    "queuebash.sh",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/QUEUE_DEV_FILE_REGISTRY.md",
+    "docs/QUEUE_DEV_PATCHSET_EXPORT.md",
+    "schemas/dev_workflow/file_registry.example.json",
+    "schemas/dev_workflow/patchset.example.json",
+    "tests/dev_file_registry_static.sh",
+    "tests/dev_file_registry_json_contract_static.py",
+    "tests/dev_file_registry_smoke.sh",
+    "tests/dev_scratchpad_lifecycle_static.sh"
+  ],
+  "validation": "validation_0.18.45_BOB12_dev_file_registry_patchset_export.log",
+  "cleanup": "cleanup_0.18.45_BOB12_dev_file_registry_patchset_export.log",
+  "boundaries": [
+    "No context/think/handover command handlers in this package",
+    "No automatic validation self-acceptance",
+    "No restoration of assets.d/net_usage.sh",
+    "Patch-set apply scripts require file/function MD5 preconditions"
+  ]
+}
