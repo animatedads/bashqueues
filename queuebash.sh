@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.22"
+QUEUEBASH_VERSION="0.18.59"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -528,6 +528,10 @@ _queue_now() {
     # Bash builtin timestamp; avoids forking `date` in submit/worker hot paths.
     printf '%(%Y%m%d_%H%M%S)T\n' -1 2>/dev/null || date +"%Y%m%d_%H%M%S"
 }
+# QBTEST:BEGIN name=queue-now-format function=_queue_now language=bash
+# QBTEST:B64
+# b3V0PSIkKF9xdWV1ZV9ub3cpIgpbWyAiJG91dCIgPX4gXlswLTldezh9X1swLTldezZ9JCBdXQo=
+# QBTEST:END
 
 _queue_now_nonce() {
     # Prefer Bash's EPOCHREALTIME to avoid `date +%N` forks during batch submits.
@@ -4788,7 +4792,13 @@ _queue_next_job() {
         deps="$(_queue_job_field_fast "$f" DEPENDS_AFTER_SUCCESS 2>/dev/null || true)"
         if [[ -n "$deps" ]]; then
             for dep in $deps; do
-                [[ -f "$root/done/$dep.job" ]] && continue
+                # Dependencies may be expressed as an exact QID or a one-shot
+                # installer/job name.  queue submit accepts either form, so the
+                # dispatcher must use the same resolver rather than checking
+                # only $root/done/$dep.job.  This keeps dogfood installer chains
+                # such as system-install-core -> system-install-cron draining
+                # correctly in an isolated queue.
+                _queue_dep_token_done "$dep" && continue
                 depfile="$(_queue_job_pending_path_by_id "$dep" "$root" 2>/dev/null || true)"
                 [[ -z "$depfile" && -f "$root/running/$dep.job" ]] && depfile="$root/running/$dep.job"
                 [[ -z "$depfile" && -f "$root/paused/$dep.job" ]] && depfile="$root/paused/$dep.job"
@@ -12779,7 +12789,227 @@ EOT
 }
 
 
+
+_queue_ai_ask_provider_known() {
+    case "${1:-}" in
+        contract|fixture|ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras) return 0 ;;
+    esac
+    local source_dir
+    source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
+    [[ -f "$source_dir/providers.d/ask/${1:-}.sh" ]]
+}
+
+_queue_ai_provider_requires_network() {
+    case "${1:-}" in
+        gemini|openai|anthropic|watsonx|mistral|deepseek|groq|cerebras|bedrock|azure_ai|vertex_ai) echo true ;;
+        *) echo false ;;
+    esac
+}
+
+_queue_ai_provider_supports_json() {
+    case "${1:-}" in
+        contract|fixture|ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras) echo true ;;
+        *) echo false ;;
+    esac
+}
+
+_queue_ai_provider_live_supported() {
+    case "${1:-}" in
+        ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras) echo true ;;
+        *) echo false ;;
+    esac
+}
+
+_queue_ai_provider_available() {
+    local provider="${1:-}" source_dir helper
+    source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
+    case "$provider" in
+        contract|fixture) echo true ;;
+        ollama)
+            helper="${QUEUEBASH_AI_OLLAMA_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-ollama"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        gemini)
+            helper="${QUEUEBASH_AI_GEMINI_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-gemini"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        openai)
+            helper="${QUEUEBASH_AI_OPENAI_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-openai"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        anthropic)
+            helper="${QUEUEBASH_AI_ANTHROPIC_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-anthropic"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        watsonx)
+            helper="${QUEUEBASH_AI_WATSONX_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-watsonx"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        openai_compat)
+            helper="${QUEUEBASH_AI_OPENAI_COMPAT_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-openai-compat"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        mistral)
+            helper="${QUEUEBASH_AI_MISTRAL_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-mistral"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        deepseek)
+            helper="${QUEUEBASH_AI_DEEPSEEK_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-deepseek"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        groq)
+            helper="${QUEUEBASH_AI_GROQ_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-groq"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        cerebras)
+            helper="${QUEUEBASH_AI_CEREBRAS_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-cerebras"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
+        *)
+            [[ -f "$source_dir/providers.d/ask/$provider.sh" ]] && echo true || echo false
+            ;;
+    esac
+}
+
+_queue_ai_provider_list() {
+    local source_dir f base seen=" contract fixture gemini ollama openai anthropic watsonx openai_compat mistral deepseek groq cerebras "
+    printf '%s\n' contract fixture gemini ollama openai anthropic watsonx openai_compat mistral deepseek groq cerebras
+    source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
+    if [[ -d "$source_dir/providers.d/ask" ]]; then
+        for f in "$source_dir"/providers.d/ask/*.sh; do
+            [[ -e "$f" ]] || continue
+            base="$(basename "$f" .sh)"
+            [[ "$base" == "contract" ]] && continue
+            if [[ "$seen" != *" $base "* ]]; then
+                printf '%s\n' "$base"
+                seen="$seen$base "
+            fi
+        done
+    fi
+}
+
+_queue_ai_provider_discovery_json() {
+    local provider="$1" live_enabled="false" available requires_network supports_json supports_streaming live_supported policy_allowed policy_reason
+    [[ "${QUEUEBASH_AI_LIVE_ENABLED:-0}" == "1" ]] && live_enabled="true"
+    available="$(_queue_ai_provider_available "$provider")"
+    requires_network="$(_queue_ai_provider_requires_network "$provider")"
+    supports_json="$(_queue_ai_provider_supports_json "$provider")"
+    supports_streaming="false"
+    live_supported="$(_queue_ai_provider_live_supported "$provider")"
+    policy_allowed="true"
+    policy_reason="fixture_or_contract_mode_allowed"
+    if [[ "$requires_network" == "true" && "$live_enabled" != "true" ]]; then
+        policy_reason="live_network_provider_requires_QUEUEBASH_AI_LIVE_ENABLED"
+    elif [[ "$live_supported" == "true" ]]; then
+        policy_reason="live_supported_when_enabled"
+    fi
+    printf '{'
+    printf '"schema":"queuebash.ask_provider.discovery.v1"'
+    printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+    printf ',"available":%s' "$available"
+    printf ',"live_enabled":%s' "$live_enabled"
+    printf ',"requires_network":%s' "$requires_network"
+    printf ',"supports_streaming":%s' "$supports_streaming"
+    printf ',"supports_json":%s' "$supports_json"
+    printf ',"supports_context_refs":true'
+    printf ',"supports_fixture":true'
+    printf ',"live_supported":%s' "$live_supported"
+    printf ',"policy":{"allowed":%s,"reason":"%s"}' "$policy_allowed" "$(_queue_json_escape "$policy_reason")"
+    printf '}\n'
+}
+
+_queue_ai_provider_discovery_command() {
+    local json=0 provider="" mode="list" arg
+    if [[ "${1:-}" == "providers" ]]; then
+        mode="list"; shift || true
+    elif [[ "${1:-}" == "provider" ]]; then
+        mode="provider"; shift || true
+        case "${1:-}" in
+            explain|test) mode="$1"; shift || true ;;
+        esac
+        provider="${1:-}"; [[ -n "$provider" ]] && shift || true
+    fi
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --json|-j) json=1; shift ;;
+            --fixture) shift ;;
+            *) shift ;;
+        esac
+    done
+    if [[ "$mode" == "list" ]]; then
+        if [[ "$json" -eq 1 ]]; then
+            printf '{"schema":"queuebash.ask_provider.list.v1","providers":['
+            local first=1 p
+            while IFS= read -r p; do
+                [[ -n "$p" ]] || continue
+                [[ "$first" -eq 0 ]] && printf ','
+                _queue_ai_provider_discovery_json "$p" | tr -d '\n'
+                first=0
+            done < <(_queue_ai_provider_list)
+            printf ']}\n'
+        else
+            echo "queue ask providers"
+            _queue_ai_provider_list | while IFS= read -r p; do
+                [[ -n "$p" ]] || continue
+                printf '  %s\n' "$p"
+            done
+        fi
+        return 0
+    fi
+    if [[ -z "$provider" ]]; then
+        echo "Usage: queue ask provider explain PROVIDER [--json]" >&2
+        return 2
+    fi
+    if ! _queue_ai_ask_provider_known "$provider"; then
+        echo "queue ask provider: unknown provider: $provider" >&2
+        return 1
+    fi
+    if [[ "$mode" == "test" ]]; then
+        if [[ "$json" -eq 1 ]]; then
+            printf '{'
+            printf '"schema":"queuebash.ask_provider.fixture_test.v1"'
+            printf ',"provider":"%s"' "$(_queue_json_escape "$provider")"
+            printf ',"status":"ok"'
+            printf ',"live_call_performed":false'
+            printf ',"advisory_only":true'
+            printf ',"policy_decision":"fixture_allowed"'
+            printf '}\n'
+        else
+            echo "queue ask provider fixture test: $provider: ok"
+            echo "  live call performed: no"
+            echo "  advisory only: yes"
+        fi
+        return 0
+    fi
+    if [[ "$json" -eq 1 ]]; then
+        _queue_ai_provider_discovery_json "$provider"
+    else
+        echo "queue ask provider: $provider"
+        echo "  available:        $(_queue_ai_provider_available "$provider")"
+        echo "  live enabled:     $([[ "${QUEUEBASH_AI_LIVE_ENABLED:-0}" == "1" ]] && echo true || echo false)"
+        echo "  requires network: $(_queue_ai_provider_requires_network "$provider")"
+        echo "  supports json:    $(_queue_ai_provider_supports_json "$provider")"
+        echo "  fixture test:     queue ask provider test $provider --fixture"
+    fi
+}
+
 _queue_ai_ask_command() {
+    case "${1:-}" in
+        providers|provider)
+            _queue_ai_provider_discovery_command "$@"
+            return $?
+            ;;
+    esac
     local provider="${QUEUEBASH_AI_PROVIDER:-contract}"
     local contexts="${QUEUEBASH_AI_DEFAULT_CONTEXT:-docs,commands,classes,assets,providers}"
     local json=0 live=0 model="${QUEUEBASH_AI_MODEL:-}"
@@ -12810,6 +13040,9 @@ _queue_ai_ask_command() {
                 cat <<'EOH'
 Usage:
   queue ask [--provider NAME] [--context csv] [--model NAME] [--live] [--json] "question"
+  queue ask providers [--json]
+  queue ask provider explain PROVIDER [--json]
+  queue ask provider test PROVIDER --fixture [--json]
 
 Purpose:
   Build a policy-gated advisory request for an AI responder provider.
@@ -12825,12 +13058,73 @@ Live providers:
   Google Gemini API:
     queue ask --provider gemini --model gemini-2.5-flash --live "question"
 
+  OpenAI Responses API:
+    queue ask --provider openai --model gpt-4.1-mini --live "question"
+
+  Anthropic Messages API:
+    queue ask --provider anthropic --model claude-sonnet-4-20250514 --live "question"
+
+  IBM watsonx.ai:
+    queue ask --provider watsonx --model ibm/granite-3-8b-instruct --live "question"
+
+  OpenAI-compatible local/private endpoint:
+    queue ask --provider openai_compat --model local-model --live "question"
+
+  Mistral AI:
+    queue ask --provider mistral --model mistral-small-latest --live "question"
+
+  DeepSeek:
+    queue ask --provider deepseek --model deepseek-v4-flash --live "question"
+
+  Groq:
+    queue ask --provider groq --model llama-3.3-70b-versatile --live "question"
+    queue ask --provider cerebras --model gpt-oss-120b --live "question"
+
   Gemini key lookup order:
     QUEUEBASH_AI_GEMINI_API_KEY_FILE
     QUEUEBASH_AI_GEMINI_API_KEY
     QUEUEBASH_AI_GEMINI_KEY
     GEMINI_API_KEY
     GOOGLE_API_KEY
+
+  OpenAI key lookup order:
+    QUEUEBASH_AI_OPENAI_API_KEY_FILE
+    QUEUEBASH_AI_OPENAI_API_KEY
+    OPENAI_API_KEY
+
+  Anthropic key lookup order:
+    QUEUEBASH_AI_ANTHROPIC_API_KEY_FILE
+    QUEUEBASH_AI_ANTHROPIC_API_KEY
+    ANTHROPIC_API_KEY
+
+  IBM watsonx.ai key lookup order:
+    QUEUEBASH_AI_WATSONX_BEARER_TOKEN_FILE or QUEUEBASH_AI_WATSONX_BEARER_TOKEN
+    QUEUEBASH_AI_WATSONX_API_KEY_FILE or QUEUEBASH_AI_WATSONX_API_KEY / IBM_CLOUD_API_KEY
+    QUEUEBASH_AI_WATSONX_PROJECT_ID
+
+  Mistral AI key lookup order:
+    QUEUEBASH_AI_MISTRAL_API_KEY_FILE
+    QUEUEBASH_AI_MISTRAL_API_KEY
+    MISTRAL_API_KEY
+
+  Mistral AI endpoint configuration:
+    QUEUEBASH_AI_MISTRAL_ENDPOINT (default: https://api.mistral.ai/v1/chat/completions)
+
+  DeepSeek key lookup order:
+    QUEUEBASH_AI_DEEPSEEK_API_KEY_FILE, QUEUEBASH_AI_DEEPSEEK_API_KEY, DEEPSEEK_API_KEY
+    QUEUEBASH_AI_DEEPSEEK_MODEL (default: deepseek-v4-flash)
+    QUEUEBASH_AI_DEEPSEEK_ENDPOINT (default: https://api.deepseek.com/chat/completions)
+
+  Groq key lookup order:
+    QUEUEBASH_AI_GROQ_API_KEY_FILE, QUEUEBASH_AI_GROQ_API_KEY, GROQ_API_KEY
+    QUEUEBASH_AI_GROQ_MODEL (default: llama-3.3-70b-versatile)
+    QUEUEBASH_AI_GROQ_ENDPOINT (default: https://api.groq.com/openai/v1/chat/completions)
+    QUEUEBASH_AI_CEREBRAS_MODEL (default: gpt-oss-120b)
+    QUEUEBASH_AI_CEREBRAS_ENDPOINT (default: https://api.cerebras.ai/v1/chat/completions)
+
+  OpenAI-compatible endpoint configuration:
+    QUEUEBASH_AI_OPENAI_COMPAT_ENDPOINT (default: http://127.0.0.1:8000/v1/chat/completions)
+    QUEUEBASH_AI_OPENAI_COMPAT_API_KEY_FILE or QUEUEBASH_AI_OPENAI_COMPAT_API_KEY (optional for local endpoints)
 
 Important:
   queue ask is advisory only. It cannot approve, submit, cancel, sign, override,
@@ -12957,6 +13251,71 @@ EOH
     response_len=0
     provider_execution="not_implemented_contract_only"
     job_ids_s="$(_queue_ai_detect_job_ids "$question" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+
+    if [[ "$provider" == "fixture" && "$live" -eq 0 ]]; then
+        local source_dir helper tmpdir req_file resp_file helper_rc provider_timeout response_schema
+        source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
+        helper="$source_dir/providers.d/ask/fixture.sh"
+        if [[ ! -x "$helper" ]]; then
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "fixture_provider_missing" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" 0 false false ""
+            echo "queue ask: fixture provider helper missing" >&2
+            return 1
+        fi
+        tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/queue-ai-fixture.XXXXXX")" || return 1
+        req_file="$tmpdir/request.json"
+        resp_file="$tmpdir/response.json"
+        {
+            printf '{'
+            printf '"schema":"queuebash.ask_provider.request.v1"'
+            printf ',"timestamp":"%s"' "$(_queue_json_escape "$ts")"
+            printf ',"operation":"ai.ask"'
+            printf ',"subject":"%s"' "$(_queue_json_escape "$subject")"
+            printf ',"provider":"fixture"'
+            [[ -n "$model" ]] && printf ',"model":"%s"' "$(_queue_json_escape "$model")"
+            printf ',"question":"%s"' "$(_queue_json_escape "$question")"
+            printf ',"question_sha256":"%s"' "$(_queue_json_escape "$qhash")"
+            printf ',"question_redacted":"%s"' "$(_queue_json_escape "$(_queue_ai_redact_question "$question")")"
+            printf ',"context_requested":"%s"' "$(_queue_json_escape "$requested_s")"
+            printf ',"context_allowed":"%s"' "$(_queue_json_escape "$allowed_s")"
+            printf ',"context_denied":"%s"' "$(_queue_json_escape "$denied_s")"
+            printf ',"job_ids_detected":"%s"' "$(_queue_json_escape "$job_ids_s")"
+            printf ',"live_requested":false'
+            printf ',"redactions_applied":true'
+            printf ',"advisory_only":true'
+            printf '}\n'
+        } > "$req_file"
+        provider_timeout="${QUEUEBASH_ASK_PROVIDER_TIMEOUT_SECONDS:-10}"
+        if command -v timeout >/dev/null 2>&1; then
+            timeout "$provider_timeout" "$helper" --request-json "$req_file" --output-json "$resp_file"
+            helper_rc=$?
+        else
+            "$helper" --request-json "$req_file" --output-json "$resp_file"
+            helper_rc=$?
+        fi
+        if [[ "$helper_rc" -ne 0 || ! -s "$resp_file" ]]; then
+            rm -rf "$tmpdir"
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "fixture_provider_failed_or_timed_out" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" 0 false false ""
+            echo "queue ask: fixture provider failed or timed out" >&2
+            return 1
+        fi
+        response_len="$(wc -c < "$resp_file" | tr -d '[:space:]')"
+        if ! grep -q '"schema":"queuebash.ask_provider.response.v1"' "$resp_file"; then
+            rm -rf "$tmpdir"
+            _queue_ai_audit_write "$provider" "$question" "error" "failed" "fixture_provider_bad_schema" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" 0 false false ""
+            echo "queue ask: fixture provider returned bad schema" >&2
+            return 1
+        fi
+        _queue_ai_audit_write "$provider" "$question" "allow" "answered" "fixture_provider" "$requested_s" "$allowed_s" "$denied_s" "$response_len" "$job_ids_s" 0 false false ""
+        if [[ "$json" -eq 1 ]]; then
+            cat "$resp_file"
+            printf '\n'
+        else
+            echo "Fixture ask provider response. No live provider call was performed."
+        fi
+        rm -rf "$tmpdir"
+        return 0
+    fi
+
     dynamic_context_text="$(_queue_ai_build_dynamic_context "$question" "$allowed_s" "$denied_s")"
     dynamic_context_hash="$(printf '%s' "$dynamic_context_text" | sha256sum | awk '{print $1}')"
     bundle_hash="$(printf '%s|%s|%s|%s|%s' "$provider" "$requested_s" "$allowed_s" "$denied_s" "$dynamic_context_hash" | sha256sum | awk '{print $1}')"
@@ -12972,7 +13331,7 @@ EOH
             echo "hint: export QUEUEBASH_AI_LIVE_ENABLED=1 or prefix the command with QUEUEBASH_AI_LIVE_ENABLED=1" >&2
             return 1
         fi
-        if [[ "$provider" != "ollama" && "$provider" != "gemini" ]]; then
+        if [[ "$provider" != "ollama" && "$provider" != "gemini" && "$provider" != "openai" && "$provider" != "anthropic" && "$provider" != "watsonx" && "$provider" != "openai_compat" && "$provider" != "mistral" && "$provider" != "deepseek" && "$provider" != "groq" && "$provider" != "cerebras" ]]; then
             _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_provider_not_supported" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
             echo "queue ask: blocked by policy: live_provider_not_supported: $provider" >&2
             return 1
@@ -12983,11 +13342,51 @@ EOH
             helper_name="queue-ai-ask-ollama"
             default_model="llama3"
             success_reason="live_ollama_provider"
-        else
+        elif [[ "$provider" == "gemini" ]]; then
             helper="${QUEUEBASH_AI_GEMINI_HELPER:-}"
             helper_name="queue-ai-ask-gemini"
             default_model="${QUEUEBASH_AI_GEMINI_MODEL:-gemini-2.5-flash}"
             success_reason="live_gemini_provider"
+        elif [[ "$provider" == "openai" ]]; then
+            helper="${QUEUEBASH_AI_OPENAI_HELPER:-}"
+            helper_name="queue-ai-ask-openai"
+            default_model="${QUEUEBASH_AI_OPENAI_MODEL:-gpt-4.1-mini}"
+            success_reason="live_openai_provider"
+        elif [[ "$provider" == "anthropic" ]]; then
+            helper="${QUEUEBASH_AI_ANTHROPIC_HELPER:-}"
+            helper_name="queue-ai-ask-anthropic"
+            default_model="${QUEUEBASH_AI_ANTHROPIC_MODEL:-claude-sonnet-4-20250514}"
+            success_reason="live_anthropic_provider"
+        elif [[ "$provider" == "watsonx" ]]; then
+            helper="${QUEUEBASH_AI_WATSONX_HELPER:-}"
+            helper_name="queue-ai-ask-watsonx"
+            default_model="${QUEUEBASH_AI_WATSONX_MODEL:-ibm/granite-3-8b-instruct}"
+            success_reason="live_watsonx_provider"
+        elif [[ "$provider" == "mistral" ]]; then
+            helper="${QUEUEBASH_AI_MISTRAL_HELPER:-}"
+            helper_name="queue-ai-ask-mistral"
+            default_model="${QUEUEBASH_AI_MISTRAL_MODEL:-mistral-small-latest}"
+            success_reason="live_mistral_provider"
+        elif [[ "$provider" == "deepseek" ]]; then
+            helper="${QUEUEBASH_AI_DEEPSEEK_HELPER:-}"
+            helper_name="queue-ai-ask-deepseek"
+            default_model="${QUEUEBASH_AI_DEEPSEEK_MODEL:-deepseek-v4-flash}"
+            success_reason="live_deepseek_provider"
+        elif [[ "$provider" == "groq" ]]; then
+            helper="${QUEUEBASH_AI_GROQ_HELPER:-}"
+            helper_name="queue-ai-ask-groq"
+            default_model="${QUEUEBASH_AI_GROQ_MODEL:-llama-3.3-70b-versatile}"
+            success_reason="live_groq_provider"
+        elif [[ "$provider" == "cerebras" ]]; then
+            helper="${QUEUEBASH_AI_CEREBRAS_HELPER:-}"
+            helper_name="queue-ai-ask-cerebras"
+            default_model="${QUEUEBASH_AI_CEREBRAS_MODEL:-gpt-oss-120b}"
+            success_reason="live_cerebras_provider"
+        else
+            helper="${QUEUEBASH_AI_OPENAI_COMPAT_HELPER:-}"
+            helper_name="queue-ai-ask-openai-compat"
+            default_model="${QUEUEBASH_AI_OPENAI_COMPAT_MODEL:-local-model}"
+            success_reason="live_openai_compat_provider"
         fi
         if [[ -z "$helper" ]]; then
             local source_dir
@@ -13189,6 +13588,10 @@ Usage:
   queue env validate NAME [--json]
 
   queue ask [--provider NAME] [--context csv] [--json] "question"
+  queue ask providers [--json]
+  queue ask provider explain PROVIDER [--json]
+  queue remote list|show SERVICE|SERVICE health|queue status|job explain JOBID
+  queue remote-admin --actor ACTOR validate|config|client|acl|secret|audit ...
   queue acl help|check|explain|set|remove
   queue key-provider help|lookup|registry|register|revoke|rotate
 
@@ -14487,7 +14890,7 @@ _queue_backup_create() {
 
 
 _queue_dev_usage() {
-    cat <<'EOF'
+    cat <<'EOF_USAGE'
 Usage:
   queue dev functions [--file FILE] [--json] [prefix]
   queue dev locate FUNCTION [--json]
@@ -14495,6 +14898,10 @@ Usage:
   queue dev scope [--json] [--prefix PREFIX]
   queue dev patch --file FILE --function FUNCTION --source SOURCE [--json] [--no-syntax-check]
   queue dev splice --file FILE (--after TEXT|--before TEXT|--replace TEXT --with TEXT) [--insert TEXT] [--dry-run] [--json]
+  queue dev test [--run] [--name NAME] [--timeout SEC] [--json] -- COMMAND...
+  queue dev test result JOBID [--root DIR] [--json]
+  queue dev test qbtest --file FILE [--function NAME] [--language bash|python] [--timeout SEC] [--list] [--json] [--keep]
+  queue dev test qbtest --help | -h | --h
   queue dev comment --file FILE --function FUNCTION --message TEXT [--changelog] [--json]
   queue dev diff --file FILE [--function FUNCTION] [--json]
   queue dev strip --file FILE --function FUNCTION [--json]
@@ -14502,6 +14909,18 @@ Usage:
   queue dev symbols --function FUNCTION [--json]
   queue dev flow --file FILE [--function FUNCTION] [--json]
   queue dev flow --function FUNCTION [--json]
+  queue dev scratchpad help|init|import|add|task|attempt|evidence|done|reject|fail|bump-fail|list|delete|next|export|explain
+  queue dev attempt begin --text TEXT [--tag TAG...] [--based-on ITEM_ID...] [--json]
+  queue dev attempt end ATTEMPT_ID --status STATUS [--text TEXT] [--json]
+  queue dev evidence record --attempt ATTEMPT_ID --text TEXT [--file FILE...] [--command COMMAND] [--status STATUS] [--json]
+  queue dev context [--json] [--tag TAG] [--kind KIND] [--status STATUS] [--limit N] [--full-corpus]
+  queue dev think --text TEXT [--subject SUBJECT] [--tag TAG...] [--authority AUTHORITY] [--json]
+  queue dev handover [--json] [--since ITEM_ID] [--tag TAG] [--full-corpus]
+  queue dev files begin|finish|add|remove|list|changed|scan|path
+  queue dev patchset create --output ZIP [--registry FILE] [--json]
+  queue dev patchset inspect --patchset ZIP [--target DIR] [--json]
+  queue dev validate [--json] [--quick] [--timeout SEC] [--file FILE...]
+  queue dev scope-check [--json] [--allow GLOB...] [--deny GLOB...] [--file FILE...]
 
 Developer/metaprogramming helpers for deterministic Bash introspection and safe
 function replacement. Intended for dogfood/AI-assisted maintenance; normal queue
@@ -14511,8 +14930,20 @@ symbols provides a lightweight static symbol table for variables, constants,
 string literals, and function membership. flow provides a static execution-path
 graph of function calls and shell control nodes for AI-assisted impact analysis.
 splice provides constrained anchored text transformations with dry-run, idempotency,
-JSON diagnostics, and atomic writes. It treats content as text only.
-EOF
+JSON diagnostics, and atomic writes. It treats content as text only. test submits
+real DEV_TEST_RUNNER jobs in an isolated harness queue root and returns a bounded
+queuebash.dev_test_result.v1 status without wiring results into scratchpad. files records
+edit-session baselines, purposes, file checksums, function checksums, and changed-file
+state. patchset creates a minimal changed-files zip with diffs, manifest, and guarded
+merge/apply scripts using old file/function MD5 preconditions for multistream work.
+attempt and evidence create a bounded development-attempt ledger under the queue root,
+linking validation evidence to named attempts without granting acceptance authority.
+context, think, and handover provide bounded working-set context loading,
+auditable planning notes, and reviewer-friendly handover summaries without dumping
+or requiring the AI to know the full scratchpad corpus by default. validate and
+scope-check provide bounded pre-merge gates that report development-test and
+changed-file scope outcomes without creating acceptance records.
+EOF_USAGE
 }
 
 _queue_dev_valid_function_name() {
@@ -15943,6 +16374,2176 @@ PYDEV_SPLICE
     return "$status"
 }
 
+_queue_dev_scratchpad_path() {
+    if [[ -n "${QUEUEBASH_DEV_SCRATCHPAD:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_DEV_SCRATCHPAD"
+    else
+        printf '%s\n' "$(_queue_root)/dev/scratchpad.json"
+    fi
+}
+
+_queue_dev_scratchpad_usage() {
+    cat <<'EOF_USAGE'
+Usage:
+  queue dev scratchpad help
+  queue dev scratchpad init --project NAME [--json]
+  queue dev scratchpad import --from-tree DIR [--project NAME] [--json]
+  queue dev scratchpad add --kind KIND --authority AUTHORITY --text TEXT [--tag TAG...] [--json]
+  queue dev scratchpad task --text TEXT [--authority team_leader] [--json]
+  queue dev scratchpad attempt ITEM_ID --note TEXT [--json]
+  queue dev scratchpad evidence ITEM_ID --summary TEXT [--raw-log PATH] [--verdict VERDICT] [--json]
+  queue dev scratchpad evidence ITEM_ID --json-file result.json [--summary TEXT] [--verdict VERDICT] [--json]
+  queue dev scratchpad done ITEM_ID --note TEXT [--authority reviewer] [--json]
+  queue dev scratchpad reject ITEM_ID --note TEXT [--authority reviewer] [--json]
+  queue dev scratchpad fail ITEM_ID --note TEXT [--json]
+  queue dev scratchpad bump-fail ITEM_ID [--json]
+  queue dev scratchpad list [--json] [--status STATUS] [--kind KIND] [--tag TAG]
+  queue dev scratchpad delete ITEM_ID [--authority reviewer] [--note TEXT] [--json]
+  queue dev scratchpad status set ITEM_ID --status STATUS [--reason TEXT] [--authority reviewer] [--json]
+  queue dev scratchpad supersede OLD_ITEM_ID --by NEW_ITEM_ID [--reason TEXT] [--authority reviewer] [--json]
+  queue dev scratchpad next [--json]
+  queue dev scratchpad export [--json]
+  queue dev scratchpad explain ITEM_ID
+
+File-backed authority-stamped development scratchpad ledger. This is storage/state
+only: no prompt rendering, no AI provider calls, and no queue dev test integration.
+EOF_USAGE
+}
+
+_queue_dev_scratchpad_command() {
+    local sub="${1:-help}" path root status old_errexit=0
+    shift || true
+    case "$sub" in
+        help|--help|-h) _queue_dev_scratchpad_usage; return 0 ;;
+        init|import|add|task|attempt|evidence|done|reject|fail|bump-fail|list|delete|status|supersede|next|export|explain) ;;
+        *) echo "queue dev scratchpad: unknown subcommand: $sub" >&2; _queue_dev_scratchpad_usage >&2; return 2 ;;
+    esac
+    path="$(_queue_dev_scratchpad_path)"
+    root="$(_queue_root)"
+    case $- in *e*) old_errexit=1; set +e ;; esac
+    "${QUEUEBASH_PYTHON:-/usr/bin/python3}" - "$path" "$root" "$sub" "$@" <<'PYDEV_SCRATCHPAD'
+import argparse, datetime as _dt, json, os, pathlib, random, re, sys, tempfile, textwrap
+try:
+    import fcntl
+except Exception:  # pragma: no cover on non-POSIX
+    fcntl = None
+
+SCRATCHPAD_SCHEMA = "queuebash.dev_scratchpad.v1"
+ITEM_SCHEMA = "queuebash.dev_scratchpad_item.v1"
+WORKING_SET_SCHEMA = "queuebash.dev_scratchpad_working_set.v1"
+AUTHORITY_TYPES = {"architect", "team_leader", "reviewer", "coding_agent", "tool", "source_tree", "test_runner", "external_ai", "imported_doc"}
+CONFIDENCES = {"authoritative", "accepted", "observed", "inferred", "proposed", "rejected", "stale"}
+KINDS = {"contract", "design_goal", "architecture", "task", "attempt", "evidence", "failure", "success", "decision", "toolchain", "known_landmine", "blocker", "challenge", "done_note", "imported_fact", "think"}
+STATUSES = {"active", "pending", "in_progress", "done", "resolved", "accepted", "rejected", "stale", "proposed", "blocked", "failed", "superseded", "archived", "removed"}
+HIGH_AUTH = {"architect", "team_leader", "reviewer"}
+SUMMARY_LIMIT = 1000
+TAIL_LIMIT = 1000
+
+path = pathlib.Path(sys.argv[1])
+queue_root = pathlib.Path(sys.argv[2])
+sub = sys.argv[3]
+av = sys.argv[4:]
+
+class ScratchpadError(Exception):
+    pass
+
+def now():
+    return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+def item_id(prefix="SP"):
+    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    return f"{prefix}-{stamp}-{random.randint(1000,9999)}"
+
+def trim(text, limit=SUMMARY_LIMIT):
+    text = "" if text is None else str(text)
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"... [truncated {len(text)-limit} chars]"
+
+def authority_obj(authority, confidence=None, source="queue dev scratchpad"):
+    if ":" in authority:
+        atype, name = authority.split(":", 1)
+    else:
+        atype, name = authority, authority
+    if atype not in AUTHORITY_TYPES:
+        raise ScratchpadError(f"invalid authority type: {atype}")
+    if confidence is None:
+        confidence = "authoritative" if atype == "architect" else "accepted" if atype in {"team_leader", "reviewer"} else "observed" if atype in {"tool", "source_tree", "test_runner"} else "proposed"
+    if confidence not in CONFIDENCES:
+        raise ScratchpadError(f"invalid confidence: {confidence}")
+    return {"type": atype, "name": name or atype, "source": source, "confidence": confidence}
+
+def new_ledger(project=""):
+    t = now()
+    return {"schema": SCRATCHPAD_SCHEMA, "project": project, "created_at": t, "updated_at": t, "items": [], "meta": {"authority_types": sorted(AUTHORITY_TYPES), "confidence": sorted(CONFIDENCES), "kind": sorted(KINDS), "status": sorted(STATUSES)}}
+
+def validate_ledger(d):
+    if not isinstance(d, dict) or d.get("schema") != SCRATCHPAD_SCHEMA or not isinstance(d.get("items"), list):
+        raise ScratchpadError(f"malformed scratchpad: expected {SCRATCHPAD_SCHEMA} with items list")
+    return d
+
+def load(required=False):
+    if not path.exists():
+        if required:
+            raise ScratchpadError(f"scratchpad not found: {path}")
+        return new_ledger()
+    try:
+        data = json.loads(path.read_text())
+    except Exception as exc:
+        raise ScratchpadError(f"malformed scratchpad: {exc}")
+    return validate_ledger(data)
+
+def write_atomic(data):
+    data["updated_at"] = now()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    with open(lock_path, "w") as lock:
+        if fcntl is not None:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+        try:
+            with os.fdopen(fd, "w") as fh:
+                json.dump(data, fh, indent=2, sort_keys=True)
+                fh.write("\n")
+            os.replace(tmp, path)
+        finally:
+            try:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+            except Exception:
+                pass
+            if fcntl is not None:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+def emit(obj=None, json_mode=False, human=""):
+    if json_mode:
+        print(json.dumps(obj, separators=(",", ":"), sort_keys=True))
+    else:
+        print(human if human else json.dumps(obj, indent=2, sort_keys=True))
+
+def parser_base():
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("--json", action="store_true")
+    return p
+
+def make_item(kind, text, authority="coding_agent", status="active", tags=None, confidence=None, source_type="command", source_ref="", parent_id="", extra=None):
+    if kind not in KINDS:
+        raise ScratchpadError(f"invalid kind: {kind}")
+    if status not in STATUSES:
+        raise ScratchpadError(f"invalid status: {status}")
+    t = now()
+    item = {
+        "id": item_id("SP"),
+        "schema": ITEM_SCHEMA,
+        "kind": kind,
+        "status": status,
+        "authority": authority_obj(authority, confidence),
+        "text": trim(text),
+        "tags": list(tags or []),
+        "created_at": t,
+        "updated_at": t,
+        "provenance": {"source_type": source_type, "source_ref": source_ref},
+        "counters": {"success": 0, "failure": 0},
+    }
+    if parent_id:
+        item["parent_id"] = parent_id
+    if extra:
+        item.update(extra)
+    return item
+
+def find_item(data, iid):
+    for it in data.get("items", []):
+        if it.get("id") == iid:
+            return it
+    raise ScratchpadError(f"item not found: {iid}")
+
+def touch_item(it):
+    it["updated_at"] = now()
+
+def append_item(data, item):
+    data.setdefault("items", []).append(item)
+    return item
+
+def read_top_heading(file):
+    p = pathlib.Path(file)
+    if not p.exists():
+        return "absent"
+    for line in p.read_text(errors="replace").splitlines():
+        if line.startswith("#"):
+            return line.strip()
+    return "present:no-heading"
+
+def import_facts(tree, project=""):
+    tree = pathlib.Path(tree).resolve()
+    if not tree.exists() or not tree.is_dir():
+        raise ScratchpadError(f"from-tree not found or not a directory: {tree}")
+    facts = []
+    qb = tree / "queuebash.sh"
+    version = "unknown"
+    if qb.exists():
+        m = re.search(r'^QUEUEBASH_VERSION="([^"]+)"', qb.read_text(errors="replace"), re.M)
+        if m:
+            version = m.group(1)
+    facts.append(("toolchain", f"QUEUEBASH_VERSION={version}", ["import", "version"]))
+    facts.append(("imported_fact", f"README top release heading: {read_top_heading(tree/'README.md')}", ["import", "README"]))
+    facts.append(("imported_fact", f"CHANGELOG top release heading: {read_top_heading(tree/'CHANGELOG.md')}", ["import", "CHANGELOG"]))
+    for rel in ["queuebash.sh", "README.md", "CHANGELOG.md", "tests", "assets.d/net_usage.sh", "caps.d/net_usage.sh"]:
+        exists = (tree / rel).exists()
+        facts.append(("imported_fact", f"{rel}: {'present' if exists else 'absent'}", ["import", "presence", rel]))
+    if qb.exists():
+        text = qb.read_text(errors="replace")
+        m = re.search(r'_queue_dev_usage\(\).*?cat <<\'EOF\'\n(.*?)\nEOF', text, re.S)
+        usage = m.group(1) if m else ""
+        commands = []
+        for line in usage.splitlines():
+            s = line.strip()
+            if s.startswith("queue dev "):
+                commands.append(s)
+        facts.append(("toolchain", "current dev tooling command list: " + "; ".join(commands[:50]), ["import", "queue-dev-usage"]))
+        facts.append(("imported_fact", f"scratchpad command present in source: {'queue dev scratchpad' in text}", ["import", "scratchpad"]))
+    return [make_item(kind=k, text=t, authority="source_tree", status="active", tags=tags, confidence="observed", source_type="tree", source_ref=str(tree)) for k, t, tags in facts]
+
+def parse_common(args):
+    json_mode = False
+    if "--json" in args:
+        args = [a for a in args if a != "--json"]
+        json_mode = True
+    return args, json_mode
+
+def get_opt(args, name, default="", required=False, multi=False):
+    vals = []
+    out = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == name:
+            if i + 1 >= len(args):
+                raise ScratchpadError(f"{name} requires a value")
+            vals.append(args[i+1]); i += 2
+        elif a.startswith(name + "="):
+            vals.append(a.split("=",1)[1]); i += 1
+        else:
+            out.append(a); i += 1
+    if required and not vals:
+        raise ScratchpadError(f"{name} is required")
+    return (vals if multi else (vals[-1] if vals else default)), out
+
+def command_init(args):
+    args, jm = parse_common(args)
+    project, args = get_opt(args, "--project", required=True)
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = new_ledger(project)
+    write_atomic(data)
+    emit({"schema": SCRATCHPAD_SCHEMA, "status": "ok", "path": str(path), "project": project}, jm, f"scratchpad initialised: {path}")
+
+def command_import(args):
+    args, jm = parse_common(args)
+    from_tree, args = get_opt(args, "--from-tree", required=True)
+    project, args = get_opt(args, "--project", default="")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(False)
+    if project:
+        data["project"] = project
+    items = import_facts(from_tree, project)
+    for it in items:
+        append_item(data, it)
+    write_atomic(data)
+    emit({"schema": SCRATCHPAD_SCHEMA, "status": "ok", "imported": len(items), "path": str(path), "items": [it["id"] for it in items]}, jm, f"imported {len(items)} observed fact(s) into {path}")
+
+def command_add(args, default_kind=None):
+    args, jm = parse_common(args)
+    kind, args = get_opt(args, "--kind", default=default_kind or "", required=default_kind is None)
+    authority, args = get_opt(args, "--authority", default="coding_agent")
+    text, args = get_opt(args, "--text", required=True)
+    tags, args = get_opt(args, "--tag", multi=True)
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(False)
+    it = append_item(data, make_item(kind, text, authority=authority, tags=tags))
+    write_atomic(data)
+    emit({"schema": ITEM_SCHEMA, "status": "ok", "item": it}, jm, f"added {kind}: {it['id']}")
+
+def command_task(args):
+    args, jm = parse_common(args)
+    text, args = get_opt(args, "--text", required=True)
+    authority, args = get_opt(args, "--authority", default="team_leader")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(False)
+    it = append_item(data, make_item("task", text, authority=authority, status="active", tags=["active-task"]))
+    write_atomic(data)
+    emit({"schema": ITEM_SCHEMA, "status": "ok", "item": it}, jm, f"added task: {it['id']}")
+
+def command_child(args, kind):
+    args, jm = parse_common(args)
+    if not args:
+        raise ScratchpadError("ITEM_ID is required")
+    iid, args = args[0], args[1:]
+    note_name = "--summary" if kind == "evidence" else "--note"
+    note, args = get_opt(args, note_name, default="")
+    authority, args = get_opt(args, "--authority", default="tool" if kind == "evidence" else "coding_agent" if kind in {"attempt", "failure"} else "reviewer")
+    verdict, args = get_opt(args, "--verdict", default="")
+    raw_log, args = get_opt(args, "--raw-log", default="")
+    json_file, args = get_opt(args, "--json-file", default="")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(True)
+    parent = find_item(data, iid)
+    extra = {}
+    if kind == "evidence":
+        if json_file:
+            jp = pathlib.Path(json_file)
+            if not jp.exists():
+                raise ScratchpadError(f"json-file not found: {json_file}")
+            try:
+                payload = json.loads(jp.read_text())
+            except Exception as exc:
+                raise ScratchpadError(f"json-file is not valid JSON: {exc}")
+            extra["json_file"] = str(jp)
+            extra["json_schema"] = payload.get("schema", "") if isinstance(payload, dict) else ""
+            if not note:
+                note = f"JSON evidence imported from {jp.name}"
+        if raw_log:
+            extra["raw_log_path"] = raw_log
+            rp = pathlib.Path(raw_log)
+            if rp.exists() and rp.is_file():
+                tail = rp.read_text(errors="replace")[-TAIL_LIMIT:]
+                extra["raw_log_tail"] = trim(tail, TAIL_LIMIT)
+        if verdict:
+            extra["verdict"] = verdict
+        if not note:
+            raise ScratchpadError("--summary is required for evidence unless --json-file is supplied")
+    elif not note:
+        raise ScratchpadError(f"{note_name} is required")
+    child = make_item(kind, note, authority=authority, status="active", tags=[kind], parent_id=iid, extra=extra)
+    append_item(data, child)
+    if kind == "failure":
+        parent.setdefault("counters", {}).setdefault("failure", 0)
+        parent["counters"]["failure"] += 1
+        touch_item(parent)
+    write_atomic(data)
+    emit({"schema": ITEM_SCHEMA, "status": "ok", "item": child, "parent_id": iid}, jm, f"added {kind} for {iid}: {child['id']}")
+
+def command_status(args, action):
+    args, jm = parse_common(args)
+    if not args:
+        raise ScratchpadError("ITEM_ID is required")
+    iid, args = args[0], args[1:]
+    note, args = get_opt(args, "--note", default="")
+    authority, args = get_opt(args, "--authority", default="reviewer")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(True)
+    it = find_item(data, iid)
+    it["status"] = {"done": "done", "reject": "rejected", "fail": "blocked"}[action]
+    touch_item(it)
+    kind = {"done": "done_note", "reject": "decision", "fail": "failure"}[action]
+    text = note or f"{action} {iid}"
+    child = append_item(data, make_item(kind, text, authority=authority, status="active" if action != "reject" else "rejected", tags=[action], parent_id=iid))
+    if action == "done":
+        it.setdefault("counters", {}).setdefault("success", 0)
+        it["counters"]["success"] += 1
+    if action == "fail":
+        it.setdefault("counters", {}).setdefault("failure", 0)
+        it["counters"]["failure"] += 1
+    write_atomic(data)
+    emit({"schema": ITEM_SCHEMA, "status": "ok", "item_id": iid, "new_status": it["status"], "note_id": child["id"]}, jm, f"{iid}: {it['status']}")
+
+def require_high_authority(authority, action):
+    auth = authority_obj(authority)
+    if auth.get("type") not in HIGH_AUTH:
+        raise ScratchpadError(f"{action} requires architect, team_leader, or reviewer authority")
+    return auth
+
+def lifecycle_note(data, iid, authority, text, tags, status="active", replacement_id=""):
+    extra = {}
+    if replacement_id:
+        extra["superseded_by"] = replacement_id
+    return append_item(data, make_item("decision", text, authority=authority, status=status, tags=tags, parent_id=iid, extra=extra))
+
+def command_lifecycle_status(args):
+    args, jm = parse_common(args)
+    if not args or args[0] != "set":
+        raise ScratchpadError("Usage: queue dev scratchpad status set ITEM_ID --status STATUS [--reason TEXT] [--authority reviewer] [--json]")
+    args = args[1:]
+    if not args:
+        raise ScratchpadError("ITEM_ID is required")
+    iid, args = args[0], args[1:]
+    new_status, args = get_opt(args, "--status", required=True)
+    reason, args = get_opt(args, "--reason", default="")
+    note, args = get_opt(args, "--note", default="")
+    authority, args = get_opt(args, "--authority", default="reviewer")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    if new_status not in STATUSES:
+        raise ScratchpadError(f"invalid status: {new_status}")
+    require_high_authority(authority, "scratchpad status set")
+    data = load(True)
+    it = find_item(data, iid)
+    old_status = it.get("status", "")
+    it["status"] = new_status
+    touch_item(it)
+    text = reason or note or f"status changed for {iid}: {old_status} -> {new_status}"
+    child = lifecycle_note(data, iid, authority, text, ["lifecycle", "status-set", new_status])
+    write_atomic(data)
+    emit({"schema": "queuebash.dev_workflow.scratchpad_status.v1", "status": "ok", "item_id": iid, "old_status": old_status, "new_status": new_status, "note_id": child["id"]}, jm, f"{iid}: {old_status} -> {new_status}")
+
+def command_supersede(args):
+    args, jm = parse_common(args)
+    if not args:
+        raise ScratchpadError("Usage: queue dev scratchpad supersede OLD_ITEM_ID --by NEW_ITEM_ID [--reason TEXT] [--authority reviewer] [--json]")
+    old_id, args = args[0], args[1:]
+    new_id, args = get_opt(args, "--by", required=True)
+    reason, args = get_opt(args, "--reason", default="")
+    note, args = get_opt(args, "--note", default="")
+    authority, args = get_opt(args, "--authority", default="reviewer")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    require_high_authority(authority, "scratchpad supersede")
+    if old_id == new_id:
+        raise ScratchpadError("cannot supersede an item by itself")
+    data = load(True)
+    old = find_item(data, old_id)
+    new = find_item(data, new_id)
+    old_status = old.get("status", "")
+    old["status"] = "superseded"
+    old["superseded_by"] = new_id
+    old.setdefault("relations", {})["superseded_by"] = new_id
+    touch_item(old)
+    new.setdefault("relations", {}).setdefault("supersedes", [])
+    if old_id not in new["relations"]["supersedes"]:
+        new["relations"]["supersedes"].append(old_id)
+    touch_item(new)
+    text = reason or note or f"{old_id} superseded by {new_id}"
+    child = lifecycle_note(data, old_id, authority, text, ["lifecycle", "supersede"], replacement_id=new_id)
+    write_atomic(data)
+    emit({"schema": "queuebash.dev_workflow.supersede.v1", "status": "ok", "item_id": old_id, "old_status": old_status, "new_status": "superseded", "superseded_by": new_id, "note_id": child["id"]}, jm, f"{old_id}: superseded by {new_id}")
+
+def command_bump_fail(args):
+    args, jm = parse_common(args)
+    if len(args) != 1:
+        raise ScratchpadError("Usage: queue dev scratchpad bump-fail ITEM_ID [--json]")
+    data = load(True)
+    it = find_item(data, args[0])
+    it.setdefault("counters", {}).setdefault("failure", 0)
+    it["counters"]["failure"] += 1
+    touch_item(it)
+    write_atomic(data)
+    emit({"schema": ITEM_SCHEMA, "status": "ok", "item_id": it["id"], "failure": it["counters"]["failure"]}, jm, f"{it['id']}: failure={it['counters']['failure']}")
+
+def build_next(data):
+    active = [it for it in data.get("items", []) if it.get("status") not in {"done", "resolved", "accepted", "rejected", "stale", "superseded", "archived", "removed"}]
+    tasks = [it for it in active if it.get("kind") == "task"]
+    current_task = tasks[-1] if tasks else None
+    current_id = current_task.get("id") if current_task else ""
+    include = []
+    for it in active:
+        kind = it.get("kind")
+        atype = it.get("authority", {}).get("type")
+        if kind in {"contract", "known_landmine", "toolchain"} and atype in HIGH_AUTH | {"source_tree", "tool"}:
+            include.append(it)
+        elif current_id and (it.get("id") == current_id or it.get("parent_id") == current_id):
+            include.append(it)
+    attempts = [it for it in include if it.get("kind") == "attempt"]
+    keep_attempt_ids = set()
+    if attempts:
+        keep_attempt_ids.add(attempts[0].get("id"))
+        keep_attempt_ids.add(attempts[-1].get("id"))
+    pruned = []
+    for it in include:
+        if it.get("kind") == "attempt" and it.get("id") not in keep_attempt_ids:
+            continue
+        pruned.append(it)
+    return {"schema": WORKING_SET_SCHEMA, "project": data.get("project", ""), "generated_at": now(), "current_task_id": current_id, "counters": current_task.get("counters", {}) if current_task else {}, "items": pruned, "full_item_count": len(data.get("items", [])), "pruned_item_count": len(pruned)}
+
+def summarize_item(it):
+    text = str(it.get("text", "")).replace("\n", " ")
+    if len(text) > 100:
+        text = text[:100] + "..."
+    return {
+        "id": it.get("id", ""),
+        "kind": it.get("kind", ""),
+        "status": it.get("status", ""),
+        "authority": it.get("authority", {}).get("type", ""),
+        "confidence": it.get("authority", {}).get("confidence", ""),
+        "tags": it.get("tags", []),
+        "created_at": it.get("created_at", ""),
+        "updated_at": it.get("updated_at", ""),
+        "parent_id": it.get("parent_id", ""),
+        "text": text,
+    }
+
+def command_list(args):
+    args, jm = parse_common(args)
+    all_items = "--all" in args
+    if all_items:
+        args = [a for a in args if a != "--all"]
+    status_filter, args = get_opt(args, "--status", default="")
+    kind_filter, args = get_opt(args, "--kind", default="")
+    tag_filter, args = get_opt(args, "--tag", default="")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(True)
+    items = list(data.get("items", []))
+    if not status_filter and not all_items:
+        items = [it for it in items if it.get("status") not in {"done", "resolved", "accepted", "rejected", "stale", "superseded", "archived", "removed"}]
+    if status_filter:
+        items = [it for it in items if it.get("status") == status_filter]
+    if kind_filter:
+        items = [it for it in items if it.get("kind") == kind_filter]
+    if tag_filter:
+        items = [it for it in items if tag_filter in it.get("tags", [])]
+    summary = [summarize_item(it) for it in items]
+    if jm:
+        emit({"schema": SCRATCHPAD_SCHEMA, "status": "ok", "count": len(summary), "items": summary}, True)
+    else:
+        for it in summary:
+            parent = f" parent={it['parent_id']}" if it.get("parent_id") else ""
+            print(f"{it['id']} {it['kind']} {it['status']} {it['authority']} tags={','.join(it.get('tags', []))}{parent}")
+            if it.get("text"):
+                print(f"  {it['text']}")
+        if not summary:
+            print("no scratchpad items matched")
+
+def command_delete(args):
+    args, jm = parse_common(args)
+    if not args:
+        raise ScratchpadError("Usage: queue dev scratchpad delete ITEM_ID [--authority reviewer] [--note TEXT] [--json]")
+    iid, args = args[0], args[1:]
+    authority, args = get_opt(args, "--authority", default="reviewer")
+    note, args = get_opt(args, "--note", default="")
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    auth = authority_obj(authority)
+    if auth.get("type") not in HIGH_AUTH:
+        raise ScratchpadError("delete requires architect, team_leader, or reviewer authority")
+    data = load(True)
+    it = find_item(data, iid)
+    if it.get("authority", {}).get("type") in HIGH_AUTH and auth.get("type") == "coding_agent":
+        raise ScratchpadError("coding_agent cannot delete high-authority scratchpad items")
+    it["status"] = "removed"
+    touch_item(it)
+    deletion_note = note or f"removed scratchpad item {iid}"
+    child = append_item(data, make_item("decision", deletion_note, authority=authority, status="active", tags=["delete", "removed"], parent_id=iid))
+    write_atomic(data)
+    emit({"schema": ITEM_SCHEMA, "status": "ok", "item_id": iid, "new_status": "removed", "note_id": child["id"]}, jm, f"{iid}: removed")
+
+def command_next(args):
+    args, jm = parse_common(args)
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    ws = build_next(load(True))
+    emit(ws, jm, json.dumps(ws, indent=2, sort_keys=True))
+
+def command_export(args):
+    args, jm = parse_common(args)
+    if args:
+        raise ScratchpadError(f"unexpected argument(s): {' '.join(args)}")
+    data = load(True)
+    emit(data, True if jm else False, json.dumps(data, indent=2, sort_keys=True))
+
+def command_explain(args):
+    args, jm = parse_common(args)
+    if jm:
+        raise ScratchpadError("explain is human-readable; use export --json for JSON")
+    if len(args) != 1:
+        raise ScratchpadError("Usage: queue dev scratchpad explain ITEM_ID")
+    data = load(True)
+    it = find_item(data, args[0])
+    lines = [f"Scratchpad item: {it.get('id')}", f"kind:       {it.get('kind')}", f"status:     {it.get('status')}", f"authority:  {it.get('authority',{}).get('type')} / {it.get('authority',{}).get('name')} / {it.get('authority',{}).get('confidence')}", f"created:    {it.get('created_at')}", f"updated:    {it.get('updated_at')}"]
+    if it.get("parent_id"):
+        lines.append(f"parent:     {it.get('parent_id')}")
+    lines += ["", "Text:", textwrap.indent(it.get("text", ""), "  ")]
+    if it.get("raw_log_path"):
+        lines.append(f"raw_log:    {it.get('raw_log_path')}")
+    if it.get("verdict"):
+        lines.append(f"verdict:    {it.get('verdict')}")
+    print("\n".join(lines))
+
+def main():
+    try:
+        if sub == "init": command_init(av)
+        elif sub == "import": command_import(av)
+        elif sub == "add": command_add(av)
+        elif sub == "task": command_task(av)
+        elif sub == "attempt": command_child(av, "attempt")
+        elif sub == "evidence": command_child(av, "evidence")
+        elif sub == "done": command_status(av, "done")
+        elif sub == "reject": command_status(av, "reject")
+        elif sub == "fail": command_status(av, "fail")
+        elif sub == "bump-fail": command_bump_fail(av)
+        elif sub == "list": command_list(av)
+        elif sub == "delete": command_delete(av)
+        elif sub == "status": command_lifecycle_status(av)
+        elif sub == "supersede": command_supersede(av)
+        elif sub == "next": command_next(av)
+        elif sub == "export": command_export(av)
+        elif sub == "explain": command_explain(av)
+        else: raise ScratchpadError(f"unsupported subcommand: {sub}")
+    except ScratchpadError as exc:
+        jm = "--json" in av
+        if jm:
+            print(json.dumps({"schema": SCRATCHPAD_SCHEMA, "status": "error", "error": str(exc)}, separators=(",", ":"), sort_keys=True))
+        else:
+            print(f"queue dev scratchpad: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+main()
+PYDEV_SCRATCHPAD
+    status=$?
+    [[ "$old_errexit" -eq 1 ]] && set -e
+    return "$status"
+}
+
+
+_queue_dev_test_usage() {
+    cat <<'USAGE'
+Usage:
+  queue dev test [--run] [--name NAME] [--timeout SEC] [--json] -- COMMAND...
+  queue dev test result JOBID [--root DIR] [--json]
+
+Submit and optionally run a real DEV_TEST_RUNNER job in an isolated harness
+QUEUEBASH_ROOT. The tested command is executed through normal queue submit and a
+bounded worker pass; results are reported as queuebash.dev_test_result.v1.
+qbtest scans base64 QBTEST comment blocks embedded near functions and runs decoded
+Bash or Python snippets with bounded execution.
+USAGE
+}
+
+_queue_dev_test_counts_json() {
+    local root="${1:-}" state count first=1
+    [[ -n "$root" ]] || root="$(_queue_root)"
+    printf '{'
+    for state in pending running done failed pol_blocked policy_blocked paused interrupted cancelled deleted; do
+        [[ "$first" -eq 1 ]] || printf ','
+        first=0
+        if [[ -d "$root/$state" ]]; then
+            count="$(find "$root/$state" -maxdepth 3 -type f -name '*.job' 2>/dev/null | wc -l | tr -d ' ')"
+        else
+            count=0
+        fi
+        printf '"%s":%s' "$state" "${count:-0}"
+    done
+    printf '}\n'
+}
+
+_queue_dev_test_find_job_file() {
+    local root="${1:-}" job_id="${2:-}" state f
+    [[ -n "$root" && -n "$job_id" ]] || return 1
+    for state in done failed pol_blocked policy_blocked cancelled interrupted deleted running paused pending; do
+        if [[ "$state" == "pending" ]]; then
+            f="$(find "$root/pending" -maxdepth 3 -type f -name "$job_id.job" 2>/dev/null | head -n 1 || true)"
+        else
+            f="$root/$state/$job_id.job"
+        fi
+        [[ -f "$f" ]] && { printf '%s\n' "$f"; return 0; }
+    done
+    return 1
+}
+
+_queue_dev_test_result_json() {
+    local root="${1:-}" job_id="${2:-}" before_json="${3:-}" after_json="${4:-}" job_file="" log_file=""
+    [[ -n "$root" && -n "$job_id" ]] || return 2
+    [[ -n "$before_json" ]] || before_json='{}'
+    [[ -n "$after_json" ]] || after_json="$(_queue_dev_test_counts_json "$root")"
+    job_file="$(_queue_dev_test_find_job_file "$root" "$job_id" 2>/dev/null || true)"
+    python3 - "$root" "$job_id" "$job_file" "$before_json" "$after_json" <<'PYDEVTEST_RESULT'
+import gzip, json, shlex, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+job_id = sys.argv[2]
+job_file = Path(sys.argv[3]) if sys.argv[3] else None
+try:
+    before = json.loads(sys.argv[4] or '{}')
+except Exception:
+    before = {}
+try:
+    after = json.loads(sys.argv[5] or '{}')
+except Exception:
+    after = {}
+fields = {}
+state = "missing"
+if job_file and job_file.exists():
+    state = job_file.parent.name
+    if state.startswith("p") and job_file.parent.parent.name == "pending":
+        state = "pending"
+    for line in job_file.read_text(errors="replace").splitlines():
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        try:
+            parts = shlex.split(val)
+            fields[key] = parts[0] if parts else ""
+        except Exception:
+            fields[key] = val.strip().strip("'").strip('"')
+exit_raw = fields.get("EXIT_CODE", "")
+try:
+    exit_code = int(exit_raw) if exit_raw != "" else None
+except Exception:
+    exit_code = None
+if state == "done" and (exit_code is None or exit_code == 0):
+    status = "pass"
+elif state == "failed" and exit_code in (124, 137, 143):
+    status = "timeout"
+elif state == "failed":
+    status = "fail"
+elif state in ("pending", "running", "paused", "cancelled", "interrupted", "deleted"):
+    status = state
+elif state in ("pol_blocked", "policy_blocked"):
+    status = "policy_blocked"
+else:
+    status = "infrastructure_error"
+log_path = fields.get("LOG_PATH", "")
+if not log_path:
+    for cand in (root / "logs" / f"{job_id}.log", root / "logs" / f"{job_id}.log.gz"):
+        if cand.exists():
+            log_path = str(cand)
+            break
+log_tail = ""
+if log_path:
+    p = Path(log_path)
+    try:
+        if p.suffix == ".gz":
+            log_text = gzip.open(p, "rt", errors="replace").read()
+        else:
+            log_text = p.read_text(errors="replace")
+        log_tail = "\n".join(log_text.splitlines()[-40:])[-4000:]
+    except Exception as exc:
+        log_tail = f"<unable to read log: {exc}>"
+if status == "pass":
+    diagnostic = "test passed"
+elif status == "fail":
+    diagnostic = f"test failed with exit code {exit_code}"
+elif status == "timeout":
+    diagnostic = "test timed out"
+elif status == "infrastructure_error":
+    diagnostic = "test job not found"
+else:
+    diagnostic = f"test is {status}"
+out = {
+    "schema": "queuebash.dev_test_result.v1",
+    "harness_root": str(root),
+    "created_job_id": job_id,
+    "job_id": job_id,
+    "job_file": str(job_file) if job_file else "",
+    "class": fields.get("JOB_CLASS", "DEV_TEST_RUNNER"),
+    "queue_state": state,
+    "status": status,
+    "exit_code": exit_code,
+    "timed_out": status == "timeout",
+    "duration_seconds": fields.get("DURATION_SECONDS", ""),
+    "log_file": log_path,
+    "log_tail": log_tail,
+    "before": before,
+    "after": after,
+    "diagnostic": diagnostic,
+}
+print(json.dumps(out, separators=(",", ":"), sort_keys=True))
+PYDEVTEST_RESULT
+}
+
+_queue_dev_test_result_command() {
+    local job_id="${1:-}" root="" json=0 out
+    [[ -n "$job_id" ]] || { echo "queue dev test result: missing JOBID" >&2; return 2; }
+    shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --root) root="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h) _queue_dev_test_usage; return 0 ;;
+            *) echo "queue dev test result: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$root" ]] || root="$(_queue_root)"
+    out="$(_queue_dev_test_result_json "$root" "$job_id")" || return "$?"
+    if [[ "$json" -eq 1 ]]; then
+        printf '%s\n' "$out"
+    else
+        python3 -c 'import json,sys; d=json.load(sys.stdin); print(f"Dev test {d.get(chr(106)+chr(111)+chr(98)+chr(95)+chr(105)+chr(100),"")}: {d.get("status","")} state={d.get("queue_state","")} exit={d.get("exit_code","")}\nHarness: {d.get("harness_root","")}\nLog: {d.get("log_file","")}")' <<<"$out"
+    fi
+}
+
+_queue_dev_test_make_harness() {
+    local harness_root="$1" here="$2"
+    mkdir -p "$harness_root"/{pending,running,done,failed,pol_blocked,policy_blocked,paused,interrupted,cancelled,deleted,logs,workers,classes,assets.d,caps.d,reporters.d,policies.d,outputs,helpers,streams}
+    if [[ -f "$here/classes/DEV_TEST_RUNNER.env" ]]; then
+        cp "$here/classes/DEV_TEST_RUNNER.env" "$harness_root/classes/DEV_TEST_RUNNER.env"
+    else
+        cat >"$harness_root/classes/DEV_TEST_RUNNER.env" <<'EOF_DEV_TEST_CLASS'
+CLASS_ALLOW_PARALLEL=1
+CLASS_MAX_CONCURRENT=2
+CLASS_DEFAULT_RUNNER=direct
+CLASS_DEFAULT_SANDBOX_LEVEL=off
+CLASS_DEFAULT_MAX_LOG_SIZE_BYTES=1048576
+CLASS_DEFAULT_LOG_OVERFLOW_POLICY=stderr-only
+EOF_DEV_TEST_CLASS
+    fi
+    if [[ -f "$here/classes/DEFAULT.env" ]]; then
+        cp "$here/classes/DEFAULT.env" "$harness_root/classes/DEFAULT.env"
+    else
+        cat >"$harness_root/classes/DEFAULT.env" <<'EOF_DEFAULT_CLASS'
+CLASS_ALLOW_PARALLEL=1
+CLASS_MAX_CONCURRENT=0
+CLASS_DEFAULT_RUNNER=direct
+EOF_DEFAULT_CLASS
+    fi
+    mkdir -p "$harness_root/empty-source"/{classes,envs.d,assets.d,caps.d,reporters.d,policies.d}
+}
+
+_queue_dev_test_qbtest_command() {
+    local file="" function="" language="" timeout_sec=30 json=0 list_only=0 keep=0
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --file|-f) file="${2:-}"; shift 2 ;;
+            --function) function="${2:-}"; shift 2 ;;
+            --language|--lang) language="${2:-}"; shift 2 ;;
+            --timeout) timeout_sec="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --list) list_only=1; shift ;;
+            --keep) keep=1; shift ;;
+            --help|-h|--h)
+                cat <<'USAGE_QBTEST'
+Usage:
+  queue dev test qbtest --file FILE [--function NAME] [--language bash|python] [--timeout SEC] [--list] [--json] [--keep]
+  queue dev test qbtest --help | -h | --h
+
+Run embedded function tests stored as base64 comment blocks. In help/docs, the
+example markers are deliberately escaped with EXAMPLE_ so the live scanner does
+not execute documentation as a real test:
+  # EXAMPLE_QBTEST:BEGIN name=queue-now-example function=_queue_now language=bash
+  # EXAMPLE_QBTEST:B64
+  # <base64-encoded test snippet>
+  # EXAMPLE_QBTEST:END
+
+Bash snippets are sourced after the target file so they can call the function.
+Python snippets run after importing the target module; globals include module,
+target, QBTEST_SOURCE_FILE, and QBTEST_FUNCTION.
+
+To filter to one function, use --function NAME. A bare positional function name
+after --file is rejected so accidental argument drift remains visible.
+USAGE_QBTEST
+                return 0 ;;
+            --*) echo "queue dev test qbtest: unexpected argument: $1" >&2; return 2 ;;
+            *)
+                if [[ -n "$file" && -z "$function" ]]; then
+                    echo "queue dev test qbtest: unexpected argument: $1" >&2
+                    echo "queue dev test qbtest: did you mean --function $1 ?" >&2
+                else
+                    echo "queue dev test qbtest: unexpected argument: $1" >&2
+                fi
+                return 2 ;;
+        esac
+    done
+    [[ -n "$file" ]] || { echo "queue dev test qbtest: --file is required" >&2; return 2; }
+    [[ -f "$file" ]] || { echo "queue dev test qbtest: file not found: $file" >&2; return 1; }
+    [[ "$timeout_sec" =~ ^[0-9]+$ && "$timeout_sec" -gt 0 ]] || { echo "queue dev test qbtest: --timeout must be a positive integer" >&2; return 2; }
+    python3 - "$file" "$function" "$language" "$timeout_sec" "$json" "$list_only" "$keep" <<'PYDEV_QBTEST'
+import argparse, base64, datetime, hashlib, json, os, pathlib, re, shlex, subprocess, sys, tempfile, time
+source = pathlib.Path(sys.argv[1]).resolve()
+filter_function = sys.argv[2]
+filter_language = sys.argv[3].lower()
+timeout_sec = int(sys.argv[4])
+json_mode = sys.argv[5] == '1'
+list_only = sys.argv[6] == '1'
+keep = sys.argv[7] == '1'
+SCHEMA='queuebash.dev_qbtest_result.v1'
+
+def now():
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+
+def strip_marker(line):
+    s=line.strip()
+    if s.startswith('#'):
+        s=s[1:].strip()
+    elif s.startswith('//'):
+        s=s[2:].strip()
+    return s
+
+def parse_meta(s):
+    meta={}
+    try:
+        parts=shlex.split(s)
+    except Exception:
+        parts=s.split()
+    name_parts=[]
+    for p in parts:
+        if '=' in p:
+            k,v=p.split('=',1); meta[k.strip().lower().replace('-','_')]=v.strip()
+        else:
+            name_parts.append(p)
+    if name_parts and 'name' not in meta:
+        meta['name']=' '.join(name_parts)
+    return meta
+
+def default_language():
+    if source.suffix.lower() in ('.py', '.pyw'):
+        return 'python'
+    return 'bash'
+
+def parse_blocks(text):
+    blocks=[]; cur=None; in_b64=False
+    for lineno,line in enumerate(text.splitlines(),1):
+        mark=strip_marker(line)
+        if mark.startswith('QBTEST:BEGIN'):
+            if cur is not None:
+                cur.setdefault('errors',[]).append(f'nested QBTEST:BEGIN at line {lineno}')
+                blocks.append(cur)
+            meta=parse_meta(mark[len('QBTEST:BEGIN'):].strip())
+            cur={'index':len(blocks)+1,'line':lineno,'meta':meta,'b64_lines':[],'errors':[]}
+            in_b64=False
+            continue
+        if cur is None:
+            continue
+        if mark.startswith('QBTEST:B64'):
+            in_b64=True; continue
+        if mark.startswith('QBTEST:END'):
+            blocks.append(cur); cur=None; in_b64=False; continue
+        if in_b64:
+            cur['b64_lines'].append(mark)
+    if cur is not None:
+        cur.setdefault('errors',[]).append('missing QBTEST:END')
+        blocks.append(cur)
+    return blocks
+
+def block_id(block):
+    meta=block.get('meta',{})
+    raw='|'.join([str(source), str(block.get('line')), meta.get('name',''), meta.get('function',''), ''.join(block.get('b64_lines',[]))[:80]])
+    return 'QBTEST-'+hashlib.md5(raw.encode()).hexdigest()[:12]
+
+def decode_block(block):
+    data=''.join(block.get('b64_lines',[])).strip()
+    if not data:
+        raise ValueError('empty QBTEST:B64 payload')
+    try:
+        return base64.b64decode(data.encode(), validate=False).decode('utf-8')
+    except Exception as exc:
+        raise ValueError(f'invalid base64 payload: {exc}')
+
+def run_bash(snippet, meta, tmp):
+    test=tmp/'test.sh'; runner=tmp/'runner.sh'
+    test.write_text(snippet)
+    runner.write_text('\n'.join([
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'export QUEUEBASH_ALLOW_NONINTERACTIVE=1',
+        f'export QBTEST_SOURCE_FILE={shlex.quote(str(source))}',
+        f'export QBTEST_FUNCTION={shlex.quote(meta.get("function", filter_function))}',
+        f'source {shlex.quote(str(source))}',
+        f'source {shlex.quote(str(test))}',
+        ''
+    ]))
+    runner.chmod(0o755)
+    return subprocess.run(['bash', str(runner)], text=True, capture_output=True, timeout=timeout_sec, cwd=str(source.parent))
+
+def run_python(snippet, meta, tmp):
+    test=tmp/'test.py'; runner=tmp/'runner.py'
+    test.write_text(snippet)
+    runner.write_text(r'''
+import importlib.util, pathlib, sys, os
+source=pathlib.Path(sys.argv[1]).resolve()
+test=pathlib.Path(sys.argv[2]).resolve()
+function=sys.argv[3]
+spec=importlib.util.spec_from_file_location('qbtest_target_module', str(source))
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+target=getattr(module, function, None) if function else None
+g={'__name__':'__qbtest__','module':module,'target':target,'QBTEST_SOURCE_FILE':str(source),'QBTEST_FUNCTION':function}
+code=compile(test.read_text(), str(test), 'exec')
+exec(code, g, g)
+''')
+    return subprocess.run([sys.executable, str(runner), str(source), str(test), meta.get('function', filter_function)], text=True, capture_output=True, timeout=timeout_sec, cwd=str(source.parent))
+
+text=source.read_text(errors='replace')
+blocks=parse_blocks(text)
+selected=[]
+for b in blocks:
+    meta=b.setdefault('meta',{})
+    meta.setdefault('name', f'qbtest-{b["index"]}')
+    meta.setdefault('language', meta.get('lang') or default_language())
+    meta['language']=meta.get('language','').lower()
+    if filter_function and meta.get('function') != filter_function:
+        continue
+    if filter_language and meta.get('language') != filter_language:
+        continue
+    selected.append(b)
+results=[]
+if list_only:
+    for b in selected:
+        results.append({'id':block_id(b),'name':b['meta'].get('name',''),'function':b['meta'].get('function',''),'language':b['meta'].get('language',''),'line':b.get('line'),'status':'listed'})
+else:
+    for b in selected:
+        meta=b['meta']; tid=block_id(b)
+        rec={'id':tid,'name':meta.get('name',''),'function':meta.get('function',''),'language':meta.get('language',''),'line':b.get('line'),'status':'pending','exit_code':None,'stdout_tail':'','stderr_tail':'','duration_seconds':0}
+        if b.get('errors'):
+            rec.update({'status':'invalid','error':'; '.join(b['errors'])}); results.append(rec); continue
+        try:
+            snippet=decode_block(b)
+        except Exception as exc:
+            rec.update({'status':'invalid','error':str(exc)}); results.append(rec); continue
+        tmp_obj=tempfile.TemporaryDirectory(prefix='queuebash-qbtest.')
+        tmp=pathlib.Path(tmp_obj.name)
+        if keep:
+            tmp=pathlib.Path(tempfile.mkdtemp(prefix='queuebash-qbtest.keep.'))
+            tmp_obj=None
+        start=time.monotonic()
+        try:
+            lang=meta.get('language') or default_language()
+            if lang == 'bash': cp=run_bash(snippet, meta, tmp)
+            elif lang == 'python': cp=run_python(snippet, meta, tmp)
+            else:
+                rec.update({'status':'invalid','error':f'unsupported language: {lang}'})
+                results.append(rec); continue
+            rec['duration_seconds']=round(time.monotonic()-start,3)
+            rec['exit_code']=cp.returncode
+            rec['stdout_tail']='\n'.join(cp.stdout.splitlines()[-40:])[-4000:]
+            rec['stderr_tail']='\n'.join(cp.stderr.splitlines()[-40:])[-4000:]
+            rec['status']='pass' if cp.returncode == 0 else 'fail'
+        except subprocess.TimeoutExpired as exc:
+            rec['duration_seconds']=round(time.monotonic()-start,3)
+            rec['status']='timeout'; rec['exit_code']=124
+            rec['stdout_tail']='\n'.join((exc.stdout or '').splitlines()[-40:])[-4000:] if isinstance(exc.stdout,str) else ''
+            rec['stderr_tail']='\n'.join((exc.stderr or '').splitlines()[-40:])[-4000:] if isinstance(exc.stderr,str) else ''
+        except Exception as exc:
+            rec['duration_seconds']=round(time.monotonic()-start,3); rec['status']='infrastructure_error'; rec['error']=str(exc)
+        finally:
+            if tmp_obj is not None: tmp_obj.cleanup()
+        results.append(rec)
+counts={k:sum(1 for r in results if r.get('status')==k) for k in ['pass','fail','timeout','invalid','infrastructure_error','listed','no_match']}
+out={'schema':SCHEMA,'status':'pass' if results and all(r.get('status') in ('pass','listed') for r in results) else ('no_match' if not results else 'fail'),'source_file':str(source),'function':filter_function,'language':filter_language,'created_at':now(),'count':len(results),'counts':counts,'results':results}
+if json_mode:
+    print(json.dumps(out, sort_keys=True, separators=(',',':')))
+else:
+    print(f"queue dev test qbtest: {out['status']} {out['count']} test(s) from {source}")
+    for r in results:
+        print(f"{r.get('status')}\t{r.get('language')}\t{r.get('function')}\t{r.get('name')}\tline={r.get('line')}")
+sys.exit(0 if out['status']=='pass' else (3 if out['status']=='no_match' else 1))
+PYDEV_QBTEST
+}
+
+_queue_dev_test_command() {
+    local run=0 json=0 timeout_sec=120 name="" sub="${1:-}"
+    if [[ "$sub" == "qbtest" || "$sub" == "embedded" ]]; then
+        shift || true
+        _queue_dev_test_qbtest_command "$@"
+        return "$?"
+    fi
+    if [[ "$sub" == "result" ]]; then
+        shift || true
+        _queue_dev_test_result_command "$@"
+        return "$?"
+    fi
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --run) run=1; shift ;;
+            --json|-j) json=1; shift ;;
+            --name) name="${2:-}"; shift 2 ;;
+            --timeout) timeout_sec="${2:-}"; shift 2 ;;
+            --help|-h) _queue_dev_test_usage; return 0 ;;
+            --) shift; break ;;
+            *) echo "queue dev test: unexpected argument before --: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ "$#" -gt 0 ]] || { echo "queue dev test: missing command after --" >&2; return 2; }
+    [[ "$timeout_sec" =~ ^[0-9]+$ && "$timeout_sec" -gt 0 ]] || { echo "queue dev test: --timeout must be a positive integer" >&2; return 2; }
+
+    local here source_abs harness_root payload submitter worker before_json after_json submit_json job_id out
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    source_abs="$here/queuebash.sh"
+    [[ -f "$source_abs" ]] || source_abs="${BASH_SOURCE[0]}"
+    harness_root="$(mktemp -d "${TMPDIR:-/tmp}/queuebash-dev-test.XXXXXX")" || return 1
+    _queue_dev_test_make_harness "$harness_root" "$here" || return "$?"
+    [[ -n "$name" ]] || name="dev-test-$(basename "${1:-command}" | tr -c 'A-Za-z0-9_.-' '-')"
+    before_json="$(_queue_dev_test_counts_json "$harness_root")"
+
+    payload="$harness_root/dev-test-payload.sh"
+    {
+        printf '%s\n' '#!/usr/bin/env bash'
+        printf '%s\n' 'set +e'
+        printf '%s' 'cmd=('
+        local arg
+        for arg in "$@"; do printf ' %q' "$arg"; done
+        printf '%s\n' ' )'
+        printf '%s\n' '"${cmd[@]}"'
+        printf '%s\n' 'rc=$?'
+        printf '%s\n' 'sleep 0.2'
+        printf '%s\n' 'exit "$rc"'
+    } >"$payload"
+    chmod +x "$payload"
+
+    submitter="$harness_root/dev-test-submit.sh"
+    cat >"$submitter" <<EOF_SUBMITTER
+#!/usr/bin/env bash
+set -u
+export QUEUEBASH_ALLOW_NONINTERACTIVE=1
+export QUEUEBASH_ROOT=$(printf '%q' "$harness_root")
+export QUEUEBASH_CLASS_SOURCE_DIR=$(printf '%q' "$harness_root/classes")
+export QUEUEBASH_ENV_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/envs.d")
+export QUEUEBASH_PLUGIN_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/assets.d")
+export QUEUEBASH_CAP_PLUGIN_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/caps.d")
+export QUEUEBASH_REPORTER_PLUGIN_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/reporters.d")
+export QUEUEBASH_POLICY_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/policies.d")
+cd $(printf '%q' "$here") || exit 97
+source $(printf '%q' "$source_abs") >/dev/null || exit 98
+queue submit $(printf '%q' "$name") --class DEV_TEST_RUNNER --allow-large-log --json -- timeout $(printf '%q' "$timeout_sec") bash $(printf '%q' "$payload") > $(printf '%q' "$harness_root/submit.json")
+EOF_SUBMITTER
+    chmod +x "$submitter"
+    if ! bash "$submitter"; then
+        echo "queue dev test: harness submit failed" >&2
+        return 1
+    fi
+    submit_json="$(cat "$harness_root/submit.json" 2>/dev/null || true)"
+    job_id="$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("qid") or d.get("job_id") or d.get("id") or "")' <<<"$submit_json" 2>/dev/null || true)"
+    [[ -n "$job_id" ]] || { echo "queue dev test: submit did not return a job id" >&2; return 1; }
+
+    if [[ "$run" -eq 1 ]]; then
+        worker="$harness_root/dev-test-worker.sh"
+        local worker_limit worker_rc terminal_seen
+        worker_limit=$((timeout_sec + 4))
+        [[ "$worker_limit" -lt 4 ]] && worker_limit=4
+        [[ "$worker_limit" -gt 6 ]] && worker_limit=6
+        cat >"$worker" <<EOF_WORKER
+#!/usr/bin/env bash
+set -u
+export QUEUEBASH_ALLOW_NONINTERACTIVE=1
+export QUEUEBASH_ROOT=$(printf '%q' "$harness_root")
+export QUEUEBASH_CLASS_SOURCE_DIR=$(printf '%q' "$harness_root/classes")
+export QUEUEBASH_ENV_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/envs.d")
+export QUEUEBASH_PLUGIN_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/assets.d")
+export QUEUEBASH_CAP_PLUGIN_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/caps.d")
+export QUEUEBASH_REPORTER_PLUGIN_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/reporters.d")
+export QUEUEBASH_POLICY_SOURCE_DIR=$(printf '%q' "$harness_root/empty-source/policies.d")
+cd $(printf '%q' "$here") || exit 97
+source $(printf '%q' "$source_abs") >/dev/null || exit 98
+_queue_worker 1 >$(printf '%q' "$harness_root/worker.inner.stdout") 2>$(printf '%q' "$harness_root/worker.inner.stderr") &
+wp=\$!
+terminal_seen=0
+for ((i=0; i<$(printf '%q' "$worker_limit")*10; i++)); do
+    if [[ -f $(printf '%q' "$harness_root/done/$job_id.job") || -f $(printf '%q' "$harness_root/failed/$job_id.job") || -f $(printf '%q' "$harness_root/pol_blocked/$job_id.job") || -f $(printf '%q' "$harness_root/policy_blocked/$job_id.job") || -f $(printf '%q' "$harness_root/cancelled/$job_id.job") || -f $(printf '%q' "$harness_root/interrupted/$job_id.job") || -f $(printf '%q' "$harness_root/deleted/$job_id.job") ]]; then
+        terminal_seen=1
+        break
+    fi
+    if [[ -f $(printf '%q' "$harness_root/running/$job_id.job") ]] && grep -q '^EXIT_CODE=' $(printf '%q' "$harness_root/running/$job_id.job") 2>/dev/null; then
+        terminal_seen=1
+        break
+    fi
+    if ! kill -0 "\$wp" 2>/dev/null; then
+        break
+    fi
+    sleep 0.1
+done
+if kill -0 "\$wp" 2>/dev/null; then
+    kill -TERM "\$wp" >/dev/null 2>&1 || true
+    sleep 0.2
+    kill -KILL "\$wp" >/dev/null 2>&1 || true
+fi
+wait "\$wp" >/dev/null 2>&1 || true
+[[ "\$terminal_seen" == "1" ]] || exit 124
+exit 0
+EOF_WORKER
+        chmod +x "$worker"
+        worker_rc=0
+        # Foreground bounded harness wrapper. The worker script owns the focused
+        # one-job poll/cleanup loop, so queue dev test does not leave a detached
+        # worker or inherited descriptor after the target job reaches terminal state.
+        timeout "$((worker_limit + 1))" bash "$worker" </dev/null >"$harness_root/worker.stdout" 2>"$harness_root/worker.stderr" || worker_rc="$?"
+        terminal_seen=0
+        if [[ -f "$harness_root/done/$job_id.job" || -f "$harness_root/failed/$job_id.job" || -f "$harness_root/pol_blocked/$job_id.job" || -f "$harness_root/policy_blocked/$job_id.job" || -f "$harness_root/cancelled/$job_id.job" || -f "$harness_root/interrupted/$job_id.job" || -f "$harness_root/deleted/$job_id.job" ]]; then
+            terminal_seen=1
+        elif [[ -f "$harness_root/running/$job_id.job" ]] && grep -q '^EXIT_CODE=' "$harness_root/running/$job_id.job" 2>/dev/null; then
+            terminal_seen=1
+        fi
+
+        # If a killed/terminated worker left the job in running after the payload
+        # appended EXIT_CODE, finish the move deterministically for the harness.
+        if [[ -f "$harness_root/running/$job_id.job" ]] && grep -q '^EXIT_CODE=' "$harness_root/running/$job_id.job" 2>/dev/null; then
+            local _dev_test_ec _dev_test_dst
+            _dev_test_ec="$(sed -n 's/^EXIT_CODE=//p' "$harness_root/running/$job_id.job" | tail -n 1 | tr -d "'" )"
+            if [[ "${_dev_test_ec:-1}" == "0" ]]; then
+                _dev_test_dst="$harness_root/done/$job_id.job"
+            else
+                _dev_test_dst="$harness_root/failed/$job_id.job"
+            fi
+            mv -f "$harness_root/running/$job_id.job" "$_dev_test_dst" 2>/dev/null || true
+        fi
+
+        if [[ "$terminal_seen" != "1" ]]; then
+            printf '%s\n' "queue dev test: worker wrapper stopped before observing terminal state rc=$worker_rc" >>"$harness_root/worker.stderr"
+        fi
+    fi
+
+    after_json="$(_queue_dev_test_counts_json "$harness_root")"
+    if [[ "$run" -eq 0 ]]; then
+        out="$(python3 - "$harness_root" "$job_id" "$name" "$before_json" "$after_json" <<'PYSUBMITTED'
+import json, sys
+root, job_id, name, before_s, after_s = sys.argv[1:]
+print(json.dumps({
+ "schema":"queuebash.dev_test_result.v1",
+ "harness_root":root,
+ "created_job_id":job_id,
+ "job_id":job_id,
+ "class":"DEV_TEST_RUNNER",
+ "name":name,
+ "queue_state":"pending",
+ "status":"submitted",
+ "exit_code":None,
+ "timed_out":False,
+ "before":json.loads(before_s),
+ "after":json.loads(after_s),
+}, separators=(",",":"), sort_keys=True))
+PYSUBMITTED
+)"
+    else
+        out="$(_queue_dev_test_result_json "$harness_root" "$job_id" "$before_json" "$after_json")"
+    fi
+    if [[ "$json" -eq 1 ]]; then
+        printf '%s\n' "$out"
+    else
+        python3 -c 'import json,sys; d=json.load(sys.stdin); print(f"Dev test {d.get(chr(106)+chr(111)+chr(98)+chr(95)+chr(105)+chr(100),"")}: {d.get("status","")} state={d.get("queue_state","")} exit={d.get("exit_code","")}\nHarness: {d.get("harness_root","")}")' <<<"$out"
+    fi
+}
+_queue_dev_file_registry_path() {
+    local root
+    root="$(_queue_root)"
+    mkdir -p "$root/dev" 2>/dev/null || true
+    printf '%s\n' "$root/dev/file_registry.json"
+}
+
+_queue_dev_file_registry_command() {
+    local sub="${1:-help}" path
+    shift || true
+    path="$(_queue_dev_file_registry_path)"
+    python3 - "$path" "$sub" "$@" <<'PYDEV_FILE_REGISTRY'
+import argparse, datetime, hashlib, json, os, pathlib, re, shutil, sys, uuid
+SCHEMA="queuebash.dev_file_registry.v1"; ENTRY_SCHEMA="queuebash.dev_file_registry_entry.v1"; EVENT_SCHEMA="queuebash.dev_file_registry_event.v1"
+registry_path=pathlib.Path(sys.argv[1]); sub=sys.argv[2]; argv=sys.argv[3:]; project_root=pathlib.Path(os.getcwd()).resolve(); backup_root=registry_path.parent/"file_registry"/"backups"
+def now(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
+def relpath(path):
+    p=pathlib.Path(path); p=(project_root/p).resolve() if not p.is_absolute() else p.resolve()
+    try: return str(p.relative_to(project_root))
+    except ValueError: return str(p)
+def md5_file(path):
+    h=hashlib.md5()
+    with open(path,'rb') as f:
+        for c in iter(lambda:f.read(1024*1024), b''): h.update(c)
+    return h.hexdigest()
+def brace_delta(line):
+    delta=0; sq=dq=esc=False; i=0
+    while i<len(line):
+        ch=line[i]
+        if esc: esc=False; i+=1; continue
+        if ch=='\\' and not sq: esc=True; i+=1; continue
+        if ch=="'" and not dq: sq=not sq; i+=1; continue
+        if ch=='"' and not sq: dq=not dq; i+=1; continue
+        if ch=='#' and not sq and not dq: break
+        if not sq and not dq:
+            if ch=='{': delta+=1
+            elif ch=='}': delta-=1
+        i+=1
+    return delta
+def functions_in_text(text):
+    lines=text.splitlines(True); out=[]; seen=set()
+    p1=re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*(?:\{|$)'); p2=re.compile(r'^\s*function\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*(?:\{|$)')
+    for i,line in enumerate(lines):
+        m=p1.match(line) or p2.match(line)
+        if not m: continue
+        fn=m.group(1)
+        if fn in seen: continue
+        depth=0; opened=False; end=None
+        for j in range(i,len(lines)):
+            d=brace_delta(lines[j]); opened = opened or d>0; depth += d
+            if opened and depth<=0: end=j; break
+        if end is None: continue
+        body=''.join(lines[i:end+1]).encode(); out.append({'function':fn,'line_start':i+1,'line_end':end+1,'md5':hashlib.md5(body).hexdigest(),'size':len(body)}); seen.add(fn)
+    return out
+def function_map(path):
+    try: return {f['function']:f for f in functions_in_text(pathlib.Path(path).read_text(errors='replace'))}
+    except FileNotFoundError: return {}
+def load():
+    if not registry_path.exists(): return {'schema':SCHEMA,'created_at':now(),'updated_at':now(),'project_root':str(project_root),'entries':[],'events':[]}
+    data=json.loads(registry_path.read_text()); data.setdefault('schema',SCHEMA); data.setdefault('entries',[]); data.setdefault('events',[]); return data
+def save(data):
+    registry_path.parent.mkdir(parents=True,exist_ok=True); data['updated_at']=now(); tmp=registry_path.with_suffix(registry_path.suffix+'.tmp'); tmp.write_text(json.dumps(data,indent=2,sort_keys=True)+'\n'); tmp.replace(registry_path)
+def find_entry(data,file):
+    rp=relpath(file)
+    for e in data.get('entries',[]):
+        if e.get('relpath')==rp or e.get('path')==str(pathlib.Path(file).resolve()): return e
+    return None
+def event(data,action,entry=None,**kw):
+    ev={'schema':EVENT_SCHEMA,'id':'fev-'+uuid.uuid4().hex[:12],'action':action,'timestamp':now()}
+    if entry: ev.update({'entry_id':entry.get('id'),'relpath':entry.get('relpath')})
+    ev.update(kw); data.setdefault('events',[]).append(ev)
+def snapshot(file,functions=None):
+    p=pathlib.Path(file); p=(project_root/p).resolve() if not p.is_absolute() else p.resolve()
+    if not p.exists(): raise SystemExit(f'queue dev files: file not found: {file}')
+    fmap=function_map(p)
+    # None means full function inventory for existing-file begin/finish tracking.
+    # An explicit empty list means bounded/no function preconditions, used for
+    # new/unbaselined files unless --function was requested.
+    wanted=sorted(fmap) if functions is None else list(functions)
+    fl=[fmap[x] for x in wanted if x in fmap]
+    return {'path':str(p),'relpath':relpath(p),'size':p.stat().st_size,'md5':md5_file(p),'functions':fl}
+def emit(obj,json_mode):
+    print(json.dumps(obj,sort_keys=True,separators=(',',':')) if json_mode else f"{obj.get('status','ok')}: {obj.get('relpath') or obj.get('path') or obj.get('message','')}")
+def parser(prog):
+    ap=argparse.ArgumentParser(prog=prog); ap.add_argument('--json',action='store_true'); return ap
+def update_change(entry, functions=None):
+    base=entry.get('baseline',{})
+    if functions:
+        entry['tracked_functions']=list(functions)
+    if functions is None:
+        functions=entry.get('tracked_functions') or [f.get('function') for f in base.get('functions',[]) if f.get('function')] or None
+    cur=snapshot(entry['path'], functions)
+    old={f.get('function'):f for f in base.get('functions',[])}; new={f.get('function'):f for f in cur.get('functions',[])}
+    changed=[]
+    for fn in sorted(set(old)|set(new)):
+        if old.get(fn,{}).get('md5') != new.get(fn,{}).get('md5'):
+            changed.append({'function':fn,'old_md5':old.get(fn,{}).get('md5'),'new_md5':new.get(fn,{}).get('md5'),'old_size':old.get(fn,{}).get('size'),'new_size':new.get(fn,{}).get('size')})
+    is_changed=bool(entry.get('added')) or base.get('md5') is None or base.get('md5') != cur.get('md5') or bool(changed)
+    entry.update({'updated_at':now(),'current':cur,'changed':is_changed,'changed_functions':changed,'status':'changed' if is_changed else 'unchanged'})
+    return cur,changed
+def cmd_begin():
+    ap=parser('queue dev files begin'); ap.add_argument('--file',required=True); ap.add_argument('--purpose',required=True); ap.add_argument('--location',default=''); ap.add_argument('--function',action='append',default=[]); ns=ap.parse_args(argv)
+    data=load(); snap=snapshot(ns.file,ns.function); eid='freg-'+uuid.uuid4().hex[:12]; bfile=backup_root/eid/snap['relpath']; bfile.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(snap['path'],bfile)
+    entry=find_entry(data,snap['path']) or {'schema':ENTRY_SCHEMA,'id':eid,'created_at':now()}
+    if entry not in data['entries']: data['entries'].append(entry)
+    entry.update({'updated_at':now(),'status':'open','path':snap['path'],'relpath':snap['relpath'],'location':ns.location or snap['relpath'],'purpose':ns.purpose,'baseline':snap,'current':snap,'backup':str(bfile),'changed':False})
+    event(data,'begin',entry,purpose=ns.purpose,backup=str(bfile)); save(data); emit({'schema':ENTRY_SCHEMA,'status':'open','entry_id':entry['id'],'relpath':snap['relpath'],'md5':snap['md5'],'size':snap['size'],'backup':str(bfile)},ns.json)
+def cmd_finish():
+    ap=parser('queue dev files finish'); ap.add_argument('--file',required=True); ap.add_argument('--purpose',default=''); ap.add_argument('--function',action='append',default=[]); ns=ap.parse_args(argv)
+    data=load(); entry=find_entry(data,ns.file)
+    if not entry: raise SystemExit('queue dev files finish: file has no registry entry; use begin first')
+    if ns.purpose: entry['purpose']=ns.purpose
+    cur,changed=update_change(entry,ns.function or None); event(data,'finish',entry,changed=entry.get('changed'),changed_functions=changed); save(data); emit({'schema':ENTRY_SCHEMA,'status':entry['status'],'entry_id':entry['id'],'relpath':entry['relpath'],'old_md5':entry.get('baseline',{}).get('md5'),'new_md5':cur.get('md5'),'changed_functions':changed},ns.json)
+def cmd_add():
+    ap=parser('queue dev files add'); ap.add_argument('--file',required=True); ap.add_argument('--purpose',required=True); ap.add_argument('--location',default=''); ap.add_argument('--function',action='append',default=[]); ns=ap.parse_args(argv)
+    data=load(); snap=snapshot(ns.file,ns.function if ns.function else []); entry=find_entry(data,snap['path'])
+    if entry is None:
+        entry={'schema':ENTRY_SCHEMA,'id':'freg-'+uuid.uuid4().hex[:12],'created_at':now(),'baseline':{'path':snap['path'],'relpath':snap['relpath'],'size':0,'md5':None,'functions':[]}}
+        data['entries'].append(entry)
+    if ns.function: entry['tracked_functions']=list(ns.function)
+    old={f.get('function'):f for f in entry.get('baseline',{}).get('functions',[])}; newf={f.get('function'):f for f in snap.get('functions',[])}
+    changed=[]
+    for fn in sorted(set(old)|set(newf)):
+        if old.get(fn,{}).get('md5') != newf.get(fn,{}).get('md5'):
+            changed.append({'function':fn,'old_md5':old.get(fn,{}).get('md5'),'new_md5':newf.get(fn,{}).get('md5'),'old_size':old.get(fn,{}).get('size'),'new_size':newf.get(fn,{}).get('size')})
+    entry.update({'updated_at':now(),'status':'changed','path':snap['path'],'relpath':snap['relpath'],'location':ns.location or snap['relpath'],'purpose':ns.purpose,'current':snap,'changed':True,'added':True,'changed_functions':changed})
+    event(data,'add',entry,purpose=ns.purpose); save(data); emit({'schema':ENTRY_SCHEMA,'status':'added','entry_id':entry['id'],'relpath':snap['relpath'],'md5':snap['md5'],'size':snap['size']},ns.json)
+def cmd_remove():
+    ap=parser('queue dev files remove'); ap.add_argument('--file',required=True); ap.add_argument('--reason',default=''); ap.add_argument('--json',action='store_true'); ns=ap.parse_args(argv)
+    data=load(); entry=find_entry(data,ns.file)
+    if not entry: raise SystemExit('queue dev files remove: file not in registry')
+    entry.update({'updated_at':now(),'status':'removed','changed':False,'remove_reason':ns.reason}); event(data,'remove',entry,reason=ns.reason); save(data); emit({'schema':ENTRY_SCHEMA,'status':'removed','entry_id':entry['id'],'relpath':entry.get('relpath')},ns.json)
+def cmd_list(changed_only=False):
+    ap=parser('queue dev files list'); ap.add_argument('--all',action='store_true'); ns=ap.parse_args(argv)
+    data=load(); out=[]
+    for e in data.get('entries',[]):
+        if pathlib.Path(e.get('path','')).exists() and e.get('status') not in {'removed','archived'}:
+            try: update_change(e,None)
+            except Exception: pass
+        if not ns.all and e.get('status') in {'removed','archived'}: continue
+        if changed_only and not e.get('changed'): continue
+        out.append(e)
+    save(data)
+    if ns.json: print(json.dumps({'schema':SCHEMA,'status':'ok','registry':str(registry_path),'entries':out},sort_keys=True,separators=(',',':')))
+    else:
+        for e in out:
+            cur=e.get('current',{}); base=e.get('baseline',{})
+            print(f"{e.get('status','?')}\t{e.get('relpath','')}\tsize={cur.get('size','')}\tmd5={cur.get('md5','')}\tbase={base.get('md5','')}\tpurpose={e.get('purpose','')}")
+
+def cmd_scan():
+    ap=parser('queue dev files scan'); ap.add_argument('--all',action='store_true'); ns=ap.parse_args(argv)
+    data=load(); scanned=[]; missing=[]; changed=0; missing_baseline=0; scan_records=[]
+    for e in data.get('entries',[]):
+        if not ns.all and e.get('status') in {'removed','archived'}: continue
+        path=e.get('path','')
+        if not path or not pathlib.Path(path).exists():
+            missing.append(e.get('relpath') or path); continue
+        try:
+            update_change(e,None); scanned.append(e.get('relpath') or path)
+            if e.get('baseline',{}).get('md5') is None: missing_baseline+=1
+            if e.get('changed'): changed+=1
+            cur=e.get('current',{})
+            scan_records.append({'relpath':e.get('relpath') or path,'status':e.get('status'),'changed':bool(e.get('changed')),'md5':cur.get('md5'),'size':cur.get('size'),'baseline_md5':e.get('baseline',{}).get('md5'),'missing_baseline_md5':e.get('baseline',{}).get('md5') is None})
+        except Exception as ex:
+            missing.append((e.get('relpath') or path)+': '+str(ex))
+    event(data,'scan',None,scanned=len(scanned),changed=changed,missing=len(missing),missing_baseline_md5=missing_baseline); save(data)
+    emit({'schema':SCHEMA,'status':'ok','registry':str(registry_path),'scanned':len(scanned),'changed':changed,'missing_baseline_md5':missing_baseline,'missing':missing,'scan_records':scan_records,'entries':data.get('entries',[])},ns.json)
+def cmd_path():
+    ap=parser('queue dev files path'); ns=ap.parse_args(argv); emit({'schema':SCHEMA,'status':'ok','path':str(registry_path)},ns.json)
+try:
+    if sub in {'help','--help','-h',''}: print('Usage: queue dev files begin|finish|add|remove|list|changed|scan|path', file=sys.stderr); sys.exit(0)
+    {'path':cmd_path,'begin':cmd_begin,'finish':cmd_finish,'add':cmd_add,'remove':cmd_remove,'list':lambda:cmd_list(False),'changed':lambda:cmd_list(True),'scan':cmd_scan}[sub]()
+except KeyError:
+    print(f'queue dev files: unknown subcommand: {sub}', file=sys.stderr); sys.exit(2)
+except SystemExit: raise
+except Exception as e:
+    print(f'queue dev files: {e}', file=sys.stderr); sys.exit(1)
+PYDEV_FILE_REGISTRY
+}
+
+_queue_dev_patchset_command() {
+    local sub="${1:-}" registry="" output="" patchset="" target="" backup_dir="" json=0 check=0
+    shift || true
+    case "$sub" in
+        create)
+            while [[ "$#" -gt 0 ]]; do
+                case "${1:-}" in
+                    --output|-o) output="${2:-}"; shift 2 ;;
+                    --registry) registry="${2:-}"; shift 2 ;;
+                    --json|-j) json=1; shift ;;
+                    *) echo "queue dev patchset create: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+            [[ -n "$output" ]] || { echo "Usage: queue dev patchset create --output ZIP [--registry FILE] [--json]" >&2; return 2; }
+            [[ -n "$registry" ]] || registry="$(_queue_dev_file_registry_path)"
+            python3 - "$registry" "$output" "$json" <<'PYDEV_PATCHSET_CREATE'
+import datetime, hashlib, json, os, pathlib, shutil, subprocess, sys, tempfile, zipfile
+registry=pathlib.Path(sys.argv[1]); outzip=pathlib.Path(sys.argv[2]); json_mode=sys.argv[3]=='1'; root=pathlib.Path(os.getcwd()).resolve()
+if not registry.exists(): print(f'queue dev patchset: registry not found: {registry}', file=sys.stderr); sys.exit(1)
+data=json.loads(registry.read_text())
+def md5_file(path):
+    h=hashlib.md5()
+    with open(path,'rb') as f:
+        for c in iter(lambda:f.read(1024*1024), b''): h.update(c)
+    return h.hexdigest()
+def safe_rel(rel):
+    p=pathlib.PurePosixPath(str(rel).replace(os.sep,'/'))
+    if p.is_absolute() or '..' in p.parts: raise SystemExit(f'unsafe registry path: {rel}')
+    return str(p)
+def include_entry(e):
+    if e.get('status') in {'removed','archived'}: return False
+    base=e.get('baseline') or {}; cur=e.get('current') or {}; path=e.get('path')
+    if e.get('changed') or e.get('added') or e.get('status')=='changed': return True
+    if base.get('md5') is None and path and pathlib.Path(path).exists(): return True
+    if base.get('md5') != cur.get('md5') and cur.get('md5') is not None: return True
+    return False
+entries=[e for e in data.get('entries',[]) if include_entry(e)]
+if not entries: print('queue dev patchset: no changed registry entries', file=sys.stderr); sys.exit(1)
+manifest={'schema':'queuebash.dev_patchset.v1','created_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source_root':str(root),'registry':str(registry),'summary':{'total_entries':0,'modified_files':0,'new_or_unbaselined_files':0,'missing_baseline_backups':0,'function_preconditions':0,'scratchpad_item_merge_entries':0},'entries':[]}
+work=pathlib.Path(tempfile.mkdtemp(prefix='queue-dev-patchset.'))
+try:
+    (work/'files').mkdir(); (work/'diffs').mkdir(); (work/'baseline').mkdir(); (work/'scripts').mkdir()
+    for e in entries:
+        rel=safe_rel(e.get('relpath')); src=pathlib.Path(e.get('path'))
+        if not src.exists(): print(f'queue dev patchset: changed file missing: {src}', file=sys.stderr); sys.exit(1)
+        dest=work/'files'/rel; dest.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(src,dest)
+        backup_s=e.get('backup') or ''; backup=pathlib.Path(backup_s) if backup_s else None; diff_rel=f'diffs/{rel}.diff'; diff_path=work/diff_rel; diff_path.parent.mkdir(parents=True,exist_ok=True)
+        baseline_present=bool(backup and backup.is_file())
+        if baseline_present:
+            bdest=work/'baseline'/rel; bdest.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(backup,bdest); proc=subprocess.run(['diff','-u',str(bdest),str(dest)],text=True,capture_output=True); diff_path.write_text(proc.stdout)
+        else:
+            diff_path.write_text(f'# baseline backup missing for {rel}\n# file_old_md5={e.get("baseline",{}).get("md5")}\n')
+        base=e.get('baseline',{}); old_md5=base.get('md5'); new_md5=md5_file(src)
+        change_type='scratchpad_item_merge' if rel=='.queuebash/dev/scratchpad.json' else ('new_or_unbaselined_file' if old_md5 is None else 'modified_file')
+        if change_type=='new_or_unbaselined_file': manifest['summary']['new_or_unbaselined_files']+=1
+        elif change_type=='scratchpad_item_merge': manifest['summary']['scratchpad_item_merge_entries']+=1
+        else: manifest['summary']['modified_files']+=1
+        if not baseline_present: manifest['summary']['missing_baseline_backups']+=1
+        manifest['summary']['function_preconditions']+=len(e.get('changed_functions') or [])
+        manifest['entries'].append({'entry_id':e.get('id'),'relpath':rel,'purpose':e.get('purpose'),'change_type':change_type,'file_old_md5':old_md5,'file_new_md5':new_md5,'file_old_size':base.get('size'),'file_new_size':src.stat().st_size,'changed_functions':e.get('changed_functions',[]),'diff':diff_rel,'file':f'files/{rel}','baseline_present':baseline_present,'precondition':{'file_old_md5_required':old_md5 is not None and rel!='.queuebash/dev/scratchpad.json','allow_absent_target_for_new_file':old_md5 is None,'allow_matching_existing_new_file':old_md5 is None,'scratchpad_item_merge':rel=='.queuebash/dev/scratchpad.json'}})
+    manifest['summary']['total_entries']=len(manifest['entries'])
+    (work/'manifest.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+    (work/'review_diff.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\nhere="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"\ntarget="${1:-.}"\npython3 "$here/scripts/check_preconditions.py" "$here/manifest.json" "$target"\nfind "$here/diffs" -type f -name "*.diff" -print -exec cat {} \\;\n')
+    (work/'apply_patchset.sh').write_text(r'''#!/usr/bin/env bash
+set -euo pipefail
+usage() {
+  cat <<'USAGE'
+Usage: ./apply_patchset.sh [--help] [--check] [--json] [--backup-dir DIR] [TARGET]
+
+Checks patchset preconditions, creates a pre-apply backup manifest, then applies files.
+Scratchpad updates are merged by scratchpad item id instead of overwriting the file.
+
+Options:
+  --help, -h        Show this help without running preconditions.
+  --check          Run preconditions only; do not back up or apply files.
+  --json           Emit bounded JSON from precondition/apply phases where supported.
+  --backup-dir DIR Put pre-apply backups under DIR.
+USAGE
+}
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+target="."
+check=0
+json=0
+backup_dir=""
+while [[ "$#" -gt 0 ]]; do
+  case "${1:-}" in
+    --help|-h) usage; exit 0 ;;
+    --check) check=1; shift ;;
+    --json) json=1; shift ;;
+    --backup-dir) backup_dir="${2:-}"; shift 2 ;;
+    --) shift; break ;;
+    -*) echo "apply_patchset.sh: unknown option: $1" >&2; usage >&2; exit 2 ;;
+    *) target="$1"; shift ;;
+  esac
+done
+check_args=()
+[[ "$json" == "1" ]] && check_args+=(--json)
+python3 "$here/scripts/check_preconditions.py" "$here/manifest.json" "$target" "${check_args[@]}"
+[[ "$check" == "1" ]] && exit 0
+apply_args=()
+[[ "$json" == "1" ]] && apply_args+=(--json)
+[[ -n "$backup_dir" ]] && apply_args+=(--backup-dir "$backup_dir")
+python3 "$here/scripts/apply_files.py" "$here/manifest.json" "$target" "$here/files" "${apply_args[@]}"
+''')
+    (work/'scripts'/'check_preconditions.py').write_text(r'''#!/usr/bin/env python3
+import argparse, hashlib, json, pathlib, re, sys
+ap=argparse.ArgumentParser(); ap.add_argument('manifest'); ap.add_argument('target'); ap.add_argument('--json',action='store_true'); ns=ap.parse_args()
+manifest=pathlib.Path(ns.manifest); target=pathlib.Path(ns.target); data=json.loads(manifest.read_text())
+def md5_file(path):
+ h=hashlib.md5()
+ with open(path,'rb') as f:
+  for c in iter(lambda:f.read(1024*1024), b''): h.update(c)
+ return h.hexdigest()
+def brace_delta(line):
+ delta=0; sq=dq=esc=False; i=0
+ while i<len(line):
+  ch=line[i]
+  if esc: esc=False; i+=1; continue
+  if ch=='\\' and not sq: esc=True; i+=1; continue
+  if ch=="'" and not dq: sq=not sq; i+=1; continue
+  if ch=='"' and not sq: dq=not dq; i+=1; continue
+  if ch=='#' and not sq and not dq: break
+  if not sq and not dq:
+   if ch=='{': delta+=1
+   elif ch=='}': delta-=1
+  i+=1
+ return delta
+def funcs(path):
+ text=path.read_text(errors='replace'); lines=text.splitlines(True); out={}; p1=re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*(?:\{|$)'); p2=re.compile(r'^\s*function\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*(?:\{|$)')
+ for i,line in enumerate(lines):
+  m=p1.match(line) or p2.match(line)
+  if not m: continue
+  fn=m.group(1); depth=0; opened=False; end=None
+  for j in range(i,len(lines)):
+   d=brace_delta(lines[j]); opened=opened or d>0; depth+=d
+   if opened and depth<=0: end=j; break
+  if end is not None: out[fn]=hashlib.md5(''.join(lines[i:end+1]).encode()).hexdigest()
+ return out
+results=[]
+for e in data.get('entries',[]):
+ rel=e['relpath']; path=target/rel; old=e.get('file_old_md5'); new=e.get('file_new_md5')
+ result={'relpath':rel,'change_type':e.get('change_type'),'status':'unknown','detail':''}
+ if rel=='.queuebash/dev/scratchpad.json':
+  if not path.exists(): result.update(status='ready_scratchpad_create', detail='scratchpad absent; safe to create from patchset')
+  else: result.update(status='ready_scratchpad_item_merge', detail='scratchpad will merge by item id; file md5 drift is not an overwrite conflict')
+  results.append(result); continue
+ if old is None:
+  if not path.exists(): result.update(status='ready_new_file_absent', detail='target path absent; safe to create')
+  else:
+   cur=md5_file(path)
+   if new and cur==new: result.update(status='already_applied', detail='new/unbaselined file already present with expected md5')
+   else: result.update(status='conflict_existing_new_file', detail=f'target exists with md5 {cur}; expected absent or {new}')
+  results.append(result); continue
+ if not path.exists(): result.update(status='missing_target', detail='target file is missing'); results.append(result); continue
+ cur=md5_file(path)
+ if old and cur!=old:
+  f=funcs(path); bad=[]
+  for ch in e.get('changed_functions') or []:
+   fn=ch.get('function'); om=ch.get('old_md5')
+   if om and f.get(fn)!=om: bad.append(f"{fn}: expected {om} got {f.get(fn)}")
+  if bad: result.update(status='conflict_function_baseline', detail='; '.join(bad))
+  else: result.update(status='ready_function_baseline', detail='file md5 differs but changed-function old md5 preconditions match')
+ else: result.update(status='ready_file_baseline', detail='file baseline md5 matched')
+ results.append(result)
+summary={'total':len(results),'ready':0,'already_applied':0,'conflict':0,'missing':0,'scratchpad_item_merge':0,'requires_full_file_reconciliation':0}
+for r in results:
+ st=r['status']
+ if st.startswith('ready_'): summary['ready']+=1
+ if st.startswith('ready_scratchpad_'): summary['scratchpad_item_merge']+=1
+ elif st=='already_applied': summary['already_applied']+=1
+ elif st.startswith('conflict_'):
+  summary['conflict']+=1
+  if st in {'conflict_function_baseline','conflict_existing_new_file'}: summary['requires_full_file_reconciliation']+=1
+ elif st=='missing_target': summary['missing']+=1
+out={'schema':'queuebash.dev_patchset.preconditions.v1','status':'ok' if summary['conflict']==0 and summary['missing']==0 else 'failed','summary':summary,'results':results}
+if ns.json: print(json.dumps(out,sort_keys=True,separators=(',',':')))
+else:
+ print('Patchset precondition summary: '+', '.join(f"{k}={v}" for k,v in summary.items()))
+ for r in results: print(f"{r['status']}\t{r['relpath']}\t{r['detail']}")
+sys.exit(0 if out['status']=='ok' else 1)
+''')
+    (work/'scripts'/'apply_files.py').write_text(r'''#!/usr/bin/env python3
+import argparse, datetime, hashlib, json, pathlib, shutil, sys
+ap=argparse.ArgumentParser(); ap.add_argument('manifest'); ap.add_argument('target'); ap.add_argument('files'); ap.add_argument('--backup-dir'); ap.add_argument('--json',action='store_true'); ns=ap.parse_args()
+data=json.loads(pathlib.Path(ns.manifest).read_text()); target=pathlib.Path(ns.target); files=pathlib.Path(ns.files)
+def md5_file(path):
+ h=hashlib.md5()
+ with open(path,'rb') as f:
+  for c in iter(lambda:f.read(1024*1024), b''): h.update(c)
+ return h.hexdigest()
+def load_json(path):
+ try: return json.loads(path.read_text())
+ except Exception: return None
+def item_key(item):
+ if isinstance(item,dict):
+  return item.get('id') or item.get('item_id') or item.get('key')
+ return None
+def merge_scratchpad(dst, src):
+ incoming=load_json(src)
+ if incoming is None: raise SystemExit(f'incoming scratchpad is not valid JSON: {src}')
+ if not dst.exists():
+  dst.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(src,dst)
+  return {'mode':'created','added':len(incoming.get('items',[]) if isinstance(incoming,dict) else []),'kept':0,'conflicts':0}
+ current=load_json(dst)
+ if current is None: raise SystemExit(f'target scratchpad is not valid JSON: {dst}')
+ if not isinstance(current,dict) or not isinstance(incoming,dict):
+  raise SystemExit('scratchpad merge requires JSON objects')
+ cur_items=current.setdefault('items',[]); inc_items=incoming.get('items',[])
+ if not isinstance(cur_items,list) or not isinstance(inc_items,list):
+  raise SystemExit('scratchpad merge requires items arrays')
+ index={item_key(x):x for x in cur_items if item_key(x)}
+ added=kept=conflicts=0
+ for item in inc_items:
+  k=item_key(item)
+  if not k:
+   cur_items.append(item); added+=1; continue
+  if k not in index:
+   cur_items.append(item); index[k]=item; added+=1; continue
+  if index[k]==item:
+   kept+=1; continue
+  conflicts+=1
+  current.setdefault('merge_conflicts',[]).append({'id':k,'reason':'same scratchpad item id differs; kept target item','incoming':item})
+ current.setdefault('merge_history',[]).append({'schema':'queuebash.dev_patchset.scratchpad_merge.v1','created_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':'patchset','added':added,'kept':kept,'conflicts':conflicts})
+ dst.write_text(json.dumps(current,indent=2,sort_keys=True)+'\n')
+ return {'mode':'merged','added':added,'kept':kept,'conflicts':conflicts}
+patchset_id=data.get('created_at','patchset').replace(':','').replace('/','_')
+backup_root=pathlib.Path(ns.backup_dir) if ns.backup_dir else target/'.queuebash'/'dev'/'patchset-backups'
+stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+backup_dir=backup_root/f'{stamp}_{patchset_id}'
+backup_dir.mkdir(parents=True,exist_ok=True)
+backup_manifest={'schema':'queuebash.dev_patchset.backup_manifest.v1','created_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'target':str(target),'patchset_created_at':data.get('created_at'),'backup_dir':str(backup_dir),'entries':[]}
+applied=[]
+for e in data.get('entries',[]):
+ rel=e['relpath']; src=files/rel; dst=target/rel; before_exists=dst.exists(); rec={'relpath':rel,'existed':before_exists,'change_type':e.get('change_type'),'action':'merge_scratchpad' if rel=='.queuebash/dev/scratchpad.json' else ('replace' if before_exists else 'create')}
+ if before_exists:
+  rec['old_md5']=md5_file(dst); rec['old_size']=dst.stat().st_size
+  bpath=backup_dir/'files'/rel; bpath.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(dst,bpath); rec['backup_path']=str(bpath.relative_to(backup_dir))
+ else:
+  rec['rollback']='delete_created_file'
+ backup_manifest['entries'].append(rec)
+backup_manifest_path=backup_dir/'backup_manifest.json'
+backup_manifest_path.write_text(json.dumps(backup_manifest,indent=2,sort_keys=True)+'\n')
+for e in data.get('entries',[]):
+ rel=e['relpath']; src=files/rel; dst=target/rel; dst.parent.mkdir(parents=True,exist_ok=True)
+ if rel=='.queuebash/dev/scratchpad.json':
+  result=merge_scratchpad(dst, src); applied.append({'relpath':rel,'status':'merged_scratchpad','result':result}); continue
+ shutil.copy2(src,dst); applied.append({'relpath':rel,'status':'applied'})
+out={'schema':'queuebash.dev_patchset.apply.v1','status':'ok','backup_dir':str(backup_dir),'backup_manifest':str(backup_manifest_path),'applied':applied}
+if ns.json: print(json.dumps(out,sort_keys=True,separators=(',',':')))
+else:
+ print(f'backup_dir: {backup_dir}')
+ print(f'backup_manifest: {backup_manifest_path}')
+ for a in applied: print(f"{a['status']} {a['relpath']}")
+''')
+    for f in [work/'review_diff.sh',work/'apply_patchset.sh',work/'scripts'/'check_preconditions.py',work/'scripts'/'apply_files.py']: os.chmod(f,0o755)
+    outzip.parent.mkdir(parents=True,exist_ok=True)
+    with zipfile.ZipFile(outzip,'w',compression=zipfile.ZIP_DEFLATED) as z:
+        for path in sorted(work.rglob('*')):
+            if path.is_file(): z.write(path,path.relative_to(work).as_posix())
+finally:
+    shutil.rmtree(work,ignore_errors=True)
+if json_mode: print(json.dumps({'schema':'queuebash.dev_patchset.v1','status':'ok','output':str(outzip),'entries':len(entries),'summary':manifest['summary']},sort_keys=True,separators=(',',':')))
+else: print(f"patchset written: {outzip}\nchanged files: {len(entries)}\nnew_or_unbaselined: {manifest['summary']['new_or_unbaselined_files']}\nmissing_baseline_backups: {manifest['summary']['missing_baseline_backups']}")
+PYDEV_PATCHSET_CREATE
+            ;;
+        inspect|apply)
+            local mode="$sub"
+            while [[ "$#" -gt 0 ]]; do
+                case "${1:-}" in
+                    --patchset|-p) patchset="${2:-}"; shift 2 ;;
+                    --target) target="${2:-}"; shift 2 ;;
+                    --backup-dir) backup_dir="${2:-}"; shift 2 ;;
+                    --check) check=1; shift ;;
+                    --json|-j) json=1; shift ;;
+                    *) echo "queue dev patchset $mode: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+            [[ -n "$patchset" ]] || { echo "Usage: queue dev patchset $mode --patchset ZIP [--target DIR] [--check] [--backup-dir DIR] [--json]" >&2; return 2; }
+            python3 - "$mode" "$patchset" "${target:-}" "$check" "$backup_dir" "$json" <<'PYDEV_PATCHSET_APPLY_INSPECT'
+import json, pathlib, subprocess, sys, tempfile, zipfile, shutil
+mode=sys.argv[1]; patchset=pathlib.Path(sys.argv[2]); target=sys.argv[3] or '.'; check=sys.argv[4]=='1'; backup_dir=sys.argv[5]; json_mode=sys.argv[6]=='1'
+if not patchset.exists(): print(f'queue dev patchset {mode}: patchset not found: {patchset}', file=sys.stderr); sys.exit(1)
+work=pathlib.Path(tempfile.mkdtemp(prefix=f'queue-dev-patchset-{mode}.'))
+out={}
+try:
+    with zipfile.ZipFile(patchset) as z: z.extractall(work)
+    manifest=json.loads((work/'manifest.json').read_text())
+    cmd=[sys.executable,str(work/'scripts'/'check_preconditions.py'),str(work/'manifest.json'),target,'--json']
+    proc=subprocess.run(cmd,text=True,capture_output=True,timeout=30)
+    try: pre=json.loads(proc.stdout or '{}')
+    except Exception: pre={'status':'failed','stdout':proc.stdout,'stderr':proc.stderr,'returncode':proc.returncode}
+    schema='queuebash.dev_patchset.inspect.v1' if mode=='inspect' else 'queuebash.dev_patchset.apply.v1'
+    out={'schema':schema,'status':'ok' if proc.returncode==0 else 'precondition_failed','patchset':str(patchset),'target':target,'summary':manifest.get('summary',{}),'preconditions':pre}
+    if mode=='inspect' or check or proc.returncode!=0:
+        pass
+    else:
+        apply_cmd=[sys.executable,str(work/'scripts'/'apply_files.py'),str(work/'manifest.json'),target,str(work/'files'),'--json']
+        if backup_dir: apply_cmd += ['--backup-dir', backup_dir]
+        aproc=subprocess.run(apply_cmd,text=True,capture_output=True,timeout=30)
+        try: app=json.loads(aproc.stdout or '{}')
+        except Exception: app={'status':'failed','stdout':aproc.stdout,'stderr':aproc.stderr,'returncode':aproc.returncode}
+        out['apply']=app
+        if aproc.returncode!=0: out['status']='apply_failed'
+    if json_mode: print(json.dumps(out,sort_keys=True,separators=(',',':')))
+    else:
+        s=out.get('preconditions',{}).get('summary',{})
+        print('Patchset precondition summary: '+', '.join(f'{k}={v}' for k,v in sorted(s.items())))
+        if 'apply' in out:
+            print('Apply: '+out['apply'].get('status','unknown'))
+            print('backup_dir: '+out['apply'].get('backup_dir',''))
+            print('backup_manifest: '+out['apply'].get('backup_manifest',''))
+finally:
+    shutil.rmtree(work,ignore_errors=True)
+sys.exit(0 if out.get('status')=='ok' else 1)
+PYDEV_PATCHSET_APPLY_INSPECT
+            ;;
+        help|--help|-h|--h|"")
+            echo "Usage: queue dev patchset create --output ZIP [--registry FILE] [--json]" >&2
+            echo "       queue dev patchset inspect --patchset ZIP [--target DIR] [--json]" >&2
+            echo "       queue dev patchset apply --patchset ZIP [--target DIR] [--check] [--backup-dir DIR] [--json]" >&2
+            return 0 ;;
+        *) echo "queue dev patchset: unknown subcommand: $sub" >&2; return 2 ;;
+    esac
+}
+
+
+
+_queue_dev_attempt_store_path() {
+    if [[ -n "${QUEUEBASH_DEV_ATTEMPTS:-}" ]]; then
+        printf '%s\n' "$QUEUEBASH_DEV_ATTEMPTS"
+    else
+        printf '%s\n' "$(_queue_root)/dev/attempts.json"
+    fi
+}
+
+
+_queue_dev_attempt_command() {
+    local sub="${1:-}" path root
+    shift || true
+    path="$(_queue_dev_attempt_store_path)"
+    root="$(_queue_root)"
+    python3 - "$path" "$root" "$sub" "$@" <<'PYDEV_ATTEMPT'
+import argparse, datetime, hashlib, json, os, pathlib, random, sys, tempfile
+try:
+    import fcntl
+except Exception:
+    fcntl = None
+SCHEMA='queuebash.dev_workflow.attempt_store.v1'
+ATTEMPT_SCHEMA='queuebash.dev_workflow.attempt.v1'
+EVIDENCE_SCHEMA='queuebash.dev_workflow.evidence.v1'
+STATUSES={'active','in_progress','blocked','resolved','accepted','rejected','failed','superseded'}
+TERMINAL={'resolved','accepted','rejected','failed','superseded','blocked'}
+EVIDENCE_STATUSES={'pass','fail','warning','info','blocked','skipped'}
+path=pathlib.Path(sys.argv[1]); root=pathlib.Path(sys.argv[2]); sub=sys.argv[3] if len(sys.argv)>3 else ''; av=sys.argv[4:]
+def now(): return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+def rid(prefix): return f"{prefix}-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S-%f')}-{random.randint(1000,9999)}"
+def sha256_text(t): return 'sha256:'+hashlib.sha256((t or '').encode()).hexdigest()
+def md5_file(p):
+    h=hashlib.md5()
+    with open(p,'rb') as f:
+        for c in iter(lambda:f.read(1024*1024), b''): h.update(c)
+    return h.hexdigest()
+def new_store(): return {'schema':SCHEMA,'created_at':now(),'updated_at':now(),'attempts':[],'evidence':[]}
+def load():
+    if not path.exists(): return new_store()
+    d=json.loads(path.read_text())
+    if d.get('schema')!=SCHEMA or not isinstance(d.get('attempts'),list) or not isinstance(d.get('evidence'),list):
+        raise SystemExit(f'malformed attempt store: {path}')
+    return d
+def save(d):
+    d['updated_at']=now(); path.parent.mkdir(parents=True,exist_ok=True); lock=path.with_suffix(path.suffix+'.lock')
+    with open(lock,'w') as lf:
+        if fcntl: fcntl.flock(lf, fcntl.LOCK_EX)
+        fd,tmp=tempfile.mkstemp(prefix=path.name+'.',suffix='.tmp',dir=str(path.parent))
+        with os.fdopen(fd,'w') as f: json.dump(d,f,indent=2,sort_keys=True); f.write('\n')
+        os.replace(tmp,path)
+def find_attempt(d, aid):
+    for a in d['attempts']:
+        if a.get('attempt_id')==aid: return a
+    return None
+def emit(obj,json_mode):
+    if json_mode: print(json.dumps(obj,sort_keys=True,separators=(',',':')))
+    else:
+        print(obj.get('attempt_id') or obj.get('evidence_id') or obj.get('status','ok'))
+def cmd_begin():
+    ap=argparse.ArgumentParser(prog='queue dev attempt begin')
+    ap.add_argument('--text',required=True); ap.add_argument('--tag',action='append',default=[]); ap.add_argument('--based-on',action='append',default=[]); ap.add_argument('--authority',default='coding_agent'); ap.add_argument('--json',action='store_true')
+    ns=ap.parse_args(av); d=load(); aid=rid('DEVATTEMPT')
+    a={'schema':ATTEMPT_SCHEMA,'attempt_id':aid,'phase':'begin','status':'active','authority':ns.authority,'text':ns.text,'text_hash':sha256_text(ns.text),'tags':ns.tag,'based_on':ns.based_on,'created_at':now(),'updated_at':now(),'evidence':[],'history':[{'at':now(),'event':'begin','status':'active','authority':ns.authority}]}
+    d['attempts'].append(a); save(d); emit({'schema':ATTEMPT_SCHEMA,'status':'ok','phase':'begin','attempt_id':aid,'authority':ns.authority,'tags':ns.tag,'based_on':ns.based_on,'text_hash':a['text_hash']},ns.json)
+def cmd_end():
+    ap=argparse.ArgumentParser(prog='queue dev attempt end')
+    ap.add_argument('attempt_id'); ap.add_argument('--status',required=True); ap.add_argument('--text',default=''); ap.add_argument('--authority',default='coding_agent'); ap.add_argument('--json',action='store_true')
+    ns=ap.parse_args(av)
+    if ns.status not in TERMINAL: raise SystemExit(f'invalid terminal attempt status: {ns.status}')
+    d=load(); a=find_attempt(d,ns.attempt_id)
+    if not a: raise SystemExit(f'attempt not found: {ns.attempt_id}')
+    prev=a.get('status','active'); a['status']=ns.status; a['phase']='end'; a['result']=ns.status; a['end_text']=ns.text; a['updated_at']=now(); a.setdefault('history',[]).append({'at':now(),'event':'end','from':prev,'to':ns.status,'authority':ns.authority,'text_hash':sha256_text(ns.text) if ns.text else ''})
+    save(d); emit({'schema':ATTEMPT_SCHEMA,'status':'ok','phase':'end','attempt_id':ns.attempt_id,'previous_status':prev,'result':ns.status,'evidence':a.get('evidence',[])},ns.json)
+try:
+    if sub=='begin': cmd_begin()
+    elif sub=='end': cmd_end()
+    else:
+        print('Usage: queue dev attempt begin|end ...', file=sys.stderr); sys.exit(2)
+except SystemExit: raise
+except Exception as e:
+    print(f'queue dev attempt: {e}', file=sys.stderr); sys.exit(1)
+PYDEV_ATTEMPT
+}
+
+
+_queue_dev_evidence_command() {
+    local sub="${1:-}" path root
+    shift || true
+    path="$(_queue_dev_attempt_store_path)"
+    root="$(_queue_root)"
+    python3 - "$path" "$root" "$sub" "$@" <<'PYDEV_EVIDENCE'
+import argparse, datetime, hashlib, json, os, pathlib, random, sys, tempfile
+try:
+    import fcntl
+except Exception:
+    fcntl = None
+SCHEMA='queuebash.dev_workflow.attempt_store.v1'
+EVIDENCE_SCHEMA='queuebash.dev_workflow.evidence.v1'
+EVIDENCE_STATUSES={'pass','fail','warning','info','blocked','skipped'}
+path=pathlib.Path(sys.argv[1]); root=pathlib.Path(sys.argv[2]); sub=sys.argv[3] if len(sys.argv)>3 else ''; av=sys.argv[4:]
+def now(): return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+def rid(prefix): return f"{prefix}-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S-%f')}-{random.randint(1000,9999)}"
+def sha256_text(t): return 'sha256:'+hashlib.sha256((t or '').encode()).hexdigest()
+def md5_file(p):
+    h=hashlib.md5()
+    with open(p,'rb') as f:
+        for c in iter(lambda:f.read(1024*1024), b''): h.update(c)
+    return h.hexdigest()
+def load():
+    if not path.exists(): return {'schema':SCHEMA,'created_at':now(),'updated_at':now(),'attempts':[],'evidence':[]}
+    d=json.loads(path.read_text())
+    if d.get('schema')!=SCHEMA: raise SystemExit(f'malformed attempt store: {path}')
+    d.setdefault('attempts',[]); d.setdefault('evidence',[]); return d
+def save(d):
+    d['updated_at']=now(); path.parent.mkdir(parents=True,exist_ok=True); lock=path.with_suffix(path.suffix+'.lock')
+    with open(lock,'w') as lf:
+        if fcntl: fcntl.flock(lf, fcntl.LOCK_EX)
+        fd,tmp=tempfile.mkstemp(prefix=path.name+'.',suffix='.tmp',dir=str(path.parent))
+        with os.fdopen(fd,'w') as f: json.dump(d,f,indent=2,sort_keys=True); f.write('\n')
+        os.replace(tmp,path)
+def find_attempt(d, aid):
+    for a in d.get('attempts',[]):
+        if a.get('attempt_id')==aid: return a
+    return None
+def rel_or_abs(p):
+    try: return str(pathlib.Path(p).resolve().relative_to(root.resolve()))
+    except Exception: return str(p)
+def cmd_record():
+    ap=argparse.ArgumentParser(prog='queue dev evidence record')
+    ap.add_argument('--attempt',required=True); ap.add_argument('--text',required=True); ap.add_argument('--file',action='append',default=[]); ap.add_argument('--command',action='append',default=[]); ap.add_argument('--status',default='info'); ap.add_argument('--authority',default='test_runner'); ap.add_argument('--json',action='store_true')
+    ns=ap.parse_args(av)
+    if ns.status not in EVIDENCE_STATUSES: raise SystemExit(f'invalid evidence status: {ns.status}')
+    d=load(); a=find_attempt(d,ns.attempt)
+    if not a: raise SystemExit(f'attempt not found: {ns.attempt}')
+    files=[]
+    for f in ns.file:
+        pp=pathlib.Path(f)
+        rec={'path':str(f),'relpath':rel_or_abs(pp),'exists':pp.exists()}
+        if pp.exists() and pp.is_file(): rec.update({'size':pp.stat().st_size,'md5':md5_file(pp)})
+        files.append(rec)
+    eid=rid('DEVEVIDENCE')
+    ev={'schema':EVIDENCE_SCHEMA,'evidence_id':eid,'attempt_id':ns.attempt,'result':ns.status,'authority':ns.authority,'text':ns.text,'text_hash':sha256_text(ns.text),'commands':ns.command,'files':files,'created_at':now()}
+    d['evidence'].append(ev); a.setdefault('evidence',[]).append(eid); a['updated_at']=now(); a.setdefault('history',[]).append({'at':now(),'event':'evidence','evidence_id':eid,'result':ns.status,'authority':ns.authority})
+    save(d); print(json.dumps({'schema':EVIDENCE_SCHEMA,'status':'ok','evidence_id':eid,'attempt_id':ns.attempt,'result':ns.status,'commands':ns.command,'files':[x['relpath'] for x in files]},sort_keys=True,separators=(',',':')) if ns.json else eid)
+try:
+    if sub=='record': cmd_record()
+    else:
+        print('Usage: queue dev evidence record ...', file=sys.stderr); sys.exit(2)
+except SystemExit: raise
+except Exception as e:
+    print(f'queue dev evidence: {e}', file=sys.stderr); sys.exit(1)
+PYDEV_EVIDENCE
+}
+
+
+_queue_dev_context_command() {
+    local path root attempts files
+    path="$(_queue_dev_scratchpad_path)"
+    root="$(_queue_root)"
+    attempts="$(_queue_dev_attempt_store_path)"
+    files="$(_queue_dev_file_registry_path)"
+    python3 - "$path" "$root" "$attempts" "$files" "$@" <<'PYDEV_CONTEXT'
+import argparse, json, pathlib, re, sys
+scratch=pathlib.Path(sys.argv[1]); root=pathlib.Path(sys.argv[2]); attempts=pathlib.Path(sys.argv[3]); files=pathlib.Path(sys.argv[4]); av=sys.argv[5:]
+DEFAULT_EXCLUDE={'done','resolved','accepted','rejected','stale','superseded','archived','removed'}
+def read_json(p, default):
+    try:
+        if p.exists(): return json.loads(p.read_text())
+    except Exception as exc:
+        return {'_error':str(exc),'_path':str(p)}
+    return default
+def version():
+    q=pathlib.Path.cwd()/"queuebash.sh"
+    try:
+        m=re.search(r'^QUEUEBASH_VERSION="([^"]+)"', q.read_text(errors='replace'), re.M)
+        return m.group(1) if m else ''
+    except Exception: return ''
+def item_summary(it):
+    auth=it.get('authority',{}) if isinstance(it.get('authority'),dict) else {'type':str(it.get('authority',''))}
+    return {'id':it.get('id',''),'kind':it.get('kind',''),'status':it.get('status','active'),'authority':auth.get('type',''),'confidence':auth.get('confidence',''),'tags':it.get('tags',[]),'created_at':it.get('created_at',''),'updated_at':it.get('updated_at',''),'text':it.get('text','')[:500]}
+ap=argparse.ArgumentParser(prog='queue dev context')
+ap.add_argument('--json',action='store_true'); ap.add_argument('--tag',action='append',default=[]); ap.add_argument('--kind',action='append',default=[]); ap.add_argument('--status',action='append',default=[]); ap.add_argument('--limit',type=int,default=25); ap.add_argument('--full-corpus',action='store_true')
+ns=ap.parse_args(av)
+ledger=read_json(scratch, {'schema':'queuebash.dev_scratchpad.v1','items':[]}); warnings=[]
+if isinstance(ledger,dict) and ledger.get('_error'): warnings.append(f"scratchpad read failed: {ledger['_error']}"); ledger={'items':[]}
+items=[]
+for it in ledger.get('items',[]):
+    st=it.get('status','active')
+    if not ns.full_corpus and not ns.status and st in DEFAULT_EXCLUDE: continue
+    if ns.tag and not any(t in set(it.get('tags',[])) for t in ns.tag): continue
+    if ns.kind and it.get('kind') not in ns.kind: continue
+    if ns.status and st not in ns.status: continue
+    items.append(item_summary(it))
+items.sort(key=lambda x:x.get('updated_at') or x.get('created_at'), reverse=True)
+if not ns.full_corpus and ns.limit >= 0: items=items[:ns.limit]
+ast=read_json(attempts, {'attempts':[],'evidence':[]})
+freg=read_json(files, {'entries':[]})
+out={'schema':'queuebash.dev_workflow.context.v1','status':'ok','mode':'full_corpus' if ns.full_corpus else 'working_set','base_version':version(),'root':str(root),'filters':{'tag':ns.tag,'kind':ns.kind,'status':ns.status,'limit':ns.limit},'items':items,'counts':{'scratchpad_items':len(ledger.get('items',[])),'returned_items':len(items),'attempts':len(ast.get('attempts',[])) if isinstance(ast,dict) else 0,'file_registry_entries':len(freg.get('entries',[])) if isinstance(freg,dict) else 0},'warnings':warnings}
+if ns.json: print(json.dumps(out,sort_keys=True,separators=(',',':')))
+else:
+    print(f"queue dev context: {out['counts']['returned_items']} item(s), base={out['base_version']}")
+    for it in items: print(f"{it['id']}\t{it['kind']}\t{it['status']}\t{','.join(it.get('tags',[]))}\t{it['text'][:120]}")
+PYDEV_CONTEXT
+}
+
+_queue_dev_think_command() {
+    local path root
+    path="$(_queue_dev_scratchpad_path)"
+    root="$(_queue_root)"
+    python3 - "$path" "$root" "$@" <<'PYDEV_THINK'
+import argparse, datetime, hashlib, json, os, pathlib, random, sys, tempfile
+try:
+    import fcntl
+except Exception:
+    fcntl=None
+SCRATCHPAD_SCHEMA='queuebash.dev_scratchpad.v1'; ITEM_SCHEMA='queuebash.dev_scratchpad_item.v1'
+path=pathlib.Path(sys.argv[1]); root=pathlib.Path(sys.argv[2]); av=sys.argv[3:]
+def now(): return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+def rid(): return f"DEVTHINK-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S-%f')}-{random.randint(1000,9999)}"
+def sha(t): return 'sha256:'+hashlib.sha256((t or '').encode()).hexdigest()
+def load():
+    if not path.exists(): return {'schema':SCRATCHPAD_SCHEMA,'project':'','created_at':now(),'updated_at':now(),'items':[],'meta':{}}
+    d=json.loads(path.read_text()); d.setdefault('items',[]); return d
+def save(d):
+    d['updated_at']=now(); path.parent.mkdir(parents=True,exist_ok=True); lock=path.with_suffix(path.suffix+'.lock')
+    with open(lock,'w') as lf:
+        if fcntl: fcntl.flock(lf, fcntl.LOCK_EX)
+        fd,tmp=tempfile.mkstemp(prefix='scratchpad.',suffix='.tmp',dir=str(path.parent))
+        with os.fdopen(fd,'w') as f: json.dump(d,f,indent=2,sort_keys=True); f.write('\n')
+        os.replace(tmp,path)
+ap=argparse.ArgumentParser(prog='queue dev think')
+ap.add_argument('--text',required=True); ap.add_argument('--subject',default=''); ap.add_argument('--tag',action='append',default=[]); ap.add_argument('--authority',default='coding_agent'); ap.add_argument('--json',action='store_true')
+ns=ap.parse_args(av)
+d=load(); t=now(); iid=rid(); tags=list(dict.fromkeys(ns.tag+['think']))
+item={'id':iid,'schema':ITEM_SCHEMA,'kind':'think','status':'active','authority':{'type':ns.authority.split(':',1)[0],'name':ns.authority,'source':'queue dev think','confidence':'proposed' if ns.authority=='coding_agent' else 'observed'},'text':ns.text,'text_hash':sha(ns.text),'subject':ns.subject,'tags':tags,'created_at':t,'updated_at':t,'provenance':{'source_type':'command','source_ref':'queue dev think'},'counters':{'success':0,'failure':0}}
+d.setdefault('items',[]).append(item); save(d)
+out={'schema':'queuebash.dev_workflow.think.v1','status':'ok','item_id':iid,'kind':'think','authority':ns.authority,'subject':ns.subject,'text_hash':item['text_hash'],'tags':tags}
+print(json.dumps(out,sort_keys=True,separators=(',',':')) if ns.json else f"think recorded: {iid}")
+PYDEV_THINK
+}
+
+_queue_dev_handover_command() {
+    local spath root attempts files
+    spath="$(_queue_dev_scratchpad_path)"
+    root="$(_queue_root)"
+    attempts="$(_queue_dev_attempt_store_path)"
+    files="$(_queue_dev_file_registry_path)"
+    python3 - "$spath" "$root" "$attempts" "$files" "$@" <<'PYDEV_HANDOVER'
+import argparse, json, pathlib, re, sys
+scratch=pathlib.Path(sys.argv[1]); root=pathlib.Path(sys.argv[2]); attempts=pathlib.Path(sys.argv[3]); files=pathlib.Path(sys.argv[4]); av=sys.argv[5:]
+EXCLUDE={'done','resolved','accepted','rejected','stale','superseded','archived','removed'}
+def read_json(p, default):
+    try:
+        if p.exists(): return json.loads(p.read_text())
+    except Exception as exc:
+        return {'_error':str(exc),'_path':str(p)}
+    return default
+def version():
+    q=pathlib.Path.cwd()/"queuebash.sh"
+    try:
+        m=re.search(r'^QUEUEBASH_VERSION="([^"]+)"', q.read_text(errors='replace'), re.M)
+        return m.group(1) if m else ''
+    except Exception: return ''
+def summ(it): return {'id':it.get('id',''),'kind':it.get('kind',''),'status':it.get('status',''),'tags':it.get('tags',[]),'updated_at':it.get('updated_at',''),'text':it.get('text','')[:700]}
+ap=argparse.ArgumentParser(prog='queue dev handover')
+ap.add_argument('--json',action='store_true'); ap.add_argument('--since',default=''); ap.add_argument('--tag',action='append',default=[]); ap.add_argument('--full-corpus',action='store_true')
+ns=ap.parse_args(av)
+ledger=read_json(scratch, {'items':[]}); ast=read_json(attempts, {'attempts':[],'evidence':[]}); freg=read_json(files, {'entries':[]}); warnings=[]
+for name,obj in [('scratchpad',ledger),('attempts',ast),('file_registry',freg)]:
+    if isinstance(obj,dict) and obj.get('_error'): warnings.append(f"{name} read failed: {obj['_error']}")
+items=ledger.get('items',[]) if isinstance(ledger,dict) else []
+if ns.since:
+    seen=False; filt=[]
+    for it in items:
+        if seen: filt.append(it)
+        if it.get('id')==ns.since: seen=True
+    items=filt
+if ns.tag:
+    items=[it for it in items if any(t in set(it.get('tags',[])) for t in ns.tag)]
+if not ns.full_corpus: items=[it for it in items if it.get('status','active') not in EXCLUDE]
+deliveries=[summ(it) for it in items if it.get('kind') in {'success','done_note','decision','evidence'} or 'delivery' in it.get('tags',[]) or 'accepted' in it.get('tags',[])]
+open_tasks=[summ(it) for it in items if it.get('kind') in {'task','blocker','failure'} and it.get('status','active') not in EXCLUDE]
+landmines=[summ(it) for it in items if it.get('kind')=='known_landmine' or 'landmine' in it.get('tags',[])]
+next_items=[summ(it) for it in items if 'current-task' in it.get('tags',[]) or 'next' in it.get('tags',[]) or it.get('kind')=='design_goal']
+changed=[]
+for e in freg.get('entries',[]) if isinstance(freg,dict) else []:
+    if e.get('changed') or e.get('status')=='changed': changed.append({'relpath':e.get('relpath'),'status':e.get('status'),'purpose':e.get('purpose'),'old_md5':e.get('baseline',{}).get('md5'),'new_md5':e.get('current',{}).get('md5'),'changed_functions':e.get('changed_functions',[])})
+attempt_summary=[]
+for a in ast.get('attempts',[]) if isinstance(ast,dict) else []:
+    if ns.full_corpus or a.get('status') not in EXCLUDE:
+        attempt_summary.append({'attempt_id':a.get('attempt_id'),'status':a.get('status'),'tags':a.get('tags',[]),'evidence':a.get('evidence',[]),'text':a.get('text','')[:500]})
+out={'schema':'queuebash.dev_workflow.handover.v1','status':'ok','mode':'full_corpus' if ns.full_corpus else 'delta','base_version':version(),'root':str(root),'filters':{'since':ns.since,'tag':ns.tag},'deliveries':deliveries,'open_tasks':open_tasks,'known_landmines':landmines,'next':next_items,'changed_files':changed,'attempts':attempt_summary,'counts':{'deliveries':len(deliveries),'open_tasks':len(open_tasks),'known_landmines':len(landmines),'next':len(next_items),'changed_files':len(changed),'attempts':len(attempt_summary)},'warnings':warnings}
+if ns.json: print(json.dumps(out,sort_keys=True,separators=(',',':')))
+else:
+    print(f"queue dev handover: base={out['base_version']} tasks={len(open_tasks)} landmines={len(landmines)} changed_files={len(changed)}")
+    for x in open_tasks[:20]: print(f"TASK\t{x['id']}\t{x['text'][:120]}")
+    for x in changed[:20]: print(f"FILE\t{x.get('relpath')}\t{x.get('status')}")
+PYDEV_HANDOVER
+}
+
+
+_queue_dev_validate_command() {
+    local json=0 quick=0 timeout_sec=60 file files=()
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --json) json=1; shift ;;
+            --quick) quick=1; shift ;;
+            --timeout) timeout_sec="${2:-}"; shift 2 ;;
+            --file) files+=("${2:-}"); shift 2 ;;
+            --help|-h|--h)
+                cat <<'EOF'
+Usage: queue dev validate [--json] [--quick] [--timeout SEC] [--file FILE...]
+
+Run a bounded development validation set. This is a reporting gate only: it does
+not mutate scratchpad state and does not author acceptance decisions.
+EOF
+                return 0 ;;
+            *) echo "queue dev validate: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$timeout_sec" && "$timeout_sec" =~ ^[0-9]+$ && "$timeout_sec" -gt 0 ]] || { echo "queue dev validate: --timeout must be a positive integer" >&2; return 2; }
+    local runner="bin/queue-dev-timeout" total=0 passed=0 failed=0 name rc out tmp status r st nm code tail first
+    [[ -x "$runner" ]] || runner="timeout"
+    tmp="${TMPDIR:-/tmp}/queue-dev-validate.$$"
+    mkdir -p "$tmp" || return 1
+    local results=()
+    _queue_dev_validate_run() {
+        name="$1"; shift
+        total=$((total+1))
+        out="$tmp/${total}.out"
+        if [[ "$runner" == "timeout" ]]; then
+            timeout "$timeout_sec" "$@" >"$out" 2>&1; rc=$?
+        else
+            "$runner" --timeout "$timeout_sec" --stdout "$out" --stderr "$tmp/${total}.err" -- "$@"; rc=$?; cat "$tmp/${total}.err" >>"$out" 2>/dev/null || true
+        fi
+        if [[ "$rc" -eq 0 ]]; then
+            passed=$((passed+1)); results+=("pass|$name|$rc|$(tail -20 "$out" | tr '\n' ' ' | cut -c1-500)")
+        else
+            failed=$((failed+1)); results+=("fail|$name|$rc|$(tail -20 "$out" | tr '\n' ' ' | cut -c1-500)")
+        fi
+    }
+    _queue_dev_validate_run "bash-n-queuebash" bash -n queuebash.sh
+    [[ -x tests/dev_qbtest_static.sh ]] && _queue_dev_validate_run "dev-qbtest-static" bash tests/dev_qbtest_static.sh
+    [[ -f tests/dev_qbtest_json_contract_static.py ]] && _queue_dev_validate_run "dev-qbtest-json-contract" python3 tests/dev_qbtest_json_contract_static.py
+    if grep -q 'QBTEST:BEGIN' queuebash.sh 2>/dev/null; then
+        _queue_dev_validate_run "qbtest-queuebash" bash -lc 'source ./queuebash.sh >/dev/null 2>&1; queue dev test qbtest --file queuebash.sh --function _queue_now --json >/dev/null'
+    fi
+    if [[ "$quick" -ne 1 ]]; then
+        [[ -x tests/dev_timeout_helper_smoke.sh ]] && _queue_dev_validate_run "dev-timeout-helper-smoke" bash tests/dev_timeout_helper_smoke.sh
+        [[ -x tests/queue_dev_contract_static.sh ]] && _queue_dev_validate_run "queue-dev-contract-static" bash tests/queue_dev_contract_static.sh
+    fi
+    for file in "${files[@]}"; do
+        [[ -f "$file" ]] || { failed=$((failed+1)); total=$((total+1)); results+=("fail|file-exists:$file|2|missing file"); continue; }
+        case "$file" in
+            *.sh|*.bash|queuebash.sh) _queue_dev_validate_run "bash-n:$file" bash -n "$file" ;;
+            *.py) _queue_dev_validate_run "py-compile:$file" python3 -m py_compile "$file" ;;
+        esac
+        if grep -q 'QBTEST:BEGIN' "$file" 2>/dev/null; then
+            _queue_dev_validate_run "qbtest:$file" bash -lc "source ./queuebash.sh >/dev/null 2>&1; queue dev test qbtest --file \"$file\" --json >/dev/null"
+        fi
+    done
+    status="pass"; [[ "$failed" -eq 0 ]] || status="fail"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.dev_validate_result.v1","status":"%s","total":%s,"passed":%s,"failed":%s,"results":[' "$status" "$total" "$passed" "$failed"
+        first=1
+        for r in "${results[@]}"; do
+            IFS='|' read -r st nm code tail <<<"$r"
+            [[ "$first" -eq 1 ]] || printf ','; first=0
+            printf '{"status":"%s","name":"%s","exit_code":%s,"tail":"%s"}' "$(_queue_json_escape "$st")" "$(_queue_json_escape "$nm")" "$(_queue_json_escape "$code")" "$(_queue_json_escape "$tail")"
+        done
+        printf ']}\n'
+    else
+        printf 'queue dev validate: %s (%s passed, %s failed)\n' "$status" "$passed" "$failed"
+        for r in "${results[@]}"; do IFS='|' read -r st nm code tail <<<"$r"; printf '%s\t%s\t%s\n' "$st" "$code" "$nm"; done
+    fi
+    rm -rf "$tmp"
+    [[ "$failed" -eq 0 ]]
+}
+
+_queue_dev_scope_check_command() {
+    local json=0 f pat status first typ path checked=0 allowed_count=0
+    local allow=() deny=() files=() violations=()
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --json) json=1; shift ;;
+            --allow) allow+=("${2:-}"); shift 2 ;;
+            --deny) deny+=("${2:-}"); shift 2 ;;
+            --file) files+=("${2:-}"); shift 2 ;;
+            --help|-h|--h)
+                cat <<'EOF'
+Usage: queue dev scope-check [--json] [--allow GLOB...] [--deny GLOB...] [--file FILE...]
+
+Check a changed-file set against simple allow/deny globs. When --file is omitted,
+changed files are read from the dev file registry. This is a reporting gate only.
+EOF
+                return 0 ;;
+            *) echo "queue dev scope-check: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    if [[ "${#files[@]}" -eq 0 && -f .queuebash/dev/file_registry.json ]]; then
+        while IFS= read -r f; do [[ -n "$f" ]] && files+=("$f"); done < <(python3 - <<'EOF_PY'
+import json
+from pathlib import Path
+try:
+    data=json.loads(Path('.queuebash/dev/file_registry.json').read_text())
+except Exception:
+    data={}
+for e in data.get('entries',[]):
+    if e.get('changed') or e.get('status') in {'changed','new','added'}:
+        print(e.get('relpath') or e.get('file') or '')
+EOF_PY
+)
+    fi
+    for f in "${files[@]}"; do
+        [[ -n "$f" ]] || continue
+        checked=$((checked+1))
+        local matched_allow=0 matched_deny=0
+        if [[ "${#allow[@]}" -eq 0 ]]; then matched_allow=1; else for pat in "${allow[@]}"; do [[ "$f" == $pat ]] && matched_allow=1; done; fi
+        for pat in "${deny[@]}"; do [[ "$f" == $pat ]] && matched_deny=1; done
+        if [[ "$matched_deny" -eq 1 ]]; then violations+=("deny|$f"); elif [[ "$matched_allow" -ne 1 ]]; then violations+=("not_allowed|$f"); else allowed_count=$((allowed_count+1)); fi
+    done
+    status="pass"; [[ "${#violations[@]}" -eq 0 ]] || status="fail"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.dev_scope_check_result.v1","status":"%s","checked":%s,"allowed":%s,"violations":[' "$status" "$checked" "$allowed_count"
+        first=1
+        for v in "${violations[@]}"; do IFS='|' read -r typ path <<<"$v"; [[ "$first" -eq 1 ]] || printf ','; first=0; printf '{"type":"%s","file":"%s"}' "$(_queue_json_escape "$typ")" "$(_queue_json_escape "$path")"; done
+        printf ']}\n'
+    else
+        printf 'queue dev scope-check: %s (%s checked, %s violation(s))\n' "$status" "$checked" "${#violations[@]}"
+        for v in "${violations[@]}"; do IFS='|' read -r typ path <<<"$v"; printf '%s\t%s\n' "$typ" "$path"; done
+    fi
+    [[ "${#violations[@]}" -eq 0 ]]
+}
+
+
 _queue_dev_command() {
     local sub="${1:-}"
     shift || true
@@ -15958,9 +18559,66 @@ _queue_dev_command() {
         symbols) _queue_dev_symbols "$@" ;;
         flow|graph|paths) _queue_dev_flow "$@" ;;
         splice) _queue_dev_splice "$@" ;;
+        test) _queue_dev_test_command "$@" ;;
+        scratchpad) _queue_dev_scratchpad_command "$@" ;;
+        attempt) _queue_dev_attempt_command "$@" ;;
+        evidence) _queue_dev_evidence_command "$@" ;;
+        context) _queue_dev_context_command "$@" ;;
+        think) _queue_dev_think_command "$@" ;;
+        handover) _queue_dev_handover_command "$@" ;;
+        files|file-registry|registry) _queue_dev_file_registry_command "$@" ;;
+        patchset) _queue_dev_patchset_command "$@" ;;
+        validate) _queue_dev_validate_command "$@" ;;
+        scope-check|scopecheck) _queue_dev_scope_check_command "$@" ;;
         help|--help|-h|"") _queue_dev_usage ;;
         *) echo "queue dev: unknown subcommand: $sub" >&2; _queue_dev_usage >&2; return 2 ;;
     esac
+}
+
+
+_queue_remote_helper_path() {
+    local helper="queue-remote-service-client.py" here cand
+    if command -v "$helper" >/dev/null 2>&1; then
+        command -v "$helper"
+        return 0
+    fi
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    for cand in         "$here/bin/$helper"         "$here/../bin/$helper"         "/usr/local/share/bashqueues/bin/$helper"         "$HOME/.queuebash/bin/$helper"; do
+        [[ -x "$cand" ]] && { printf '%s
+' "$cand"; return 0; }
+    done
+    return 1
+}
+
+_queue_remote_command() {
+    local helper
+    helper="$(_queue_remote_helper_path)" || {
+        echo "queue remote: helper not found: queue-remote-service-client.py" >&2
+        return 1
+    }
+    python3 "$helper" "$@"
+}
+
+_queue_remote_admin_helper_path() {
+    local helper="remote_admin_policy.sh" here cand
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    for cand in \
+        "$here/providers.d/remote_admin/$helper" \
+        "$here/../providers.d/remote_admin/$helper" \
+        "/usr/local/share/bashqueues/providers.d/remote_admin/$helper" \
+        "$HOME/.queuebash/providers.d/remote_admin/$helper"; do
+        [[ -x "$cand" ]] && { printf '%s\n' "$cand"; return 0; }
+    done
+    return 1
+}
+
+_queue_remote_admin_command() {
+    local helper
+    helper="$(_queue_remote_admin_helper_path)" || {
+        echo "queue remote-admin: helper not found: providers.d/remote_admin/remote_admin_policy.sh" >&2
+        return 1
+    }
+    "$helper" "$@"
 }
 
 _queue_backup_restore() {
@@ -16699,6 +19357,14 @@ queue() {
 
         ask|ai-ask|advisory|advise)
             _queue_ai_ask_command "$@"
+            ;;
+
+        remote|remote-queue|rq)
+            _queue_remote_command "$@"
+            ;;
+
+        remote-admin|remote_admin|remote-admin-policy)
+            _queue_remote_admin_command "$@"
             ;;
 
         acl|access-control)

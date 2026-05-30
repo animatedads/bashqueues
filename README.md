@@ -1,3 +1,232 @@
+# 0.18.59 BOB12 patchset apply backup hardening
+
+Hardens generated patchset application and `queue dev patchset apply`: help/check modes, isolated zip apply, pre-apply backup manifests, JSON reporting, and item-level scratchpad merge instead of blind `.queuebash/dev/scratchpad.json` overwrite.
+
+# 0.18.58 BOB_MERGER remote-admin ACL-gated policy commands merge
+
+Merges Bob10 remote-admin ACL-gated policy command contracts onto the 0.18.57 merger line. Adds `queue remote-admin` helper dispatch, docs, provider helpers, fixtures, and static/smoke/JSON tests for governed editing of remote queue management policy files. The command surface is ACL-gated and contract/test focused; no live remote mutation is enabled by default.
+
+# 0.18.57 BOB_MERGER Cerebras, GPU templates, scratchpad required-fields, and dev validate/scope merge
+
+Merges Bob11 Cerebras ask-provider support, Bob10 GPU cloud provisioning template parity, Bob2 scratchpad required-fields guard, and Bob12 queue dev validate/scope-check gates onto the accepted 0.18.56 Groq/status enum base. Patch tooling was used first; ledger/version overlaps were treated as expected, and runtime queuebash changes were reconciled across independent provider, cloud, and queue-dev lanes.
+
+# 0.18.56 BOB_MERGER Groq provider and scratchpad status-enum guard merge
+## 0.18.57 BOB11 Cerebras ask-provider pack
+
+- Adds Cerebras OpenAI-compatible chat-completions ask provider.
+- Keeps default tests fixture/gated: no live API key or network required.
+- Preserves existing Bob11 ask providers and 0.18.56 Groq/status enum base.
+
+
+Merges Bob11 Groq ask-provider support and Bob2 scratchpad status enum guard onto the accepted 0.18.56 QBTEST example/timeout-helper base. Patch tooling was used first; Groq queuebash integration was reconciled to preserve the accepted EXAMPLE_QBTEST help/example fix and timeout-helper work.
+
+# 0.18.56 BOB12 QBTEST example escape and timeout helper
+
+Escapes QBTEST examples in help/docs so documentation is never executed as an embedded test, adds a small bounded non-interactive `bin/queue-dev-timeout` helper for repeatable dev-test runs, and preserves the accepted 0.18.55 Bob Merger EU/APAC QBTEST DeepSeek base.
+
+# 0.18.55 BOB_MERGER EU/APAC cloud helpers, QBTEST polish, and DeepSeek merge
+
+Merges Bob10 EU/APAC cloud infrastructure helper parity, Bob12 QBTEST usability polish, and Bob11 DeepSeek ask-provider support onto the accepted 0.18.54 master. Patch script application was used first; Bob10 and Bob12 applied through the patch tooling, and Bob11 DeepSeek was manually reconciled only where the expected queuebash.sh/ledger version overlap occurred. Cloud helper work remains dry-run/status only; DeepSeek live use remains gated; QBTEST polish is developer-command only.
+
+# 0.18.55 BOB10 EU/APAC cloud infrastructure helper parity
+
+Adds dry-run/status lifecycle-helper rails for EU sovereign and APAC/China provider families that were already mapped as provider contract packs: OVHcloud, Scaleway, Hetzner Cloud, Open Telekom Cloud, Alibaba Cloud, Tencent Cloud, and Huawei Cloud. This remains fixture-first and non-mutating: no live provider API calls, no credentials required, no provisioning/destruction, and no queue dispatch refactor.
+
+# 0.18.54 BOB_MERGER Mistral, scratchpad authority guard, and Azure/GCP parity merge
+
+Merges Bob11's Mistral ask-provider pack, Bob2's scratchpad authority-shape guard, and Bob10's Azure/GCP first-tier platform parity work onto the accepted 0.18.53 QBTEST full-delivery master. Ledger/version overlaps are expected. Runtime changes are limited to adding the Mistral ask provider and version identity; Azure/GCP parity remains fixture-first and non-mutating, and scratchpad authority objects are normalized for safer dev workflow use.
+
+## 0.18.52 BOB11 Mistral AI ask-provider pack
+
+Adds a fixture-gated Mistral AI ask-provider through `bin/queue-ai-ask-mistral` and `providers.d/ask/mistral.sh`. Default tests require no credentials and perform no live network call; live use remains gated by `QUEUEBASH_AI_LIVE_ENABLED`.
+
+## 0.18.52 BOB2 scratchpad authority shape guard
+
+Adds a static guard ensuring every scratchpad item has an object-shaped authority with `type`, `name`, and `confidence`, and repairs historical malformed authority records during merge.
+
+## 0.18.52 BOB10 Azure and GCP first-tier platform parity
+
+Promotes Azure and GCP to first-tier contract coverage by adding explicit FinOps/cost and ITAR/export-control parity notes, cost/export policy examples, first-tier docs/tests, and platform-parity status updates. This remains fixture-first and non-mutating: no live Azure/GCP API calls, no credentials required by default, no provisioning/destruction, and no queue dispatch refactor.
+
+# 0.18.53 BOB_MERGER QBTEST embedded function tests merge
+
+Merges Bob12's `queue dev test qbtest` embedded function-test helper into the accepted 0.18.52 merger line. QBTEST scans base64 comment blocks near Bash or Python functions and runs decoded snippets with bounded execution. Ledger/version overlaps are expected; this delivery preserves the 0.18.52 dev context/think/handover merge, the 0.18.51 version-guard cleanup, and the repaired patchset inspect boundedness.
+
+## 0.18.52 BOB_MERGER dev context think handover merge
+
+Merges Bob12's lightweight `queue dev context`, `queue dev think`, and `queue dev handover` cockpit commands into the accepted 0.18.51 full-delivery line. The commands provide bounded working-set context, auditable planning notes, and reviewer-friendly handover summaries while preserving the version-guard cleanup and avoiding validation self-acceptance, dispatcher refactors, or live-provider expansion.
+
+## 0.18.50 BOB12 dev context think handover
+
+Implements the remaining lightweight dev workflow cockpit commands: `queue dev context`, `queue dev think`, and `queue dev handover`. Context and handover default to bounded working-set/delta output instead of dumping the whole scratchpad corpus; think records a safe auditable planning note in the scratchpad rather than private reasoning. This remains a patch-only follow-up from the accepted 0.18.48 base plus the 0.18.49 patchset hardening line. It does not wire validation self-acceptance, refactor queue dispatch, or add live providers.
+
+## 0.18.51 BOB_MERGER version guard cleanup
+
+Bumps the repaired full delivery line to 0.18.51 and removes stale exact QUEUEBASH_VERSION pins from legacy static tests. Tests should verify the version shape or feature/minimum compatibility, not crash merely because the accepted package version advanced.
+
+## 0.18.50 BOB_MERGER repaired full delivery with OpenAI-compatible ask and cloud reconcile
+
+Repairs the Bob Merger round2 full delivery by cleaning Python cache debris, bounding `queue dev patchset inspect --target` output for new/unbaselined files, and merging the Bob11 OpenAI-compatible local/private ask-provider pack plus Bob10 cloud resource reconcile enhancement. Version/ledger overlaps are expected merger noise; runtime is now `0.18.50` because accepted runtime/provider command surface was added.
+
+## 0.18.50 BOB11 OpenAI-compatible local/private ask-provider pack
+
+Adds a fixture-gated OpenAI-compatible local/private ask-provider for localhost or private `/v1/chat/completions` endpoints. Live use remains opt-in through `QUEUEBASH_AI_LIVE_ENABLED`; default tests require no endpoint, credentials, or network call.
+
+## 0.18.50 BOB10 cloud resource reconcile enhancement
+
+Adds local-registry-only cloud resource reconcile support with observation import, stale marking, suspect-claim reporting, and explicit no-cloud-mutation evidence. This is not provisioning and not scheduling.
+
+## 0.18.51 BOB2 static version-pin policy guard
+
+Adds a static guard ensuring provider-family tests use future-compatible version checks rather than stale exact `QUEUEBASH_VERSION` pins. This is a static-test policy guard only and does not bump runtime beyond the current runtime delivery.
+
+## 0.18.49 BOB12 patchset file-registry hardening
+
+Hardens the accepted dev file-registry and patchset workflow. `queue dev files scan` now reports per-file current MD5/size records and counts missing baseline MD5s explicitly. Patchset export now treats missing old MD5 as new/unbaselined changed state even when older registry entries forgot to mark `changed=true`, adds manifest summary/change-type/precondition metadata, and includes a `queue dev patchset inspect` command for reviewable outcome reporting before apply. This is a patch-only follow-up and does not add live providers or refactor the dispatcher.
+
+## 0.18.49 BOB11 ask IBM watsonx.ai live-provider pack
+
+Adds a Bob11 IBM watsonx.ai ask-provider pack. The provider is fixture/gated by default, requires no credentials or live API calls in default tests, supports file-backed IBM Cloud API key or bearer token lookup for live use, preserves OpenAI/Anthropic/Gemini/Ollama/fixture behaviour, and keeps Bob2/Bob10/Bob12 lanes untouched.
+
+## 0.18.49 BOB10 cloud provisioning approval live gate contract
+
+Adds a contract-only approval/live-gate layer for cloud provisioning. The new gates validate change-ticket/reason/authority/audit evidence, customer-data/data-protection review, export-control review, and cost approval before any future live provisioning can proceed. This package remains non-mutating: it performs no live cloud API calls, ignores provider credentials as authority, does not provision/destroy resources, does not write queue dispatch paths, and keeps registry handoff/local resource records separate from live apply.
+
+## 0.18.48 BOB12 Bob10 handoff evidence merge repair
+
+Repairs the 0.18.47 multistream merge by importing Bob10's dedicated controlled registry-handoff documentation, focused handoff static/smoke/JSON tests, and Bob10 validation/cleanup/manifest evidence files from the full Bob10 handoff package. Also updates stale provider static version pins for the current branch head. No new live cloud API calls, credentials, provisioning, destruction, or dispatcher refactors are introduced.
+
+## 0.18.47 BOB12 multistream registry scan merge
+
+Merges Bob2 primary-source validation, Bob10 registry handoff, Bob11 OpenAI/Anthropic ask-provider work, and Bob12 attempt/evidence linkage on top of the dev file registry line. Repairs the first real multistream patchset failure mode: missing baseline MD5 now means new or unbaselined changed file, never unchanged. Adds `queue dev files scan` to refresh current size/MD5/function metadata for tracked files without creating false baselines, and keeps newly added files included in patch-set exports.
+
+# 0.18.44 BOB11 ask Anthropic live-provider pack
+
+Adds Bob11's optional Anthropic ask-provider helper, descriptor, docs, policy examples, and fixture/gated smoke tests. Default tests perform no live Anthropic API call and require no credentials.
+
+# 0.18.43 BOB11 ask OpenAI live-provider pack
+
+Adds Bob11's optional OpenAI ask-provider helper, descriptor, docs, policy examples, and fixture/gated smoke tests. Default tests perform no live OpenAI API call and require no credentials.
+
+# 0.18.46 BOB12 attempt evidence linkage
+
+Adds `queue dev attempt begin/end` and `queue dev evidence record` so validation facts can be bound to named engineering attempts without granting automatic acceptance authority. Also tightens `queue dev files` scoped-function tracking so later changed/list views preserve the intentionally tracked function set, and fixes newly added files so patch-set export can include them as changed entries.
+
+## 0.18.46 BOB2 primary-source validation + BOB12 patchset registry merged
+
+Merges Bob12 dev file registry/patchset export tooling with Bob2 provider-family primary-source validation framework. The BOB12 command/tooling base is preserved: `queue dev files` records multistream file edit baselines and `queue dev patchset create` exports changed-file patchsets with checksum preconditions. The BOB2 provider-governance layer is carried forward additively: provider-family consistency, explainability standardization, primary-source validation policy, platform parity status, and tests. This merge does not add live provider API calls, credentials, provisioning/destruction, or queue dispatcher refactors beyond already accepted command surfaces.
+
+# 0.18.45 BOB12 dev file registry patchset export
+
+Adds a `queue dev files` registry for multistream development work and a guarded `queue dev patchset create` exporter. The registry records edit-session baselines, file locations, purposes, timestamps, sizes, file MD5 checksums, and function-level MD5 checksums. Patch-set export creates a minimal zip containing only changed files, unified diffs, a manifest, and review/apply scripts that enforce old file/function MD5 preconditions before merge. This package does not implement context/think/handover handlers and does not make validation self-author acceptance.
+
+# 0.18.44 BOB12 scratchpad lifecycle commands
+
+Implements the first staged dev-workflow command handlers for scratchpad lifecycle management. Adds `queue dev scratchpad status set` and `queue dev scratchpad supersede` as authority-gated, append-preserving lifecycle operations so stale or duplicate scratchpad items can be marked without deletion. Default scratchpad list/working-set views prefer active/current records while full export remains chronological and auditable. This release does not implement dev context/think/attempt/evidence/handover handlers, does not make validation self-author acceptance, and does not refactor queue dispatch.
+
+# 0.18.43 BOB12 dev workflow command contracts
+
+Adds a contract-first roadmap package for future `queue dev` workflow commands: context, think, attempt begin/end, evidence record, handover, scratchpad status set, and scratchpad supersede. This release is docs/schemas/static-tests only: it defines command semantics, authority rules, lifecycle transitions, attempt/evidence linkage, handover/delta behaviour, fail-closed boundaries, and JSON example payloads. It intentionally does not implement the commands, does not refactor the dispatcher, does not add dynamic queue-dev probes, and does not make validation automatically mutate scratchpad state.
+
+# 0.18.42 BOB12 queue dev contract cleanup merged
+
+Merges Bob12 queue dev contract cleanup onto the accepted 0.18.41 Bob2 hybrid/on-prem cloud lifecycle ask-provider base. The package formalises queue dev as a controlled internal development API for AI-assisted inspection, patching, testing, evidence, scratchpad, and remote-review workflows. It adds contract/security/workflow docs and bounded static/JSON contract tests. It keeps scope to docs/tests and stale-test repair; it does not add Grid FinOps, OT/ICS, live APIs, dispatcher refactors, or restored assets.d/net_usage.sh.
+
+# 0.18.41 BOB2 hybrid/on-prem provider contracts merged with cloud lifecycle + ask provider
+
+Merges Bob2 hybrid/on-prem provider-contract coverage into the accepted 0.18.40 Bob10 cloud provisioning lifecycle + ask provider base. The merge preserves Bob10's cloud_provision lifecycle-plan and registry-preview dry-run workflows, preserves Bob11 ask-provider contract/discovery, and adds Bob2 fixture-first VMware/vCloud, OpenStack, and OpenShift provider contracts. Hybrid/on-prem remains provider-family contract coverage only: no live provider API calls, no credentials, no provisioning/deployment/destruction, and no queue dispatch refactor.
+
+# 0.18.40 BOB10 cloud provisioning lifecycle + ask provider merged
+
+Merged current 0.18.39 edge cloud/cloud provisioning/ask-provider base with Bob10 cloud provisioning dry-run lifecycle.
+
+- Preserves ask provider contract/discovery and fixture execution path.
+- Preserves edge cloud provider contracts.
+- Extends cloud_provision with lifecycle-plan and registry-preview dry-run commands.
+- Keeps live cloud API calls, credentials, provisioning/destruction, registry writes, and queue dispatch refactor out of scope.
+
+# 0.18.39 BOB10 edge cloud, cloud provisioning, and ask provider contract merged
+
+Merged the accepted 0.18.38 edge cloud + cloud provisioning base with Bob11's repaired ask provider contract/discovery package. Ask provider discovery and the fixture execution path are present, fixture-first, non-live, and preserve Gemini/Ollama behaviour. Edge cloud remains fixture-first; cloud provisioning remains dry-run-only. No live provider API calls, credentials, provisioning/destruction, or queue dispatch refactor are introduced.
+
+## 0.18.38 BOB10 edge cloud and cloud provisioning merged
+
+Merges the accepted 0.18.37 Bob2 edge cloud provider contracts branch and the accepted 0.18.37 Bob10 cloud provisioning contract branch onto one current head. Edge cloud remains fixture-first provider-contract coverage for Cloudflare Workers, Fastly Compute@Edge, and Fly.io. Cloud provisioning remains Bob10's dry-run-only signed work-order layer beside `cloud_resource` and `cloud_infra`. The merge preserves the boundary: `cloud_provision` does not absorb edge provider logic, edge provider contracts do not imply live deployment/provisioning, and queue dispatch is not refactored.
+
+## 0.18.37 edge cloud provider contracts
+
+Adds Bob2 contract-first edge cloud provider coverage for Cloudflare Workers, Fastly Compute@Edge, and Fly.io. This is a fixture-first governance/provider-contract pack: docs, provider helper, policy examples, class templates, fixtures, explainability, legal/compliance posture, edge runtime/network/data-residency posture, and static/smoke/JSON tests. It makes no live provider API calls, requires no credentials, performs no provisioning/deployment/destruction, and does not refactor queuebash.sh dispatch. AWS remains first-tier for contract coverage; GCP, Azure, EU sovereign, APAC/China, GPU cloud, and edge cloud providers remain accepted fixture-first provider coverage; OCI and IBM remain high-standard references.
+
+## 0.18.37 cloud provisioning contract
+
+Adds Bob10 provider-neutral cloud provisioning contract as a controlled lifecycle work-order layer beside `cloud_resource` and `cloud_infra`. The package adds dry-run-only provisioning docs, security model, workflows, `providers.d/cloud_provision/cloud_provision.sh`, policy/template examples, plan examples for OCI/AWS/Azure/GCP/IBM, and static/JSON/dry-run smoke tests. It remains contract-first and non-mutating: no live cloud API calls, no provider credentials, no provisioning/destruction, no queue dispatcher refactor, and no ordinary dispatch path creates cloud servers.
+
+## 0.18.36 GPU cloud provider contracts
+
+Adds Bob2 contract-first GPU cloud provider coverage for CoreWeave, Lambda Cloud, and NVIDIA DGX Cloud. This is a fixture-first governance/provider-contract pack: docs, provider helper, policy examples, class templates, fixtures, explainability, legal/compliance posture, GPU capacity/accelerator posture, and static/smoke/JSON tests. It makes no live provider API calls, requires no credentials, performs no provisioning/destruction, and does not refactor queuebash.sh dispatch. AWS remains first-tier for contract coverage; GCP, Azure, EU sovereign, APAC/China, and GPU cloud providers remain accepted fixture-first provider coverage; OCI and IBM remain high-standard references.
+
+## 0.18.35 remote management listener + APAC/China cloud provider contracts merge
+
+Merges Bob11's repaired optional remote queue management listener onto Bob2's 0.18.35 APAC/China cloud provider coverage. The package preserves the 0.18.35 Azure/EU/APAC provider-contract sequence while adding the listener install option, loopback-first server-side remote management endpoint, HMAC client registry, fail-closed ACL policy files, audit logging, bounded read-only operation surface, and repaired denial paths for bad signatures and unknown clients. The unknown-client denial path is specifically hardened through an explicit close/bounded HTTP client path so a stranger knocking on the listener airlock returns JSON denial rather than hanging. The listener installer now dogfoods remote-listener installation as named queue jobs (`system-install-remote-listener-policy`, `system-install-remote-listener-service`, and `system-install-remote-listener-verify`) chained with `--after-success`; those jobs create `/etc/bashqueues/policies.d/remote-queue/`, copy `remote-management.env`, `acl.tsv`, and `clients.tsv`, install/enable the service, and verify the required files before post-install guidance is printed. The queue dispatcher dependency check now honours the same QID-or-exact-name contract accepted by `queue submit --after-success`, so one-shot named installer dependencies release correctly in the sandbox installer queue. It remains fixture-first for cloud providers: no live Azure/EU/APAC cloud API calls, no credentials required by default, no provisioning/destruction, and no queue dispatcher refactor.
+
+## 0.18.35 APAC/China cloud provider contracts
+
+Adds Bob2 contract-first APAC/China cloud provider coverage for Alibaba Cloud, Tencent Cloud, and Huawei Cloud. This is a fixture-first governance/provider-contract pack: docs, provider helper, policy examples, class templates, fixtures, explainability, legal/compliance posture, and static/smoke/JSON tests. It makes no live API calls, requires no credentials, performs no provisioning/destruction, and does not refactor queuebash.sh dispatch. AWS remains first-tier for contract coverage; GCP, Azure, and EU sovereign providers remain accepted fixture-first provider coverage; OCI and IBM remain high-standard references.
+
+## 0.18.34 EU sovereign cloud provider contracts
+
+Adds Bob2 contract-first EU sovereign cloud provider coverage for OVHcloud, Scaleway, Hetzner Cloud, and Open Telekom Cloud. This is a fixture-first governance/provider-contract pack: docs, provider helper, policy examples, class templates, fixtures, explainability, legal/compliance posture, and static/smoke/JSON tests. It makes no live API calls, requires no credentials, performs no provisioning/destruction, and does not refactor queuebash.sh dispatch. AWS remains first-tier for contract coverage; GCP and Azure remain accepted fixture-first provider coverage; OCI and IBM remain high-standard references.
+
+## 0.18.33 Azure provider contract backfill
+
+Adds Bob2 contract-first Microsoft Azure provider coverage as a backfill provider pack on top of the accepted 0.18.32 remote queue command + AWS/GCP parity base. Azure receives provider docs, class criteria, explainability, legal/compliance posture, fixture helper, policies, class templates, fixtures, and static/smoke/JSON tests. The package is fixture-first and non-mutating: no live Azure API calls, no credentials required by default, no provisioning or destruction, and no queue dispatcher refactor. AWS remains first-tier for contract coverage; GCP remains accepted fixture-first provider coverage; OCI and IBM remain high-standard references.
+
+## 0.18.32 remote queue command + AWS/GCP provider parity merge
+
+Merges Bob9 remote queue command plugin, Bob10 AWS first-tier cloud platform parity, and Bob2 GCP provider contract coverage. The remote command plugin remains a signed, read-only client-side system plugin (`queue remote <service> ...`) with no shell/run/exec/cmd path. AWS remains first-tier cloud platform/provider contract material. GCP is added as an accepted fixture-first provider contract pack with docs, provider helper, policies, classes, fixtures, explainability, legal/compliance notes, static/smoke/JSON tests, and no live GCP calls. The Bob9/Bob10/Bob2 boundary remains explicit: remote service exposes authorised queue/dev operations; cloud provider packs describe governance/resource/provider facts and do not become remote execution logic or cloud scheduling.
+
+## 0.18.31 remote queue command plugin
+
+Adds `queue remote <service> <command structure>` as the first client-side system plugin for the remote queue service line. The command loads named service configs from `remote.d`, signs read-only remote queue requests, supports `health`, `version`, `capabilities`, `queue status/list`, `job explain/tail`, `worker status`, and `service ps`, and keeps provider responses as data only. It does not expose a shell, does not add host-wide ps/kill, does not turn Bob9 remote service work into Bob10 cloud scheduling, and does not alter queue dispatch semantics beyond the new command entry point.
+
+## 0.18.30 cloud resource provider contract
+
+Adds Bob10 provider-neutral cloud resource registry contract: file-backed resources, lease-based claim/release/heartbeat/reconcile, cloud_resource asset preflight, platform parity matrix/gap tests, and Bob2 cloud_infra lifecycle helpers as an adjacent dry-run/gated layer. Keeps remote-service and cloud-resource scopes separate; no live cloud mutation, no provisioning, and no queue dispatch refactor. Includes reviewer scratchpad evidence from a live Gemini `queue ask` customer-data governance test, reinforcing that advisory strictness escalates for customer databases, cross-border deployment, and legal jurisdiction prompts.
+
+## 0.18.28 remote queue service provider contract
+
+Defines a provider-neutral remote queue service contract that extends the accepted 0.18.27 runner pattern into a future governed service boundary. The contract covers authenticated sessions, policy-gated named operations, queue/dev operation allowlists, scoped workspace file transfer, session-scoped ps/kill, bounded JSON results/log tails, audit events, and fail-closed behaviour.
+
+This release is deliberately contract-only. It does not add live remote service execution, does not expose a generic shell, does not add `/run`, and does not change the accepted 0.18.27 dev runner implementation except documentation and contract tests.
+
+## 0.18.27 merged platform package: exposed API auth key repair + OCI provider contracts
+
+Merges the accepted OCI provider-contract overlay into the newer repaired remote-runner platform base. The OCI additions remain contract/helper/fixture/test oriented and are kept away from the queue dispatcher/core queue path. This merge preserves the exposed API authentication repair and process-control behaviour from the newer platform package while adding OCI provider contracts, OCI class criteria, explainability, legal/compliance notes, provider fixture helpers, policy examples, class examples, and OCI contract tests.
+
+## 0.18.27 internal dev remote runner bridge
+
+Adds `bin/queue-dev-runner.py`, a localhost-first, capability-scoped remote development runner for external build/test VMs. The bridge creates short-lived session workspaces, requires a server-console one-time bootstrap code followed by random session id plus auth code, bounds uploads/runtime/log tails, rejects path traversal and symlink escape, redacts obvious secret-bearing fields, and exposes only named development operations: upload, approved test, queue dev test, queue dev patch, queue dev splice, session-scoped ps, session-scoped kill, and session close.
+
+The API is deliberately visible and narrow: `GET /healthz` works, `GET /session/create` is unavailable, `POST /session/create` consumes a bootstrap code printed in the server terminal, `/run` is absent, and all operational endpoints require session authentication. Direct JSON/form endpoints accept `session_id` and `auth_code` in the body as well as header auth, while multipart upload keeps header-only auth so the file stream is not consumed before parsing. Pressing Enter on the server mints a new one-use bootstrap code.
+
+The repaired process-control contract adds a per-session process registry. `ps` lists only registered processes for the authenticated session. `kill` can terminate only a registered process id/process group belonging to that same session, and rejects host/global PIDs such as PID 1. API-submitted operations are visible on screen for the issuer of the token through server-console audit lines.
+
+This release is deliberately dev-infrastructure-only. It is not a generic HTTP shell, does not expose arbitrary command execution, and does not alter queue dev test, queue dev scratchpad, OCI governance/provider contracts, governance provider behaviour, or job-resolution semantics.
+
+## 0.18.26 Oracle Cloud Infrastructure governance provider contract
+
+Adds a contract-first OCI governance/provider boundary for future Oracle Cloud Infrastructure integrations. This package documents normalized helper contracts, fail-closed provider behaviour, OCI policy/ACL/key/posture/audit evidence responsibilities, and an example provider environment file under `examples/providers/oci.env.example`.
+
+This release is deliberately contract-only: it does not add live OCI CLI/SDK enforcement, does not install an OCI runtime asset, and does not claim that `queue oci` command functionality exists yet. Future packages may add runtime/provider implementations against this contract after primary-source validation and explicit scoping.
+
+## 0.18.25 internal dev test runner class
+
+Adds `queue dev test` as a queue-native development test runner on top of the accepted scratchpad list/delete/dedupe base. The command creates an isolated harness `QUEUEBASH_ROOT`, submits a real `DEV_TEST_RUNNER` job through normal `queue submit` in a clean subprocess, optionally runs a bounded worker pass with `--run`, and emits `queuebash.dev_test_result.v1` JSON. Scratchpad remains available for continuity but automatic test-result-to-scratchpad wiring is deliberately deferred.
+
+## 0.18.24 internal dev scratchpad import contract
+
+Adds `queue dev scratchpad` as a file-backed, authority-stamped engineering ledger for AI-assisted development. The first package is storage/state only: `init`, lightweight `import --from-tree`, `add`, `task`, `attempt`, `evidence`, `done`, `reject`, `fail`, `bump-fail`, compact `list`, soft-audit `delete ITEM_ID`, pruned `next --json`, full `export --json`, and human `explain ITEM_ID`. It deliberately does not integrate with `queue dev test`, render prompts, call AI providers, or refactor queue/job-resolution/splice semantics.
+
 ## 0.18.22 internal dev splice tool
 
 This release adds `queue dev splice`, a constrained anchored text-splicing tool for internal refactor work. It supports dry-run/idempotency, JSON diagnostics, atomic writes, permission preservation, file-based anchors/inserts/replacements with trailing newlines preserved, and deliberately does not implement `_queue_resolve_job_operand` or refactor `queue()`.
@@ -143,6 +372,7 @@ Enterprise provider contracts:
 
 - [Trust providers](docs/TRUST_PROVIDERS.md)
 - [Microsoft governance provider contract](docs/MS_GOVERNANCE_PROVIDER.md)
+- [Oracle Cloud Infrastructure governance provider contract](docs/OCI_GOVERNANCE_PROVIDER.md)
 - [Directory governance provider contracts](docs/DIRECTORY_GOVERNANCE_PROVIDERS.md)
 - [AI advisory provider contract](docs/AI_ADVISORY_PROVIDER.md)
 - [AI advisory audit logging](docs/AI_AUDIT_LOGGING.md)

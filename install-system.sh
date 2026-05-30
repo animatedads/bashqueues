@@ -11,6 +11,7 @@ src_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 prefix="${PREFIX:-/usr/local}"
 with_cron=0
 with_daemon=0
+with_remote_listener=0
 force_root_key=0
 no_root_key=0
 lock_policy=0
@@ -28,6 +29,9 @@ Options:
   --without-cron        Do not install cron bridge support (default)
   --with-daemon         Install and enable the root multi-user bashqueues daemon
   --without-daemon      Do not install the system daemon (default)
+  --with-remote-listener Install and enable the remote queue management listener
+  --without-remote-listener
+                        Do not install remote queue management listener (default)
   --queue-root DIR      Root user's queue root for key setup (default: /root/.queuebash)
   --force-root-key      Replace root's authorisation key if it exists
   --no-root-key         Do not generate/install a root authorisation key
@@ -56,6 +60,8 @@ while (($#)); do
     --without-cron) with_cron=0; shift ;;
     --with-daemon) with_daemon=1; shift ;;
     --without-daemon) with_daemon=0; shift ;;
+    --with-remote-listener) with_remote_listener=1; shift ;;
+    --without-remote-listener) with_remote_listener=0; shift ;;
     --queue-root) queue_root="${2:?missing DIR for --queue-root}"; shift 2 ;;
     --force-root-key) force_root_key=1; shift ;;
     --no-root-key) no_root_key=1; shift ;;
@@ -98,6 +104,7 @@ bashqueues system install plan
   root queue:    $queue_root
   cron bridge:   $([[ "$with_cron" == 1 ]] && echo yes || echo no)
   system daemon: $([[ "$with_daemon" == 1 ]] && echo yes || echo no)
+  remote listener: $([[ "$with_remote_listener" == 1 ]] && echo yes || echo no)
   root key:      $([[ "$no_root_key" == 1 ]] && echo disabled || echo enabled)
   dogfood queue: $install_queue
 PLAN
@@ -363,6 +370,103 @@ echo "Installed bashqueues system daemon"
 STEP
 chmod 0755 "$work_dir/install-daemon.sh"
 
+cat > "$work_dir/install-remote-listener-policy.sh" <<'STEP'
+#!/usr/bin/env bash
+set -euo pipefail
+src_dir="$1"; prefix="$2"
+bin_dir="$prefix/bin"
+share_dir="$prefix/share/bashqueues"
+policy_dir="/etc/bashqueues/policies.d/remote-queue"
+state_dir="/var/lib/queuebash/remote-queue-management"
+queue_root="/var/lib/queuebash/remote-queue-root"
+audit_dir="/var/log/queuebash"
+
+install -d -m 0755 "$bin_dir" "$share_dir/bin" "$share_dir/docs" "$share_dir/policies.d/remote-queue" "$policy_dir" "$state_dir" "$queue_root" "$audit_dir"
+install -d -m 0750 "$policy_dir/secrets"
+install -m 0755 "$src_dir/bin/queue-remote-management-listener.py" "$share_dir/bin/queue-remote-management-listener.py"
+ln -sf "$share_dir/bin/queue-remote-management-listener.py" "$bin_dir/queue-remote-management-listener"
+
+install -m 0644 "$src_dir/docs/REMOTE_QUEUE_MANAGEMENT_LISTENER.md" "$share_dir/docs/REMOTE_QUEUE_MANAGEMENT_LISTENER.md"
+install -m 0644 "$src_dir/policies.d/remote-queue/remote-management.env.example" "$share_dir/policies.d/remote-queue/remote-management.env.example"
+install -m 0644 "$src_dir/policies.d/remote-queue/clients.example.tsv" "$share_dir/policies.d/remote-queue/clients.example.tsv"
+install -m 0644 "$src_dir/policies.d/remote-queue/acl.example.tsv" "$share_dir/policies.d/remote-queue/acl.example.tsv"
+
+if [[ ! -e "$policy_dir/remote-management.env" ]]; then
+  install -m 0644 "$src_dir/policies.d/remote-queue/remote-management.env.example" "$policy_dir/remote-management.env"
+  echo "Installed remote management policy: $policy_dir/remote-management.env"
+else
+  echo "Keeping existing remote management policy: $policy_dir/remote-management.env"
+fi
+if [[ ! -e "$policy_dir/clients.tsv" ]]; then
+  install -m 0640 "$src_dir/policies.d/remote-queue/clients.example.tsv" "$policy_dir/clients.tsv"
+  echo "Installed disabled client registry template: $policy_dir/clients.tsv"
+else
+  echo "Keeping existing remote management client registry: $policy_dir/clients.tsv"
+fi
+if [[ ! -e "$policy_dir/acl.tsv" ]]; then
+  install -m 0640 "$src_dir/policies.d/remote-queue/acl.example.tsv" "$policy_dir/acl.tsv"
+  echo "Installed deny-by-default ACL template: $policy_dir/acl.tsv"
+else
+  echo "Keeping existing remote management ACL: $policy_dir/acl.tsv"
+fi
+chmod 0750 "$policy_dir" "$policy_dir/secrets" 2>/dev/null || true
+echo "Installed bashqueues remote queue management listener policy files"
+STEP
+chmod 0755 "$work_dir/install-remote-listener-policy.sh"
+
+cat > "$work_dir/install-remote-listener-service.sh" <<'STEP'
+#!/usr/bin/env bash
+set -euo pipefail
+src_dir="$1"; prefix="$2"
+bin_dir="$prefix/bin"
+share_dir="$prefix/share/bashqueues"
+install -d -m 0755 /etc/systemd/system
+
+# Keep service file prefix-aware.
+tmp_service="$(mktemp)"
+sed   -e "s#/usr/local/bin/queue-remote-management-listener#$bin_dir/queue-remote-management-listener#g"   -e "s#/usr/local/share/bashqueues#$share_dir#g"   "$src_dir/systemd/bashqueues-remote-management.service" > "$tmp_service"
+install -m 0644 "$tmp_service" /etc/systemd/system/bashqueues-remote-management.service
+rm -f "$tmp_service"
+
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload
+  systemctl enable --now bashqueues-remote-management.service
+  echo "Enabled bashqueues-remote-management.service"
+else
+  echo "systemctl not found; remote management service installed but not enabled" >&2
+fi
+echo "Installed bashqueues remote queue management listener service"
+STEP
+chmod 0755 "$work_dir/install-remote-listener-service.sh"
+
+cat > "$work_dir/install-remote-listener-verify.sh" <<'STEP'
+#!/usr/bin/env bash
+set -euo pipefail
+prefix="$1"
+bin_dir="$prefix/bin"
+policy_dir="/etc/bashqueues/policies.d/remote-queue"
+for required_remote_policy in \
+  "$policy_dir/remote-management.env" \
+  "$policy_dir/acl.tsv" \
+  "$policy_dir/clients.tsv"; do
+  if [[ ! -f "$required_remote_policy" ]]; then
+    echo "install-system.sh: remote listener policy file was not installed: $required_remote_policy" >&2
+    exit 1
+  fi
+done
+if [[ ! -x "$bin_dir/queue-remote-management-listener" ]]; then
+  echo "install-system.sh: remote listener wrapper was not installed: $bin_dir/queue-remote-management-listener" >&2
+  exit 1
+fi
+if [[ ! -f /etc/systemd/system/bashqueues-remote-management.service ]]; then
+  echo "install-system.sh: remote listener systemd unit was not installed" >&2
+  exit 1
+fi
+echo "Verified bashqueues remote queue management listener install"
+echo "Configure clients in $policy_dir/clients.tsv and grants in $policy_dir/acl.tsv"
+STEP
+chmod 0755 "$work_dir/install-remote-listener-verify.sh"
+
 # Dogfood the installation through an isolated temporary queue so this installer
 # does not dispatch any existing root queue work.
 export QUEUEBASH_ROOT="$install_queue"
@@ -386,14 +490,81 @@ if [[ "$with_daemon" == 1 ]]; then
   [[ "$with_cron" != 1 && "$no_root_key" != 1 ]] && dep="system-install-root-key"
   queue submit system-install-daemon --after-success "$dep" --reason "install bashqueues system daemon" -- bash "$work_dir/install-daemon.sh" "$src_dir" "$prefix"
 fi
+if [[ "$with_remote_listener" == 1 ]]; then
+  queue submit system-install-remote-listener-policy --after-success system-install-core --reason "install remote listener policy files" -- bash "$work_dir/install-remote-listener-policy.sh" "$src_dir" "$prefix"
+  queue submit system-install-remote-listener-service --after-success system-install-remote-listener-policy --reason "install remote listener systemd service" -- bash "$work_dir/install-remote-listener-service.sh" "$src_dir" "$prefix"
+  queue submit system-install-remote-listener-verify --after-success system-install-remote-listener-service --reason "verify remote listener installation" -- bash "$work_dir/install-remote-listener-verify.sh" "$prefix"
+fi
 
-queue run
+installer_failed_jobs() {
+  find "$install_queue/failed" "$install_queue/pol_block" "$install_queue/interrupted" -type f -name '*.job' 2>/dev/null || true
+}
+installer_pending_jobs_count() {
+  find "$install_queue/pending" -type f -name '*.job' 2>/dev/null | wc -l | tr -d '[:space:]'
+}
+installer_fail_if_any_job_failed() {
+  if installer_failed_jobs | grep -q .; then
+    echo "install-system.sh: one or more dogfood installation jobs failed" >&2
+    installer_failed_jobs >&2 || true
+    find "$install_queue/logs" -maxdepth 1 -type f -print -exec sh -c 'echo "### $1"; case "$1" in *.gz) gzip -cd "$1" 2>/dev/null | tail -80 ;; *) tail -80 "$1" ;; esac' _ {} \; >&2 || true
+    exit 1
+  fi
+}
 
-if find "$install_queue/failed" "$install_queue/pol_block" "$install_queue/interrupted" -type f -name '*.job' 2>/dev/null | grep -q .; then
-  echo "install-system.sh: one or more dogfood installation jobs failed" >&2
-  find "$install_queue/failed" "$install_queue/pol_block" "$install_queue/interrupted" -type f -name '*.job' 2>/dev/null -print >&2 || true
-  find "$install_queue/logs" -type f -maxdepth 1 -print -exec tail -80 {} \; >&2 || true
+# Drain the isolated installer queue.  Dependency jobs intentionally use stable
+# one-shot names and --after-success; each foreground run may reveal the next
+# dependency level, so keep running until no pending installer jobs remain.
+max_install_queue_passes=20
+for ((install_queue_pass=1; install_queue_pass<=max_install_queue_passes; install_queue_pass++)); do
+  pending_before="$(installer_pending_jobs_count)"
+  [[ "$pending_before" -gt 0 ]] || break
+  queue run
+  installer_fail_if_any_job_failed
+  pending_after="$(installer_pending_jobs_count)"
+  [[ "$pending_after" -gt 0 ]] || break
+done
+
+remaining_pending="$(installer_pending_jobs_count)"
+if [[ "$remaining_pending" -gt 0 ]]; then
+  echo "install-system.sh: dogfood installation queue did not drain; pending jobs remain: $remaining_pending" >&2
+  find "$install_queue/pending" -type f -name '*.job' -print >&2 || true
+  find "$install_queue/logs" -maxdepth 1 -type f -print -exec tail -80 {} \; >&2 || true
   exit 1
+fi
+
+installer_fail_if_any_job_failed
+
+if [[ "$with_remote_listener" == 1 ]]; then
+  remote_policy_dir="/etc/bashqueues/policies.d/remote-queue"
+  for required_remote_policy in     "$remote_policy_dir/remote-management.env"     "$remote_policy_dir/acl.tsv"     "$remote_policy_dir/clients.tsv"; do
+    if [[ ! -f "$required_remote_policy" ]]; then
+      echo "install-system.sh: remote listener policy file was not installed: $required_remote_policy" >&2
+      exit 1
+    fi
+  done
+fi
+
+if [[ "$with_remote_listener" == 1 ]]; then
+  remote_listener_status="$(cat <<'REMOTE_DONE'
+  installed; policy files copied under:
+    /etc/bashqueues/policies.d/remote-queue/
+
+  Expected files:
+    /etc/bashqueues/policies.d/remote-queue/remote-management.env
+    /etc/bashqueues/policies.d/remote-queue/acl.tsv
+    /etc/bashqueues/policies.d/remote-queue/clients.tsv
+
+  Example source files:
+    policies.d/remote-queue/remote-management.env.example
+    policies.d/remote-queue/acl.example.tsv
+    policies.d/remote-queue/clients.example.tsv
+
+  Check service:
+    systemctl status bashqueues-remote-management.service
+REMOTE_DONE
+)"
+else
+  remote_listener_status="  not installed; rerun with --with-remote-listener to enable"
 fi
 
 cat <<DONE
@@ -414,4 +585,7 @@ Cron bridge:
 
 System daemon:
   $([[ "$with_daemon" == 1 ]] && echo "installed; check: systemctl status bashqueues-daemon.service" || echo "not installed; rerun with --with-daemon to enable")
+
+Remote queue management listener:
+$remote_listener_status
 DONE
