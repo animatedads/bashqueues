@@ -1,0 +1,11 @@
+{
+  "schema": "queuebash.gcp.detect.v1",
+  "provider": "gcp",
+  "detected": true,
+  "method": "fixture",
+  "project_id": "queuebash-example",
+  "region": "europe-west2",
+  "zone": "europe-west2-a",
+  "fail_closed": false,
+  "reason": "fixture_detected"
+}

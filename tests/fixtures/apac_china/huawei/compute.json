@@ -1,0 +1,13 @@
+{
+  "cpu_limit_supported": true,
+  "decision": "available",
+  "memory_limit_supported": true,
+  "provider": "huawei",
+  "provider_family": "apac_china",
+  "provider_name": "Huawei Cloud",
+  "reason": "fixture_compute_mapped",
+  "resource_type": "vm",
+  "schema": "queuebash.apac_china.huawei.compute.v1",
+  "shape": "s6.large.2",
+  "source": "fixture"
+}

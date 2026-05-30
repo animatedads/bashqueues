@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.azure.cost_policy.v1",
+  "provider": "azure",
+  "currency": "GBP",
+  "daily_ceiling": 25,
+  "monthly_ceiling": 500,
+  "required_tags": ["owner", "cost_center", "environment", "queuebash_class"],
+  "billing_api_live_checks_default": false,
+  "decision": "allow",
+  "reason": "example_cost_policy_fixture_only",
+  "status": "mapped_pending_validation",
+  "notes": "Example FinOps rail only. No Azure billing API call is made by default tests."
+}

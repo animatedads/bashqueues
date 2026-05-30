@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.gcp.legal.v1",
+  "provider": "gcp",
+  "check": "legal",
+  "frameworks": ["GDPR", "UK_DPA"],
+  "status": "mapped_pending_validation",
+  "region": "europe-west2",
+  "retention_evidence_required": true,
+  "deletion_evidence_required": true,
+  "decision": "unknown",
+  "reason": "fixture_legal_mapping_pending_validation",
+  "fail_closed": true
+}

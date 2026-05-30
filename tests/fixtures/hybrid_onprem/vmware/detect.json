@@ -1,0 +1,12 @@
+{
+  "check": "detect",
+  "decision": "allow",
+  "detected": true,
+  "fail_closed": false,
+  "provider": "vmware",
+  "provider_family": "hybrid_onprem",
+  "provider_name": "VMware/vCloud",
+  "reason": "fixture_detected",
+  "schema": "queuebash.hybrid_onprem.vmware.detect.v1",
+  "source": "fixture"
+}

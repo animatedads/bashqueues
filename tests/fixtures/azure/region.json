@@ -1,0 +1,1 @@
+{"schema":"queuebash.azure.region.v1","provider":"azure","region":"uksouth","sovereignty_group":"uk","allowed_frameworks":["UK_DPA","GDPR"],"status":"mapped_pending_validation","decision":"allow","reason":"region_fixture_allowed","source":"fixture","fail_closed":false}

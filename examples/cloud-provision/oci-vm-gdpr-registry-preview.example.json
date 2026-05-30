@@ -1,0 +1,48 @@
+{
+    "decision": "allow",
+    "fail_closed": false,
+    "live": false,
+    "mutated": false,
+    "plan_id": "cp-1780090676-5e12c68a",
+    "provider": "oci",
+    "reason": "registry_handoff_preview",
+    "registry_write": false,
+    "resource_record": {
+        "allowed_classes": [
+            "CLOUD_OCI_LEGAL_COMPLIANCE"
+        ],
+        "capacity": {
+            "cpu": 4,
+            "memory_gb": 16
+        },
+        "compliance": [
+            "gdpr",
+            "data-protection"
+        ],
+        "labels": [
+            "cloud_provision",
+            "gdpr",
+            "oci",
+            "planned",
+            "vm"
+        ],
+        "lifecycle_state": "planned",
+        "provenance": {
+            "cloud_infra_service": "oci-free-london",
+            "cloud_provision_plan_id": "cp-1780090676-5e12c68a",
+            "cloud_provision_template": "oci-vm-gdpr",
+            "handoff_mode": "preview-only",
+            "source": "cloud_provision",
+            "template": "oci-vm-gdpr"
+        },
+        "provider": "oci",
+        "region": "uk-london-1",
+        "registry_handoff_state": "planned",
+        "resource_id": "planned-oci-vm-gdpr-91889a06",
+        "resource_type": "vm",
+        "schema": "queuebash.cloud_resource.v1",
+        "status": "planned"
+    },
+    "schema": "queuebash.cloud_provision.registry_preview.v1",
+    "template": "oci-vm-gdpr"
+}

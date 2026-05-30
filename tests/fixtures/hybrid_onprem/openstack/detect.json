@@ -1,0 +1,12 @@
+{
+  "check": "detect",
+  "decision": "allow",
+  "detected": true,
+  "fail_closed": false,
+  "provider": "openstack",
+  "provider_family": "hybrid_onprem",
+  "provider_name": "OpenStack",
+  "reason": "fixture_detected",
+  "schema": "queuebash.hybrid_onprem.openstack.detect.v1",
+  "source": "fixture"
+}

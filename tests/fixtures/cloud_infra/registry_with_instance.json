@@ -1,0 +1,282 @@
+{
+  "schema": "queuebash.cloud_infra.registry.v1",
+  "services": [
+    {
+      "id": "oci-free-london",
+      "provider": "oci",
+      "helper": "oci_free",
+      "enabled": true,
+      "allowed_actions": [
+        "plan",
+        "status",
+        "start",
+        "stop"
+      ],
+      "region": "uk-london-1",
+      "instance_id": "ocid1.instance.oc1.uk-london-1.example",
+      "shape": "VM.Standard.E2.1.Micro",
+      "prefix": "lon-free",
+      "allow_create": false,
+      "allow_destroy": false,
+      "legal": {
+        "sovereignty": "uk",
+        "retention_policy": "dev-artifacts-only",
+        "classification": "dev-test"
+      }
+    },
+    {
+      "id": "ovh-gdpr-vm",
+      "provider": "ovhcloud",
+      "helper": "ovh_vm",
+      "enabled": true,
+      "allowed_actions": [
+        "plan",
+        "status"
+      ],
+      "region": "gra",
+      "allow_create": false,
+      "allow_destroy": false,
+      "queue_class": "CLOUD_EU_SOVEREIGN_GDPR",
+      "legal": {
+        "sovereignty": "eu-eea",
+        "retention_policy": "template-only",
+        "classification": "customer-data",
+        "framework": "GDPR"
+      },
+      "cost": {
+        "budget_policy": "eu-sovereign-default"
+      }
+    },
+    {
+      "id": "scaleway-gdpr-instance",
+      "provider": "scaleway",
+      "helper": "scaleway_instance",
+      "enabled": true,
+      "allowed_actions": [
+        "plan",
+        "status"
+      ],
+      "region": "fr-par",
+      "allow_create": false,
+      "allow_destroy": false,
+      "queue_class": "CLOUD_EU_SOVEREIGN_GDPR",
+      "legal": {
+        "sovereignty": "eu-eea",
+        "retention_policy": "template-only",
+        "classification": "customer-data",
+        "framework": "GDPR"
+      },
+      "cost": {
+        "budget_policy": "eu-sovereign-default"
+      }
+    },
+    {
+      "id": "hetzner-gdpr-cloud",
+      "provider": "hetzner",
+      "helper": "hetzner_cloud",
+      "enabled": true,
+      "allowed_actions": [
+        "plan",
+        "status"
+      ],
+      "region": "fsn1",
+      "allow_create": false,
+      "allow_destroy": false,
+      "queue_class": "CLOUD_EU_SOVEREIGN_GDPR",
+      "legal": {
+        "sovereignty": "eu-eea",
+        "retention_policy": "template-only",
+        "classification": "customer-data",
+        "framework": "GDPR"
+      },
+      "cost": {
+        "budget_policy": "eu-sovereign-default"
+      }
+    },
+    {
+      "id": "otc-gdpr-ecs",
+      "provider": "otc",
+      "helper": "otc_ecs",
+      "enabled": true,
+      "allowed_actions": [
+        "plan",
+        "status"
+      ],
+      "region": "eu-de",
+      "allow_create": false,
+      "allow_destroy": false,
+      "queue_class": "CLOUD_EU_SOVEREIGN_GDPR",
+      "legal": {
+        "sovereignty": "eu-eea",
+        "retention_policy": "template-only",
+        "classification": "customer-data",
+        "framework": "GDPR"
+      },
+      "cost": {
+        "budget_policy": "eu-sovereign-default"
+      }
+    },
+    {
+      "id": "alibaba-export-review-ecs",
+      "provider": "alibaba",
+      "helper": "alibaba_ecs",
+      "enabled": true,
+      "allowed_actions": [
+        "plan",
+        "status"
+      ],
+      "region": "cn-hangzhou",
+      "allow_create": false,
+      "allow_destroy": false,
+      "queue_class": "CLOUD_APAC_CHINA_EXPORT_REVIEW",
+      "legal": {
+        "sovereignty": "china-apac-review",
+        "retention_policy": "template-only",
+        "classification": "customer-data",
+        "framework": "EXPORT_REVIEW"
+      },
+      "cost": {
+        "budget_policy": "apac-china-default"
+      }
+    },
+    {
+      "id": "tencent-export-review-cvm",
+      "provider": "tencent",
+      "helper": "tencent_cvm",
+      "enabled": true,
+      "allowed_actions": [
+        "plan",
+        "status"
+      ],
+      "region": "ap-guangzhou",
+      "allow_create": false,
+      "allow_destroy": false,
+      "queue_class": "CLOUD_APAC_CHINA_EXPORT_REVIEW",
+      "legal": {
+        "sovereignty": "china-apac-review",
+        "retention_policy": "template-only",
+        "classification": "customer-data",
+        "framework": "EXPORT_REVIEW"
+      },
+      "cost": {
+        "budget_policy": "apac-china-default"
+      }
+    },
+    {
+      "id": "huawei-export-review-ecs",
+      "provider": "huawei",
+      "helper": "huawei_ecs",
+      "enabled": true,
+      "allowed_actions": [
+        "plan",
+        "status"
+      ],
+      "region": "cn-north-4",
+      "allow_create": false,
+      "allow_destroy": false,
+      "queue_class": "CLOUD_APAC_CHINA_EXPORT_REVIEW",
+      "legal": {
+        "sovereignty": "china-apac-review",
+        "retention_policy": "template-only",
+        "classification": "customer-data",
+        "framework": "EXPORT_REVIEW"
+      },
+      "cost": {
+        "budget_policy": "apac-china-default"
+      }
+    },
+    {
+      "id": "gpu-coreweave-a100-training",
+      "provider": "coreweave",
+      "provider_family": "gpu-cloud",
+      "helper": "gpu_cloud",
+      "enabled": true,
+      "allowed_actions": [
+        "plan",
+        "status"
+      ],
+      "region": "us-east",
+      "allow_create": false,
+      "allow_destroy": false,
+      "queue_class": "CLOUD_GPU_MODEL_TRAINING",
+      "accelerator": {
+        "vendor": "nvidia",
+        "model": "A100",
+        "count": 1,
+        "vram_gb": 80
+      },
+      "legal": {
+        "sovereignty": "policy-mapped",
+        "retention_policy": "template-only",
+        "classification": "model-training-data",
+        "framework": "GPU_WORKLOAD_REVIEW"
+      },
+      "cost": {
+        "budget_policy": "gpu-cloud-default",
+        "estimated_monthly_cost": 1400
+      }
+    },
+    {
+      "id": "gpu-lambda-h100-training",
+      "provider": "lambda",
+      "provider_family": "gpu-cloud",
+      "helper": "gpu_cloud",
+      "enabled": true,
+      "allowed_actions": [
+        "plan",
+        "status"
+      ],
+      "region": "us-west",
+      "allow_create": false,
+      "allow_destroy": false,
+      "queue_class": "CLOUD_GPU_MODEL_TRAINING",
+      "accelerator": {
+        "vendor": "nvidia",
+        "model": "H100",
+        "count": 1,
+        "vram_gb": 80
+      },
+      "legal": {
+        "sovereignty": "policy-mapped",
+        "retention_policy": "template-only",
+        "classification": "model-training-data",
+        "framework": "GPU_WORKLOAD_REVIEW"
+      },
+      "cost": {
+        "budget_policy": "gpu-cloud-default",
+        "estimated_monthly_cost": 1800
+      }
+    },
+    {
+      "id": "gpu-dgx-export-review",
+      "provider": "dgx",
+      "provider_family": "gpu-cloud",
+      "helper": "gpu_cloud",
+      "enabled": true,
+      "allowed_actions": [
+        "plan",
+        "status"
+      ],
+      "region": "eu-west",
+      "allow_create": false,
+      "allow_destroy": false,
+      "queue_class": "CLOUD_GPU_EXPORT_REVIEW",
+      "accelerator": {
+        "vendor": "nvidia",
+        "model": "H100",
+        "count": 8,
+        "vram_gb": 640
+      },
+      "legal": {
+        "sovereignty": "policy-mapped",
+        "retention_policy": "template-only",
+        "classification": "restricted-model-artifacts",
+        "framework": "EXPORT_REVIEW"
+      },
+      "cost": {
+        "budget_policy": "gpu-cloud-export-review",
+        "estimated_monthly_cost": 1950
+      }
+    }
+  ]
+}

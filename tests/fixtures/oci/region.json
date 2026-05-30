@@ -1,0 +1,1 @@
+{"schema":"queuebash.oci.region.v1","provider":"oci","region":"uk-london-1","sovereignty_zone":"uk","legal_frameworks":["UK_DPA","GDPR"],"data_residency_decision":"allow","source":"fixture","reason":"region_allowed_by_fixture_policy","fail_closed":false}

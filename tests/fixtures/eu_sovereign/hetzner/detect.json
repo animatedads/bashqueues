@@ -1,0 +1,10 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "fail_closed": false,
+  "provider": "hetzner",
+  "provider_family": "eu_sovereign",
+  "reason": "fixture_detected",
+  "schema": "queuebash.eu_sovereign.hetzner.detect.v1",
+  "source": "fixture"
+}

@@ -1,0 +1,11 @@
+{
+  "budget_label_required": true,
+  "cost_center_required": true,
+  "decision": "allow",
+  "provider": "huawei",
+  "provider_family": "apac_china",
+  "provider_name": "Huawei Cloud",
+  "reason": "fixture_finops_mapped",
+  "schema": "queuebash.apac_china.huawei.finops.v1",
+  "source": "fixture"
+}

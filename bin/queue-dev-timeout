@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+Usage:
+  queue-dev-timeout [--timeout SEC] [--kill-after SEC] [--xtrace] [--stdout FILE] [--stderr FILE] -- COMMAND...
+
+Run a development/test command with consistent non-interactive queuebash defaults
+and a bounded timeout. This helper is intended for reviewers and AI workers so
+that repeated sandbox/test hangs are diagnosed the same way every time.
+
+Defaults:
+  --timeout 30
+  --kill-after 2
+
+Environment exported for the child:
+  QUEUEBASH_ALLOW_NONINTERACTIVE=1
+  CI=1
+  TERM=dumb
+  GIT_TERMINAL_PROMPT=0
+
+Examples:
+  queue-dev-timeout --timeout 20 -- bash tests/dev_qbtest_smoke.sh
+  queue-dev-timeout --timeout 20 --xtrace --stdout /tmp/smoke.out --stderr /tmp/smoke.err -- bash tests/dev_qbtest_smoke.sh
+EOF
+}
+
+timeout_sec=30
+kill_after=2
+xtrace=0
+stdout_file=""
+stderr_file=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --timeout) timeout_sec="${2:-}"; shift 2 ;;
+        --kill-after) kill_after="${2:-}"; shift 2 ;;
+        --xtrace|-x) xtrace=1; shift ;;
+        --stdout) stdout_file="${2:-}"; shift 2 ;;
+        --stderr) stderr_file="${2:-}"; shift 2 ;;
+        --help|-h|--h) usage; exit 0 ;;
+        --) shift; break ;;
+        *) echo "queue-dev-timeout: unexpected argument before --: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+if [[ $# -eq 0 ]]; then
+    echo "queue-dev-timeout: command is required after --" >&2
+    usage >&2
+    exit 2
+fi
+if ! [[ "$timeout_sec" =~ ^[0-9]+$ && "$timeout_sec" -gt 0 ]]; then
+    echo "queue-dev-timeout: --timeout must be a positive integer" >&2
+    exit 2
+fi
+if ! [[ "$kill_after" =~ ^[0-9]+$ && "$kill_after" -gt 0 ]]; then
+    echo "queue-dev-timeout: --kill-after must be a positive integer" >&2
+    exit 2
+fi
+
+export QUEUEBASH_ALLOW_NONINTERACTIVE=1
+export CI="${CI:-1}"
+export TERM=dumb
+export GIT_TERMINAL_PROMPT=0
+
+cmd=("$@")
+if [[ "$xtrace" -eq 1 ]]; then
+    if [[ "${cmd[0]}" == "bash" ]]; then
+        cmd=(bash -x "${cmd[@]:1}")
+    else
+        cmd=(bash -x -c '"$@"' _ "${cmd[@]}")
+    fi
+fi
+
+runner=(timeout --signal=TERM --kill-after="${kill_after}s" "${timeout_sec}s" "${cmd[@]}")
+
+if [[ -n "$stdout_file" && -n "$stderr_file" ]]; then
+    mkdir -p "$(dirname "$stdout_file")" "$(dirname "$stderr_file")"
+    "${runner[@]}" >"$stdout_file" 2>"$stderr_file"
+elif [[ -n "$stdout_file" ]]; then
+    mkdir -p "$(dirname "$stdout_file")"
+    "${runner[@]}" >"$stdout_file"
+elif [[ -n "$stderr_file" ]]; then
+    mkdir -p "$(dirname "$stderr_file")"
+    "${runner[@]}" 2>"$stderr_file"
+else
+    "${runner[@]}"
+fi

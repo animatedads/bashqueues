@@ -1,0 +1,4 @@
+# framework	status	class_hint	notes
+GDPR	proposed	CLOUD_GCP_GDPR	Requires validated region/data-processing/audit mapping
+UK_DPA	proposed	CLOUD_GCP_GDPR	Requires validated UK DPA posture
+ITAR	proposed	CLOUD_GCP_ITAR	Requires explicit export-control validation before use

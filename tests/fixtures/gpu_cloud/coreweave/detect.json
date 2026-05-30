@@ -1,0 +1,13 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "fail_closed": false,
+  "provider": "coreweave",
+  "provider_family": "gpu_cloud",
+  "provider_model": "kubernetes_or_cloud_instance",
+  "provider_name": "CoreWeave",
+  "reason": "fixture_contract",
+  "region": "us-east",
+  "schema": "queuebash.gpu_cloud.coreweave.detect.v1",
+  "source": "fixture"
+}

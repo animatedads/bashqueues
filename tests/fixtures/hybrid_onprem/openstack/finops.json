@@ -1,0 +1,12 @@
+{
+  "check": "finops",
+  "cost_centre_required": true,
+  "decision": "allow",
+  "fail_closed": false,
+  "provider": "openstack",
+  "provider_family": "hybrid_onprem",
+  "quota_checked": true,
+  "reason": "chargeback_quota_fixture",
+  "schema": "queuebash.hybrid_onprem.openstack.finops.v1",
+  "source": "fixture"
+}

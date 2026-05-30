@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.gcp.compute.v1",
+  "provider": "gcp",
+  "check": "compute",
+  "instance_id": "fixture-instance-1",
+  "machine_type": "e2-standard-4",
+  "vcpus": 4,
+  "memory_gb": 16,
+  "source": "fixture",
+  "decision": "available",
+  "reason": "fixture_compute_inventory",
+  "fail_closed": false
+}

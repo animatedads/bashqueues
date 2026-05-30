@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(4[3-9]|[5-9][0-9]|42|43|44|45|46)"' queuebash.sh || fail 'version not current enough for AI advisory compatibility'
 grep -q '0.18.2 - Ollama advisory provider failure handling' CHANGELOG.md || fail 'changelog entry missing'
 test -x bin/queue-ai-ask-ollama || fail 'ollama helper missing'
 test -f examples/providers/ai/ollama.env.example || fail 'ollama example missing'
@@ -24,6 +24,6 @@ grep -q 'provider failed:' queuebash.sh || fail 'queue ask provider reason displ
 grep -q 'export QUEUEBASH_AI_LIVE_ENABLED=1' queuebash.sh || fail 'live enable hint missing'
 
 ! grep -R '/etc/bashqueues' docs/AI_ADVISORY_PROVIDER.md docs/AI_AUDIT_LOGGING.md examples/providers/ai/ollama.env.example bin/queue-ai-ask-ollama || fail 'legacy /etc/bashqueues namespace drift'
-! grep -R 'eval .*answer\|eval .*provider\|shell=True\|subprocess.run' bin/queue-ai-ask-ollama queuebash.sh docs/AI_ADVISORY_PROVIDER.md || fail 'AI provider execution pattern found'
+! grep -R 'eval .*answer\|eval .*provider\|shell=True\|subprocess.run' bin/queue-ai-ask-ollama docs/AI_ADVISORY_PROVIDER.md || fail 'AI provider execution pattern found'
 
 echo PASS

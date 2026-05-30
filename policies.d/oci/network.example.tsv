@@ -1,0 +1,3 @@
+# name	vcn_id	subnet_id	nsg_required	egress_policy	ingress_policy
+high_assurance	ocid1.vcn.example	ocid1.subnet.example	1	restricted	ssh_restricted
+artifact_runner	ocid1.vcn.example	ocid1.subnet.artifacts	1	object_storage_only	closed

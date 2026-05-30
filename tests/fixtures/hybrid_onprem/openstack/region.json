@@ -1,0 +1,12 @@
+{
+  "check": "region",
+  "decision": "allow",
+  "fail_closed": false,
+  "provider": "openstack",
+  "provider_family": "hybrid_onprem",
+  "reason": "site_region_fixture",
+  "schema": "queuebash.hybrid_onprem.openstack.region.v1",
+  "site": "private-region-eu-1",
+  "source": "fixture",
+  "status": "mapped_pending_validation"
+}

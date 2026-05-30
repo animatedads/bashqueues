@@ -1,0 +1,10 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "fail_closed": false,
+  "provider": "ovhcloud",
+  "provider_family": "eu_sovereign",
+  "reason": "fixture_detected",
+  "schema": "queuebash.eu_sovereign.ovhcloud.detect.v1",
+  "source": "fixture"
+}

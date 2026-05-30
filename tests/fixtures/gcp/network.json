@@ -1,0 +1,12 @@
+{
+  "schema": "queuebash.gcp.network.v1",
+  "provider": "gcp",
+  "check": "network",
+  "vpc": "queuebash-vpc",
+  "subnet": "queuebash-subnet",
+  "region": "europe-west2",
+  "egress_policy": "restricted",
+  "decision": "allow",
+  "reason": "fixture_network_controls_present",
+  "fail_closed": false
+}

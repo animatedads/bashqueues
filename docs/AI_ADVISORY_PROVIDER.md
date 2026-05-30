@@ -32,6 +32,7 @@ An AI advisory provider may be implemented by:
 
 - IBM Watson or watsonx
 - OpenAI
+- Anthropic
 - Azure OpenAI
 - Gemini
 - an internal enterprise LLM
@@ -265,3 +266,27 @@ The response may state that the request was logged as an AI safety/policy event.
 High-risk destructive or retention-affecting operations are governed before provider invocation. The local classifier categorizes legitimate destructive work as `destructive_operation` and returns a local governed workflow advisory instead of a casual command recipe.
 
 Provider integrations must preserve this distinction: destructive misuse is refused, policy-bypass destructive requests are refused, and legitimate approved decommissioning receives authority/change-ticket, retention/legal-hold, trusted authorisation, isolation, change-window, `queue explain`, and audit-evidence guidance.
+
+## OpenAI advisory provider
+
+`0.18.46` includes an optional OpenAI live advisory provider. It uses the same `queue ask` policy, audit, context, and safety gates as Gemini and Ollama. Live calls require `QUEUEBASH_AI_LIVE_ENABLED=1` and an API key from `QUEUEBASH_AI_OPENAI_API_KEY_FILE`, `QUEUEBASH_AI_OPENAI_API_KEY`, or `OPENAI_API_KEY`.
+
+Example:
+
+```text
+QUEUEBASH_AI_LIVE_ENABLED=1 queue ask --provider openai --model gpt-4.1-mini --live --context docs,tests,classes "question"
+```
+
+The helper returns normalized `queuebash.ai_advisory.response.v1` JSON. Missing credentials and provider failures fail closed with bounded JSON and redacted error details. Provider output is data, never shell.
+
+## Anthropic advisory provider
+
+`0.18.46` includes an optional Anthropic live advisory provider. It uses the same policy, redaction, context, and audit contract as the other ask providers. The provider is invoked only when `QUEUEBASH_AI_LIVE_ENABLED=1` and `queue ask --provider anthropic --live ...` are both present.
+
+Example:
+
+```bash
+QUEUEBASH_AI_LIVE_ENABLED=1 queue ask --provider anthropic --model claude-sonnet-4-20250514 --live --context docs,tests,classes "question"
+```
+
+Provider output is data, never shell.

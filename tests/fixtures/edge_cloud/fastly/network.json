@@ -1,0 +1,11 @@
+{
+  "decision": "allow",
+  "egress_policy": "restricted_preferred",
+  "fail_closed": false,
+  "ingress": "managed_edge",
+  "provider": "fastly",
+  "provider_family": "edge_cloud",
+  "reason": "fixture_contract",
+  "schema": "queuebash.edge_cloud.fastly.network.v1",
+  "source": "fixture"
+}

@@ -1,0 +1,5 @@
+# framework	region_selector	data_classes	requires_change_ticket	requires_legal_basis	requires_audit
+AWS_GDPR	eu-west-1,eu-west-2	personal-data,customer-data	yes	yes	yes
+AWS_UK_DPA	eu-west-2	personal-data,customer-data	yes	yes	yes
+AWS_ITAR	us-gov-west-1	export-controlled,itar	yes	yes	yes
+AWS_CUSTOMER_DATA_US	us-east-1,us-west-2	customer-data	yes	yes	yes

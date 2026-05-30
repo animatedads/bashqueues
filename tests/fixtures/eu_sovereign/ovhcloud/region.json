@@ -1,0 +1,12 @@
+{
+  "decision": "allow",
+  "eu_or_uk": true,
+  "fail_closed": false,
+  "jurisdiction": "FR",
+  "provider": "ovhcloud",
+  "provider_family": "eu_sovereign",
+  "reason": "region_mapped_pending_validation",
+  "region": "gra",
+  "schema": "queuebash.eu_sovereign.ovhcloud.region.v1",
+  "source": "fixture"
+}

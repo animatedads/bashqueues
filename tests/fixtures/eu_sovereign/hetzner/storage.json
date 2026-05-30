@@ -1,0 +1,11 @@
+{
+  "decision": "available",
+  "fail_closed": false,
+  "mode": "object-storage",
+  "provider": "hetzner",
+  "provider_family": "eu_sovereign",
+  "reason": "storage_fixture_available",
+  "schema": "queuebash.eu_sovereign.hetzner.storage.v1",
+  "signed_url_redacted": true,
+  "source": "fixture"
+}

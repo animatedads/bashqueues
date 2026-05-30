@@ -1,0 +1,16 @@
+{
+  "schema": "queuebash.cloud_resource.v1",
+  "resource_id": "oci-uk-vm-001",
+  "provider": "oci",
+  "resource_type": "vm",
+  "region": "uk-london-1",
+  "zone": "AD-1",
+  "lifecycle_state": "running",
+  "status": "available",
+  "capacity": {"cpu": 4, "memory_gb": 16},
+  "labels": ["batch", "bob10-example"],
+  "compliance": ["gdpr", "uk-dpa"],
+  "allowed_classes": ["CLOUD_RESOURCE_GDPR", "*"],
+  "cost": {"hourly_estimate": 0.12, "currency": "GBP"},
+  "provenance": {"source": "example", "redacted": true}
+}

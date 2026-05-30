@@ -1,0 +1,12 @@
+{
+  "check": "detect",
+  "decision": "allow",
+  "detected": true,
+  "fail_closed": false,
+  "provider": "openshift",
+  "provider_family": "hybrid_onprem",
+  "provider_name": "OpenShift",
+  "reason": "fixture_detected",
+  "schema": "queuebash.hybrid_onprem.openshift.detect.v1",
+  "source": "fixture"
+}

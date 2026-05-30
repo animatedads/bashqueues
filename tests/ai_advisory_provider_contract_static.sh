@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(4[3-9]|[5-9][0-9]|42|43|44|45|46)"' queuebash.sh || fail 'version not current enough for AI advisory compatibility'
 grep -q '0.18.2 - Ollama advisory provider failure handling' CHANGELOG.md || fail 'changelog entry missing'
 grep -q '_queue_ai_ask_command' queuebash.sh || fail 'queue ask function missing'
 grep -q 'ask|ai-ask|advisory|advise)' queuebash.sh || fail 'queue ask dispatch missing'

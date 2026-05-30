@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.dev_workflow.evidence.v1",
+  "status": "ok",
+  "evidence_id": "DEVEVIDENCE-EXAMPLE",
+  "attempt_id": "DEVATTEMPT-EXAMPLE",
+  "result": "pass",
+  "commands": ["bash -n queuebash.sh", "tests/queue_dev_workflow_contract_static.sh"],
+  "files": ["validation_0.18.43_BOB12_dev_workflow_command_contracts.log"]
+}

@@ -1,0 +1,4 @@
+provider	framework	status	notes
+alibaba	data_residency	mapped_pending_validation	Validate region, account, and cross-border posture against primary sources.
+tencent	data_residency	mapped_pending_validation	Validate region, account, and cross-border posture against primary sources.
+huawei	data_residency	mapped_pending_validation	Validate region, account, and cross-border posture against primary sources.

@@ -1,0 +1,13 @@
+{
+  "cpu_limit_supported": true,
+  "decision": "available",
+  "memory_limit_supported": true,
+  "provider": "tencent",
+  "provider_family": "apac_china",
+  "provider_name": "Tencent Cloud",
+  "reason": "fixture_compute_mapped",
+  "resource_type": "vm",
+  "schema": "queuebash.apac_china.tencent.compute.v1",
+  "shape": "S5.MEDIUM4",
+  "source": "fixture"
+}

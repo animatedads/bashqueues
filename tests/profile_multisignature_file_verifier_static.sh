@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 grep -q 'file_verifier' queuebash.sh
 grep -q 'key_provider_consulted' queuebash.sh
 grep -q 'profile.sign' queuebash.sh

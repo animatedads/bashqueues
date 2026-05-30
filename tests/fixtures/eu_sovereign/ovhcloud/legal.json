@@ -1,0 +1,14 @@
+{
+  "cross_border_review_required": true,
+  "decision": "unknown",
+  "fail_closed": true,
+  "frameworks": [
+    "GDPR"
+  ],
+  "provider": "ovhcloud",
+  "provider_family": "eu_sovereign",
+  "reason": "legal_mapping_pending_primary_source_validation",
+  "schema": "queuebash.eu_sovereign.ovhcloud.legal.v1",
+  "source": "fixture",
+  "status": "mapped_pending_validation"
+}

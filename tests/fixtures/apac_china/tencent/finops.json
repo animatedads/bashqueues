@@ -1,0 +1,11 @@
+{
+  "budget_label_required": true,
+  "cost_center_required": true,
+  "decision": "allow",
+  "provider": "tencent",
+  "provider_family": "apac_china",
+  "provider_name": "Tencent Cloud",
+  "reason": "fixture_finops_mapped",
+  "schema": "queuebash.apac_china.tencent.finops.v1",
+  "source": "fixture"
+}

@@ -1,0 +1,12 @@
+{
+  "schema": "queuebash.dev_workflow.context.v1",
+  "status": "ok",
+  "mode": "working_set",
+  "filters": {
+    "tag": ["bob12", "queue-dev"],
+    "status": ["active", "in_progress", "blocked"]
+  },
+  "base_version": "0.18.43",
+  "items": [],
+  "warnings": []
+}

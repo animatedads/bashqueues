@@ -1,0 +1,13 @@
+{
+  "check": "region",
+  "decision": "allow",
+  "fail_closed": false,
+  "provider": "coreweave",
+  "provider_family": "gpu_cloud",
+  "provider_name": "CoreWeave",
+  "reason": "fixture_contract",
+  "region": "us-east",
+  "schema": "queuebash.gpu_cloud.coreweave.region.v1",
+  "source": "fixture",
+  "sovereignty_status": "mapped_pending_validation"
+}

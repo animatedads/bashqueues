@@ -1,0 +1,13 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "fail_closed": false,
+  "provider": "lambda",
+  "provider_family": "gpu_cloud",
+  "provider_model": "gpu_instance",
+  "provider_name": "Lambda Cloud",
+  "reason": "fixture_contract",
+  "region": "us-west",
+  "schema": "queuebash.gpu_cloud.lambda.detect.v1",
+  "source": "fixture"
+}

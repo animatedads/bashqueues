@@ -1,0 +1,12 @@
+{
+  "artifact_supported": true,
+  "decision": "available",
+  "provider": "huawei",
+  "provider_family": "apac_china",
+  "provider_name": "Huawei Cloud",
+  "reason": "fixture_storage_mapped",
+  "schema": "queuebash.apac_china.huawei.storage.v1",
+  "service": "obs",
+  "signed_url_redacted": true,
+  "source": "fixture"
+}

@@ -1,0 +1,146 @@
+{
+  "default_safety_contract": {
+    "credentials_required_for_default_tests": false,
+    "fixture_first": true,
+    "live_api_default": false,
+    "provisioning_default": false,
+    "queue_dispatch_refactor": false
+  },
+  "families": {
+    "apac_china": {
+      "class_prefix": "CLOUD_APAC_CHINA",
+      "doc_prefix": "APAC_CHINA",
+      "fixture_dir": "apac_china",
+      "notes": "Accepted Bob2 fixture-first provider family, mapped pending validation.",
+      "policy_dir": "apac-china",
+      "provider_dir": "apac_china",
+      "providers": [
+        "alibaba",
+        "tencent",
+        "huawei"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "aws": {
+      "class_prefix": "CLOUD_AWS",
+      "doc_prefix": "AWS",
+      "fixture_dir": "aws",
+      "notes": "Bob10 first-tier contract coverage; no live mutation by default.",
+      "policy_dir": "aws",
+      "provider_dir": "aws",
+      "status": "first_tier_contract"
+    },
+    "azure": {
+      "class_prefix": "CLOUD_AZURE",
+      "doc_prefix": "AZURE",
+      "fixture_dir": "azure",
+      "notes": "Bob10 first-tier contract coverage as of 0.18.52; fixture-first and non-mutating, with compliance status still requiring primary-source validation.",
+      "policy_dir": "azure",
+      "provider_dir": "azure",
+      "status": "first_tier_contract"
+    },
+    "edge_cloud": {
+      "class_prefix": "CLOUD_EDGE",
+      "doc_prefix": "EDGE_CLOUD",
+      "fixture_dir": "edge_cloud",
+      "notes": "Accepted Bob2 fixture-first provider family, mapped pending validation.",
+      "policy_dir": "edge-cloud",
+      "provider_dir": "edge_cloud",
+      "providers": [
+        "cloudflare",
+        "fastly",
+        "flyio"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "eu_sovereign": {
+      "class_prefix": "CLOUD_EU_SOVEREIGN",
+      "doc_prefix": "EU_SOVEREIGN",
+      "fixture_dir": "eu_sovereign",
+      "notes": "Accepted Bob2 fixture-first provider family, mapped pending validation.",
+      "policy_dir": "eu-sovereign",
+      "provider_dir": "eu_sovereign",
+      "providers": [
+        "ovhcloud",
+        "scaleway",
+        "hetzner",
+        "otc"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "gcp": {
+      "class_prefix": "CLOUD_GCP",
+      "doc_prefix": "GCP",
+      "fixture_dir": "gcp",
+      "notes": "Bob10 first-tier contract coverage as of 0.18.52; fixture-first and non-mutating, with compliance status still requiring primary-source validation.",
+      "policy_dir": "gcp",
+      "provider_dir": "gcp",
+      "status": "first_tier_contract"
+    },
+    "gpu_cloud": {
+      "class_prefix": "CLOUD_GPU",
+      "doc_prefix": "GPU_CLOUD",
+      "fixture_dir": "gpu_cloud",
+      "notes": "Accepted Bob2 fixture-first provider family, mapped pending validation.",
+      "policy_dir": "gpu-cloud",
+      "provider_dir": "gpu_cloud",
+      "providers": [
+        "coreweave",
+        "lambda",
+        "dgx"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "hybrid_onprem": {
+      "class_prefix": "CLOUD_HYBRID",
+      "doc_prefix": "HYBRID_ONPREM",
+      "fixture_dir": "hybrid_onprem",
+      "notes": "Accepted Bob2 fixture-first provider family, mapped pending validation.",
+      "policy_dir": "hybrid-onprem",
+      "provider_dir": "hybrid_onprem",
+      "providers": [
+        "vmware",
+        "openstack",
+        "openshift"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "ibm": {
+      "class_prefix": "CLOUD_IBM",
+      "doc_prefix": "IBM_CLOUD",
+      "fixture_dir": null,
+      "notes": "High-standard governance/FinOps/class reference material; not a Bob2 fixture pack.",
+      "policy_dir": null,
+      "provider_dir": null,
+      "status": "high_standard_reference"
+    },
+    "oci": {
+      "class_prefix": "CLOUD_OCI",
+      "doc_prefix": "OCI",
+      "fixture_dir": "oci",
+      "notes": "Strong OCI provider material; still fixture/default non-live.",
+      "policy_dir": "oci",
+      "provider_dir": "oci",
+      "status": "high_standard_reference"
+    }
+  },
+  "required_provider_family_shape": [
+    "provider_contract_docs",
+    "class_criteria_docs",
+    "explainability_docs",
+    "legal_compliance_docs",
+    "provider_helper",
+    "policy_examples",
+    "class_templates",
+    "fixtures",
+    "static_tests",
+    "json_contract_tests",
+    "fixture_smoke_tests",
+    "no_live_api_by_default",
+    "no_credentials_by_default",
+    "no_provisioning_by_default",
+    "no_queue_dispatch_refactor"
+  ],
+  "schema": "queuebash.provider_family_consistency.v1",
+  "verdict": "not_equal_yet"
+}

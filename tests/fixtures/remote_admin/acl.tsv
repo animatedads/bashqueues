@@ -1,0 +1,14 @@
+# subject	operation	resource	decision	reason
+admin@example.invalid	remote-admin.validate	*	allow	fixture validate
+admin@example.invalid	remote-admin.config.read	*	allow	fixture config read
+admin@example.invalid	remote-admin.config.write	*	allow	fixture config write
+admin@example.invalid	remote-admin.client.read	*	allow	fixture client read
+admin@example.invalid	remote-admin.client.write	*	allow	fixture client write
+admin@example.invalid	remote-admin.acl.read	*	allow	fixture acl read
+security-admin@example.invalid	remote-admin.acl.write	*	allow	fixture acl write
+secret-admin@example.invalid	remote-admin.secret.read-metadata	*	allow	fixture secret metadata
+secret-admin@example.invalid	remote-admin.secret.write	*	allow	fixture secret write
+secret-admin@example.invalid	remote-admin.secret.rotate	*	allow	fixture secret rotate
+auditor@example.invalid	remote-admin.audit.read	*	allow	fixture audit read
+auditor@example.invalid	remote-admin.audit.verify	*	allow	fixture audit verify
+auditor@example.invalid	remote-admin.audit.append	*	allow	fixture audit append

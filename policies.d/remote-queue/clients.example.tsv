@@ -1,0 +1,4 @@
+# client_id	key_id	subject	secret_file	status	comment
+# Create one secret file per remote queue client, mode 0640 or stricter.
+# Example:
+# queue-admin	default	queue-admin@example.invalid	/etc/bashqueues/policies.d/remote-queue/secrets/queue-admin.secret	active	read-only queue management client

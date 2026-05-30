@@ -1,0 +1,12 @@
+{
+  "cpu_limit_supported": true,
+  "decision": "available",
+  "fail_closed": false,
+  "memory_limit_supported": true,
+  "provider": "hetzner",
+  "provider_family": "eu_sovereign",
+  "reason": "compute_fixture_available",
+  "schema": "queuebash.eu_sovereign.hetzner.compute.v1",
+  "shape": "cx22",
+  "source": "fixture"
+}

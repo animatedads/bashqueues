@@ -1,0 +1,4 @@
+framework	status	notes
+GDPR	mapped_pending_validation	Requires customer data map, retention, deletion, audit, and DPA review.
+UK_DPA	mapped_pending_validation	Requires UK data-protection/legal review.
+EXPORT_REVIEW	mapped_pending_validation	Requires workload/export-control classification before placement.

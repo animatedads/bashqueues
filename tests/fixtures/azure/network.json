@@ -1,0 +1,1 @@
+{"schema":"queuebash.azure.network.v1","provider":"azure","vnet":"queuebash-vnet","subnet":"queuebash-subnet","nsg":"queuebash-nsg","private_endpoint_required":false,"egress_policy":"restricted","decision":"allow","reason":"network_fixture_controls_present","source":"fixture","fail_closed":false}

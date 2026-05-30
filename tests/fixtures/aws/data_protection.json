@@ -1,0 +1,18 @@
+{
+  "data_classes": [
+    "personal-data",
+    "customer-data"
+  ],
+  "decision": "allow",
+  "fail_closed": false,
+  "frameworks": [
+    "AWS_GDPR",
+    "AWS_UK_DPA"
+  ],
+  "provider": "aws",
+  "requires_audit": true,
+  "requires_change_ticket": true,
+  "requires_legal_basis": true,
+  "schema": "queuebash.aws.data_protection.v1",
+  "source": "fixture"
+}

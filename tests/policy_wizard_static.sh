@@ -4,8 +4,8 @@ fail(){ echo "FAIL: $*" >&2; exit 1; }
 
 [[ -x bin/queue-policy-wizard ]] || fail 'bin/queue-policy-wizard missing or not executable'
 bash -n bin/queue-policy-wizard || fail 'wizard syntax failed'
-grep -q 'WIZARD_VERSION="0.18.22"' bin/queue-policy-wizard || fail 'wizard version not 0.18.22'
-grep -q '^QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'queuebash version not 0.18.22'
+grep -Eq 'WIZARD_VERSION="0\.[0-9]+\.[0-9]+"' bin/queue-policy-wizard || fail 'wizard version string missing/malformed'
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 
 grep -q 'QUEUEBASH_AI_LIVE_ENABLED' bin/queue-policy-wizard || fail 'current AI live gate missing'
 ! grep -q 'QUEUEBASH_AI_ASK_LIVE' bin/queue-policy-wizard || fail 'stale AI live variable found'

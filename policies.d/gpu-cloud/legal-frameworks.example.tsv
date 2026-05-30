@@ -1,0 +1,5 @@
+framework	provider_family	status	note
+GDPR	gpu_cloud	mapped_pending_validation	Requires provider-specific DPA/residency/retention validation.
+UK-DPA	gpu_cloud	mapped_pending_validation	Requires UK/EU transfer and processing review.
+ITAR	gpu_cloud	mapped_pending_validation	Requires export-control review before GPU workloads are claimed eligible.
+EAR	gpu_cloud	mapped_pending_validation	Requires export-control review for restricted workloads/accelerators.

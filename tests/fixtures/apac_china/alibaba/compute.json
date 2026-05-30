@@ -1,0 +1,13 @@
+{
+  "cpu_limit_supported": true,
+  "decision": "available",
+  "memory_limit_supported": true,
+  "provider": "alibaba",
+  "provider_family": "apac_china",
+  "provider_name": "Alibaba Cloud",
+  "reason": "fixture_compute_mapped",
+  "resource_type": "vm",
+  "schema": "queuebash.apac_china.alibaba.compute.v1",
+  "shape": "ecs.g6.large",
+  "source": "fixture"
+}

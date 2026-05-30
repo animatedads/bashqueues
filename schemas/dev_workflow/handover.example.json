@@ -1,0 +1,10 @@
+{
+  "schema": "queuebash.dev_workflow.handover.v1",
+  "status": "ok",
+  "mode": "delta",
+  "base_version": "0.18.43",
+  "deliveries": [],
+  "open_tasks": [],
+  "known_landmines": [],
+  "next": []
+}

@@ -1,0 +1,10 @@
+{
+  "schema": "queuebash.azure.export_control.v1",
+  "provider": "azure",
+  "controls": ["ITAR", "EAR", "UK_EXPORT_CONTROL"],
+  "required_evidence": ["workload_classification", "region_allowlist", "data_classification", "approval_reference", "audit_sink"],
+  "default_decision": "review",
+  "fail_closed": true,
+  "status": "mapped_pending_validation",
+  "notes": "Example export-control posture only. This is not an ITAR compliance certification."
+}

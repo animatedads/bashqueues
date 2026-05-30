@@ -1,0 +1,371 @@
+{
+  "schema": "queuebash.cloud_provision.templates.v1",
+  "templates": [
+    {
+      "name": "aws-ec2-gdpr",
+      "provider": "aws",
+      "resource_type": "vm",
+      "region": "eu-west-2",
+      "class": "CLOUD_AWS_GDPR",
+      "classification": "customer-data",
+      "legal_framework": "GDPR",
+      "workload": "database-migration",
+      "customer_data": true,
+      "capacity": {
+        "cpu": 4,
+        "memory_gb": 16
+      },
+      "estimated_monthly_cost": 120,
+      "currency": "USD",
+      "compliance": [
+        "gdpr",
+        "data-protection"
+      ],
+      "labels": [
+        "aws",
+        "ec2",
+        "gdpr"
+      ],
+      "itar_allowed": false,
+      "allow_live": false,
+      "cloud_infra_service": "aws-gdpr-ec2",
+      "registry_handoff": "preview-only"
+    },
+    {
+      "name": "oci-vm-gdpr",
+      "provider": "oci",
+      "resource_type": "vm",
+      "region": "uk-london-1",
+      "class": "CLOUD_OCI_LEGAL_COMPLIANCE",
+      "classification": "customer-data",
+      "legal_framework": "GDPR",
+      "workload": "database-migration",
+      "customer_data": true,
+      "capacity": {
+        "cpu": 4,
+        "memory_gb": 16
+      },
+      "estimated_monthly_cost": 40,
+      "currency": "USD",
+      "compliance": [
+        "gdpr",
+        "data-protection"
+      ],
+      "labels": [
+        "oci",
+        "vm",
+        "gdpr"
+      ],
+      "itar_allowed": false,
+      "allow_live": false,
+      "cloud_infra_service": "oci-free-london",
+      "registry_handoff": "preview-only"
+    },
+    {
+      "name": "azure-vm-gdpr",
+      "provider": "azure",
+      "resource_type": "vm",
+      "region": "uksouth",
+      "class": "CLOUD_AZURE_GDPR",
+      "classification": "customer-data",
+      "legal_framework": "GDPR",
+      "workload": "database-migration",
+      "customer_data": true,
+      "capacity": {
+        "cpu": 4,
+        "memory_gb": 16
+      },
+      "estimated_monthly_cost": 150,
+      "currency": "USD",
+      "compliance": [
+        "gdpr",
+        "data-protection"
+      ],
+      "labels": [
+        "azure",
+        "vm",
+        "gdpr"
+      ],
+      "itar_allowed": false,
+      "allow_live": false,
+      "cloud_infra_service": "azure-gdpr-vm",
+      "registry_handoff": "preview-only"
+    },
+    {
+      "name": "gcp-compute-gdpr",
+      "provider": "gcp",
+      "resource_type": "vm",
+      "region": "europe-west2",
+      "class": "CLOUD_GCP_GDPR",
+      "classification": "customer-data",
+      "legal_framework": "GDPR",
+      "workload": "database-migration",
+      "customer_data": true,
+      "capacity": {
+        "cpu": 4,
+        "memory_gb": 16
+      },
+      "estimated_monthly_cost": 150,
+      "currency": "USD",
+      "compliance": [
+        "gdpr",
+        "data-protection"
+      ],
+      "labels": [
+        "gcp",
+        "compute",
+        "gdpr"
+      ],
+      "itar_allowed": false,
+      "allow_live": false,
+      "cloud_infra_service": "gcp-gdpr-compute",
+      "registry_handoff": "preview-only"
+    },
+    {
+      "name": "ibm-vpc-gdpr",
+      "provider": "ibm",
+      "resource_type": "vm",
+      "region": "eu-gb",
+      "class": "CLOUD_IBM_LEGAL_COMPLIANCE",
+      "classification": "customer-data",
+      "legal_framework": "GDPR",
+      "workload": "database-migration",
+      "customer_data": true,
+      "capacity": {
+        "cpu": 4,
+        "memory_gb": 16
+      },
+      "estimated_monthly_cost": 150,
+      "currency": "USD",
+      "compliance": [
+        "gdpr",
+        "data-protection"
+      ],
+      "labels": [
+        "ibm",
+        "vpc",
+        "gdpr"
+      ],
+      "itar_allowed": false,
+      "allow_live": false,
+      "cloud_infra_service": "ibm-gdpr-vpc",
+      "registry_handoff": "preview-only"
+    },
+    {
+      "name": "aws-ec2-itar",
+      "provider": "aws",
+      "resource_type": "vm",
+      "region": "us-east-1",
+      "class": "CLOUD_AWS_ITAR",
+      "classification": "restricted-export",
+      "legal_framework": "ITAR_REVIEW",
+      "workload": "itar-controlled-build",
+      "customer_data": false,
+      "capacity": {
+        "cpu": 8,
+        "memory_gb": 32
+      },
+      "estimated_monthly_cost": 280,
+      "currency": "USD",
+      "compliance": [
+        "itar",
+        "export-control"
+      ],
+      "labels": [
+        "aws",
+        "ec2",
+        "itar"
+      ],
+      "itar_allowed": true,
+      "allow_live": false,
+      "cloud_infra_service": "aws-itar-ec2",
+      "registry_handoff": "preview-only"
+    },
+    {
+      "name": "bad-missing-region",
+      "provider": "aws",
+      "resource_type": "vm",
+      "class": "CLOUD_AWS_GDPR",
+      "classification": "customer-data",
+      "legal_framework": "GDPR",
+      "estimated_monthly_cost": 10,
+      "compliance": [
+        "gdpr"
+      ],
+      "allow_live": false
+    },
+    {
+      "name": "bad-missing-legal",
+      "provider": "aws",
+      "resource_type": "vm",
+      "region": "eu-west-2",
+      "class": "CLOUD_AWS_GDPR",
+      "classification": "customer-data",
+      "estimated_monthly_cost": 10,
+      "compliance": [
+        "gdpr"
+      ],
+      "allow_live": false
+    },
+    {
+      "name": "bad-itar-on-generic",
+      "provider": "aws",
+      "resource_type": "vm",
+      "region": "us-east-1",
+      "class": "CLOUD_AWS_GDPR",
+      "classification": "restricted-export",
+      "legal_framework": "ITAR_REVIEW",
+      "workload": "itar-controlled-build",
+      "estimated_monthly_cost": 10,
+      "compliance": [
+        "gdpr"
+      ],
+      "itar_allowed": false,
+      "allow_live": false
+    },
+    {
+      "name": "bad-cost-breach",
+      "provider": "aws",
+      "resource_type": "vm",
+      "region": "eu-west-2",
+      "class": "CLOUD_AWS_GDPR",
+      "classification": "customer-data",
+      "legal_framework": "GDPR",
+      "estimated_monthly_cost": 9999,
+      "compliance": [
+        "gdpr"
+      ],
+      "allow_live": false
+    },
+    {
+      "name": "gpu-coreweave-a100-training",
+      "provider": "gpu-cloud",
+      "provider_detail": "coreweave",
+      "resource_type": "gpu-vm",
+      "region": "us-east",
+      "class": "CLOUD_GPU_MODEL_TRAINING",
+      "classification": "model-training-data",
+      "legal_framework": "GPU_WORKLOAD_REVIEW",
+      "workload": "gpu-model-training",
+      "customer_data": false,
+      "capacity": {
+        "cpu": 16,
+        "memory_gb": 120,
+        "gpu": {
+          "vendor": "nvidia",
+          "model": "A100",
+          "count": 1,
+          "vram_gb": 80
+        }
+      },
+      "estimated_monthly_cost": 1400,
+      "currency": "USD",
+      "compliance": [
+        "gpu-workload-review",
+        "finops-review"
+      ],
+      "labels": [
+        "gpu-cloud",
+        "coreweave",
+        "a100",
+        "training"
+      ],
+      "itar_allowed": false,
+      "allow_live": false,
+      "cloud_infra_service": "gpu-coreweave-a100-training",
+      "registry_handoff": "preview-only"
+    },
+    {
+      "name": "gpu-lambda-h100-training",
+      "provider": "gpu-cloud",
+      "provider_detail": "lambda",
+      "resource_type": "gpu-vm",
+      "region": "us-west",
+      "class": "CLOUD_GPU_MODEL_TRAINING",
+      "classification": "model-training-data",
+      "legal_framework": "GPU_WORKLOAD_REVIEW",
+      "workload": "gpu-model-training",
+      "customer_data": false,
+      "capacity": {
+        "cpu": 26,
+        "memory_gb": 200,
+        "gpu": {
+          "vendor": "nvidia",
+          "model": "H100",
+          "count": 1,
+          "vram_gb": 80
+        }
+      },
+      "estimated_monthly_cost": 1800,
+      "currency": "USD",
+      "compliance": [
+        "gpu-workload-review",
+        "finops-review"
+      ],
+      "labels": [
+        "gpu-cloud",
+        "lambda",
+        "h100",
+        "training"
+      ],
+      "itar_allowed": false,
+      "allow_live": false,
+      "cloud_infra_service": "gpu-lambda-h100-training",
+      "registry_handoff": "preview-only"
+    },
+    {
+      "name": "gpu-dgx-export-review",
+      "provider": "gpu-cloud",
+      "provider_detail": "dgx",
+      "resource_type": "gpu-cluster",
+      "region": "eu-west",
+      "class": "CLOUD_GPU_EXPORT_REVIEW",
+      "classification": "restricted-model-artifacts",
+      "legal_framework": "EXPORT_REVIEW",
+      "workload": "export-review-gpu-training",
+      "customer_data": false,
+      "capacity": {
+        "cpu": 128,
+        "memory_gb": 1024,
+        "gpu": {
+          "vendor": "nvidia",
+          "model": "H100",
+          "count": 8,
+          "vram_gb": 640
+        }
+      },
+      "estimated_monthly_cost": 1950,
+      "currency": "USD",
+      "compliance": [
+        "gpu-workload-review",
+        "export-review",
+        "finops-review"
+      ],
+      "labels": [
+        "gpu-cloud",
+        "dgx",
+        "h100",
+        "export-review"
+      ],
+      "itar_allowed": false,
+      "allow_live": false,
+      "cloud_infra_service": "gpu-dgx-export-review",
+      "registry_handoff": "preview-only"
+    },
+    {
+      "name": "bad-gpu-cost-breach",
+      "provider": "gpu-cloud",
+      "resource_type": "gpu-vm",
+      "region": "us-east",
+      "class": "CLOUD_GPU_MODEL_TRAINING",
+      "classification": "model-training-data",
+      "legal_framework": "GPU_WORKLOAD_REVIEW",
+      "workload": "gpu-model-training",
+      "estimated_monthly_cost": 99999,
+      "compliance": [
+        "gpu-workload-review"
+      ],
+      "allow_live": false
+    }
+  ]
+}

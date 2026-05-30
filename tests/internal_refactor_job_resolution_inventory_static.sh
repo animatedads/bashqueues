@@ -6,8 +6,8 @@ fail(){ echo "FAIL: $*" >&2; exit 1; }
 [[ -f queuebash.sh ]] || fail "run from repository root"
 [[ -f docs/JOB_RESOLUTION_INVENTORY.md ]] || fail "missing job resolution inventory doc"
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
-grep -q 'WIZARD_VERSION="0.18.22"' bin/queue-policy-wizard || fail 'wizard version not bumped to 0.18.22'
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
+grep -Eq 'WIZARD_VERSION="0\.[0-9]+\.[0-9]+"' bin/queue-policy-wizard || fail 'wizard version string missing/malformed'
 
 doc="docs/JOB_RESOLUTION_INVENTORY.md"
 

@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 grep -q '0.17.97 - Microsoft governance provider contract' CHANGELOG.md || fail 'changelog entry missing'
 
 for f in docs/MS_GOVERNANCE_PROVIDER.md docs/TRUST_PROVIDERS.md examples/providers/microsoft.env.example; do

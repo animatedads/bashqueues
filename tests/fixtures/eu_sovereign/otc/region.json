@@ -1,0 +1,12 @@
+{
+  "decision": "allow",
+  "eu_or_uk": true,
+  "fail_closed": false,
+  "jurisdiction": "DE",
+  "provider": "otc",
+  "provider_family": "eu_sovereign",
+  "reason": "region_mapped_pending_validation",
+  "region": "eu-de",
+  "schema": "queuebash.eu_sovereign.otc.region.v1",
+  "source": "fixture"
+}

@@ -1,0 +1,2 @@
+# project	vpc	subnet	region	egress_policy	status
+example-project	queuebash-vpc	queuebash-subnet	europe-west2	restricted	proposed

@@ -1,0 +1,17 @@
+{
+  "schema": "queuebash.dev_file_registry.v1",
+  "project_root": "/work/bashqueues",
+  "entries": [
+    {
+      "schema": "queuebash.dev_file_registry_entry.v1",
+      "id": "freg-example",
+      "status": "changed",
+      "relpath": "queuebash.sh",
+      "location": "queuebash.sh",
+      "purpose": "implement queue dev file registry",
+      "baseline": {"md5": "old-file-md5", "size": 1000, "functions": [{"function": "_queue_dev_command", "md5": "old-fn-md5"}]},
+      "current": {"md5": "new-file-md5", "size": 1100, "functions": [{"function": "_queue_dev_command", "md5": "new-fn-md5"}]},
+      "changed_functions": [{"function": "_queue_dev_command", "old_md5": "old-fn-md5", "new_md5": "new-fn-md5"}]
+    }
+  ]
+}

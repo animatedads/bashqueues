@@ -1,0 +1,14 @@
+{
+  "api_key_stored": false,
+  "auth_model": "provider_api_or_cluster_identity",
+  "check": "identity",
+  "decision": "allow",
+  "fail_closed": false,
+  "kubeconfig_stored": false,
+  "provider": "lambda",
+  "provider_family": "gpu_cloud",
+  "provider_name": "Lambda Cloud",
+  "reason": "fixture_contract",
+  "schema": "queuebash.gpu_cloud.lambda.identity.v1",
+  "source": "fixture"
+}

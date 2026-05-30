@@ -1,0 +1,11 @@
+{
+  "decision": "available",
+  "deployment_mutation": false,
+  "fail_closed": false,
+  "provider": "fastly",
+  "provider_family": "edge_cloud",
+  "reason": "fixture_contract",
+  "runtime": "compute_at_edge",
+  "schema": "queuebash.edge_cloud.fastly.edge_runtime.v1",
+  "source": "fixture"
+}

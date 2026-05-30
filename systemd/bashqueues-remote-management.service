@@ -1,0 +1,19 @@
+[Unit]
+Description=bashqueues remote queue management listener
+Documentation=file:/usr/local/share/bashqueues/docs/REMOTE_QUEUE_MANAGEMENT_LISTENER.md
+After=network.target local-fs.target
+
+[Service]
+Type=simple
+Environment=QUEUE_REMOTE_MANAGEMENT_POLICY=/etc/bashqueues/policies.d/remote-queue/remote-management.env
+ExecStart=/usr/local/bin/queue-remote-management-listener --config /etc/bashqueues/policies.d/remote-queue/remote-management.env
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/queuebash /var/log/queuebash /etc/bashqueues/policies.d/remote-queue
+
+[Install]
+WantedBy=multi-user.target

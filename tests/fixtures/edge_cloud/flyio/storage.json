@@ -1,0 +1,11 @@
+{
+  "cache_log_pointers_only": true,
+  "decision": "available",
+  "fail_closed": false,
+  "provider": "flyio",
+  "provider_family": "edge_cloud",
+  "reason": "fixture_contract",
+  "schema": "queuebash.edge_cloud.flyio.storage.v1",
+  "signed_url_redacted": true,
+  "source": "fixture"
+}

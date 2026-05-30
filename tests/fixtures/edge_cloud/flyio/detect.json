@@ -1,0 +1,11 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "display_name": "Fly.io",
+  "fail_closed": false,
+  "provider": "flyio",
+  "provider_family": "edge_cloud",
+  "reason": "fixture_contract",
+  "schema": "queuebash.edge_cloud.flyio.detect.v1",
+  "source": "fixture"
+}

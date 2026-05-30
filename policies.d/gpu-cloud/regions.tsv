@@ -1,0 +1,7 @@
+provider	region	jurisdiction	sovereignty_label	status
+coreweave	us-east	US	mapped_pending_validation	fixture
+coreweave	eu-west	EU	mapped_pending_validation	fixture
+lambda	us-west	US	mapped_pending_validation	fixture
+lambda	us-east	US	mapped_pending_validation	fixture
+dgx	us	US	mapped_pending_validation	fixture
+dgx	eu	EU	mapped_pending_validation	fixture

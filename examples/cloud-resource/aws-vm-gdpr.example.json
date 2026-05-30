@@ -1,0 +1,38 @@
+{
+  "allowed_classes": [
+    "CLOUD_AWS_GDPR",
+    "CLOUD_AWS_DATA_PROTECTION",
+    "CLOUD_AWS_HIGH_ASSURANCE"
+  ],
+  "capacity": {
+    "cpu": 4,
+    "memory_gb": 16
+  },
+  "compliance": [
+    "gdpr",
+    "uk-dpa",
+    "customer-data",
+    "high-assurance"
+  ],
+  "cost": {
+    "currency": "USD",
+    "expected_hourly_usd": 0.08
+  },
+  "labels": [
+    "aws",
+    "ec2",
+    "first-tier"
+  ],
+  "lifecycle_state": "running",
+  "provenance": {
+    "redacted": true,
+    "source": "example"
+  },
+  "provider": "aws",
+  "region": "eu-west-2",
+  "resource_id": "aws-eu-west-2-gdpr-vm-001",
+  "resource_type": "vm",
+  "schema": "queuebash.cloud_resource.v1",
+  "status": "available",
+  "zone": "eu-west-2a"
+}

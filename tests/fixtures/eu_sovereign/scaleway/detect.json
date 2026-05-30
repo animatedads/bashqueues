@@ -1,0 +1,10 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "fail_closed": false,
+  "provider": "scaleway",
+  "provider_family": "eu_sovereign",
+  "reason": "fixture_detected",
+  "schema": "queuebash.eu_sovereign.scaleway.detect.v1",
+  "source": "fixture"
+}

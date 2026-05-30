@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.gcp.storage.v1",
+  "provider": "gcp",
+  "check": "storage",
+  "bucket": "queuebash-artifacts-example",
+  "prefix": "queuebash/",
+  "signed_url_supported": true,
+  "signed_url_redacted": true,
+  "retention_policy_required": false,
+  "decision": "available",
+  "reason": "fixture_storage_config_present",
+  "fail_closed": false
+}

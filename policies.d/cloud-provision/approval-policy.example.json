@@ -1,0 +1,132 @@
+{
+  "rules": {
+    "allowed_legal_frameworks": {
+      "apac-china": [
+        "APAC_LOCAL_REVIEW",
+        "EXPORT_REVIEW"
+      ],
+      "aws": [
+        "GDPR",
+        "UK_DPA",
+        "ITAR_REVIEW"
+      ],
+      "azure": [
+        "GDPR",
+        "UK_DPA",
+        "ITAR_REVIEW"
+      ],
+      "eu-sovereign": [
+        "GDPR",
+        "EU_SOVEREIGN"
+      ],
+      "gcp": [
+        "GDPR",
+        "UK_DPA",
+        "ITAR_REVIEW"
+      ],
+      "gpu-cloud": [
+        "GPU_WORKLOAD_REVIEW",
+        "EXPORT_REVIEW"
+      ],
+      "ibm": [
+        "GDPR",
+        "UK_DPA",
+        "FINREG"
+      ],
+      "oci": [
+        "GDPR",
+        "UK_DPA",
+        "US_DATA_RESIDENCY"
+      ]
+    },
+    "allowed_regions": {
+      "apac-china": [
+        "cn-hangzhou",
+        "ap-guangzhou",
+        "cn-north-4"
+      ],
+      "aws": [
+        "eu-west-2",
+        "eu-west-1",
+        "us-east-1"
+      ],
+      "azure": [
+        "uksouth",
+        "ukwest",
+        "westeurope"
+      ],
+      "eu-sovereign": [
+        "eu-central",
+        "eu-west",
+        "de",
+        "fr"
+      ],
+      "gcp": [
+        "europe-west2",
+        "europe-west1",
+        "us-central1"
+      ],
+      "gpu-cloud": [
+        "us-east",
+        "us-west",
+        "eu-west"
+      ],
+      "ibm": [
+        "eu-gb",
+        "eu-de",
+        "us-south"
+      ],
+      "oci": [
+        "uk-london-1",
+        "eu-frankfurt-1",
+        "us-ashburn-1"
+      ]
+    },
+    "approval": {
+      "accepted_audit_sinks": [
+        "jsonl",
+        "journald",
+        "syslog",
+        "ticket-system",
+        "siem"
+      ],
+      "allowed_authorities": [
+        "cloud-operator",
+        "platform-owner",
+        "data-owner",
+        "security-reviewer"
+      ],
+      "audit_sink_required": true,
+      "change_ticket_required": true,
+      "cost_approval_threshold": 200,
+      "customer_data_requires_data_protection_review": true,
+      "export_control_requires_export_review": true,
+      "reason_required": true
+    },
+    "default_monthly_cost_ceiling": 250,
+    "denied_regions": {
+      "aws": [],
+      "oci": []
+    },
+    "live_gate": {
+      "contract_only": true,
+      "live_apply_implemented": false,
+      "provider_credentials_are_not_authority": true,
+      "requires_approval_decision_allow": true,
+      "requires_explicit_live_enabled_flag": true,
+      "requires_queue_dispatch_isolation": true,
+      "requires_template_allow_live": false
+    },
+    "monthly_cost_ceiling": {
+      "apac-china": 250,
+      "aws": 300,
+      "azure": 300,
+      "eu-sovereign": 250,
+      "gcp": 300,
+      "gpu-cloud": 2000,
+      "ibm": 300,
+      "oci": 50
+    }
+  },
+  "schema": "queuebash.cloud_provision.approval_policy.v1"
+}

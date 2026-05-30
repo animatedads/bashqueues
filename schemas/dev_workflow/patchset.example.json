@@ -1,0 +1,15 @@
+{
+  "schema": "queuebash.dev_patchset.v1",
+  "entries": [
+    {
+      "relpath": "queuebash.sh",
+      "file_old_md5": "old-file-md5",
+      "file_new_md5": "new-file-md5",
+      "changed_functions": [
+        {"function": "_queue_dev_command", "old_md5": "old-fn-md5", "new_md5": "new-fn-md5"}
+      ],
+      "file": "files/queuebash.sh",
+      "diff": "diffs/queuebash.sh.diff"
+    }
+  ]
+}

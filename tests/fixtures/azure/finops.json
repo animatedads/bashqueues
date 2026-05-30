@@ -1,0 +1,1 @@
+{"schema":"queuebash.azure.finops.v1","provider":"azure","currency":"GBP","daily_ceiling":25,"cost_center_tag_required":true,"owner_tag_required":true,"decision":"allow","reason":"finops_fixture_policy_present","source":"fixture","fail_closed":false}

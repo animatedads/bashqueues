@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+user="${1:-lockeduser}"
+
+case "$user" in
+  ''|*[!A-Za-z0-9_-]*|[0-9]*)
+    echo "ERROR: invalid execution user name: $user" >&2
+    exit 1
+    ;;
+esac
+
+if ! id -u "$user" >/dev/null 2>&1; then
+  sudo useradd --create-home --shell /usr/sbin/nologin "$user"
+fi
+
+sudo passwd -l "$user" >/dev/null 2>&1 || true
+
+if id -nG "$user" | tr ' ' '\n' | grep -qxE 'sudo|wheel|admin'; then
+  echo "ERROR: $user is in a privileged group" >&2
+  exit 1
+fi
+
+echo "locked execution user ready: $user"

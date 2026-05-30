@@ -1,0 +1,12 @@
+{
+  "artifact_supported": true,
+  "decision": "available",
+  "provider": "alibaba",
+  "provider_family": "apac_china",
+  "provider_name": "Alibaba Cloud",
+  "reason": "fixture_storage_mapped",
+  "schema": "queuebash.apac_china.alibaba.storage.v1",
+  "service": "oss",
+  "signed_url_redacted": true,
+  "source": "fixture"
+}

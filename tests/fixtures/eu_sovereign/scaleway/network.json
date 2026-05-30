@@ -1,0 +1,10 @@
+{
+  "decision": "allow",
+  "fail_closed": false,
+  "provider": "scaleway",
+  "provider_family": "eu_sovereign",
+  "reason": "network_fixture_mapped_pending_validation",
+  "restricted_egress": true,
+  "schema": "queuebash.eu_sovereign.scaleway.network.v1",
+  "source": "fixture"
+}

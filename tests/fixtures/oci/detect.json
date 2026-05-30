@@ -1,0 +1,1 @@
+{"schema":"queuebash.oci.detect.v1","provider":"oci","detected":true,"method":"fixture","metadata_reachable":true,"auth_header_required":true,"region":"uk-london-1","availability_domain":"example-ad-1","compartment_id":"ocid1.compartment.example","instance_id":"ocid1.instance.example","fail_closed":false,"reason":"oci_fixture_detected"}

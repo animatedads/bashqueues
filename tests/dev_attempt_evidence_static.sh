@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+fail(){ echo "FAIL: $*" >&2; exit 1; }
+[[ -f queuebash.sh ]] || fail 'run from repository root'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(49|[5-9][0-9])"' queuebash.sh || fail 'version not compatible with 0.18.49+'
+grep -q '0.18.46 BOB12 attempt evidence linkage' README.md || fail 'README missing 0.18.46 entry'
+grep -q '0.18.46 - BOB12 attempt evidence linkage' CHANGELOG.md || fail 'CHANGELOG missing 0.18.46 entry'
+grep -q 'queue dev attempt begin --text TEXT' queuebash.sh || fail 'dev usage missing attempt begin'
+grep -q 'queue dev attempt end ATTEMPT_ID' queuebash.sh || fail 'dev usage missing attempt end'
+grep -q 'queue dev evidence record --attempt ATTEMPT_ID' queuebash.sh || fail 'dev usage missing evidence record'
+grep -q '_queue_dev_attempt_command' queuebash.sh || fail 'attempt handler missing'
+grep -q '_queue_dev_evidence_command' queuebash.sh || fail 'evidence handler missing'
+grep -q 'attempt) _queue_dev_attempt_command' queuebash.sh || fail 'attempt dispatcher branch missing'
+grep -q 'evidence) _queue_dev_evidence_command' queuebash.sh || fail 'evidence dispatcher branch missing'
+[[ -f docs/QUEUE_DEV_ATTEMPT_EVIDENCE.md ]] || fail 'missing attempt/evidence doc'
+grep -q 'Validation output remains evidence only' docs/QUEUE_DEV_ATTEMPT_EVIDENCE.md || fail 'authority boundary missing'
+grep -q 'The 0.18.46 attempt/evidence commands record metadata only' docs/QUEUE_DEV_WORKFLOW_SECURITY_MODEL.md || fail 'attempt/evidence security boundary missing'
+! [[ -e assets.d/net_usage.sh ]] || fail 'assets.d/net_usage.sh must remain absent'
+[[ -e caps.d/net_usage.sh ]] || fail 'caps.d/net_usage.sh should remain present'
+echo 'PASS dev_attempt_evidence_static'

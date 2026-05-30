@@ -1,0 +1,5 @@
+# sovereignty_zone	framework	retention_days	audit_required	cross_border_review
+uk	UK_DPA	30	1	1
+uk	GDPR	30	1	1
+eea	GDPR	30	1	1
+us	US_FEDERAL_REVIEW	30	1	1

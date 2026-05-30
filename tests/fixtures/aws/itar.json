@@ -1,0 +1,14 @@
+{
+  "data_classes": [
+    "itar",
+    "export-controlled"
+  ],
+  "decision": "allow",
+  "fail_closed": false,
+  "framework": "AWS_ITAR",
+  "provider": "aws",
+  "region": "us-gov-west-1",
+  "requires_export_control_approval": true,
+  "schema": "queuebash.aws.itar.v1",
+  "source": "fixture"
+}

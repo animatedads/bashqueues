@@ -1,0 +1,14 @@
+{
+  "capacity": {
+    "cpu": 2,
+    "memory_gb": 8
+  },
+  "decision": "allow",
+  "fail_closed": false,
+  "provider": "aws",
+  "region": "eu-west-2",
+  "resource_type": "vm",
+  "schema": "queuebash.aws.resource_shape.v1",
+  "shape": "t3.large",
+  "source": "fixture"
+}

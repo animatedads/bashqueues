@@ -3,7 +3,7 @@ set -euo pipefail
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 cd "$(dirname "$0")/.."
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(4[3-9]|[5-9][0-9]|42|43|44|45|46)"' queuebash.sh || fail 'version not current enough for AI advisory compatibility'
 grep -q '0.18.4 - Gemini model discovery and default refresh' CHANGELOG.md || fail 'changelog entry missing'
 [[ -x bin/queue-ai-ask-gemini ]] || fail 'Gemini helper missing or not executable'
 

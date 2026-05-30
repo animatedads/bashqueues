@@ -1,0 +1,11 @@
+{
+  "decision": "allow",
+  "jurisdiction_status": "mapped_pending_validation",
+  "provider": "alibaba",
+  "provider_family": "apac_china",
+  "provider_name": "Alibaba Cloud",
+  "reason": "fixture_region_mapped",
+  "region": "cn-hangzhou",
+  "schema": "queuebash.apac_china.alibaba.region.v1",
+  "source": "fixture"
+}

@@ -1,0 +1,5 @@
+# region	jurisdiction	sovereignty_zone	gdpr	uk_dpa	itar_candidate
+eu-west-2	UK	uk	yes	yes	no
+eu-west-1	Ireland	eea	yes	no	no
+us-east-1	United States	us	conditional	no	no
+us-gov-west-1	United States GovCloud	us-gov	conditional	no	yes

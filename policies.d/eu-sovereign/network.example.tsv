@@ -1,0 +1,5 @@
+provider	control	status	note
+ovhcloud	private_network	mapped_pending_validation	provider network contract placeholder
+scaleway	private_network	mapped_pending_validation	provider network contract placeholder
+hetzner	firewall	mapped_pending_validation	provider firewall contract placeholder
+otc	vpc_security_group	mapped_pending_validation	provider VPC/security group contract placeholder

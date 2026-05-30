@@ -124,6 +124,29 @@ LDAP and PAM.d/NSS providers should use the same response envelope, operation
 ACL vocabulary, TTL/cache semantics, and fail-closed behaviour.
 
 
+## Oracle Cloud Infrastructure governance provider contract
+
+The Oracle Cloud Infrastructure governance provider is the OCI peer of the
+Microsoft, LDAP, PAM/NSS, ACL, key, and trust provider contracts. OCI IAM,
+dynamic groups, compartments, defined tags, Vault, Audit, Events, Work Requests,
+Resource Manager, Cloud Guard, and Security Zones can provide authoritative
+policy, ACL, key, posture, and evidence material. bashqueues consumes constrained
+provider JSON and exit-code decisions; it does not execute OCI-sourced policy,
+tag, compartment, audit, or posture data as shell.
+
+See `docs/OCI_GOVERNANCE_PROVIDER.md` for the helper contracts:
+
+- `queue-oci-auth-context`
+- `queue-oci-policy-resolve`
+- `queue-oci-acl-check`
+- `queue-oci-key-resolve`
+- `queue-oci-posture-check`
+- `queue-oci-audit-evidence`
+
+The OCI provider keeps single-user installations file-backed by default and makes
+live OCI enforcement an explicit later integration step.
+
+
 ## Directory governance provider contracts
 
 LDAP and PAM.d/NSS providers are peers of the Microsoft provider. They let an

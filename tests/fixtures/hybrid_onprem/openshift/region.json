@@ -1,0 +1,12 @@
+{
+  "check": "region",
+  "decision": "allow",
+  "fail_closed": false,
+  "provider": "openshift",
+  "provider_family": "hybrid_onprem",
+  "reason": "site_region_fixture",
+  "schema": "queuebash.hybrid_onprem.openshift.region.v1",
+  "site": "regulated-cluster-uk-1",
+  "source": "fixture",
+  "status": "mapped_pending_validation"
+}

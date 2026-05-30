@@ -2,7 +2,7 @@
 set -euo pipefail
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 grep -q '_queue_install_bundled_tree_files()' queuebash.sh || fail 'missing bundled tree install helper'
 grep -q '_queue_install_bundled_policy_family()' queuebash.sh || fail 'missing policy family installer helper'
 grep -q '_queue_install_bundled_policy_top_level()' queuebash.sh || fail 'missing top-level compatibility policy installer'

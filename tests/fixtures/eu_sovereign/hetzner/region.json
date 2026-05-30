@@ -1,0 +1,12 @@
+{
+  "decision": "allow",
+  "eu_or_uk": true,
+  "fail_closed": false,
+  "jurisdiction": "DE",
+  "provider": "hetzner",
+  "provider_family": "eu_sovereign",
+  "reason": "region_mapped_pending_validation",
+  "region": "fsn1",
+  "schema": "queuebash.eu_sovereign.hetzner.region.v1",
+  "source": "fixture"
+}

@@ -1,0 +1,13 @@
+{
+  "check": "region",
+  "decision": "allow",
+  "fail_closed": false,
+  "provider": "dgx",
+  "provider_family": "gpu_cloud",
+  "provider_name": "NVIDIA DGX Cloud",
+  "reason": "fixture_contract",
+  "region": "us",
+  "schema": "queuebash.gpu_cloud.dgx.region.v1",
+  "source": "fixture",
+  "sovereignty_status": "mapped_pending_validation"
+}

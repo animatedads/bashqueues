@@ -1,0 +1,11 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "method": "fixture",
+  "provider": "alibaba",
+  "provider_family": "apac_china",
+  "provider_name": "Alibaba Cloud",
+  "reason": "fixture_detected",
+  "schema": "queuebash.apac_china.alibaba.detect.v1",
+  "source": "fixture"
+}

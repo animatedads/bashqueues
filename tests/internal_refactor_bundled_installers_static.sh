@@ -2,7 +2,7 @@
 set -euo pipefail
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 grep -q '_queue_resolve_bundled_source_dir()' queuebash.sh || fail 'missing bundled source resolver helper'
 grep -q '_queue_install_bundled_flat_files()' queuebash.sh || fail 'missing bundled flat install helper'
 grep -q '_queue_install_bundled_classes()' queuebash.sh || fail 'missing class installer wrapper'

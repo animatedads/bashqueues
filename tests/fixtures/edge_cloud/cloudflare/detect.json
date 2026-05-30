@@ -1,0 +1,11 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "display_name": "Cloudflare Workers",
+  "fail_closed": false,
+  "provider": "cloudflare",
+  "provider_family": "edge_cloud",
+  "reason": "fixture_contract",
+  "schema": "queuebash.edge_cloud.cloudflare.detect.v1",
+  "source": "fixture"
+}

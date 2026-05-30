@@ -1,0 +1,14 @@
+# provider	enabled	live_allowed	network_allowed	max_context_bytes	max_output_bytes
+contract	yes	no	no	65536	8192
+fixture	yes	no	no	65536	8192
+ollama	yes	yes	no	131072	8192
+gemini	yes	yes	yes	65536	8192
+openai	yes	yes	yes	65536	8192
+anthropic	yes	yes	yes	65536	8192
+watsonx	yes	yes	yes	65536	8192
+openai_compat	yes	yes	no	131072	8192
+mistral	yes	yes	yes	65536	8192
+
+deepseek	yes	no	yes	120000	4096	DeepSeek live provider; live use requires explicit enablement and API key file/env.
+groq	yes	no	yes	65536	8192	Groq OpenAI-compatible chat completions provider; live use requires explicit enablement and credential policy.
+cerebras	yes	no	yes	65536	8192	Cerebras OpenAI-compatible chat completions provider; live use requires explicit enablement and credential policy.

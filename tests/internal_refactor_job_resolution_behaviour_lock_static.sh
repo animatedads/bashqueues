@@ -7,8 +7,8 @@ fail(){ echo "FAIL: $*" >&2; exit 1; }
 [[ -f docs/JOB_RESOLUTION_INVENTORY.md ]] || fail "missing job resolution inventory doc"
 [[ -f tests/internal_refactor_job_resolution_behaviour_lock_smoke.sh ]] || fail "missing behaviour lock smoke test"
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
-grep -q 'WIZARD_VERSION="0.18.22"' bin/queue-policy-wizard || fail 'wizard version not bumped to 0.18.22'
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
+grep -Eq 'WIZARD_VERSION="0\.[0-9]+\.[0-9]+"' bin/queue-policy-wizard || fail 'wizard version string missing/malformed'
 
 # Behaviour-lock release: the future helper must still not be implemented.
 if grep -q '^_queue_resolve_job_operand()' queuebash.sh; then

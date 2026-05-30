@@ -1,0 +1,8 @@
+# context	enabled	requires_env
+commands	yes	
+assets	yes	
+providers	yes	
+queue_status	no	QUEUEBASH_AI_ALLOW_QUEUE_STATUS
+job_status	no	QUEUEBASH_AI_ALLOW_JOB_STATUS
+job_tail	no	QUEUEBASH_AI_ALLOW_JOB_TAIL
+policy_details	no	QUEUEBASH_AI_ALLOW_POLICY_DETAILS

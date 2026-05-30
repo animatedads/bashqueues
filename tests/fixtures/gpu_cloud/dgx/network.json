@@ -1,0 +1,13 @@
+{
+  "check": "network",
+  "decision": "allow",
+  "fail_closed": false,
+  "private_connectivity": "mapped_pending_validation",
+  "provider": "dgx",
+  "provider_family": "gpu_cloud",
+  "provider_name": "NVIDIA DGX Cloud",
+  "public_ingress": "deny_by_default",
+  "reason": "fixture_contract",
+  "schema": "queuebash.gpu_cloud.dgx.network.v1",
+  "source": "fixture"
+}

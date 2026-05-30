@@ -1,0 +1,1 @@
+{"schema":"queuebash.oci.object_storage.v1","provider":"oci","mode":"instance_principal","bucket":"queuebash-artifacts","namespace":"example_namespace","prefix":"queuebash/dev-test/","par_supported":true,"par_expiry_required":true,"par_url_redacted":true,"retention_days":30,"decision":"available","reason":"fixture_object_storage_config_present"}

@@ -1,0 +1,70 @@
+{
+    "cloud_infra_action": {
+        "action": "plan-start",
+        "decision": "dry_run",
+        "fail_closed": false,
+        "helper": "oci_free",
+        "instance_id": null,
+        "legal": {
+            "classification": "dev-test",
+            "retention_policy": "dev-artifacts-only",
+            "sovereignty": "uk"
+        },
+        "live": false,
+        "mutated": false,
+        "prefix": "lon-free",
+        "provider": "oci",
+        "reason": "live_gate_not_enabled",
+        "region": "uk-london-1",
+        "registry_checked": true,
+        "returncode": 0,
+        "schema": "queuebash.cloud_infra.action.v1",
+        "service_id": "oci-free-london",
+        "shape": "VM.Standard.E2.1.Micro"
+    },
+    "cloud_infra_service": "oci-free-london",
+    "decision": "dry_run",
+    "fail_closed": false,
+    "live": false,
+    "mutated": false,
+    "operation": "lifecycle-plan",
+    "plan_id": "cp-1780090673-aaae241f",
+    "provider": "oci",
+    "reason": "lifecycle_dry_run_ready",
+    "requested_action": "start",
+    "resource_record_preview": {
+        "allowed_classes": [
+            "CLOUD_OCI_LEGAL_COMPLIANCE"
+        ],
+        "capacity": {
+            "cpu": 4,
+            "memory_gb": 16
+        },
+        "compliance": [
+            "gdpr",
+            "data-protection"
+        ],
+        "labels": [
+            "cloud_provision",
+            "gdpr",
+            "oci",
+            "planned",
+            "vm"
+        ],
+        "lifecycle_state": "planned",
+        "provenance": {
+            "cloud_infra_service": "oci-free-london",
+            "source": "cloud_provision",
+            "template": "oci-vm-gdpr"
+        },
+        "provider": "oci",
+        "region": "uk-london-1",
+        "registry_handoff_state": "planned",
+        "resource_id": "planned-oci-vm-gdpr-9f7e0685",
+        "resource_type": "vm",
+        "schema": "queuebash.cloud_resource.v1",
+        "status": "planned"
+    },
+    "schema": "queuebash.cloud_provision.lifecycle_plan.v1",
+    "template": "oci-vm-gdpr"
+}

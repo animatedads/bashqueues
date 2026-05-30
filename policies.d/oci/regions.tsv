@@ -1,0 +1,5 @@
+# region	sovereignty_zone	legal_frameworks	status
+uk-london-1	uk	UK_DPA,GDPR	allowed
+uk-cardiff-1	uk	UK_DPA,GDPR	allowed
+eu-frankfurt-1	eea	GDPR	review
+us-ashburn-1	us	US_FEDERAL_REVIEW	review

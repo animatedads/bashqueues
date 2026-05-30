@@ -5,7 +5,7 @@ cd "$ROOT"
 
 fail(){ echo "FAIL $0: $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail "version not bumped"
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 grep -q '_queue_acl_command' queuebash.sh || fail "queue acl command missing"
 grep -q 'queuebash.acl_decision.v1' queuebash.sh || fail "ACL decision schema missing from command surface"
 grep -q 'queue acl check SUBJECT OPERATION RESOURCE' queuebash.sh || fail "canonical ACL check usage missing"

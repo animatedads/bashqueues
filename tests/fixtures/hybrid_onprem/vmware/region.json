@@ -1,0 +1,12 @@
+{
+  "check": "region",
+  "decision": "allow",
+  "fail_closed": false,
+  "provider": "vmware",
+  "provider_family": "hybrid_onprem",
+  "reason": "site_region_fixture",
+  "schema": "queuebash.hybrid_onprem.vmware.region.v1",
+  "site": "private-dc-uk-1",
+  "source": "fixture",
+  "status": "mapped_pending_validation"
+}

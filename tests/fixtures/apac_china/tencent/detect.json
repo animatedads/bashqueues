@@ -1,0 +1,11 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "method": "fixture",
+  "provider": "tencent",
+  "provider_family": "apac_china",
+  "provider_name": "Tencent Cloud",
+  "reason": "fixture_detected",
+  "schema": "queuebash.apac_china.tencent.detect.v1",
+  "source": "fixture"
+}

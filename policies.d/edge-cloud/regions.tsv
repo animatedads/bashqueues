@@ -1,0 +1,6 @@
+provider	region	jurisdiction	status
+cloudflare	global	mixed	mapped_pending_validation
+fastly	global	mixed	mapped_pending_validation
+flyio	lhr	uk	mapped_pending_validation
+flyio	ams	eu	mapped_pending_validation
+flyio	fra	eu	mapped_pending_validation

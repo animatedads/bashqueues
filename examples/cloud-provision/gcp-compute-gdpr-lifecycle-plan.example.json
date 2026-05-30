@@ -1,0 +1,67 @@
+{
+    "cloud_infra_action": {
+        "action": "plan-start",
+        "commands": [
+            "provider-specific lifecycle helper contract placeholder",
+            "no live cloud mutation in default path"
+        ],
+        "decision": "dry_run",
+        "fail_closed": false,
+        "helper": "gcp_compute_stack",
+        "live": false,
+        "mutated": false,
+        "planned_only": true,
+        "provider": "gcp",
+        "reason": "placeholder_lifecycle_plan_no_live_mutation",
+        "registry_checked": true,
+        "remediation_hint": "Implement a provider-specific live helper behind policy gates before enabling mutation.",
+        "returncode": 0,
+        "schema": "queuebash.cloud_infra.action.v1",
+        "service_id": "gcp-gdpr-compute"
+    },
+    "cloud_infra_service": "gcp-gdpr-compute",
+    "decision": "dry_run",
+    "fail_closed": false,
+    "live": false,
+    "mutated": false,
+    "operation": "lifecycle-plan",
+    "plan_id": "cp-1780090735-0542d3eb",
+    "provider": "gcp",
+    "reason": "lifecycle_dry_run_ready",
+    "requested_action": "start",
+    "resource_record_preview": {
+        "allowed_classes": [
+            "CLOUD_GCP_GDPR"
+        ],
+        "capacity": {
+            "cpu": 4,
+            "memory_gb": 16
+        },
+        "compliance": [
+            "gdpr",
+            "data-protection"
+        ],
+        "labels": [
+            "cloud_provision",
+            "compute",
+            "gcp",
+            "gdpr",
+            "planned"
+        ],
+        "lifecycle_state": "planned",
+        "provenance": {
+            "cloud_infra_service": "gcp-gdpr-compute",
+            "source": "cloud_provision",
+            "template": "gcp-compute-gdpr"
+        },
+        "provider": "gcp",
+        "region": "europe-west2",
+        "registry_handoff_state": "planned",
+        "resource_id": "planned-gcp-compute-gdpr-7fc77499",
+        "resource_type": "vm",
+        "schema": "queuebash.cloud_resource.v1",
+        "status": "planned"
+    },
+    "schema": "queuebash.cloud_provision.lifecycle_plan.v1",
+    "template": "gcp-compute-gdpr"
+}

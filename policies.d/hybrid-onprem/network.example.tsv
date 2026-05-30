@@ -1,0 +1,4 @@
+provider	network	decision	reason
+vmware	prod-portgroup-restricted	allow	restricted_portgroup_fixture
+openstack	private-net-gdpr	allow	security_group_fixture
+openshift	namespace-egress-restricted	allow	network_policy_fixture

@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 grep -q 'queue profile interrogate verify NAME' queuebash.sh || fail 'verify usage missing'
 grep -q 'def verify_cmd' bin/queue-interrogate-compile || fail 'verify command missing'
 grep -q 'verify_profile_file' bin/queue-interrogate-compile || fail 'profile verify helper missing'

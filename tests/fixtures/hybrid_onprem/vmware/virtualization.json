@@ -1,0 +1,12 @@
+{
+  "check": "virtualization",
+  "decision": "available",
+  "fail_closed": false,
+  "platform_context": "vsphere_cluster",
+  "provider": "vmware",
+  "provider_family": "hybrid_onprem",
+  "reason": "virtualization_fixture",
+  "schema": "queuebash.hybrid_onprem.vmware.virtualization.v1",
+  "source": "fixture",
+  "template_approved": true
+}

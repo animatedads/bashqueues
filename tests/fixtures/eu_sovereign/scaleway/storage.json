@@ -1,0 +1,11 @@
+{
+  "decision": "available",
+  "fail_closed": false,
+  "mode": "object-storage",
+  "provider": "scaleway",
+  "provider_family": "eu_sovereign",
+  "reason": "storage_fixture_available",
+  "schema": "queuebash.eu_sovereign.scaleway.storage.v1",
+  "signed_url_redacted": true,
+  "source": "fixture"
+}

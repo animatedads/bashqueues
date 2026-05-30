@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+"""Mistral AI advisory provider for bashqueues queue ask.
+
+This helper targets Mistral AI's hosted chat completions endpoint. It remains
+advisory-only: it reads a normalized queuebash request, builds bounded/redacted
+context, performs a live call only when queuebash has already allowed live mode,
+and returns normalized response JSON. Model output is never executed.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import re
+import socket
+import sys
+import time
+import urllib.error
+import urllib.request
+from typing import Dict, Iterable, List, Tuple
+
+SCHEMA_RESPONSE = "queuebash.ai_advisory.response.v1"
+DEFAULT_MODEL = os.environ.get("QUEUEBASH_AI_MISTRAL_MODEL", "mistral-small-latest")
+DEFAULT_ENDPOINT = os.environ.get("QUEUEBASH_AI_MISTRAL_ENDPOINT", "https://api.mistral.ai/v1/chat/completions")
+TIMEOUT = float(os.environ.get("QUEUEBASH_AI_MISTRAL_TIMEOUT", "60"))
+MAX_OUTPUT_TOKENS = int(os.environ.get("QUEUEBASH_AI_MISTRAL_MAX_OUTPUT_TOKENS", "4096"))
+TEMPERATURE = float(os.environ.get("QUEUEBASH_AI_MISTRAL_TEMPERATURE", "0.2"))
+MAX_FILE_BYTES = int(os.environ.get("QUEUEBASH_AI_CONTEXT_FILE_BYTES", "16000"))
+MAX_TOTAL_BYTES = int(os.environ.get("QUEUEBASH_AI_CONTEXT_TOTAL_BYTES", "120000"))
+ROOT = pathlib.Path(os.environ.get("QUEUEBASH_AI_CONTEXT_ROOT", os.getcwd())).resolve()
+
+CONTEXT_MAP = {
+    "docs": ["docs", "README.md", "CHANGELOG.md"],
+    "manuals": ["docs", "README.md"],
+    "tests": ["tests"],
+    "implementation_tests": ["tests"],
+    "policies": ["policies.d"],
+    "policy_definitions": ["policies.d"],
+    "classes": ["classes"],
+    "assets": ["assets.d"],
+    "providers": ["docs/ASK_PROVIDER_CONTRACT.md", "docs/AI_ADVISORY_PROVIDER.md", "providers.d/ask"],
+    "commands": ["README.md", "docs"],
+}
+TEXT_SUFFIXES = {".md", ".txt", ".env", ".sh", ".py", ".json", ".yml", ".yaml", ".service", ".timer"}
+SECRET_PATTERNS = ("-----begin private key-----", "client_secret", "password=", "api_key=", "apikey=", "token=", "bearer ", "sk-")
+
+
+def read_file(path: str) -> str:
+    p = pathlib.Path(path).expanduser()
+    try:
+        value = p.read_text(encoding="utf-8").strip()
+    except Exception as exc:
+        raise RuntimeError(f"mistral_api_key_file_unreadable: {exc.__class__.__name__}") from exc
+    if not value:
+        raise RuntimeError("mistral_api_key_file_empty")
+    return value
+
+
+def resolve_api_key() -> str:
+    key_file = os.environ.get("QUEUEBASH_AI_MISTRAL_API_KEY_FILE")
+    if key_file:
+        return read_file(key_file)
+    for name in ("QUEUEBASH_AI_MISTRAL_API_KEY", "MISTRAL_API_KEY"):
+        value = os.environ.get(name)
+        if value:
+            return value.strip()
+    return ""
+
+
+def redact_secret_values(text: str) -> str:
+    text = re.sub(r"sk-[A-Za-z0-9_\-]{10,}", "<redacted-api-key>", text)
+    text = re.sub(r"(api[_-]?key|authorization|bearer)([=: ]+)([^\s,;]+)", r"\1\2<redacted>", text, flags=re.I)
+    return text[:700]
+
+
+def safe_under_root(path: pathlib.Path) -> bool:
+    try:
+        path.resolve().relative_to(ROOT)
+        return True
+    except Exception:
+        return False
+
+
+def iter_files_for_contexts(contexts: Iterable[str]) -> Iterable[pathlib.Path]:
+    seen = set()
+    ordered: List[str] = []
+    for preferred in ("tests", "implementation_tests", "docs", "manuals", "policies", "policy_definitions"):
+        if preferred in contexts and preferred not in ordered:
+            ordered.append(preferred)
+    for ctx in contexts:
+        if ctx not in ordered:
+            ordered.append(ctx)
+    for ctx in ordered:
+        for rel in CONTEXT_MAP.get(ctx, []):
+            p = (ROOT / rel).resolve()
+            if not safe_under_root(p) or not p.exists():
+                continue
+            candidates = [p] if p.is_file() else sorted(x for x in p.rglob("*") if x.is_file())
+            for f in candidates:
+                if f in seen:
+                    continue
+                seen.add(f)
+                if not safe_under_root(f):
+                    continue
+                if f.name.startswith(".") or f.suffix.lower() not in TEXT_SUFFIXES:
+                    continue
+                yield f
+
+
+def read_context(contexts: List[str]) -> Tuple[str, List[Dict[str, object]]]:
+    parts: List[str] = []
+    manifest: List[Dict[str, object]] = []
+    total = 0
+    for f in iter_files_for_contexts(contexts):
+        if total >= MAX_TOTAL_BYTES:
+            break
+        try:
+            data = f.read_bytes()[:MAX_FILE_BYTES]
+        except Exception:
+            continue
+        text = data.decode("utf-8", errors="replace")
+        lowered = text[:4096].lower()
+        if any(pattern in lowered for pattern in SECRET_PATTERNS):
+            continue
+        rel = str(f.relative_to(ROOT))
+        chunk = f"\n--- FILE: {rel} ---\n{text}\n"
+        remaining = MAX_TOTAL_BYTES - total
+        if len(chunk.encode("utf-8")) > remaining:
+            chunk = chunk.encode("utf-8")[:remaining].decode("utf-8", errors="replace")
+        parts.append(chunk)
+        total += len(chunk.encode("utf-8"))
+        manifest.append({"path": rel, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+    return "".join(parts), manifest
+
+
+def write_json(path: str, obj: Dict[str, object]) -> None:
+    pathlib.Path(path).write_text(json.dumps(obj, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def extract_output_text(data: Dict[str, object]) -> str:
+    if isinstance(data.get("output_text"), str) and data["output_text"].strip():
+        return str(data["output_text"])
+    choices = data.get("choices") or []
+    if choices and isinstance(choices, list):
+        texts: List[str] = []
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            message = choice.get("message")
+            if isinstance(message, dict) and isinstance(message.get("content"), str):
+                texts.append(message["content"])
+            elif isinstance(choice.get("text"), str):
+                texts.append(choice["text"])
+        if texts:
+            return "\n".join(t for t in texts if t).strip()
+    texts = []
+    for item in data.get("output", []) or []:
+        if not isinstance(item, dict):
+            continue
+        for content in item.get("content", []) or []:
+            if isinstance(content, dict) and isinstance(content.get("text"), str):
+                texts.append(content["text"])
+    return "\n".join(t for t in texts if t).strip()
+
+
+def build_prompt(req: Dict[str, object], combined_context: str, question: str) -> str:
+    return f"""You are a bashqueues advisory provider.
+
+Rules:
+- You are advisory only. Do not claim to have executed commands.
+- Provider output is data only and is never evaluated as shell.
+- Do not suggest bypassing bashqueues policy, signatures, ACLs, trust providers, seccomp, caps, legal, FinOps, or integrity gates.
+- Treat tests as the highest-authority implementation evidence when docs and tests differ.
+- Suggest queue commands only as suggestions. Never output shell intended for automatic execution.
+- If policy-restricted context is absent, say what is missing rather than guessing.
+
+Allowed context follows. It may be partial and redacted.
+{combined_context}
+
+Question:
+{question}
+
+Answer with practical, concise guidance for a bashqueues user or administrator.
+"""
+
+
+def call_endpoint(model: str, prompt: str) -> Tuple[str, Dict[str, object]]:
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are a bashqueues advisory provider. Provider output is data, never shell."},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": MAX_OUTPUT_TOKENS,
+        "temperature": TEMPERATURE,
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json", "User-Agent": "bashqueues-queue-ask-openai-compat/1"}
+    api_key = resolve_api_key()
+    if not api_key:
+        raise RuntimeError("mistral_api_key_missing")
+    headers["Authorization"] = f"Bearer {api_key}"
+    req = urllib.request.Request(DEFAULT_ENDPOINT, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except TimeoutError as exc:
+        raise RuntimeError(f"mistral_timeout_after_{int(TIMEOUT)}s") from exc
+    except socket.timeout as exc:
+        raise RuntimeError(f"mistral_timeout_after_{int(TIMEOUT)}s") from exc
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = str(exc)
+        raise RuntimeError(f"mistral_http_error_{exc.code}: {redact_secret_values(detail)}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"mistral_unreachable: {redact_secret_values(str(exc.reason))}") from exc
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"mistral_invalid_json: {exc}") from exc
+    answer = extract_output_text(data)
+    if not answer:
+        raise RuntimeError("mistral_empty_response")
+    return answer, data
+
+
+def describe() -> Dict[str, object]:
+    return {
+        "schema": "queuebash.ask_provider.contract.v1",
+        "provider": "mistral",
+        "live_supported": True,
+        "fixture_supported": True,
+        "requires_network": False,
+        "advisory_only": True,
+        "default_model": DEFAULT_MODEL,
+        "endpoint": DEFAULT_ENDPOINT,
+        "endpoint_family": "openai_chat_completions_compatible",
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--describe", action="store_true")
+    ap.add_argument("--request-json")
+    ap.add_argument("--output-json")
+    args = ap.parse_args()
+    if args.describe:
+        print(json.dumps(describe(), sort_keys=True))
+        return 0
+    if not args.request_json or not args.output_json:
+        print("queue-ai-ask-mistral: --request-json and --output-json required", file=sys.stderr)
+        return 2
+    try:
+        req = json.loads(pathlib.Path(args.request_json).read_text(encoding="utf-8"))
+        question = str(req.get("question") or "").strip()
+        model = str(req.get("model") or DEFAULT_MODEL)
+        contexts = str(req.get("context_allowed") or "docs,commands,providers").replace(",", " ").split()
+        dynamic_context = str(req.get("dynamic_context_text") or "")
+        repo_context, manifest = read_context(contexts)
+        combined_context = (dynamic_context + "\n" + repo_context).strip()
+        prompt = build_prompt(req, combined_context, question)
+        started = time.time()
+        answer, raw = call_endpoint(model, prompt)
+        elapsed_ms = int((time.time() - started) * 1000)
+        write_json(args.output_json, {
+            "schema": SCHEMA_RESPONSE,
+            "provider": "mistral",
+            "status": "ok",
+            "model": model,
+            "endpoint": DEFAULT_ENDPOINT,
+            "answer_markdown": answer,
+            "advisory_only": True,
+            "live_call_performed": True,
+            "context_manifest": manifest,
+            "usage": raw.get("usage", {}),
+            "latency_ms": elapsed_ms,
+        })
+        return 0
+    except Exception as exc:
+        write_json(args.output_json, {
+            "schema": SCHEMA_RESPONSE,
+            "provider": "mistral",
+            "status": "error",
+            "reason": redact_secret_values(str(exc)),
+            "advisory_only": True,
+            "live_call_performed": False,
+        })
+        print(f"queue-ai-ask-mistral: {redact_secret_values(str(exc))}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

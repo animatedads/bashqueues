@@ -1,0 +1,12 @@
+{
+  "access_key_stored": false,
+  "account_id": "huawei-account-redacted",
+  "decision": "allow",
+  "identity_model": "access_key_or_instance_role_pending_validation",
+  "provider": "huawei",
+  "provider_family": "apac_china",
+  "provider_name": "Huawei Cloud",
+  "reason": "fixture_identity_mapped",
+  "schema": "queuebash.apac_china.huawei.identity.v1",
+  "source": "fixture"
+}

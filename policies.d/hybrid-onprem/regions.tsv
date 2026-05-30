@@ -1,0 +1,4 @@
+provider	site	jurisdiction	status
+vmware	private-dc-uk-1	UK	mapped_pending_validation
+openstack	private-region-eu-1	EU	mapped_pending_validation
+openshift	regulated-cluster-uk-1	UK	mapped_pending_validation

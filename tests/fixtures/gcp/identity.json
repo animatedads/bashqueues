@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.gcp.identity.v1",
+  "provider": "gcp",
+  "check": "identity",
+  "auth_mode": "service_account_attached",
+  "principal_type": "service_account",
+  "service_account_email": "queuebash-worker@example.iam.gserviceaccount.com",
+  "key_file_required": false,
+  "key_file_stored": false,
+  "decision": "allow",
+  "reason": "fixture_service_account_attached",
+  "fail_closed": false
+}

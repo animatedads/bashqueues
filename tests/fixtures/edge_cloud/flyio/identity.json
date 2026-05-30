@@ -1,0 +1,12 @@
+{
+  "api_token_stored": false,
+  "decision": "allow",
+  "fail_closed": false,
+  "identity_mode": "access_token",
+  "provider": "flyio",
+  "provider_family": "edge_cloud",
+  "reason": "fixture_contract",
+  "schema": "queuebash.edge_cloud.flyio.identity.v1",
+  "secret_env_stored": false,
+  "source": "fixture"
+}

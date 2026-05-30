@@ -1,0 +1,11 @@
+{
+  "schema": "queuebash.gcp.finops.v1",
+  "provider": "gcp",
+  "check": "finops",
+  "labels_required": true,
+  "required_labels": ["owner", "cost-center", "environment", "queuebash-class"],
+  "labels_present": true,
+  "decision": "allow",
+  "reason": "fixture_required_labels_present",
+  "fail_closed": false
+}

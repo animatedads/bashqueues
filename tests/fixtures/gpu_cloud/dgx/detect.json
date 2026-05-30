@@ -1,0 +1,13 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "fail_closed": false,
+  "provider": "dgx",
+  "provider_family": "gpu_cloud",
+  "provider_model": "managed_dgx_cloud",
+  "provider_name": "NVIDIA DGX Cloud",
+  "reason": "fixture_contract",
+  "region": "us",
+  "schema": "queuebash.gpu_cloud.dgx.detect.v1",
+  "source": "fixture"
+}

@@ -1,0 +1,11 @@
+{
+  "cost_model": "mapped_pending_validation",
+  "cost_tag_required": true,
+  "decision": "allow",
+  "fail_closed": false,
+  "provider": "hetzner",
+  "provider_family": "eu_sovereign",
+  "reason": "finops_fixture_available",
+  "schema": "queuebash.eu_sovereign.hetzner.finops.v1",
+  "source": "fixture"
+}

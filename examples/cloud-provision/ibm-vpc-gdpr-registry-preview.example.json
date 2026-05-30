@@ -1,0 +1,48 @@
+{
+    "decision": "allow",
+    "fail_closed": false,
+    "live": false,
+    "mutated": false,
+    "plan_id": "cp-1780090738-e9858c85",
+    "provider": "ibm",
+    "reason": "registry_handoff_preview",
+    "registry_write": false,
+    "resource_record": {
+        "allowed_classes": [
+            "CLOUD_IBM_LEGAL_COMPLIANCE"
+        ],
+        "capacity": {
+            "cpu": 4,
+            "memory_gb": 16
+        },
+        "compliance": [
+            "gdpr",
+            "data-protection"
+        ],
+        "labels": [
+            "cloud_provision",
+            "gdpr",
+            "ibm",
+            "planned",
+            "vpc"
+        ],
+        "lifecycle_state": "planned",
+        "provenance": {
+            "cloud_infra_service": "ibm-gdpr-vpc",
+            "cloud_provision_plan_id": "cp-1780090738-e9858c85",
+            "cloud_provision_template": "ibm-vpc-gdpr",
+            "handoff_mode": "preview-only",
+            "source": "cloud_provision",
+            "template": "ibm-vpc-gdpr"
+        },
+        "provider": "ibm",
+        "region": "eu-gb",
+        "registry_handoff_state": "planned",
+        "resource_id": "planned-ibm-vpc-gdpr-55aa3f7f",
+        "resource_type": "vm",
+        "schema": "queuebash.cloud_resource.v1",
+        "status": "planned"
+    },
+    "schema": "queuebash.cloud_provision.registry_preview.v1",
+    "template": "ibm-vpc-gdpr"
+}

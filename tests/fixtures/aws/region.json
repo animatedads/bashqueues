@@ -1,0 +1,12 @@
+{
+  "decision": "allow",
+  "fail_closed": false,
+  "gdpr": true,
+  "jurisdiction": "UK",
+  "provider": "aws",
+  "region": "eu-west-2",
+  "schema": "queuebash.aws.region.v1",
+  "source": "fixture",
+  "sovereignty_zone": "uk",
+  "uk_dpa": true
+}

@@ -1,0 +1,4 @@
+provider	network_control	status
+alibaba	vpc_security_group	mapped_pending_validation
+tencent	vpc_security_group	mapped_pending_validation
+huawei	vpc_security_group	mapped_pending_validation

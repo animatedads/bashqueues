@@ -1,0 +1,16 @@
+{
+  "capabilities": [
+    "identity",
+    "region",
+    "data-protection",
+    "itar",
+    "finops",
+    "resource-shape"
+  ],
+  "decision": "allow",
+  "fail_closed": false,
+  "mutated": false,
+  "provider": "aws",
+  "schema": "queuebash.aws.detect.v1",
+  "source": "fixture"
+}

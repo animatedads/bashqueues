@@ -1,0 +1,5 @@
+region	sovereignty_group	data_residency_note	status
+uksouth	uk	UK South region mapping pending primary-source validation	mapped_pending_validation
+ukwest	uk	UK West region mapping pending primary-source validation	mapped_pending_validation
+westeurope	eu	EU region mapping pending primary-source validation	mapped_pending_validation
+northeurope	eu	EU region mapping pending primary-source validation	mapped_pending_validation

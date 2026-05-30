@@ -1,0 +1,11 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "method": "fixture",
+  "provider": "huawei",
+  "provider_family": "apac_china",
+  "provider_name": "Huawei Cloud",
+  "reason": "fixture_detected",
+  "schema": "queuebash.apac_china.huawei.detect.v1",
+  "source": "fixture"
+}

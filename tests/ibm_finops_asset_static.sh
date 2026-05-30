@@ -11,7 +11,7 @@ grep -q 'ibm_finops:anomaly_free' assets.d/ibm_finops.sh || fail 'missing anomal
 grep -q '/etc/queuebash/finops/ibm_cost_cache.json' assets.d/ibm_finops.sh || fail 'missing canonical cache path'
 grep -q 'QUEUEBASH_IBM_FINOPS_CACHE' assets.d/ibm_finops.sh || fail 'missing cache override env'
 grep -q 'does not implement live IBM API calls\|never calls IBM Cloud APIs' assets.d/ibm_finops.sh || fail 'asset must state no worker-side live API calls'
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 
 # Smoke the asset against local cache files only.
 tmp="$(mktemp -d)"

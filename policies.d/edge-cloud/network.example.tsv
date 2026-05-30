@@ -1,0 +1,4 @@
+provider	ingress	egress	status
+cloudflare	managed-edge	restricted-preferred	mapped_pending_validation
+fastly	managed-edge	restricted-preferred	mapped_pending_validation
+flyio	app-ingress	restricted-preferred	mapped_pending_validation

@@ -1,0 +1,12 @@
+{
+  "check": "virtualization",
+  "decision": "available",
+  "fail_closed": false,
+  "platform_context": "nova_project",
+  "provider": "openstack",
+  "provider_family": "hybrid_onprem",
+  "reason": "virtualization_fixture",
+  "schema": "queuebash.hybrid_onprem.openstack.virtualization.v1",
+  "source": "fixture",
+  "template_approved": true
+}

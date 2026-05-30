@@ -1,0 +1,11 @@
+{
+  "decision": "allow",
+  "jurisdiction_status": "mapped_pending_validation",
+  "provider": "tencent",
+  "provider_family": "apac_china",
+  "provider_name": "Tencent Cloud",
+  "reason": "fixture_region_mapped",
+  "region": "ap-guangzhou",
+  "schema": "queuebash.apac_china.tencent.region.v1",
+  "source": "fixture"
+}

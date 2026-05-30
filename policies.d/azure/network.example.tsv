@@ -1,0 +1,3 @@
+name	vnet	subnet	nsg_required	private_endpoint_required	egress_policy	status
+azure-default	queuebash-vnet	queuebash-subnet	1	0	restricted	fixture_example
+azure-high-assurance	queuebash-secure-vnet	queuebash-private-subnet	1	1	restricted	fixture_example

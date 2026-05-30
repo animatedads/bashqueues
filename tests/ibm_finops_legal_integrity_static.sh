@@ -2,7 +2,7 @@
 set -euo pipefail
 fail(){ echo "FAIL $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 [[ -f policies.d/finops/ibm.env.example ]] || fail 'missing IBM FinOps policy example'
 [[ -f policies.d/legal-registry/ibm.example.tsv ]] || fail 'missing IBM legal registry example'
 [[ -f examples/manifests/ibm_finreg.manifest.example ]] || fail 'missing IBM integrity manifest example'

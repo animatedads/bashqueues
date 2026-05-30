@@ -1,0 +1,11 @@
+{
+  "schema": "queuebash.gcp.region.v1",
+  "provider": "gcp",
+  "check": "region",
+  "region": "europe-west2",
+  "sovereignty_group": "uk",
+  "allowed_by_policy": true,
+  "decision": "allow",
+  "reason": "fixture_region_allowed",
+  "fail_closed": false
+}

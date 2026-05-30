@@ -1,0 +1,11 @@
+{
+  "decision": "allow",
+  "jurisdiction_status": "mapped_pending_validation",
+  "provider": "huawei",
+  "provider_family": "apac_china",
+  "provider_name": "Huawei Cloud",
+  "reason": "fixture_region_mapped",
+  "region": "cn-north-4",
+  "schema": "queuebash.apac_china.huawei.region.v1",
+  "source": "fixture"
+}

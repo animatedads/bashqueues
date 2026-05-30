@@ -1,0 +1,10 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "fail_closed": false,
+  "provider": "otc",
+  "provider_family": "eu_sovereign",
+  "reason": "fixture_detected",
+  "schema": "queuebash.eu_sovereign.otc.detect.v1",
+  "source": "fixture"
+}

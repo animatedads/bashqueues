@@ -1,0 +1,48 @@
+{
+    "decision": "allow",
+    "fail_closed": false,
+    "live": false,
+    "mutated": false,
+    "plan_id": "cp-1780090694-feb45a49",
+    "provider": "azure",
+    "reason": "registry_handoff_preview",
+    "registry_write": false,
+    "resource_record": {
+        "allowed_classes": [
+            "CLOUD_AZURE_GDPR"
+        ],
+        "capacity": {
+            "cpu": 4,
+            "memory_gb": 16
+        },
+        "compliance": [
+            "gdpr",
+            "data-protection"
+        ],
+        "labels": [
+            "azure",
+            "cloud_provision",
+            "gdpr",
+            "planned",
+            "vm"
+        ],
+        "lifecycle_state": "planned",
+        "provenance": {
+            "cloud_infra_service": "azure-gdpr-vm",
+            "cloud_provision_plan_id": "cp-1780090694-feb45a49",
+            "cloud_provision_template": "azure-vm-gdpr",
+            "handoff_mode": "preview-only",
+            "source": "cloud_provision",
+            "template": "azure-vm-gdpr"
+        },
+        "provider": "azure",
+        "region": "uksouth",
+        "registry_handoff_state": "planned",
+        "resource_id": "planned-azure-vm-gdpr-4fbe001d",
+        "resource_type": "vm",
+        "schema": "queuebash.cloud_resource.v1",
+        "status": "planned"
+    },
+    "schema": "queuebash.cloud_provision.registry_preview.v1",
+    "template": "azure-vm-gdpr"
+}

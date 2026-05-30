@@ -1,0 +1,1 @@
+{"schema":"queuebash.azure.compute.v1","provider":"azure","vm_size":"Standard_D4s_v5","vcpus":4,"memory_gb":16,"resource_group":"queuebash-dev","power_state":"running","tags":{"cost_center":"queuebash","owner":"architect"},"decision":"available","reason":"compute_fixture_available","source":"fixture","fail_closed":false}

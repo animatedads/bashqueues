@@ -1,0 +1,15 @@
+{
+  "account_id": "123456789012",
+  "decision": "allow",
+  "mutated": false,
+  "partition": "aws",
+  "provider": "aws",
+  "regions": [
+    "eu-west-2",
+    "eu-west-1",
+    "us-east-1",
+    "us-gov-west-1"
+  ],
+  "schema": "queuebash.aws.metadata.v1",
+  "source": "fixture"
+}

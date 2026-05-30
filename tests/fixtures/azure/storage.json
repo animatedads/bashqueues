@@ -1,0 +1,1 @@
+{"schema":"queuebash.azure.storage.v1","provider":"azure","account":"queuebashartifacts","container":"queuebash-artifacts","prefix":"queuebash/dev-test/","sas_supported":true,"sas_redacted":true,"signed_url_redacted":true,"decision":"available","reason":"storage_fixture_config_present","source":"fixture","fail_closed":false}

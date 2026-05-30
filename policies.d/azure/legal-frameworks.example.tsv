@@ -1,0 +1,4 @@
+framework	region_group	requires_retention_evidence	requires_deletion_evidence	requires_audit_evidence	status
+GDPR	eu	1	1	1	mapped_pending_validation
+UK_DPA	uk	1	1	1	mapped_pending_validation
+ITAR	us	1	1	1	proposed_pending_validation

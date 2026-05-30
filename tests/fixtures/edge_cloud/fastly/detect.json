@@ -1,0 +1,11 @@
+{
+  "decision": "allow",
+  "detected": true,
+  "display_name": "Fastly Compute@Edge",
+  "fail_closed": false,
+  "provider": "fastly",
+  "provider_family": "edge_cloud",
+  "reason": "fixture_contract",
+  "schema": "queuebash.edge_cloud.fastly.detect.v1",
+  "source": "fixture"
+}

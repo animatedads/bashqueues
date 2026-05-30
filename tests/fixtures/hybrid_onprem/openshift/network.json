@@ -1,0 +1,12 @@
+{
+  "check": "network",
+  "decision": "allow",
+  "egress_policy": "restricted",
+  "fail_closed": false,
+  "network_context": "network-policy-restricted",
+  "provider": "openshift",
+  "provider_family": "hybrid_onprem",
+  "reason": "network_fixture",
+  "schema": "queuebash.hybrid_onprem.openshift.network.v1",
+  "source": "fixture"
+}

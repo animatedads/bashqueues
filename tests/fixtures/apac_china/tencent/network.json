@@ -1,0 +1,11 @@
+{
+  "decision": "allow",
+  "egress_policy": "mapped_pending_validation",
+  "network_model": "vpc_security_group_pending_validation",
+  "provider": "tencent",
+  "provider_family": "apac_china",
+  "provider_name": "Tencent Cloud",
+  "reason": "fixture_network_mapped",
+  "schema": "queuebash.apac_china.tencent.network.v1",
+  "source": "fixture"
+}

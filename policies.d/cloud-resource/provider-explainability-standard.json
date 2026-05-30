@@ -1,0 +1,54 @@
+{
+  "schema": "queuebash.provider_explainability_standard.v1",
+  "verdict": "standardized_backfill",
+  "scope": "bob2_provider_family_explainability",
+  "default_safety_contract": {
+    "fixture_first": true,
+    "live_api_default": false,
+    "credentials_required_for_default_tests": false,
+    "provisioning_default": false,
+    "queue_dispatch_refactor": false,
+    "compliance_claims_default": false
+  },
+  "required_human_fields": [
+    "Provider",
+    "Check",
+    "Decision",
+    "Reason",
+    "Source",
+    "Fail-closed",
+    "Remediation",
+    "Validation status"
+  ],
+  "required_json_concepts": [
+    "schema",
+    "provider",
+    "check",
+    "decision",
+    "reason",
+    "source",
+    "fail_closed",
+    "remediation_hint"
+  ],
+  "status_vocabulary": [
+    "first_tier_contract",
+    "high_standard_reference",
+    "fixture_first_provider_family",
+    "mapped_pending_validation",
+    "needs_primary_source_validation"
+  ],
+  "provider_families": [
+    "aws",
+    "gcp",
+    "azure",
+    "eu_sovereign",
+    "apac_china",
+    "gpu_cloud",
+    "edge_cloud",
+    "hybrid_onprem"
+  ],
+  "reference_providers": [
+    "oci",
+    "ibm"
+  ]
+}

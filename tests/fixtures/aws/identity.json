@@ -1,0 +1,11 @@
+{
+  "account_id": "123456789012",
+  "auth_method": "assume-role-or-instance-profile",
+  "decision": "allow",
+  "fail_closed": false,
+  "mutated": false,
+  "principal_arn": "arn:aws:iam::123456789012:role/bashqueues-readonly",
+  "provider": "aws",
+  "schema": "queuebash.aws.identity.v1",
+  "source": "fixture"
+}

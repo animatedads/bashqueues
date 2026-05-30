@@ -1,0 +1,12 @@
+{
+  "cpu_limit_supported": true,
+  "decision": "available",
+  "fail_closed": false,
+  "memory_limit_supported": true,
+  "provider": "otc",
+  "provider_family": "eu_sovereign",
+  "reason": "compute_fixture_available",
+  "schema": "queuebash.eu_sovereign.otc.compute.v1",
+  "shape": "s3.large.2",
+  "source": "fixture"
+}

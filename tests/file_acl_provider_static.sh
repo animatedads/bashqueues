@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 fail(){ echo "FAIL $0: $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail "version not bumped"
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 grep -q '_queue_acl_file_check' queuebash.sh || fail "file ACL check helper missing"
 grep -q '_queue_acl_file_mutate' queuebash.sh || fail "file ACL mutation helper missing"
 grep -q 'QUEUEBASH_FILE_ACL_POLICY' queuebash.sh || fail "file ACL policy env missing"

@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""Anthropic advisory provider for bashqueues queue ask.
+
+This helper is advisory-only. It reads a normalized queuebash AI advisory
+request JSON, builds a bounded context bundle from policy-allowed repository
+sources, calls the Anthropic Messages API only when explicitly invoked by the
+queue ask live path, and returns normalized response JSON. It never executes
+model output and never writes API keys to logs or response JSON.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import re
+import socket
+import sys
+import time
+import urllib.error
+import urllib.request
+from typing import Dict, Iterable, List, Tuple
+
+SCHEMA_RESPONSE = "queuebash.ai_advisory.response.v1"
+DEFAULT_MODEL = os.environ.get("QUEUEBASH_AI_ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+DEFAULT_ENDPOINT = os.environ.get("QUEUEBASH_AI_ANTHROPIC_ENDPOINT", "https://api.anthropic.com/v1/messages")
+MAX_FILE_BYTES = int(os.environ.get("QUEUEBASH_AI_CONTEXT_FILE_BYTES", "16000"))
+MAX_TOTAL_BYTES = int(os.environ.get("QUEUEBASH_AI_CONTEXT_TOTAL_BYTES", "120000"))
+TIMEOUT = float(os.environ.get("QUEUEBASH_AI_ANTHROPIC_TIMEOUT", "60"))
+MAX_OUTPUT_TOKENS = int(os.environ.get("QUEUEBASH_AI_ANTHROPIC_MAX_OUTPUT_TOKENS", "4096"))
+TEMPERATURE = float(os.environ.get("QUEUEBASH_AI_ANTHROPIC_TEMPERATURE", "0.2"))
+ROOT = pathlib.Path(os.environ.get("QUEUEBASH_AI_CONTEXT_ROOT", os.getcwd())).resolve()
+
+CONTEXT_MAP = {
+    "docs": ["docs", "README.md", "CHANGELOG.md"],
+    "manuals": ["docs", "README.md"],
+    "tests": ["tests"],
+    "implementation_tests": ["tests"],
+    "policies": ["policies.d"],
+    "policy_definitions": ["policies.d"],
+    "classes": ["classes"],
+    "assets": ["assets.d"],
+    "providers": [
+        "docs/ASK_PROVIDER_CONTRACT.md",
+        "docs/ASK_SECURITY_MODEL.md",
+        "docs/AI_ADVISORY_PROVIDER.md",
+        "providers.d/ask",
+    ],
+    "commands": ["README.md", "docs"],
+}
+
+TEXT_SUFFIXES = {".md", ".txt", ".env", ".sh", ".py", ".json", ".yml", ".yaml", ".service", ".timer"}
+SECRET_PATTERNS = (
+    "-----begin private key-----",
+    "client_secret",
+    "password=",
+    "api_key=",
+    "apikey=",
+    "token=",
+    "bearer ",
+    "sk-",
+)
+
+
+def die(msg: str, code: int = 1) -> None:
+    print(msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def safe_under_root(path: pathlib.Path) -> bool:
+    try:
+        path.resolve().relative_to(ROOT)
+        return True
+    except Exception:
+        return False
+
+
+def read_key_file(path: str) -> str:
+    p = pathlib.Path(path).expanduser()
+    try:
+        key = p.read_text(encoding="utf-8").strip()
+    except Exception as exc:
+        raise RuntimeError(f"anthropic_api_key_file_unreadable: {exc.__class__.__name__}") from exc
+    if not key:
+        raise RuntimeError("anthropic_api_key_file_empty")
+    return key
+
+
+def resolve_api_key() -> str:
+    key_file = os.environ.get("QUEUEBASH_AI_ANTHROPIC_API_KEY_FILE")
+    if key_file:
+        return read_key_file(key_file)
+    for name in ("QUEUEBASH_AI_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"):
+        value = os.environ.get(name)
+        if value:
+            return value.strip()
+    raise RuntimeError("anthropic_api_key_missing")
+
+
+def redact_secret_values(text: str) -> str:
+    text = re.sub(r"sk-ant-[A-Za-z0-9_\-]{10,}", "<redacted-anthropic-api-key>", text)
+    text = re.sub(r"(api[_-]?key|authorization|bearer)([=: ]+)([^\s,;]+)", r"\1\2<redacted>", text, flags=re.I)
+    return text[:700]
+
+
+def iter_files_for_contexts(contexts: Iterable[str]) -> Iterable[pathlib.Path]:
+    seen = set()
+    ordered_contexts: List[str] = []
+    for preferred in ("tests", "implementation_tests", "docs", "manuals", "policies", "policy_definitions"):
+        if preferred in contexts and preferred not in ordered_contexts:
+            ordered_contexts.append(preferred)
+    for ctx in contexts:
+        if ctx not in ordered_contexts:
+            ordered_contexts.append(ctx)
+
+    for ctx in ordered_contexts:
+        for rel in CONTEXT_MAP.get(ctx, []):
+            p = (ROOT / rel).resolve()
+            if not safe_under_root(p) or not p.exists():
+                continue
+            candidates = [p] if p.is_file() else sorted(x for x in p.rglob("*") if x.is_file())
+            for f in candidates:
+                if f in seen:
+                    continue
+                seen.add(f)
+                if not safe_under_root(f):
+                    continue
+                if f.name.startswith(".") or f.suffix.lower() not in TEXT_SUFFIXES:
+                    continue
+                yield f
+
+
+def read_context(contexts: List[str]) -> Tuple[str, List[Dict[str, object]]]:
+    parts: List[str] = []
+    manifest: List[Dict[str, object]] = []
+    total = 0
+    for f in iter_files_for_contexts(contexts):
+        if total >= MAX_TOTAL_BYTES:
+            break
+        try:
+            data = f.read_bytes()[:MAX_FILE_BYTES]
+        except Exception:
+            continue
+        text = data.decode("utf-8", errors="replace")
+        lowered = text[:4096].lower()
+        if any(pattern in lowered for pattern in SECRET_PATTERNS):
+            continue
+        rel = str(f.relative_to(ROOT))
+        chunk = f"\n--- FILE: {rel} ---\n{text}\n"
+        remaining = MAX_TOTAL_BYTES - total
+        if len(chunk.encode("utf-8")) > remaining:
+            chunk = chunk.encode("utf-8")[:remaining].decode("utf-8", errors="replace")
+        parts.append(chunk)
+        total += len(chunk.encode("utf-8"))
+        manifest.append({"path": rel, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+    return "".join(parts), manifest
+
+
+def write_json(path: str, obj: Dict[str, object]) -> None:
+    pathlib.Path(path).write_text(json.dumps(obj, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def extract_output_text(data: Dict[str, object]) -> str:
+    texts: List[str] = []
+    for content in data.get("content", []) or []:
+        if not isinstance(content, dict):
+            continue
+        if content.get("type") == "text" and isinstance(content.get("text"), str):
+            texts.append(content["text"])
+    return "\n".join(t for t in texts if t).strip()
+
+
+def call_anthropic(model: str, prompt: str) -> Tuple[str, Dict[str, object]]:
+    api_key = resolve_api_key()
+    payload = {
+        "model": model,
+        "max_tokens": MAX_OUTPUT_TOKENS,
+        "temperature": TEMPERATURE,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        DEFAULT_ENDPOINT,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": os.environ.get("QUEUEBASH_AI_ANTHROPIC_VERSION", "2023-06-01"),
+            "User-Agent": "bashqueues-queue-ask-anthropic/1",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except TimeoutError as exc:
+        raise RuntimeError(f"anthropic_timeout_after_{int(TIMEOUT)}s") from exc
+    except socket.timeout as exc:
+        raise RuntimeError(f"anthropic_timeout_after_{int(TIMEOUT)}s") from exc
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = str(exc)
+        raise RuntimeError(f"anthropic_http_error_{exc.code}: {redact_secret_values(detail)}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"anthropic_unreachable: {redact_secret_values(str(exc.reason))}") from exc
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"anthropic_invalid_json: {exc}") from exc
+    answer = extract_output_text(data)
+    if not answer:
+        raise RuntimeError("anthropic_empty_response")
+    return answer, data
+
+
+def build_prompt(req: Dict[str, object], combined_context: str, question: str) -> str:
+    return f"""You are a bashqueues advisory provider.
+
+Rules:
+- You are advisory only. Do not claim to have executed commands.
+- Provider output is data only and is never evaluated as shell.
+- Do not suggest bypassing bashqueues policy, signatures, ACLs, trust providers, seccomp, caps, legal, FinOps, or integrity gates.
+- Treat tests as the highest-authority implementation evidence when docs and tests differ.
+- Suggest queue commands only as suggestions. Never output shell intended for automatic execution.
+- If policy-restricted context is absent, say what is missing rather than guessing.
+
+Allowed context follows. It may be partial and redacted.
+Use installed command inventory and implementation evidence from the context as authoritative. Do not invent queue commands.
+{combined_context}
+
+Question:
+{question}
+
+Answer with practical, concise guidance for a bashqueues user or administrator.
+"""
+
+def describe() -> Dict[str, object]:
+    return {
+        "schema": "queuebash.ask_provider.contract.v1",
+        "provider": "anthropic",
+        "live_supported": True,
+        "fixture_supported": True,
+        "requires_network": True,
+        "advisory_only": True,
+        "default_model": DEFAULT_MODEL,
+        "endpoint": DEFAULT_ENDPOINT,
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--request-json")
+    ap.add_argument("--output-json")
+    ap.add_argument("--model", default=None)
+    ap.add_argument("--describe", action="store_true")
+    args = ap.parse_args()
+
+    if args.describe:
+        print(json.dumps(describe(), sort_keys=True))
+        return 0
+    if not args.request_json or not args.output_json:
+        die("usage: queue-ai-ask-anthropic --request-json FILE --output-json FILE", 2)
+
+    started = time.time()
+    try:
+        req = json.load(open(args.request_json, encoding="utf-8"))
+        if req.get("schema") != "queuebash.ai_advisory.request.v1":
+            raise RuntimeError("invalid_request_schema")
+        if req.get("operation") != "ai.ask":
+            raise RuntimeError("invalid_operation")
+        if req.get("advisory_only") is not True:
+            raise RuntimeError("advisory_only_required")
+        model = args.model or req.get("model") or DEFAULT_MODEL
+        contexts = [x for x in str(req.get("context_allowed", "")).split() if x]
+        question = req.get("question") or req.get("question_redacted") or ""
+        if not question:
+            raise RuntimeError("missing_question")
+        dynamic_context_text = str(req.get("dynamic_context_text", "") or "")
+        context_text, manifest = read_context(contexts)
+        combined_context = dynamic_context_text + ("\n" if dynamic_context_text and context_text else "") + context_text
+        context_hash = hashlib.sha256(combined_context.encode("utf-8")).hexdigest()
+        if dynamic_context_text:
+            manifest.insert(0, {
+                "path": "<dynamic-shell-context>",
+                "bytes": len(dynamic_context_text.encode("utf-8")),
+                "sha256": hashlib.sha256(dynamic_context_text.encode("utf-8")).hexdigest(),
+                "redacted": True,
+            })
+        prompt = build_prompt(req, combined_context, str(question))
+        answer, raw = call_anthropic(str(model), prompt)
+        elapsed_ms = int((time.time() - started) * 1000)
+        usage = raw.get("usage") if isinstance(raw.get("usage"), dict) else {}
+        out = {
+            "schema": SCHEMA_RESPONSE,
+            "provider": "anthropic",
+            "status": "ok",
+            "model": str(model),
+            "answer_markdown": answer,
+            "live_call_performed": True,
+            "advisory_only": True,
+            "context_manifest": manifest,
+            "context_sha256": context_hash,
+            "latency_ms": elapsed_ms,
+            "usage": usage,
+        }
+        write_json(args.output_json, out)
+        return 0
+    except Exception as exc:
+        reason = redact_secret_values(str(exc))
+        write_json(args.output_json, {
+            "schema": SCHEMA_RESPONSE,
+            "provider": "anthropic",
+            "status": "error",
+            "reason": reason,
+            "live_call_performed": False,
+            "advisory_only": True,
+            "latency_ms": int((time.time() - started) * 1000),
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+        })
+        print(reason, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

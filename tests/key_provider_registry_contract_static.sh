@@ -2,7 +2,7 @@
 set -euo pipefail
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail 'version not bumped to 0.18.22'
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 grep -q 'queue key-provider help' queuebash.sh || fail 'queue key-provider command help missing'
 grep -q '_queue_key_provider_command' queuebash.sh || fail 'key provider command function missing'
 grep -q 'queuebash.key_lookup_response.v1' queuebash.sh docs/KEY_PROVIDER_CONTRACT.md || fail 'key lookup response schema missing'

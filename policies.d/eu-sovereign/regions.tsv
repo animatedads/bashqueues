@@ -1,0 +1,8 @@
+provider	region	jurisdiction	status	note
+ovhcloud	gra	FR	mapped_pending_validation	example France region family
+ovhcloud	bhs	CA	requires_cross_border_review	non-EU example must not pass EU-only class
+scaleway	fr-par	FR	mapped_pending_validation	Paris example
+scaleway	nl-ams	NL	mapped_pending_validation	Amsterdam example
+hetzner	fsn1	DE	mapped_pending_validation	Falkenstein example
+hetzner	nbg1	DE	mapped_pending_validation	Nuremberg example
+otc	eu-de	DE	mapped_pending_validation	Open Telekom Cloud Germany example

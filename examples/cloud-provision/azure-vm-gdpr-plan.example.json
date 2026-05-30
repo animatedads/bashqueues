@@ -1,0 +1,120 @@
+{
+    "class": "CLOUD_AZURE_GDPR",
+    "cloud_infra_service": "azure-gdpr-vm",
+    "cost_estimate": {
+        "currency": "USD",
+        "estimated_monthly_cost": 150.0
+    },
+    "data_protection": {
+        "classification": "customer-data",
+        "customer_data": true,
+        "legal_framework": "GDPR"
+    },
+    "decision": "allow",
+    "evidence": {
+        "generated_epoch": 1780090688,
+        "policy_source": "/mnt/data/bq_next/bashqueues_0.18.38_BOB10_edge_cloud_and_cloud_provisioning_merged/policies.d/cloud-provision/approval-policy.example.json",
+        "templates_source": "/mnt/data/bq_next/bashqueues_0.18.38_BOB10_edge_cloud_and_cloud_provisioning_merged/policies.d/cloud-provision/templates.example.json"
+    },
+    "export_control": {
+        "itar_allowed": false,
+        "workload": "database-migration"
+    },
+    "fail_closed": false,
+    "live_mutation": false,
+    "mutated": false,
+    "operation": "plan",
+    "plan_id": "cp-1780090688-7364d165",
+    "policy_gates": [
+        {
+            "decision": "allow",
+            "name": "provider_allowed",
+            "reason": "provider_known"
+        },
+        {
+            "decision": "allow",
+            "name": "region_allowed",
+            "reason": "region_present",
+            "region": "uksouth"
+        },
+        {
+            "decision": "allow",
+            "legal_framework": "GDPR",
+            "name": "legal_framework_allowed",
+            "reason": "legal_framework_present"
+        },
+        {
+            "classification": "customer-data",
+            "decision": "allow",
+            "name": "data_classification",
+            "reason": "classification_present"
+        },
+        {
+            "decision": "allow",
+            "name": "export_control",
+            "reason": "no_itar_marker"
+        },
+        {
+            "ceiling": 300.0,
+            "decision": "allow",
+            "estimated_monthly_cost": 150.0,
+            "name": "cost_ceiling",
+            "reason": "cost_within_ceiling"
+        },
+        {
+            "decision": "allow",
+            "name": "live_mutation",
+            "reason": "no_live_mutation_requested"
+        },
+        {
+            "decision": "allow",
+            "name": "audit_evidence",
+            "reason": "normalized_plan_is_audit_evidence"
+        }
+    ],
+    "provider": "azure",
+    "reason": "provision_plan_passed_policy_gates",
+    "region": "uksouth",
+    "registry_handoff": {
+        "mode": "preview-only",
+        "resource_schema": "queuebash.cloud_resource.v1",
+        "state": "planned"
+    },
+    "resource_record_preview": {
+        "allowed_classes": [
+            "CLOUD_AZURE_GDPR"
+        ],
+        "capacity": {
+            "cpu": 4,
+            "memory_gb": 16
+        },
+        "compliance": [
+            "gdpr",
+            "data-protection"
+        ],
+        "labels": [
+            "azure",
+            "cloud_provision",
+            "gdpr",
+            "planned",
+            "vm"
+        ],
+        "lifecycle_state": "planned",
+        "provenance": {
+            "cloud_infra_service": "azure-gdpr-vm",
+            "source": "cloud_provision",
+            "template": "azure-vm-gdpr"
+        },
+        "provider": "azure",
+        "region": "uksouth",
+        "registry_handoff_state": "planned",
+        "resource_id": "planned-azure-vm-gdpr-ddb7cc11",
+        "resource_type": "vm",
+        "schema": "queuebash.cloud_resource.v1",
+        "status": "planned"
+    },
+    "resource_type": "vm",
+    "schema": "queuebash.cloud_provision.plan.v1",
+    "template": "azure-vm-gdpr",
+    "workload": "database-migration"
+}

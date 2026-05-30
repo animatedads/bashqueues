@@ -1,0 +1,7 @@
+provider	region	jurisdiction	status
+alibaba	cn-hangzhou	CN	mapped_pending_validation
+alibaba	cn-hongkong	HK	mapped_pending_validation
+tencent	ap-guangzhou	CN	mapped_pending_validation
+tencent	ap-hongkong	HK	mapped_pending_validation
+huawei	cn-north-4	CN	mapped_pending_validation
+huawei	ap-southeast-1	SG	mapped_pending_validation

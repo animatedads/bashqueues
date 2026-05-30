@@ -1,0 +1,10 @@
+{
+  "schema": "queuebash.dev_workflow.think.v1",
+  "status": "ok",
+  "item_id": "DEVTHINK-EXAMPLE",
+  "kind": "think",
+  "authority": "developer",
+  "subject": "queue dev workflow command contracts",
+  "text_hash": "sha256:example",
+  "tags": ["bob12", "queue-dev", "dev-workflow"]
+}

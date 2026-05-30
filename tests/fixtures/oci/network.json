@@ -1,0 +1,1 @@
+{"schema":"queuebash.oci.network.v1","provider":"oci","vcn_id":"ocid1.vcn.example","subnet_id":"ocid1.subnet.example","nsg_ids":["ocid1.networksecuritygroup.example"],"security_lists":["ocid1.securitylist.example"],"egress_policy":"restricted","ingress_policy":"ssh_restricted","decision":"allow","reason":"fixture_network_controls_present"}

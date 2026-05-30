@@ -1,0 +1,14 @@
+{
+  "artifact_pointer_only": true,
+  "check": "storage",
+  "decision": "available",
+  "fail_closed": false,
+  "model_registry_secret_stored": false,
+  "provider": "dgx",
+  "provider_family": "gpu_cloud",
+  "provider_name": "NVIDIA DGX Cloud",
+  "reason": "fixture_contract",
+  "schema": "queuebash.gpu_cloud.dgx.storage.v1",
+  "signed_url_redacted": true,
+  "source": "fixture"
+}

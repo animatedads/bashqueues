@@ -1,0 +1,4 @@
+provider	framework	status	notes
+cloudflare	GDPR	mapped_pending_validation	validate DPA/residency/cache/log controls
+fastly	GDPR	mapped_pending_validation	validate DPA/residency/cache/log controls
+flyio	GDPR	mapped_pending_validation	validate app/data placement controls

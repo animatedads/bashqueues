@@ -1,0 +1,73 @@
+{
+  "schema": "queuebash.provider_primary_source_validation.v1",
+  "default_status": "mapped_pending_validation",
+  "accepted_statuses": [
+    "advisory_import",
+    "mapped_pending_validation",
+    "primary_source_validated",
+    "accepted_project_criterion",
+    "stale_validation",
+    "rejected_or_superseded"
+  ],
+  "primary_source_families": [
+    "official_provider_documentation",
+    "regulator_or_standards_body",
+    "official_government_guidance",
+    "project_owned_reproducible_probe",
+    "accepted_architect_or_team_leader_evidence"
+  ],
+  "not_primary_sources_by_themselves": [
+    "external_ai_output",
+    "marketing_page",
+    "blog_post",
+    "unvalidated_scratchpad_note",
+    "copied_example_without_source"
+  ],
+  "region_table_contract": {
+    "production_warning_required": true,
+    "required_fields_when_validated": [
+      "provider_family",
+      "region",
+      "jurisdiction",
+      "legal_framework",
+      "validation_status",
+      "source_ref",
+      "last_validated"
+    ]
+  },
+  "export_control_normalization": {
+    "required_terms": [
+      "export_control_required",
+      "itar_review_required",
+      "restricted_country_review_required",
+      "gpu_or_accelerator_export_review_required",
+      "sensitive_model_training_review_required",
+      "customer_data_transfer_review_required"
+    ],
+    "claim_without_validation": "mapped_pending_validation"
+  },
+  "secret_hygiene": {
+    "forbidden_evidence_material": [
+      "provider_tokens",
+      "private_keys",
+      "service_account_keys",
+      "signed_urls",
+      "par_urls",
+      "kubeconfigs_with_credentials",
+      "openstack_rc_secrets",
+      "customer_data_logs"
+    ],
+    "evidence_should_use": [
+      "redacted_source_refs",
+      "evidence_hashes",
+      "bounded_excerpts",
+      "file_pointers"
+    ]
+  },
+  "scope_guards": {
+    "live_api_calls_default": false,
+    "credentials_required_for_default_tests": false,
+    "provisioning_default": false,
+    "queue_dispatch_refactor": false
+  }
+}

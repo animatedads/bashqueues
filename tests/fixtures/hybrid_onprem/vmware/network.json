@@ -1,0 +1,12 @@
+{
+  "check": "network",
+  "decision": "allow",
+  "egress_policy": "restricted",
+  "fail_closed": false,
+  "network_context": "restricted-portgroup",
+  "provider": "vmware",
+  "provider_family": "hybrid_onprem",
+  "reason": "network_fixture",
+  "schema": "queuebash.hybrid_onprem.vmware.network.v1",
+  "source": "fixture"
+}

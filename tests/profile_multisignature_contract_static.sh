@@ -3,7 +3,7 @@ set -euo pipefail
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
 [[ -f queuebash.sh ]] || fail "run from repository root"
-grep -q 'QUEUEBASH_VERSION="0.18.22"' queuebash.sh || fail "version not bumped to 0.18.22"
+grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash version string missing/malformed"
 grep -q 'queuebash.profile_signatures.v1' queuebash.sh docs/PROFILE_MULTISIGNATURE_CONTRACT.md examples/profiles/multisig/signatures.goodrexx.json.example || fail "profile signature schema missing"
 grep -q 'queuebash.profile_signature_verification.v1' queuebash.sh docs/PROFILE_MULTISIGNATURE_CONTRACT.md || fail "verification schema missing"
 grep -q 'self:NAME' docs/PROFILE_MULTISIGNATURE_CONTRACT.md || fail "self namespace missing"

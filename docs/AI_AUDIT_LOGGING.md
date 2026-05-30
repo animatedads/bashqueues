@@ -157,3 +157,38 @@ Required fields include:
 ```
 
 Destructive misuse and policy-bypass destructive requests remain refusal events.
+
+## OpenAI audit reason
+
+Successful OpenAI live provider calls are audited with reason `live_openai_provider`. Missing keys, network failures, HTTP errors, invalid JSON, and empty responses are audited as provider failures with redacted details.
+
+## Anthropic audit reason
+
+Successful Anthropic live provider calls are audited with reason `live_anthropic_provider`. Missing keys, network failures, HTTP errors, invalid JSON, empty responses, and helper failures are normalized as provider failures without logging raw API keys.
+
+
+## IBM watsonx.ai provider note
+
+The `watsonx` provider follows the same normalized ask-provider contract as OpenAI and Anthropic. It is live-capable, network-required, advisory-only, fixture-testable by default, and gated by `QUEUEBASH_AI_LIVE_ENABLED` plus provider policy.
+
+## OpenAI-compatible local/private provider audit
+
+`openai_compat` audit records should identify provider `openai_compat`, the selected model, the configured endpoint family, live-mode policy decisions, context bundle hashes, redaction state, and provider failure reasons. API keys or bearer tokens must never be logged. Provider output is data, never shell.
+
+## Mistral AI audit note
+
+Mistral ask-provider calls are audited like other live providers. Audit records should include provider `mistral`, model, live-mode decision, context bundle hash, redaction metadata, result status, and error class without recording API keys or full sensitive prompts by default.
+
+
+## DeepSeek audit metadata
+
+DeepSeek ask-provider activity uses the normal `queue ask` audit path. Audit records should identify provider `deepseek`, question hash/redacted question, context bundle hash, policy decision, status, and bounded response metadata. API keys and bearer tokens must not be logged.
+
+
+## Groq provider note
+
+The Groq provider is a live-capable, fixture-tested ask provider using an OpenAI-compatible chat completions endpoint. It is advisory-only and gated by QUEUEBASH_AI_LIVE_ENABLED plus provider policy.
+
+## Cerebras audit note
+
+Cerebras live calls use the same queue ask audit path as other live providers. Audit records should capture provider `cerebras`, model, policy decision, status, and bounded metadata without API keys or raw secrets.

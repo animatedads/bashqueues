@@ -1,0 +1,11 @@
+{
+  "decision": "available",
+  "deployment_mutation": false,
+  "fail_closed": false,
+  "provider": "flyio",
+  "provider_family": "edge_cloud",
+  "reason": "fixture_contract",
+  "runtime": "machines_or_apps",
+  "schema": "queuebash.edge_cloud.flyio.edge_runtime.v1",
+  "source": "fixture"
+}

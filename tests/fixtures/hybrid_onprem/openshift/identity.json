@@ -1,0 +1,13 @@
+{
+  "api_token_stored": false,
+  "check": "identity",
+  "decision": "allow",
+  "fail_closed": false,
+  "provider": "openshift",
+  "provider_family": "hybrid_onprem",
+  "reason": "rbac_identity_fixture",
+  "schema": "queuebash.hybrid_onprem.openshift.identity.v1",
+  "secret_values_stored": false,
+  "source": "fixture",
+  "subject_type": "service_account"
+}

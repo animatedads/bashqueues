@@ -1,0 +1,11 @@
+{
+  "budget_labels_required": true,
+  "cost_model_status": "mapped_pending_validation",
+  "decision": "unknown",
+  "fail_closed": false,
+  "provider": "flyio",
+  "provider_family": "edge_cloud",
+  "reason": "fixture_contract",
+  "schema": "queuebash.edge_cloud.flyio.finops.v1",
+  "source": "fixture"
+}

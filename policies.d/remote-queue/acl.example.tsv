@@ -1,0 +1,13 @@
+# subject	operation	resource	decision	reason
+# Fail-closed default: no matching line means deny.
+# Keep this deliberately narrow. Resource is '*' for non-job-specific operations.
+# Example grants for a read-only operator:
+# queue-admin@example.invalid	health	*	allow	remote management health check
+# queue-admin@example.invalid	version	*	allow	remote management version check
+# queue-admin@example.invalid	capabilities	*	allow	remote management capabilities
+# queue-admin@example.invalid	queue.status	*	allow	read queue status
+# queue-admin@example.invalid	queue.list	*	allow	read queue list
+# queue-admin@example.invalid	job.explain	*	allow	read job explain
+# queue-admin@example.invalid	job.tail	*	allow	read bounded job tail
+# queue-admin@example.invalid	worker.status	*	allow	read worker status
+# queue-admin@example.invalid	service.ps	*	allow	read queue-owned service process view

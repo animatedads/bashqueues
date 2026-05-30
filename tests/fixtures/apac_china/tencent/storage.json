@@ -1,0 +1,12 @@
+{
+  "artifact_supported": true,
+  "decision": "available",
+  "provider": "tencent",
+  "provider_family": "apac_china",
+  "provider_name": "Tencent Cloud",
+  "reason": "fixture_storage_mapped",
+  "schema": "queuebash.apac_china.tencent.storage.v1",
+  "service": "cos",
+  "signed_url_redacted": true,
+  "source": "fixture"
+}

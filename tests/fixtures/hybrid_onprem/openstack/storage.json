@@ -1,0 +1,13 @@
+{
+  "check": "storage",
+  "decision": "available",
+  "fail_closed": false,
+  "provider": "openstack",
+  "provider_family": "hybrid_onprem",
+  "reason": "storage_fixture",
+  "schema": "queuebash.hybrid_onprem.openstack.storage.v1",
+  "secret_values_stored": false,
+  "signed_url_redacted": true,
+  "source": "fixture",
+  "storage_context": "cinder-swift"
+}

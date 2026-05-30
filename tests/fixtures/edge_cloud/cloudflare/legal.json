@@ -1,0 +1,12 @@
+{
+  "decision": "unknown",
+  "export_review_required": true,
+  "fail_closed": false,
+  "provider": "cloudflare",
+  "provider_family": "edge_cloud",
+  "reason": "fixture_contract",
+  "retention_policy_required": true,
+  "schema": "queuebash.edge_cloud.cloudflare.legal.v1",
+  "source": "fixture",
+  "status": "mapped_pending_validation"
+}

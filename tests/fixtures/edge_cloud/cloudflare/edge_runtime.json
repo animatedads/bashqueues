@@ -1,0 +1,11 @@
+{
+  "decision": "available",
+  "deployment_mutation": false,
+  "fail_closed": false,
+  "provider": "cloudflare",
+  "provider_family": "edge_cloud",
+  "reason": "fixture_contract",
+  "runtime": "workers",
+  "schema": "queuebash.edge_cloud.cloudflare.edge_runtime.v1",
+  "source": "fixture"
+}

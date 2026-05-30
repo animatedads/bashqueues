@@ -1,0 +1,1 @@
+{"schema":"queuebash.oci.resource_shape.v1","provider":"oci","shape":"VM.Standard.E4.Flex","ocpus":4,"memory_gb":32,"source":"fixture","cpu_limit_supported":true,"memory_limit_supported":true,"reason":"fixture_shape_detected"}

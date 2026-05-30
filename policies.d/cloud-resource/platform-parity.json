@@ -1,0 +1,159 @@
+{
+  "platforms": {
+    "apac_china": {
+      "asset_checks": true,
+      "finops_cost": false,
+      "first_class": false,
+      "fixtures": true,
+      "gdpr_data_protection": false,
+      "governance": true,
+      "itar_export_control": false,
+      "notes": "Initial Bob2 APAC/China provider-contract pack added in 0.18.35 for Alibaba Cloud, Tencent Cloud, and Huawei Cloud; fixture-first and non-mutating. Legal/compliance posture remains mapped pending validation and this is not first-class parity.",
+      "provider_json_contract": true,
+      "providers": [
+        "alibaba",
+        "tencent",
+        "huawei"
+      ],
+      "static_smoke_json_tests": true
+    },
+    "aws": {
+      "asset_checks": true,
+      "finops_cost": true,
+      "first_class": true,
+      "fixtures": true,
+      "gdpr_data_protection": true,
+      "governance": true,
+      "itar_export_control": true,
+      "notes": "Promoted to first-tier contract coverage in 0.18.32. Still no live provisioning or dispatch rewrite.",
+      "provider_json_contract": true,
+      "static_smoke_json_tests": true
+    },
+    "azure": {
+      "asset_checks": true,
+      "finops_cost": true,
+      "first_class": true,
+      "fixtures": true,
+      "gdpr_data_protection": true,
+      "governance": true,
+      "itar_export_control": true,
+      "notes": "Promoted to first-tier contract coverage in 0.18.52 by Bob10. Includes provider contracts, assets, policy examples, class templates, fixtures, FinOps/cost posture, ITAR/export-control posture, explainability, and static/smoke/JSON tests. Still fixture-first/non-mutating and not a legal compliance certification.",
+      "provider_json_contract": true,
+      "static_smoke_json_tests": true
+    },
+    "edge_cloud": {
+      "asset_checks": true,
+      "finops_cost": false,
+      "first_class": false,
+      "fixtures": true,
+      "gdpr_data_protection": false,
+      "governance": true,
+      "itar_export_control": false,
+      "notes": "Initial Bob2 edge cloud provider-contract pack added in 0.18.37 for Cloudflare Workers, Fastly Compute@Edge, and Fly.io; fixture-first and non-mutating. Edge locality/legal/cache/log posture remains mapped pending validation and this is not first-class parity.",
+      "provider_json_contract": true,
+      "providers": [
+        "cloudflare",
+        "fastly",
+        "flyio"
+      ],
+      "static_smoke_json_tests": true
+    },
+    "eu_sovereign": {
+      "asset_checks": true,
+      "finops_cost": false,
+      "first_class": false,
+      "fixtures": true,
+      "gdpr_data_protection": true,
+      "governance": true,
+      "itar_export_control": false,
+      "notes": "Initial Bob2 EU sovereign provider-contract pack added in 0.18.34 for OVHcloud, Scaleway, Hetzner Cloud, and Open Telekom Cloud; fixture-first and non-mutating. Still needs provider-specific validation and first-tier parity work.",
+      "provider_json_contract": true,
+      "providers": [
+        "ovhcloud",
+        "scaleway",
+        "hetzner",
+        "otc"
+      ],
+      "static_smoke_json_tests": true
+    },
+    "gcp": {
+      "asset_checks": true,
+      "finops_cost": true,
+      "first_class": true,
+      "fixtures": true,
+      "gdpr_data_protection": true,
+      "governance": true,
+      "itar_export_control": true,
+      "notes": "Promoted to first-tier contract coverage in 0.18.52 by Bob10. Includes provider contracts, assets, policy examples, class templates, fixtures, FinOps/cost posture, ITAR/export-control posture, explainability, and static/smoke/JSON tests. Still fixture-first/non-mutating and not a legal compliance certification.",
+      "provider_json_contract": true,
+      "static_smoke_json_tests": true
+    },
+    "gpu_cloud": {
+      "asset_checks": true,
+      "finops_cost": false,
+      "first_class": false,
+      "fixtures": true,
+      "gdpr_data_protection": false,
+      "governance": true,
+      "itar_export_control": false,
+      "notes": "Initial Bob2 GPU cloud provider-contract pack added in 0.18.36 for CoreWeave, Lambda Cloud, and NVIDIA DGX Cloud; fixture-first and non-mutating. GPU capacity/export-control/legal posture remains mapped pending validation and this is not first-class parity.",
+      "provider_json_contract": true,
+      "providers": [
+        "coreweave",
+        "lambda",
+        "dgx"
+      ],
+      "static_smoke_json_tests": true
+    },
+    "hybrid_onprem": {
+      "asset_checks": true,
+      "finops_cost": false,
+      "first_class": false,
+      "fixtures": true,
+      "gdpr_data_protection": true,
+      "governance": true,
+      "itar_export_control": false,
+      "notes": "Initial Bob2 hybrid/on-prem provider-contract pack merged in 0.18.41 for VMware/vCloud, OpenStack, and OpenShift; fixture-first and non-mutating. Site/legal/identity/platform posture remains mapped pending validation and this is not first-class parity.",
+      "provider_json_contract": true,
+      "providers": [
+        "vmware",
+        "openstack",
+        "openshift"
+      ],
+      "static_smoke_json_tests": true
+    },
+    "ibm": {
+      "finops_cost": true,
+      "first_class": false,
+      "gdpr_data_protection": true,
+      "governance": true,
+      "itar_export_control": false,
+      "notes": "Strong identity/governance/FinOps posture, but needs provider-resource parity and ITAR."
+    },
+    "oci": {
+      "finops_cost": false,
+      "first_class": false,
+      "gdpr_data_protection": true,
+      "governance": true,
+      "itar_export_control": false,
+      "notes": "Strong provider-contract docs/fixtures/tests, but needs asset/cost/ITAR parity."
+    }
+  },
+  "required_coverage": [
+    "identity_auth",
+    "provider_json_contract",
+    "asset_checks",
+    "policy_examples",
+    "class_templates",
+    "region_sovereignty",
+    "gdpr_data_protection",
+    "itar_export_control",
+    "legal_retention_jurisdiction",
+    "audit_evidence",
+    "finops_cost",
+    "fixtures",
+    "static_smoke_json_tests"
+  ],
+  "schema": "queuebash.cloud_platform_parity.v1",
+  "verdict": "not_equal_yet"
+}

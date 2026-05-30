@@ -1,0 +1,11 @@
+{
+  "allow_over_budget": false,
+  "cost_centre": "EXAMPLE-CLOUD",
+  "currency": "USD",
+  "expected_hourly_usd": 0.08,
+  "max_hourly_usd": 0.25,
+  "notes": "Example local policy only. Does not call AWS Billing APIs.",
+  "policy": "example-aws-cost-guardrail",
+  "requires_cost_centre": true,
+  "schema": "queuebash.aws.finops_policy.v1"
+}

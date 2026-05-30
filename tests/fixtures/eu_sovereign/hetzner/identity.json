@@ -1,0 +1,11 @@
+{
+  "api_secret_stored": false,
+  "decision": "allow",
+  "fail_closed": false,
+  "principal_type": "service_identity",
+  "provider": "hetzner",
+  "provider_family": "eu_sovereign",
+  "reason": "fixture_identity_available",
+  "schema": "queuebash.eu_sovereign.hetzner.identity.v1",
+  "source": "fixture"
+}

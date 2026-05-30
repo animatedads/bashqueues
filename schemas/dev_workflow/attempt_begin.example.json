@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.dev_workflow.attempt.v1",
+  "status": "ok",
+  "attempt_id": "DEVATTEMPT-EXAMPLE",
+  "phase": "begin",
+  "authority": "developer",
+  "based_on": ["TEAMLEADER-ROADMAP-ITEM"],
+  "tags": ["bob12", "queue-dev", "attempt"]
+}

@@ -1,0 +1,7 @@
+{
+  "schema": "queuebash.dev_workflow.supersede.v1",
+  "status": "ok",
+  "item_id": "OLD-ITEM-EXAMPLE",
+  "superseded_by": "NEW-ITEM-EXAMPLE",
+  "reason": "version correction"
+}

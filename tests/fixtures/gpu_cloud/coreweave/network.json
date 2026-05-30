@@ -1,0 +1,13 @@
+{
+  "check": "network",
+  "decision": "allow",
+  "fail_closed": false,
+  "private_connectivity": "mapped_pending_validation",
+  "provider": "coreweave",
+  "provider_family": "gpu_cloud",
+  "provider_name": "CoreWeave",
+  "public_ingress": "deny_by_default",
+  "reason": "fixture_contract",
+  "schema": "queuebash.gpu_cloud.coreweave.network.v1",
+  "source": "fixture"
+}

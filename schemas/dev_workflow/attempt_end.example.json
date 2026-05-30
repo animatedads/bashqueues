@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.dev_workflow.attempt.v1",
+  "status": "ok",
+  "attempt_id": "DEVATTEMPT-EXAMPLE",
+  "phase": "end",
+  "authority": "developer",
+  "result": "resolved",
+  "evidence": ["DEVEVIDENCE-EXAMPLE"]
+}

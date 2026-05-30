@@ -1,0 +1,1 @@
+{"schema":"queuebash.oci.identity.v1","provider":"oci","auth_mode":"instance_principal","oci_cli_auth":"instance_principal","principal_type":"instance","instance_id":"ocid1.instance.example","compartment_id":"ocid1.compartment.example","dynamic_group_hint":"queuebash-workers","decision":"allow","reason":"instance_principal_fixture_available","fail_closed":false}
