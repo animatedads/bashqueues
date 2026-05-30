@@ -1,3 +1,17 @@
+# 0.18.75 - BOB_MERGER13 ask command inventory remote-add repair
+
+- Expand `queue ask` commands context to include remote helper `--help` output.
+- Add explicit `queue remote add SERVICE --url URL (--secret SECRET|--secret-file FILE|--secret-env ENV) [--json]` syntax to main help and ask grounding.
+- Add QBTEST coverage for `_queue_ai_command_inventory_text` to prevent regressions.
+- Preserve live-provider policy gates and avoid provider/dispatch/remote mutation behaviour changes.
+
+# 0.18.74 - BOB_MERGER13 QBTEST installer validation repair
+
+- Fix `_queue_command_shell_words_from_args` QBTEST pattern so it matches the actual `%q` escaped output.
+- Split the nested `_queue_cron_spool_dir` / `_queue_cron_system_dir` QBTEST markers into two valid blocks.
+- Update `qbtest_installer.sh` so forced reinstalls do not reintroduce the older command-shell test payload.
+- Preserve the complete 0.18.73 installer merge, QBTEST add/extract command surface, and grid/energy platform base.
+
 # 0.18.73 - BOB_MERGER13 QBTEST installer complete merge
 
 - Preserve the accepted 0.18.71 grid/energy cost model platform base.

@@ -1,3 +1,11 @@
+# 0.18.75 BOB_MERGER13 ask command inventory remote-add repair
+
+Repairs `queue ask` command grounding so the commands context includes the installed `queue remote add` syntax from current help/helper output. This fixes the case where `queue remote --help` advertised `add`, but live ask providers were told the command was absent from the installed inventory.
+
+# 0.18.74 BOB_MERGER13 QBTEST installer validation repair
+
+Repairs the complete QBTEST installer merge after live validation against 0.18.71/0.18.73 found one failing command-shell quoting test and one malformed nested cron QBTEST block. Keeps the installer route, fixes the installer payload for the affected command-shell test, separates the cron spool/system blocks, and preserves the 0.18.73 QBTEST add/extract plus installer delivery.
+
 # 0.18.73 BOB_MERGER13 QBTEST installer complete merge
 
 Merges the Bob13 QBTEST add/extract command support and restored function-level QBTEST coverage onto the accepted 0.18.71 grid/energy cost platform line, then adds Claude's portable `qbtest_installer.sh` as the compatibility route for older/newer trees. The installer sources the target `queuebash.sh` and uses the target tree's own `queue dev test qbtest add` command, skipping existing blocks unless `--force` is supplied. Runtime provider, dispatch, provisioning, cloud, and live API posture remain unchanged.
