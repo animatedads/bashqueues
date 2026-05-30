@@ -1,0 +1,1 @@
+{"schema":"queuebash.ibm.finops.v1","provider":"ibm","check":"finops","decision":"allow","reason":"budget_ok_no_anomaly","source":"fixture","account_id":"abc123example","current_spend":42.50,"budget_limit":1000.00,"budget_remaining":957.50,"anomaly_detected":false,"cache_age_seconds":3600,"fail_closed":true}

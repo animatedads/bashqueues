@@ -1,0 +1,1 @@
+{"schema":"queuebash.ibm.identity.v1","provider":"ibm","check":"identity","decision":"allow","reason":"ibm_iam_token_valid","source":"fixture","auth_method":"iam_token","account_id":"abc123example","iam_id":"IBMid-example","subject":"serviceID-example","token_expiry_seconds":3600,"fail_closed":true}

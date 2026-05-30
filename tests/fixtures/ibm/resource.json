@@ -1,0 +1,1 @@
+{"schema":"queuebash.ibm.resource.v1","provider":"ibm","check":"resource","decision":"allow","reason":"resource_instance_active","source":"fixture","resource_id":"crn:v1:bluemix:public:example","resource_group":"default","state":"active","fail_closed":true}

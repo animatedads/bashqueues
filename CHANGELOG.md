@@ -1,3 +1,11 @@
+# 0.18.60 - BOB_MERGER IBM/OCI cloud enablement provider contracts
+
+- Merge additive IBM provider contract pack and OCI asset helper onto the accepted 0.18.59 base.
+- Add IBM provider docs, class criteria, explainability and legal/compliance notes.
+- Add IBM policy examples, fixtures, static/smoke/JSON provider tests, and `providers.d/ibm/ibm_provider.sh`.
+- Add `assets.d/oci.sh` as an OCI asset helper.
+- Preserve fixture-first/no-live/no-dispatch-refactor boundaries.
+
 # 0.18.59 - BOB12 patchset apply backup hardening
 
 - Add `queue dev patchset apply --patchset ZIP [--target DIR] [--check] [--backup-dir DIR] [--json]`.

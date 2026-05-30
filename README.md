@@ -1,3 +1,7 @@
+# 0.18.60 BOB_MERGER IBM/OCI cloud enablement provider contracts
+
+Merges the additive IBM cloud provider contract pack and OCI asset helper onto the accepted 0.18.59 patchset apply backup hardening base. Adds IBM provider docs, class criteria, explainability and legal/compliance notes, IBM policy examples, fixture-first IBM provider helper/tests, and an OCI asset helper. This remains contract/fixture-first: no live IBM or OCI API calls, no credentials required, no provisioning/destruction, and no queue dispatch refactor.
+
 # 0.18.59 BOB12 patchset apply backup hardening
 
 Hardens generated patchset application and `queue dev patchset apply`: help/check modes, isolated zip apply, pre-apply backup manifests, JSON reporting, and item-level scratchpad merge instead of blind `.queuebash/dev/scratchpad.json` overwrite.

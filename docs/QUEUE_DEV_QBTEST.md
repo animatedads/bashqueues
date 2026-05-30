@@ -23,10 +23,10 @@ debugging only; normal runs clean it automatically.
 ## Comment block format
 
 ```bash
-# QBTEST:BEGIN name=my-real-test function=my_function language=bash
-# QBTEST:B64
+# EXAMPLE_QBTEST:BEGIN name=my-real-test function=my_function language=bash
+# EXAMPLE_QBTEST:B64
 # <base64 encoded real test snippet>
-# QBTEST:END
+# EXAMPLE_QBTEST:END
 ```
 
 Documentation examples in help text use escaped `EXAMPLE_QBTEST:*` markers rather

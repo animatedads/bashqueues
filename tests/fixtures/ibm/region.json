@@ -1,0 +1,1 @@
+{"schema":"queuebash.ibm.region.v1","provider":"ibm","check":"region","decision":"allow","reason":"region_in_allowed_framework","source":"fixture","region":"eu-de","sovereignty_zone":"eu","legal_frameworks":["GDPR","EU_DATA_ACT"],"data_residency_decision":"allow","fail_closed":true}

@@ -1,0 +1,11 @@
+region	sovereignty_zone	frameworks	data_residency_note	status
+eu-de	eu	GDPR,FINREG,LEGAL	Frankfurt — EU primary region	mapped_pending_validation
+eu-gb	uk	GDPR,UK_DPA,FINREG,LEGAL	London — UK/EU region; UK DPA adequacy assumptions apply	mapped_pending_validation
+eu-es	eu	GDPR,FINREG,LEGAL	Madrid — EU region	mapped_pending_validation
+us-south	us	FINREG,LEGAL	Dallas — FS-validated; not for EU/UK data residency	mapped_pending_validation
+us-east	us	FINREG,LEGAL	Washington DC — FS-validated; not for EU/UK data residency	mapped_pending_validation
+ca-tor	ca	FINREG,LEGAL	Toronto — Canadian residency; PIPEDA considerations apply	mapped_pending_validation
+au-syd	au	FINREG,LEGAL	Sydney — Australian residency; Privacy Act considerations apply	mapped_pending_validation
+jp-tok	jp	FINREG,LEGAL	Tokyo — Japan residency; APPI considerations apply	mapped_pending_validation
+jp-osa	jp	FINREG,LEGAL	Osaka — Japan residency; APPI considerations apply	mapped_pending_validation
+br-sao	br	FINREG,LEGAL	São Paulo — Brazilian residency; LGPD considerations apply	mapped_pending_validation

@@ -1,0 +1,1 @@
+{"schema":"queuebash.ibm.network.v1","provider":"ibm","check":"network","decision":"allow","reason":"vpc_network_posture_ok","source":"fixture","vpc_id":"vpc-example","subnet_id":"subnet-example","security_group_ids":["sg-example"],"private_endpoint_only":true,"fail_closed":true}
