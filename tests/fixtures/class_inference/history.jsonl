@@ -1,0 +1,4 @@
+{"command_shape_hash":"sha256:45f32fa7a7b960be541dd25fc4569295dcc21ad7125cbd4cfab642070650650a","class":"VIDEO_ENCODE","outcome":"done","learning_weight":1.0}
+{"command_shape_hash":"sha256:45f32fa7a7b960be541dd25fc4569295dcc21ad7125cbd4cfab642070650650a","class":"VIDEO_ENCODE","outcome":"done","learning_weight":1.0}
+{"command_shape_hash":"sha256:45f32fa7a7b960be541dd25fc4569295dcc21ad7125cbd4cfab642070650650a","class":"VIDEO_ENCODE","outcome":"done","learning_weight":1.0}
+{"command_shape_hash":"sha256:45f32fa7a7b960be541dd25fc4569295dcc21ad7125cbd4cfab642070650650a","class":"DEFAULT","outcome":"accepted_with_warning","learning_weight":0.1}

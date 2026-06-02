@@ -1,34 +1,65 @@
 {
   "schema": "queuebash.cloud_signals.availability_policy.v1",
   "note": "Fixture/local policy only. This is not live provider status and must not be presented as current cloud availability.",
+  "policy_references": [
+    {
+      "id": "corp-cloud-placement-policy",
+      "type": "corporate",
+      "title": "Corporate cloud placement policy",
+      "uri": "policy://corporate/cloud-placement",
+      "applies_to": ["cloud-broker", "service-availability"],
+      "note": "Replace policy:// references with organisation policy document URIs before production use."
+    },
+    {
+      "id": "gdpr-cross-border-screening",
+      "type": "regulatory",
+      "title": "GDPR / UK data protection screening",
+      "uri": "policy://regulatory/gdpr-uk-dpa-screening",
+      "applies_to": ["gdpr", "uk-dpa", "customer-data"],
+      "note": "Local evidence pointer only; not legal advice."
+    },
+    {
+      "id": "itar-export-review",
+      "type": "regulatory",
+      "title": "ITAR / export-control review",
+      "uri": "policy://regulatory/itar-export-control-review",
+      "applies_to": ["itar-review", "export-review", "us"],
+      "note": "Local evidence pointer only; not a determination of export-control status."
+    }
+  ],
   "platforms": {
     "aws": {
+      "policy_references": [{"id": "aws-corporate-standard", "type": "corporate", "title": "AWS corporate landing-zone standard", "uri": "policy://corporate/aws/landing-zone"}],
       "regions": {
-        "eu-west-2": {"compliance": ["uk-dpa", "gdpr"], "services": {"compute": {"status": "available", "evidence": {"source": "local-fixture"}}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}},
+        "eu-west-2": {"compliance": ["uk-dpa", "gdpr"], "policy_references": [{"id": "uk-customer-data-placement", "type": "corporate", "title": "UK customer data placement policy", "uri": "policy://corporate/data/uk-customer-data-placement"}], "services": {"compute": {"status": "available", "evidence": {"source": "local-fixture"}}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}},
         "us-east-1": {"compliance": ["us", "itar-review"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}}
       }
     },
     "azure": {
+      "policy_references": [{"id": "azure-corporate-standard", "type": "corporate", "title": "Azure corporate landing-zone standard", "uri": "policy://corporate/azure/landing-zone"}],
       "regions": {
-        "uksouth": {"compliance": ["uk-dpa", "gdpr"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}},
+        "uksouth": {"compliance": ["uk-dpa", "gdpr"], "policy_references": [{"id": "uk-customer-data-placement", "type": "corporate", "title": "UK customer data placement policy", "uri": "policy://corporate/data/uk-customer-data-placement"}], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}},
         "eastus": {"compliance": ["us", "itar-review"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}}
       }
     },
     "gcp": {
+      "policy_references": [{"id": "gcp-corporate-standard", "type": "corporate", "title": "GCP corporate landing-zone standard", "uri": "policy://corporate/gcp/landing-zone"}],
       "regions": {
-        "europe-west2": {"compliance": ["uk-dpa", "gdpr"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}},
+        "europe-west2": {"compliance": ["uk-dpa", "gdpr"], "policy_references": [{"id": "uk-customer-data-placement", "type": "corporate", "title": "UK customer data placement policy", "uri": "policy://corporate/data/uk-customer-data-placement"}], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}},
         "us-central1": {"compliance": ["us", "export-review"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}}
       }
     },
     "ibm": {
+      "policy_references": [{"id": "ibm-corporate-standard", "type": "corporate", "title": "IBM Cloud corporate landing-zone standard", "uri": "policy://corporate/ibm/landing-zone"}],
       "regions": {
-        "eu-gb": {"compliance": ["uk-dpa", "gdpr"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "review"}}},
+        "eu-gb": {"compliance": ["uk-dpa", "gdpr"], "policy_references": [{"id": "uk-customer-data-placement", "type": "corporate", "title": "UK customer data placement policy", "uri": "policy://corporate/data/uk-customer-data-placement"}], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "review"}}},
         "us-south": {"compliance": ["us", "export-review"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "review"}}}
       }
     },
     "oci": {
+      "policy_references": [{"id": "oci-corporate-standard", "type": "corporate", "title": "OCI corporate landing-zone standard", "uri": "policy://corporate/oci/landing-zone"}],
       "regions": {
-        "uk-london-1": {"compliance": ["uk-dpa", "gdpr"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}},
+        "uk-london-1": {"compliance": ["uk-dpa", "gdpr"], "policy_references": [{"id": "uk-customer-data-placement", "type": "corporate", "title": "UK customer data placement policy", "uri": "policy://corporate/data/uk-customer-data-placement"}], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}},
         "us-ashburn-1": {"compliance": ["us", "itar-review"], "services": {"compute": {"status": "available"}, "object-storage": {"status": "available"}, "gpu": {"status": "limited"}}}
       }
     }

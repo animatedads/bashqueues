@@ -1,6 +1,16 @@
 {
   "schema": "queuebash.cloud_signals.cost_catalog.v1",
   "note": "Fixture/local cost policy only. Values are guardrail examples, not provider price claims. Replace with organisation-approved catalog data before production use.",
+  "policy_references": [
+    {
+      "id": "corp-finops-standard",
+      "type": "corporate",
+      "title": "Corporate FinOps budget guardrail",
+      "uri": "policy://corporate/finops/cloud-budget-guardrails",
+      "applies_to": ["cost", "budget", "cloud-broker"],
+      "note": "Replace with the organisation's approved FinOps policy reference."
+    }
+  ],
   "default_monthly_budget_usd": 500.0,
   "defaults": {
     "compute": {"max_hourly_usd": 1.0},
@@ -8,10 +18,10 @@
     "gpu": {"max_hourly_usd": 25.0}
   },
   "platforms": {
-    "aws": {"monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}},
-    "azure": {"monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}},
-    "gcp": {"monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}},
-    "ibm": {"monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}},
-    "oci": {"monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}}
+    "aws": {"policy_references": [{"id": "aws-finops-standard", "type": "corporate", "title": "AWS FinOps account budget policy", "uri": "policy://corporate/finops/aws"}], "monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}},
+    "azure": {"policy_references": [{"id": "azure-finops-standard", "type": "corporate", "title": "Azure FinOps subscription budget policy", "uri": "policy://corporate/finops/azure"}], "monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}},
+    "gcp": {"policy_references": [{"id": "gcp-finops-standard", "type": "corporate", "title": "GCP FinOps project budget policy", "uri": "policy://corporate/finops/gcp"}], "monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}},
+    "ibm": {"policy_references": [{"id": "ibm-finops-standard", "type": "corporate", "title": "IBM Cloud FinOps budget policy", "uri": "policy://corporate/finops/ibm"}], "monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}},
+    "oci": {"policy_references": [{"id": "oci-finops-standard", "type": "corporate", "title": "OCI FinOps tenancy budget policy", "uri": "policy://corporate/finops/oci"}], "monthly_budget_usd": 750.0, "services": {"compute": {"max_hourly_usd": 1.25}, "object-storage": {"max_hourly_usd": 0.25}, "gpu": {"max_hourly_usd": 35.0}}}
   }
 }

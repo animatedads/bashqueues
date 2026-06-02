@@ -1,0 +1,22 @@
+{
+  "schema": "queuebash.ai.broker.request.v1",
+  "operation": "chat",
+  "profile": "balanced",
+  "capabilities": ["chat", "json"],
+  "messages": [
+    {"role": "system", "content": "You are assisting a queue job."},
+    {"role": "user", "content": "Summarise this file."}
+  ],
+  "constraints": {
+    "max_cost_gbp": 0.05,
+    "max_latency_seconds": 60,
+    "allow_cloud": true,
+    "allow_local": true,
+    "require_json": true
+  },
+  "context": {
+    "job_id": "20260602_000000_000000_000001_000001",
+    "class": "AI_SUMMARY",
+    "allowed_contexts": ["docs", "job_metadata"]
+  }
+}

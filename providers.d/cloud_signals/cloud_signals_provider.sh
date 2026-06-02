@@ -75,6 +75,64 @@ def parser_common() -> argparse.ArgumentParser:
     return p
 
 
+
+def as_list(value: Any) -> List[Dict[str, Any]]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [v for v in value if isinstance(v, dict)]
+    if isinstance(value, dict):
+        return [value]
+    return []
+
+
+def dedupe_refs(refs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for ref in refs:
+        key = (str(ref.get("id", "")), str(ref.get("uri", "")), str(ref.get("type", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(ref)
+    return out
+
+
+def collect_matching_refs(doc: Dict[str, Any], tags: List[str]) -> List[Dict[str, Any]]:
+    wanted = {str(t) for t in tags if t}
+    refs = []
+    for ref in as_list(doc.get("policy_references")):
+        applies = {str(x) for x in ref.get("applies_to", [])}
+        if not applies or applies.intersection(wanted):
+            refs.append(ref)
+    return refs
+
+
+def availability_policy_references(policy: Dict[str, Any], provider: str, region: str, service: str, compliance: List[str]) -> List[Dict[str, Any]]:
+    platforms = policy.get("platforms", {})
+    pdoc = platforms.get(provider, {}) if isinstance(platforms, dict) else {}
+    rdoc = ((pdoc.get("regions", {}) or {}).get(region) or {}) if isinstance(pdoc, dict) else {}
+    sdoc = ((rdoc.get("services", {}) or {}).get(service) or {}) if isinstance(rdoc, dict) else {}
+    tags = [provider, region, service, "cloud-broker", "service-availability"] + [str(c) for c in compliance]
+    refs: List[Dict[str, Any]] = []
+    refs.extend(collect_matching_refs(policy, tags))
+    refs.extend(as_list(pdoc.get("policy_references")))
+    refs.extend(as_list(rdoc.get("policy_references")))
+    refs.extend(as_list(sdoc.get("policy_references")))
+    return dedupe_refs(refs)
+
+
+def cost_policy_references(catalog: Dict[str, Any], provider: str, service: str) -> List[Dict[str, Any]]:
+    platforms = catalog.get("platforms", {})
+    pdoc = platforms.get(provider, {}) if isinstance(platforms, dict) else {}
+    sdoc = ((pdoc.get("services", {}) or {}).get(service) or {}) if isinstance(pdoc, dict) else {}
+    tags = [provider, service, "cloud-broker", "cost", "budget"]
+    refs: List[Dict[str, Any]] = []
+    refs.extend(collect_matching_refs(catalog, tags))
+    refs.extend(as_list(pdoc.get("policy_references")))
+    refs.extend(as_list(sdoc.get("policy_references")))
+    return dedupe_refs(refs)
+
 def check_provider(name: str) -> None:
     if name not in MAJOR_PROVIDERS:
         raise SystemExit(f"ERROR: unsupported major provider for this wiring contract: {name}")
@@ -96,6 +154,7 @@ def availability_lookup(policy: Dict[str, Any], provider: str, region: str, serv
             "reason": "region_not_mapped_in_local_policy",
             "live": False,
             "source": "local_policy",
+            "policy_references": availability_policy_references(policy, provider, region, service, []),
         }
     sdoc = (rdoc.get("services", {}) or {}).get(service)
     if not sdoc:
@@ -109,6 +168,7 @@ def availability_lookup(policy: Dict[str, Any], provider: str, region: str, serv
             "reason": "service_not_mapped_in_local_policy",
             "live": False,
             "source": "local_policy",
+            "policy_references": availability_policy_references(policy, provider, region, service, rdoc.get("compliance", [])),
         }
     status = str(sdoc.get("status", "unknown"))
     if status == "available":
@@ -132,6 +192,7 @@ def availability_lookup(policy: Dict[str, Any], provider: str, region: str, serv
         "evidence": sdoc.get("evidence", {}),
         "live": False,
         "source": "local_policy",
+        "policy_references": availability_policy_references(policy, provider, region, service, rdoc.get("compliance", [])),
     }
 
 
@@ -183,6 +244,7 @@ def cost_lookup(catalog: Dict[str, Any], provider: str, region: str, service: st
         "currency": "USD",
         "live": False,
         "source": "local_cost_catalog",
+        "policy_references": cost_policy_references(catalog, provider, service),
     }
 
 
@@ -196,7 +258,7 @@ def cmd_platforms(args: List[str]) -> None:
         cdoc = (catalog.get("platforms", {}) or {}).get(provider, {})
         regions = sorted((pdoc.get("regions", {}) or {}).keys())
         services = sorted({s for r in (pdoc.get("regions", {}) or {}).values() for s in (r.get("services", {}) or {}).keys()} | set((cdoc.get("services", {}) or {}).keys()))
-        platforms.append({"provider": provider, "regions": regions, "services": services, "cost_policy": bool(cdoc), "availability_policy": bool(pdoc)})
+        platforms.append({"provider": provider, "regions": regions, "services": services, "cost_policy": bool(cdoc), "availability_policy": bool(pdoc), "policy_references": dedupe_refs(as_list(pdoc.get("policy_references")) + as_list(cdoc.get("policy_references")))})
     emit({"schema": SCHEMA_PLATFORMS, "status": "ok", "platforms": platforms, "live": False}, json_out=ns.json_out)
 
 
@@ -241,7 +303,11 @@ def cmd_explain(args: List[str]) -> None:
         decision = "review"
     else:
         decision = "allow"
-    emit({"schema": SCHEMA_EXPLAIN, "decision": decision, "provider": ns.provider, "region": ns.region, "service": ns.service, "availability": availability, "cost": cost, "live": False, "mutated": False}, code=0, json_out=ns.json_out)
+    policy_refs = []
+    policy_refs.extend(availability.get("policy_references", []))
+    if cost:
+        policy_refs.extend(cost.get("policy_references", []))
+    emit({"schema": SCHEMA_EXPLAIN, "decision": decision, "provider": ns.provider, "region": ns.region, "service": ns.service, "availability": availability, "cost": cost, "policy_references": dedupe_refs(policy_refs), "live": False, "mutated": False}, code=0, json_out=ns.json_out)
 
 
 def cmd_self_test(args: List[str]) -> None:

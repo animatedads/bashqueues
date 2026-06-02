@@ -1,0 +1,24 @@
+{
+  "schema": "queuebash.class_inference.policy.v1",
+  "mode": "suggest",
+  "min_observations": 3,
+  "confidence_threshold": 0.8,
+  "block_security_downgrade": false,
+  "validation_status": "mapped_pending_validation",
+  "corporate_policy_refs": [
+    {
+      "id": "CORP-QUEUE-CLASS-001",
+      "title": "Workload classing and brokerage policy",
+      "status": "example_pending_site_acceptance",
+      "url": "policy://corporate/workload-classing"
+    }
+  ],
+  "regulatory_refs": [
+    {
+      "id": "DATA-PROTECTION-MAPPING",
+      "title": "Data-protection and jurisdiction mapping placeholder",
+      "status": "mapped_pending_validation",
+      "url": "policy://regulatory/data-protection-mapping"
+    }
+  ]
+}

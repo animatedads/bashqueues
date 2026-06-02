@@ -34,8 +34,12 @@ require_grep 'first_pub_in_oci_dir' policies.d/cloud-infra/registry.example.json
 require_grep 'sovereignty' policies.d/cloud-infra/registry.example.json
 require_grep 'retention_policy' policies.d/cloud-infra/registry.example.json
 
-if grep -R 'queue cloud-infra\|queue cloud-resources\|_queue_cloud' queuebash.sh providers.d/cloud_infra docs/CLOUD_INFRASTRUCTURE_HELPERS.md >/dev/null; then
-  echo 'cloud infra package must not wire a queue dispatcher yet' >&2
+# Earlier cloud_infra helper packages deliberately had no queue dispatcher.
+# The 0.18.80 cloud broker front may route `queue cloud infra ...` to this
+# helper, but cloud_infra itself must still not implement scheduler logic or
+# legacy direct top-level queue cloud-infra/cloud-resources commands.
+if grep -R 'queue cloud-infra\|queue cloud-resources' queuebash.sh providers.d/cloud_infra docs/CLOUD_INFRASTRUCTURE_HELPERS.md >/dev/null; then
+  echo 'cloud infra package must not wire legacy direct queue cloud-infra/cloud-resources commands' >&2
   exit 1
 fi
 require_absent assets.d/net_usage.sh
