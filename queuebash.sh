@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.84"
+QUEUEBASH_VERSION="0.18.86"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -13467,7 +13467,7 @@ EOT
 
 _queue_ai_ask_provider_known() {
     case "${1:-}" in
-        contract|fixture|ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras|perplexity) return 0 ;;
+        contract|fixture|ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras|perplexity|baseten) return 0 ;;
     esac
     local source_dir
     source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
@@ -13480,7 +13480,7 @@ _queue_ai_ask_provider_known() {
 
 _queue_ai_provider_requires_network() {
     case "${1:-}" in
-        gemini|openai|anthropic|watsonx|mistral|deepseek|groq|cerebras|perplexity|bedrock|azure_ai|vertex_ai) echo true ;;
+        gemini|openai|anthropic|watsonx|mistral|deepseek|groq|cerebras|perplexity|baseten|bedrock|azure_ai|vertex_ai) echo true ;;
         *) echo false ;;
     esac
 }
@@ -13491,7 +13491,7 @@ _queue_ai_provider_requires_network() {
 
 _queue_ai_provider_supports_json() {
     case "${1:-}" in
-        contract|fixture|ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras|perplexity) echo true ;;
+        contract|fixture|ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras|perplexity|baseten) echo true ;;
         *) echo false ;;
     esac
 }
@@ -13502,7 +13502,7 @@ _queue_ai_provider_supports_json() {
 
 _queue_ai_provider_live_supported() {
     case "${1:-}" in
-        ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras|perplexity) echo true ;;
+        ollama|gemini|openai|anthropic|watsonx|openai_compat|mistral|deepseek|groq|cerebras|perplexity|baseten) echo true ;;
         *) echo false ;;
     esac
 }
@@ -13571,6 +13571,11 @@ _queue_ai_provider_available() {
             [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-perplexity"
             [[ -x "$helper" ]] && echo true || echo false
             ;;
+        baseten)
+            helper="${QUEUEBASH_AI_BASETEN_HELPER:-}"
+            [[ -n "$helper" && -x "$helper" ]] || helper="$source_dir/bin/queue-ai-ask-baseten"
+            [[ -x "$helper" ]] && echo true || echo false
+            ;;
         *)
             [[ -f "$source_dir/providers.d/ask/$provider.sh" ]] && echo true || echo false
             ;;
@@ -13578,8 +13583,8 @@ _queue_ai_provider_available() {
 }
 
 _queue_ai_provider_list() {
-    local source_dir f base seen=" contract fixture gemini ollama openai anthropic watsonx openai_compat mistral deepseek groq cerebras perplexity "
-    printf '%s\n' contract fixture gemini ollama openai anthropic watsonx openai_compat mistral deepseek groq cerebras perplexity
+    local source_dir f base seen=" contract fixture gemini ollama openai anthropic watsonx openai_compat mistral deepseek groq cerebras perplexity baseten "
+    printf '%s\n' contract fixture gemini ollama openai anthropic watsonx openai_compat mistral deepseek groq cerebras perplexity baseten
     source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
     if [[ -d "$source_dir/providers.d/ask" ]]; then
         for f in "$source_dir"/providers.d/ask/*.sh; do
@@ -13780,6 +13785,7 @@ Live providers:
     queue ask --provider groq --model llama-3.3-70b-versatile --live "question"
     queue ask --provider cerebras --model gpt-oss-120b --live "question"
     queue ask --provider perplexity --model sonar-pro --live "question"
+    queue ask --provider baseten --model deepseek-ai/DeepSeek-V4-Pro --live "question"
 
   Gemini key lookup order:
     QUEUEBASH_AI_GEMINI_API_KEY_FILE
@@ -13827,6 +13833,11 @@ Live providers:
     QUEUEBASH_AI_PERPLEXITY_API_KEY_FILE, QUEUEBASH_AI_PERPLEXITY_API_KEY, PERPLEXITY_API_KEY
     QUEUEBASH_AI_PERPLEXITY_MODEL (default: sonar-pro)
     QUEUEBASH_AI_PERPLEXITY_ENDPOINT (default: https://api.perplexity.ai/chat/completions)
+
+  Baseten key lookup order:
+    QUEUEBASH_AI_BASETEN_API_KEY_FILE, QUEUEBASH_AI_BASETEN_API_KEY, BASETEN_API_KEY
+    QUEUEBASH_AI_BASETEN_MODEL (default: deepseek-ai/DeepSeek-V4-Pro)
+    QUEUEBASH_AI_BASETEN_ENDPOINT (default: https://inference.baseten.co/v1/chat/completions)
 
   OpenAI-compatible endpoint configuration:
     QUEUEBASH_AI_OPENAI_COMPAT_ENDPOINT (default: http://127.0.0.1:8000/v1/chat/completions)
@@ -14037,7 +14048,7 @@ EOH
             echo "hint: export QUEUEBASH_AI_LIVE_ENABLED=1 or prefix the command with QUEUEBASH_AI_LIVE_ENABLED=1" >&2
             return 1
         fi
-        if [[ "$provider" != "ollama" && "$provider" != "gemini" && "$provider" != "openai" && "$provider" != "anthropic" && "$provider" != "watsonx" && "$provider" != "openai_compat" && "$provider" != "mistral" && "$provider" != "deepseek" && "$provider" != "groq" && "$provider" != "cerebras" && "$provider" != "perplexity" ]]; then
+        if [[ "$provider" != "ollama" && "$provider" != "gemini" && "$provider" != "openai" && "$provider" != "anthropic" && "$provider" != "watsonx" && "$provider" != "openai_compat" && "$provider" != "mistral" && "$provider" != "deepseek" && "$provider" != "groq" && "$provider" != "cerebras" && "$provider" != "perplexity" && "$provider" != "baseten" ]]; then
             _queue_ai_audit_write "$provider" "$question" "deny" "blocked" "live_provider_not_supported" "$requested_s" "$allowed_s" "$denied_s" 0 "$job_ids_s" "$job_context_collected" true "$tail_included" "$bundle_hash"
             echo "queue ask: blocked by policy: live_provider_not_supported: $provider" >&2
             return 1
@@ -14093,6 +14104,11 @@ EOH
             helper_name="queue-ai-ask-perplexity"
             default_model="${QUEUEBASH_AI_PERPLEXITY_MODEL:-sonar-pro}"
             success_reason="live_perplexity_provider"
+        elif [[ "$provider" == "baseten" ]]; then
+            helper="${QUEUEBASH_AI_BASETEN_HELPER:-}"
+            helper_name="queue-ai-ask-baseten"
+            default_model="${QUEUEBASH_AI_BASETEN_MODEL:-deepseek-ai/DeepSeek-V4-Pro}"
+            success_reason="live_baseten_provider"
         else
             helper="${QUEUEBASH_AI_OPENAI_COMPAT_HELPER:-}"
             helper_name="queue-ai-ask-openai-compat"
@@ -22941,6 +22957,10 @@ EOF
             esac
             ;;
 
+        fetch)
+            _queue_fetch_command "$@"
+            ;;
+
         *)
             echo "Unknown queue command: $cmd" >&2
             _queue_help
@@ -22949,6 +22969,171 @@ EOF
     esac
 }
 
+
+
+_queue_fetch_command() {
+    local root
+    root="$(_queue_root)"
+    local job_id="" class="" status_filter="done" limit=20 json=0
+    local mode="job"
+
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --job-id) job_id="${2:-}"; shift 2 ;;
+            --class) class="${2:-}"; mode="class"; shift 2 ;;
+            --status) status_filter="${2:-done}"; shift 2 ;;
+            --limit) limit="${2:-20}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            *) echo "queue fetch: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+
+    if [[ "$mode" == "job" ]]; then
+        [[ -n "$job_id" ]] || { echo "Usage: queue fetch --job-id ID [--json]" >&2; return 2; }
+
+        # Find job file in terminal state dirs
+        local jobf="" state=""
+        for state in done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+            if [[ -f "$root/$state/$job_id.job" ]]; then
+                jobf="$root/$state/$job_id.job"
+                break
+            fi
+        done
+
+        if [[ -z "$jobf" ]]; then
+            echo "queue fetch: job not found: $job_id" >&2
+            return 1
+        fi
+
+        # Load class file for egress policy
+        local job_class
+        job_class="$(_queue_class_for_job_file "$jobf" 2>/dev/null || _queue_job_var_value "$jobf" JOB_CLASS 2>/dev/null || echo DEFAULT)"
+        local class_file=""
+        for _cf in "$root/classes/${job_class}.env" "/etc/bashqueues/classes/${job_class}.env" \
+                   "$(dirname "$root")/classes/${job_class}.env" \
+                   "$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/classes/${job_class}.env" \
+                   "$PWD/classes/${job_class}.env"; do
+            [[ -f "$_cf" ]] && { class_file="$_cf"; break; }
+        done
+
+        local egress_jurisdiction="GLOBAL" egress_require_enc=0
+        if [[ -n "$class_file" ]]; then
+            local _ej _ere
+            _ej="$(grep "^CLASS_EGRESS_ALLOWED_JURISDICTION=" "$class_file" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+            _ere="$(grep "^CLASS_EGRESS_REQUIRE_ENCRYPTION=" "$class_file" 2>/dev/null | tail -1 | cut -d= -f2- | xargs printf '%s' 2>/dev/null || true)"
+            [[ -n "$_ej" ]] && egress_jurisdiction="$_ej"
+            [[ "$_ere" == "1" ]] && egress_require_enc=1
+        fi
+
+        # Egress jurisdiction check
+        if [[ "$egress_jurisdiction" == "NONE" ]]; then
+            echo "queue fetch: egress denied: CLASS_EGRESS_ALLOWED_JURISDICTION=NONE for class $job_class" >&2
+            _queue_fetch_emit_audit "$root" "$job_id" "$job_class" "$state" "deny" "jurisdiction=NONE"
+            return 3
+        fi
+        if [[ "$egress_jurisdiction" != "GLOBAL" ]]; then
+            local env_jur="${QUEUEBASH_JURISDICTION:-}"
+            if [[ -z "$env_jur" || "$env_jur" != "$egress_jurisdiction" ]]; then
+                echo "queue fetch: egress denied: class requires jurisdiction=$egress_jurisdiction; QUEUEBASH_JURISDICTION=${QUEUEBASH_JURISDICTION:-unset}" >&2
+                _queue_fetch_emit_audit "$root" "$job_id" "$job_class" "$state" "deny" "jurisdiction_mismatch"
+                return 3
+            fi
+        fi
+
+        # Encryption check: deny only if remote fetch without encryption
+        if [[ "$egress_require_enc" -eq 1 && "${QUEUEBASH_REMOTE_FETCH:-}" == "1" && "${QUEUEBASH_FETCH_TRANSPORT:-}" != "encrypted" ]]; then
+            echo "queue fetch: egress denied: CLASS_EGRESS_REQUIRE_ENCRYPTION=1 requires encrypted transport for remote fetch" >&2
+            _queue_fetch_emit_audit "$root" "$job_id" "$job_class" "$state" "deny" "encryption_required"
+            return 3
+        fi
+
+        local job_name exit_code duration log_path fetched_at
+        job_name="$(_queue_job_name "$jobf" 2>/dev/null || basename "$jobf" .job)"
+        exit_code="$(_queue_job_var_value "$jobf" EXIT_CODE 2>/dev/null || true)"
+        duration="$(_queue_job_var_value "$jobf" DURATION_SECONDS 2>/dev/null || true)"
+        log_path="$(_queue_job_var_value "$jobf" LOG_FILE 2>/dev/null || true)"
+        fetched_at="$(_queue_now_iso)"
+
+        _queue_fetch_emit_audit "$root" "$job_id" "$job_class" "$state" "allow" "ok"
+
+        if [[ "$json" -eq 1 ]]; then
+            printf '{"schema":"queuebash.fetch.v1","job_id":"%s","job_name":"%s","class":"%s","state":"%s","exit_code":%s,"log_path":"%s","egress_jurisdiction":"%s","egress_encryption_required":%s,"fetched_at":"%s"}\n' \
+                "$(_queue_json_escape "$job_id")" \
+                "$(_queue_json_escape "$job_name")" \
+                "$(_queue_json_escape "$job_class")" \
+                "$(_queue_json_escape "$state")" \
+                "${exit_code:-null}" \
+                "$(_queue_json_escape "${log_path:-}")" \
+                "$(_queue_json_escape "$egress_jurisdiction")" \
+                "$(if [[ "$egress_require_enc" -eq 1 ]]; then echo true; else echo false; fi)" \
+                "$(_queue_json_escape "$fetched_at")"
+        else
+            printf 'job_id:           %s\n' "$job_id"
+            printf 'job_name:         %s\n' "$job_name"
+            printf 'class:            %s\n' "$job_class"
+            printf 'state:            %s\n' "$state"
+            printf 'exit_code:        %s\n' "${exit_code:-}"
+            printf 'duration:         %s\n' "${duration:-}"
+            printf 'log_path:         %s\n' "${log_path:-}"
+            printf 'egress_jur:       %s\n' "$egress_jurisdiction"
+            printf 'egress_enc_req:   %s\n' "$egress_require_enc"
+            printf 'fetched_at:       %s\n' "$fetched_at"
+        fi
+        return 0
+
+    else
+        # Class listing mode
+        [[ -n "$class" ]] || { echo "Usage: queue fetch --class CLASS [--status done] [--limit N] [--json]" >&2; return 2; }
+
+        local count=0 first=1
+        [[ "$json" -eq 1 ]] && printf '{"schema":"queuebash.fetch.v1","jobs":['
+
+        for state in done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+            [[ "$status_filter" == "done" && "$state" != "done" ]] && continue
+            for jobf in "$root/$state"/*.job; do
+                [[ -e "$jobf" ]] || continue
+                local jc
+                jc="$(_queue_class_for_job_file "$jobf" 2>/dev/null || _queue_job_var_value "$jobf" JOB_CLASS 2>/dev/null || echo DEFAULT)"
+                [[ "$jc" == "$class" ]] || continue
+                local jid jname jrc
+                jid="$(basename "$jobf" .job)"
+                jname="$(_queue_job_name "$jobf" 2>/dev/null || echo "$jid")"
+                jrc="$(_queue_job_var_value "$jobf" EXIT_CODE 2>/dev/null || true)"
+                if [[ "$json" -eq 1 ]]; then
+                    [[ "$first" -eq 0 ]] && printf ','
+                    printf '{"job_id":"%s","job_name":"%s","class":"%s","state":"%s","exit_code":%s}' \
+                        "$(_queue_json_escape "$jid")" "$(_queue_json_escape "$jname")" "$(_queue_json_escape "$jc")" "$(_queue_json_escape "$state")" "${jrc:-null}"
+                    first=0
+                else
+                    printf '%s\t%s\t%s\t%s\n' "$jid" "$jname" "$jc" "$state"
+                fi
+                count=$((count + 1))
+                [[ "$count" -ge "$limit" ]] && break 2
+            done
+        done
+
+        [[ "$json" -eq 1 ]] && printf ']}\n'
+        return 0
+    fi
+}
+
+_queue_fetch_emit_audit() {
+    local root="$1" job_id="$2" job_class="$3" state="$4" decision="$5" reason="$6"
+    local log_dir="$root/logs"
+    mkdir -p "$log_dir" 2>/dev/null || true
+    local ts esc_ts esc_job_id esc_job_class esc_state esc_decision esc_reason esc_jurisdiction esc_remote_fetch
+    ts="$(_queue_now_iso)"
+    esc_ts="$(_queue_json_escape "$ts")"
+    esc_job_id="$(_queue_json_escape "$job_id")"
+    esc_job_class="$(_queue_json_escape "$job_class")"
+    esc_state="$(_queue_json_escape "$state")"
+    esc_decision="$(_queue_json_escape "$decision")"
+    esc_reason="$(_queue_json_escape "$reason")"
+    esc_jurisdiction="$(_queue_json_escape "${QUEUEBASH_JURISDICTION:-}")"
+    esc_remote_fetch="$(_queue_json_escape "${QUEUEBASH_REMOTE_FETCH:-0}")"
+    printf '{"schema":"queuebash.egress.v1","ts":"%s","job_id":"%s","class":"%s","state":"%s","decision":"%s","reason":"%s","jurisdiction":"%s","remote_fetch":"%s"}
+'         "$esc_ts" "$esc_job_id" "$esc_job_class" "$esc_state" "$esc_decision" "$esc_reason" "$esc_jurisdiction" "$esc_remote_fetch"         >> "$log_dir/egress-audit.jsonl" 2>/dev/null || true
+}
 
 
 _queue_system_daemon_candidate_users() {

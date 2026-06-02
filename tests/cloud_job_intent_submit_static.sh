@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "FAIL: $*" >&2; exit 1; }
-grep -q 'QUEUEBASH_VERSION="0.18.84"' queuebash.sh || fail 'version not bumped to 0.18.84'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(84|85|86|[9][0-9])"' queuebash.sh || fail 'version not compatible with cloud job intent line'
 grep -q -- '--uses-cloud' queuebash.sh || fail 'submit --uses-cloud flag missing'
 grep -q 'CLOUD_PROFILE' queuebash.sh || fail 'CLOUD_PROFILE persistence missing'
 grep -q 'CLOUD_BROKER_BINDING' queuebash.sh || fail 'CLOUD_BROKER_BINDING persistence missing'

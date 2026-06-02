@@ -54,3 +54,7 @@ See `docs/QUEUE_AI_BROKER_POLICY_LINKS.md`.
 `queue ai chat` and `queue ai json` still default to selection-only mode. When `--live` is provided and `QUEUEBASH_AI_LIVE_ENABLED=1` is set, `bin/queue-ai-broker` now delegates to the selected provider helper using the existing ask-provider `--request-json` / `--output-json` contract. The broker returns normalized `queuebash.ai_broker.response.v1` JSON and records whether fallback was used.
 
 No default test performs a real network call. The smoke test injects a local fake helper through the provider helper environment override.
+
+## Baseten provider note
+
+Baseten Model APIs are represented as an OpenAI-compatible cloud inference provider. Live use is gated, credential lookup is file/env based, and AI broker decisions should surface applicable corporate/vendor, privacy, data-residency, and audit policy references when configured.

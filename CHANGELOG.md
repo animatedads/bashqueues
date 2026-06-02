@@ -1,3 +1,20 @@
+# 0.18.86 - BOB_MERGER13 mobile fetch client enablement merge
+
+- Merge rebuilt mobile fetch support onto 0.18.85 Baseten ask-provider line.
+- Add `queue fetch --job-id ID [--json]` and `queue fetch --class CLASS [--status done] [--limit N] [--json]`.
+- Add mobile classes for Android, iOS, and local-only use with egress/jurisdiction examples.
+- Add fetch/mobile documentation and tests while preserving Baseten as AI-provider-only.
+- Do not merge the older stale `mobile_fetch_patch.zip`; only `mobile_fetch_patch_v2.zip` is accepted.
+
+# 0.18.85 - BOB_MERGER13 Baseten ask-provider merge
+
+Upstream branch identity: BOB11 Baseten ask-provider coverage.
+
+- Merge `queue-ai-ask-baseten` and `providers.d/ask/baseten.sh` as advisory-only AI provider support.
+- Wire Baseten into `queue ask` provider discovery and AI broker helper delegation.
+- Add Baseten docs, policy/example env files, provider-registry entries, and fixture-only static/smoke tests.
+- Preserve 0.18.84 cloud job intent metadata and AI broker live-call delegation; Baseten is not a compute/provisioning provider.
+
 # 0.18.84 - BOB_MERGER13 cloud job intent and AI live broker merge
 
 - Merge Bob10 cloud job intent submit contract: `queue submit --uses-cloud` plus cloud profile/capability/provider/region/service/cost/policy-reference metadata.

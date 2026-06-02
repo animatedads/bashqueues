@@ -13,3 +13,4 @@ deepseek	yes	no	yes	120000	4096	DeepSeek live provider; live use requires explic
 groq	yes	no	yes	65536	8192	Groq OpenAI-compatible chat completions provider; live use requires explicit enablement and credential policy.
 cerebras	yes	no	yes	65536	8192	Cerebras OpenAI-compatible chat completions provider; live use requires explicit enablement and credential policy.
 perplexity	yes	no	yes	65536	8192	Perplexity Sonar live provider; live use requires explicit enablement.
+baseten	yes	no	yes	65536	8192	Baseten Model APIs OpenAI-compatible chat completions provider; live use requires explicit enablement and Baseten API key.

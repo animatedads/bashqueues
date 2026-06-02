@@ -1,3 +1,11 @@
+# 0.18.86 BOB_MERGER13 mobile fetch client enablement merge
+
+Merges the rebuilt mobile fetch patch onto the accepted 0.18.85 Baseten ask-provider base. Adds `queue fetch` for policy-gated mobile/client retrieval of completed job metadata, mobile-oriented class examples, fetch/mobile docs, and fixture/static tests. Baseten remains AI-provider-only; this delivery does not merge the earlier stale mobile patch and does not change cloud compute/provisioning behaviour.
+
+# 0.18.85 BOB_MERGER13 Baseten ask-provider merge
+
+Merges Bob11 Baseten Model APIs ask-provider support onto the accepted 0.18.84 cloud-job-intent and AI-live-delegation base. Baseten is treated strictly as an AI model/provider endpoint for `queue ask` and `queue ai`, not as a compute/cloud provisioning provider. Live use remains gated by `QUEUEBASH_AI_LIVE_ENABLED` and Baseten credentials supplied by file or environment.
+
 # 0.18.84 BOB_MERGER13 cloud job intent and AI live broker merge
 
 Merges Bob10 cloud job intent submit metadata and Bob11 AI broker live-call delegation onto the accepted 0.18.83 dev merge-plan manifest normalization line. Cloud job intent records advisory-only cloud profile/capability/provider/region/service/cost/policy references in job files without binding dispatch or provisioning. AI broker live calls remain policy-gated by `QUEUEBASH_AI_LIVE_ENABLED=1` and delegate through existing ask-provider helpers. Preserves dev merge-plan, cloud broker, deterministic class inference, ask inventory, grid-energy, embedded API, and QBTEST support.

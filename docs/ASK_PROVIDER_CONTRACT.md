@@ -103,3 +103,6 @@ The Perplexity provider is fixture-gated by default, uses the same advisory-only
 
 `0.18.71` carries `providers.d/grid_energy/grid_energy_provider.sh` as a separate non-AI Grid FinOps provider. It follows the same fixture-first, no-live-default, bounded-JSON philosophy as ask providers, but it is used by asset/class policy gates rather than by `queue ask`.
 
+## Baseten provider note
+
+Baseten Model APIs are represented as an OpenAI-compatible cloud inference provider. Live use is gated, credential lookup is file/env based, and AI broker decisions should surface applicable corporate/vendor, privacy, data-residency, and audit policy references when configured.

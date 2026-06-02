@@ -135,6 +135,77 @@
           }
         ]
       }
+    },
+    {
+      "provider": "baseten",
+      "enabled": true,
+      "location_type": "cloud",
+      "models": [
+        {
+          "name": "deepseek-ai/DeepSeek-V4-Pro",
+          "aliases": [
+            "balanced",
+            "json-default",
+            "baseten-default"
+          ],
+          "capabilities": [
+            "chat",
+            "json",
+            "schema_json",
+            "tool_calling",
+            "cloud",
+            "high_quality"
+          ],
+          "context_tokens": 131072,
+          "supports_json": true,
+          "supports_schema_json": true,
+          "supports_tools": true,
+          "supports_streaming": false,
+          "cost_input_per_million": 0.0,
+          "cost_output_per_million": 0.0,
+          "health_state": "available",
+          "priority": 73,
+          "policy_refs": {
+            "regulatory": [
+              {
+                "id": "CLOUD_AI_REVIEW",
+                "label": "Cloud AI provider review",
+                "uri": "policy://regulatory/cloud-ai-review"
+              }
+            ],
+            "data_residency": [
+              {
+                "id": "DATA_RESIDENCY_REVIEW",
+                "label": "Data residency review required for Baseten cloud inference",
+                "uri": "policy://data-residency/default"
+              }
+            ],
+            "audit": [
+              {
+                "id": "AI_AUDIT_REQUIRED",
+                "label": "AI broker request and selection audit required",
+                "uri": "policy://audit/ai-broker"
+              }
+            ]
+          }
+        }
+      ],
+      "policy_refs": {
+        "corporate": [
+          {
+            "id": "BASETEN_PROVIDER_APPROVAL",
+            "label": "Baseten provider approval / vendor review",
+            "uri": "policy://corporate/providers/baseten"
+          }
+        ],
+        "privacy": [
+          {
+            "id": "PII_REDACTION",
+            "label": "PII redaction required before cloud AI",
+            "uri": "policy://privacy/pii-redaction"
+          }
+        ]
+      }
     }
   ]
 }

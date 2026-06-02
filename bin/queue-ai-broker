@@ -1,0 +1,759 @@
+#!/usr/bin/env python3
+"""queuebash AI broker runtime helper.
+
+This helper implements the first brokered AI runtime surface for `queue ai`.
+It is deliberately fixture/local by default: it loads a provider/model registry,
+loads an AI profile, scores viable providers, explains selection, and returns
+normalised JSON without making live provider calls. Future patches can delegate
+brokered calls to provider helpers once the selection contract is accepted.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import tempfile
+import time
+from typing import Any, Dict, Iterable, List, Tuple
+
+SCHEMA_PROVIDERS = "queuebash.ai_broker.providers.v1"
+SCHEMA_MODELS = "queuebash.ai_broker.models.v1"
+SCHEMA_HEALTH = "queuebash.ai_broker.health.v1"
+SCHEMA_EXPLAIN = "queuebash.ai_broker.explain.v1"
+SCHEMA_RESPONSE = "queuebash.ai_broker.response.v1"
+SCHEMA_ERROR = "queuebash.ai_broker.error.v1"
+
+DEFAULT_PROFILE = "balanced"
+POLICY_REF_KEYS = (
+    "AI_REGULATORY_POLICY_REFS",
+    "AI_CORPORATE_POLICY_REFS",
+    "AI_PRIVACY_POLICY_REFS",
+    "AI_DATA_RESIDENCY_POLICY_REFS",
+    "AI_EXPORT_CONTROL_POLICY_REFS",
+    "AI_AUDIT_POLICY_REFS",
+)
+POLICY_REF_LABELS = {
+    "AI_REGULATORY_POLICY_REFS": "regulatory",
+    "AI_CORPORATE_POLICY_REFS": "corporate",
+    "AI_PRIVACY_POLICY_REFS": "privacy",
+    "AI_DATA_RESIDENCY_POLICY_REFS": "data_residency",
+    "AI_EXPORT_CONTROL_POLICY_REFS": "export_control",
+    "AI_AUDIT_POLICY_REFS": "audit",
+}
+
+
+HELPER_ENV = {
+    "ollama": ("QUEUEBASH_AI_OLLAMA_HELPER", "queue-ai-ask-ollama"),
+    "gemini": ("QUEUEBASH_AI_GEMINI_HELPER", "queue-ai-ask-gemini"),
+    "openai": ("QUEUEBASH_AI_OPENAI_HELPER", "queue-ai-ask-openai"),
+    "anthropic": ("QUEUEBASH_AI_ANTHROPIC_HELPER", "queue-ai-ask-anthropic"),
+    "watsonx": ("QUEUEBASH_AI_WATSONX_HELPER", "queue-ai-ask-watsonx"),
+    "openai_compat": ("QUEUEBASH_AI_OPENAI_COMPAT_HELPER", "queue-ai-ask-openai-compat"),
+    "mistral": ("QUEUEBASH_AI_MISTRAL_HELPER", "queue-ai-ask-mistral"),
+    "deepseek": ("QUEUEBASH_AI_DEEPSEEK_HELPER", "queue-ai-ask-deepseek"),
+    "groq": ("QUEUEBASH_AI_GROQ_HELPER", "queue-ai-ask-groq"),
+    "cerebras": ("QUEUEBASH_AI_CEREBRAS_HELPER", "queue-ai-ask-cerebras"),
+    "perplexity": ("QUEUEBASH_AI_PERPLEXITY_HELPER", "queue-ai-ask-perplexity"),
+    "baseten": ("QUEUEBASH_AI_BASETEN_HELPER", "queue-ai-ask-baseten"),
+}
+
+def source_dir() -> pathlib.Path:
+    return pathlib.Path(__file__).resolve().parents[1]
+
+
+def _read_json(path: pathlib.Path) -> Dict[str, Any]:
+    with path.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def registry_candidates(root: pathlib.Path) -> List[pathlib.Path]:
+    vals: List[pathlib.Path] = []
+    env = os.environ.get("QUEUEBASH_AI_BROKER_REGISTRY")
+    if env:
+        vals.append(pathlib.Path(env))
+    vals.extend([
+        pathlib.Path("/etc/bashqueues/policies.d/ai-broker/provider-registry.json"),
+        root / "policies.d/ai-broker/provider-registry.json",
+        root / "policies.d/ai-broker/provider-registry.example.json",
+        root / "tests/fixtures/ai_broker/provider_registry.example.json",
+    ])
+    return vals
+
+
+def load_registry(root: pathlib.Path) -> Tuple[Dict[str, Any], str]:
+    errors: List[str] = []
+    for path in registry_candidates(root):
+        try:
+            if path.exists():
+                data = _read_json(path)
+                if data.get("schema") != "queuebash.ai.provider_registry.v1":
+                    raise RuntimeError("unexpected_schema")
+                return data, str(path)
+        except Exception as exc:  # Keep bounded diagnostics for JSON consumers.
+            errors.append(f"{path}: {exc.__class__.__name__}")
+    raise RuntimeError("provider_registry_not_found_or_invalid: " + "; ".join(errors[:4]))
+
+
+def parse_env_file(path: pathlib.Path) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    if not path.exists():
+        return out
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k = k.strip()
+        v = v.strip().strip('"').strip("'")
+        if k:
+            out[k] = v
+    return out
+
+
+def profile_candidates(root: pathlib.Path, profile: str) -> List[pathlib.Path]:
+    safe = "".join(ch for ch in profile if ch.isalnum() or ch in ("_", "-")) or DEFAULT_PROFILE
+    vals: List[pathlib.Path] = []
+    env = os.environ.get("QUEUEBASH_AI_PROFILE_FILE")
+    if env:
+        vals.append(pathlib.Path(env))
+    vals.extend([
+        pathlib.Path(f"/etc/bashqueues/policies.d/ai-profiles/{safe}.env"),
+        root / f"policies.d/ai-profiles/{safe}.env",
+        root / f"policies.d/ai-profiles/{safe}.env.example",
+    ])
+    return vals
+
+
+def load_profile(root: pathlib.Path, profile: str) -> Tuple[Dict[str, str], str]:
+    for path in profile_candidates(root, profile):
+        if path.exists():
+            data = parse_env_file(path)
+            if data:
+                return data, str(path)
+    # Built-in fallback keeps the broker usable in tiny fixture trees.
+    return {
+        "AI_PROFILE_NAME": profile or DEFAULT_PROFILE,
+        "AI_CAPABILITIES": "chat json",
+        "AI_PROVIDER_ORDER": "openai_compat ollama gemini anthropic mistral deepseek groq cerebras baseten watsonx",
+        "AI_ALLOW_CLOUD": "1",
+        "AI_ALLOW_LOCAL": "1",
+        "AI_FALLBACK_ENABLED": "1",
+        "AI_HEALTH_REQUIRED": "1",
+        "AI_MAX_COST_PER_REQUEST_GBP": "0.05",
+        "AI_REQUIRE_JSON_MODE": "0",
+        "AI_REGULATORY_POLICY_REFS": "",
+        "AI_CORPORATE_POLICY_REFS": "",
+        "AI_PRIVACY_POLICY_REFS": "",
+        "AI_DATA_RESIDENCY_POLICY_REFS": "",
+        "AI_EXPORT_CONTROL_POLICY_REFS": "",
+        "AI_AUDIT_POLICY_REFS": "",
+    }, "builtin"
+
+
+def bool_env(value: str, default: bool = False) -> bool:
+    if value == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def split_words(value: str) -> List[str]:
+    return [x for x in value.replace(",", " ").split() if x]
+
+
+def providers(registry: Dict[str, Any]) -> List[Dict[str, Any]]:
+    vals = registry.get("providers") or []
+    return [p for p in vals if isinstance(p, dict)]
+
+
+def model_rows(registry: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for provider in providers(registry):
+        pname = str(provider.get("provider") or "")
+        for model in provider.get("models") or []:
+            if not isinstance(model, dict):
+                continue
+            row = dict(model)
+            row["provider"] = pname
+            row["provider_enabled"] = bool(provider.get("enabled", True))
+            row["location_type"] = str(provider.get("location_type") or "unknown")
+            rows.append(row)
+    return rows
+
+
+def capabilities_satisfied(model: Dict[str, Any], requested: Iterable[str], require_json: bool) -> Tuple[bool, List[str]]:
+    caps = set(str(x) for x in (model.get("capabilities") or []))
+    missing: List[str] = []
+    for cap in requested:
+        if cap in {"summarize", "summarise", "classify"}:
+            cap = "chat"
+        if cap == "schema":
+            cap = "schema_json"
+        if cap and cap not in caps:
+            missing.append(cap)
+    if require_json and not (model.get("supports_json") or "json" in caps or model.get("supports_schema_json")):
+        missing.append("json")
+    return not missing, sorted(set(missing))
+
+
+
+def _normalise_ref(value: str) -> Dict[str, str]:
+    raw = value.strip()
+    if not raw:
+        return {}
+    if "|" in raw:
+        parts = raw.split("|")
+        ref = {"id": parts[0].strip()}
+        if len(parts) > 1 and parts[1].strip():
+            ref["label"] = parts[1].strip()
+        if len(parts) > 2 and parts[2].strip():
+            ref["uri"] = parts[2].strip()
+        return ref
+    return {"id": raw}
+
+
+def _append_policy_ref(out: Dict[str, List[Dict[str, str]]], category: str, ref: Dict[str, str]) -> None:
+    if not ref or not ref.get("id"):
+        return
+    seen = {(x.get("id"), x.get("uri", "")) for x in out.setdefault(category, [])}
+    key = (ref.get("id"), ref.get("uri", ""))
+    if key not in seen:
+        out[category].append(ref)
+
+
+def split_policy_ref_items(value: str) -> List[str]:
+    """Split ID|label|uri references while preserving spaces inside labels.
+
+    Historical examples used space-separated references even though labels contain
+    spaces. A new reference begins when a token starts with an uppercase-ish ID
+    followed by a pipe, for example `UK_GDPR|...`.
+    """
+    raw = value.replace(",", " ").strip()
+    if not raw:
+        return []
+    parts: List[str] = []
+    current: List[str] = []
+    for token in raw.split():
+        starts_ref = "|" in token and token.split("|", 1)[0].replace("_", "").replace("-", "").isalnum() and token.split("|", 1)[0].upper() == token.split("|", 1)[0]
+        if starts_ref and current:
+            parts.append(" ".join(current).strip())
+            current = [token]
+        else:
+            current.append(token)
+    if current:
+        parts.append(" ".join(current).strip())
+    return parts
+
+
+def parse_policy_ref_env(profile: Dict[str, str]) -> Dict[str, List[Dict[str, str]]]:
+    out: Dict[str, List[Dict[str, str]]] = {label: [] for label in POLICY_REF_LABELS.values()}
+    for key in POLICY_REF_KEYS:
+        category = POLICY_REF_LABELS[key]
+        for item in split_policy_ref_items(profile.get(key, "")):
+            _append_policy_ref(out, category, _normalise_ref(item))
+    return out
+
+
+def registry_policy_refs(obj: Dict[str, Any]) -> Dict[str, List[Dict[str, str]]]:
+    out: Dict[str, List[Dict[str, str]]] = {label: [] for label in POLICY_REF_LABELS.values()}
+    refs = obj.get("policy_refs") or {}
+    if not isinstance(refs, dict):
+        return out
+    aliases = {
+        "regulatory": "regulatory",
+        "regulation": "regulatory",
+        "corporate": "corporate",
+        "privacy": "privacy",
+        "data_residency": "data_residency",
+        "data-residency": "data_residency",
+        "export_control": "export_control",
+        "export-control": "export_control",
+        "audit": "audit",
+    }
+    for key, value in refs.items():
+        category = aliases.get(str(key))
+        if not category:
+            continue
+        values = value if isinstance(value, list) else [value]
+        for item in values:
+            if isinstance(item, dict):
+                ref = {str(k): str(v) for k, v in item.items() if v is not None}
+            else:
+                ref = _normalise_ref(str(item))
+            _append_policy_ref(out, category, ref)
+    return out
+
+
+def merge_policy_refs(*items: Dict[str, List[Dict[str, str]]]) -> Dict[str, List[Dict[str, str]]]:
+    out: Dict[str, List[Dict[str, str]]] = {label: [] for label in POLICY_REF_LABELS.values()}
+    for item in items:
+        for category, refs in (item or {}).items():
+            for ref in refs:
+                _append_policy_ref(out, category, ref)
+    return out
+
+
+def provider_policy_map(registry: Dict[str, Any]) -> Dict[str, Dict[str, List[Dict[str, str]]]]:
+    out: Dict[str, Dict[str, List[Dict[str, str]]]] = {}
+    for provider in providers(registry):
+        pname = str(provider.get("provider") or "")
+        if not pname:
+            continue
+        out[pname] = registry_policy_refs(provider)
+    return out
+
+
+def policy_links_for_selection(registry: Dict[str, Any], profile: Dict[str, str], selected: Dict[str, Any] | None) -> Dict[str, Any]:
+    profile_refs = parse_policy_ref_env(profile)
+    if not selected:
+        return {"applicable": False, "profile": profile_refs, "provider": {}, "model": {}, "combined": profile_refs}
+    provider_name = str(selected.get("provider") or "")
+    pmap = provider_policy_map(registry)
+    provider_refs = pmap.get(provider_name, {label: [] for label in POLICY_REF_LABELS.values()})
+    model_refs = registry_policy_refs(selected)
+    combined = merge_policy_refs(profile_refs, provider_refs, model_refs)
+    applicable = any(combined.get(category) for category in combined)
+    return {
+        "applicable": applicable,
+        "profile": profile_refs,
+        "provider": provider_refs,
+        "model": model_refs,
+        "combined": combined,
+    }
+
+def select_model(registry: Dict[str, Any], profile: Dict[str, str], requested_caps: List[str]) -> Dict[str, Any]:
+    provider_order = split_words(profile.get("AI_PROVIDER_ORDER", ""))
+    order_index = {name: idx for idx, name in enumerate(provider_order)}
+    allow_cloud = bool_env(profile.get("AI_ALLOW_CLOUD", "1"), True)
+    allow_local = bool_env(profile.get("AI_ALLOW_LOCAL", "1"), True)
+    health_required = bool_env(profile.get("AI_HEALTH_REQUIRED", "1"), True)
+    require_json = bool_env(profile.get("AI_REQUIRE_JSON_MODE", "0"), False) or "json" in requested_caps or "schema_json" in requested_caps
+    max_cost = float(profile.get("AI_MAX_COST_PER_REQUEST_GBP", "999999") or "999999")
+    routing = profile.get("AI_ROUTING_STRATEGY", "highest_quality_within_budget")
+
+    candidates: List[Dict[str, Any]] = []
+    rejected: List[Dict[str, Any]] = []
+    for row in model_rows(registry):
+        reason: List[str] = []
+        provider = str(row.get("provider") or "")
+        location = str(row.get("location_type") or "unknown")
+        if not row.get("provider_enabled", True):
+            reason.append("provider_disabled")
+        if provider_order and provider not in order_index:
+            reason.append("provider_not_in_profile_order")
+        if location == "cloud" and not allow_cloud:
+            reason.append("cloud_not_allowed")
+        if location in {"local", "private"} and not allow_local:
+            reason.append("local_private_not_allowed")
+        health = str(row.get("health_state") or "unknown")
+        if health_required and health not in {"available", "healthy"}:
+            reason.append(f"health_{health}")
+        ok_caps, missing = capabilities_satisfied(row, requested_caps, require_json)
+        if not ok_caps:
+            reason.append("missing_capability:" + ",".join(missing))
+        # Use a small conservative estimate because exact token usage is not known at selection time.
+        estimate = (float(row.get("cost_input_per_million", 0) or 0) * 0.001) + (float(row.get("cost_output_per_million", 0) or 0) * 0.0005)
+        if estimate > max_cost:
+            reason.append("cost_ceiling_exceeded")
+        if reason:
+            rejected.append({"provider": provider, "model": row.get("name"), "reasons": reason})
+            continue
+        score = int(row.get("priority", 0) or 0) * 10 - order_index.get(provider, 999)
+        if routing == "cheapest_healthy":
+            score = int(1000000 - estimate * 1000000) - order_index.get(provider, 999)
+        item = dict(row)
+        item["estimated_cost_gbp"] = round(estimate, 6)
+        item["score"] = score
+        candidates.append(item)
+
+    candidates.sort(key=lambda x: (int(x.get("score", 0)), int(x.get("priority", 0) or 0)), reverse=True)
+    return {"selected": candidates[0] if candidates else None, "candidates": candidates, "rejected": rejected}
+
+
+def json_dump(obj: Dict[str, Any]) -> int:
+    print(json.dumps(obj, indent=2, sort_keys=True))
+    return 0
+
+
+def text_print(obj: Dict[str, Any]) -> int:
+    schema = obj.get("schema", "queuebash.ai_broker")
+    print(schema)
+    if "selected" in obj and obj["selected"]:
+        sel = obj["selected"]
+        print(f"selected: {sel.get('provider')} / {sel.get('name')}")
+    elif "providers" in obj:
+        for p in obj["providers"]:
+            print(f"{p.get('provider')}\tmodels={p.get('model_count')}\tenabled={p.get('enabled')}")
+    elif "models" in obj:
+        for m in obj["models"]:
+            print(f"{m.get('provider')}\t{m.get('name')}\t{','.join(m.get('capabilities') or [])}")
+    else:
+        print(json.dumps(obj, sort_keys=True))
+    return 0
+
+
+def emit(obj: Dict[str, Any], as_json: bool) -> int:
+    return json_dump(obj) if as_json else text_print(obj)
+
+
+def command_providers(args: argparse.Namespace, registry: Dict[str, Any], registry_path: str) -> int:
+    rows = []
+    for p in providers(registry):
+        rows.append({
+            "provider": p.get("provider"),
+            "enabled": bool(p.get("enabled", True)),
+            "location_type": p.get("location_type", "unknown"),
+            "model_count": len(p.get("models") or []),
+            "policy_refs": registry_policy_refs(p),
+        })
+    return emit({"schema": SCHEMA_PROVIDERS, "registry_path": registry_path, "providers": rows}, args.json)
+
+
+def command_models(args: argparse.Namespace, registry: Dict[str, Any], registry_path: str) -> int:
+    rows = model_rows(registry)
+    if args.provider:
+        rows = [r for r in rows if r.get("provider") == args.provider]
+    return emit({"schema": SCHEMA_MODELS, "registry_path": registry_path, "models": rows}, args.json)
+
+
+def command_health(args: argparse.Namespace, registry: Dict[str, Any], registry_path: str) -> int:
+    rows = []
+    for r in model_rows(registry):
+        rows.append({
+            "provider": r.get("provider"),
+            "model": r.get("name"),
+            "state": r.get("health_state", "unknown"),
+            "enabled": bool(r.get("provider_enabled", True)),
+            "location_type": r.get("location_type", "unknown"),
+        })
+    return emit({"schema": SCHEMA_HEALTH, "registry_path": registry_path, "health": rows}, args.json)
+
+
+def requested_capabilities(args: argparse.Namespace, profile: Dict[str, str]) -> List[str]:
+    caps = split_words(args.capability or "")
+    if not caps:
+        caps = [c for c in split_words(profile.get("AI_CAPABILITIES", "chat")) if c in {"chat", "json", "schema_json", "summarize", "summarise", "classify"}]
+    return caps or ["chat"]
+
+
+def command_explain(args: argparse.Namespace, registry: Dict[str, Any], registry_path: str, root: pathlib.Path) -> int:
+    profile, profile_path = load_profile(root, args.profile)
+    caps = requested_capabilities(args, profile)
+    selection = select_model(registry, profile, caps)
+    policy_links = policy_links_for_selection(registry, profile, selection["selected"])
+    obj = {
+        "schema": SCHEMA_EXPLAIN,
+        "profile": args.profile,
+        "profile_path": profile_path,
+        "registry_path": registry_path,
+        "capabilities_requested": caps,
+        "selected": selection["selected"],
+        "policy_links": policy_links,
+        "fallback_enabled": bool_env(profile.get("AI_FALLBACK_ENABLED", "1"), True),
+        "candidates_considered": len(selection["candidates"]),
+        "rejected": selection["rejected"][:20],
+        "decision": "allow" if selection["selected"] else "deny",
+        "reason": "broker_selected_provider" if selection["selected"] else "no_provider_satisfies_profile",
+    }
+    return emit(obj, args.json)
+
+
+def read_input(args: argparse.Namespace) -> str:
+    parts: List[str] = []
+    if args.message:
+        parts.append(args.message)
+    if args.input_file:
+        p = pathlib.Path(args.input_file)
+        data = p.read_bytes()[: int(os.environ.get("QUEUEBASH_AI_BROKER_INPUT_FILE_BYTES", "120000"))]
+        parts.append(data.decode("utf-8", errors="replace"))
+    return "\n".join(parts).strip()
+
+
+def resolve_helper(root: pathlib.Path, provider: str) -> Tuple[str, str]:
+    env_name, helper_name = HELPER_ENV.get(provider, (f"QUEUEBASH_AI_{provider.upper()}_HELPER", f"queue-ai-ask-{provider.replace('_', '-')}"))
+    explicit = os.environ.get(env_name, "").strip()
+    if explicit:
+        hp = pathlib.Path(explicit)
+        if hp.exists() and os.access(str(hp), os.X_OK):
+            return str(hp), helper_name
+        raise RuntimeError(f"{provider}_helper_not_executable:{env_name}")
+    bundled = root / "bin" / helper_name
+    if bundled.exists() and os.access(str(bundled), os.X_OK):
+        return str(bundled), helper_name
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        cand = pathlib.Path(directory) / helper_name
+        if cand.exists() and os.access(str(cand), os.X_OK):
+            return str(cand), helper_name
+    raise RuntimeError(f"{provider}_helper_missing:{helper_name}")
+
+
+def provider_timeout(profile: Dict[str, str]) -> float:
+    raw = os.environ.get("QUEUEBASH_AI_BROKER_PROVIDER_TIMEOUT_SECONDS") or profile.get("AI_MAX_LATENCY_SECONDS") or "60"
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return 60.0
+
+
+def build_provider_request(
+    operation: str,
+    args: argparse.Namespace,
+    profile: Dict[str, str],
+    profile_path: str,
+    caps: List[str],
+    selected: Dict[str, Any],
+    text: str,
+) -> Dict[str, Any]:
+    provider = str(selected.get("provider") or "")
+    model = str(args.model or selected.get("name") or "")
+    context_allowed = profile.get("AI_CONTEXT_ALLOWED") or profile.get("CLASS_AI_CONTEXT_ALLOWED") or "docs,commands,providers"
+    return {
+        "schema": "queuebash.ai_advisory.request.v1",
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "operation": f"ai.broker.{operation}",
+        "provider": provider,
+        "model": model,
+        "question": text,
+        "question_redacted": text[:1000],
+        "context_requested": context_allowed,
+        "context_allowed": context_allowed,
+        "context_denied": "",
+        "dynamic_context_text": "",
+        "brokered_call": True,
+        "broker_profile": args.profile,
+        "broker_profile_path": profile_path,
+        "broker_capabilities": caps,
+        "live_requested": True,
+        "redactions_applied": True,
+        "advisory_only": True,
+    }
+
+
+def call_provider_helper(
+    root: pathlib.Path,
+    operation: str,
+    args: argparse.Namespace,
+    profile: Dict[str, str],
+    profile_path: str,
+    caps: List[str],
+    selected: Dict[str, Any],
+    text: str,
+) -> Dict[str, Any]:
+    provider = str(selected.get("provider") or "")
+    helper, helper_name = resolve_helper(root, provider)
+    req = build_provider_request(operation, args, profile, profile_path, caps, selected, text)
+    timeout_s = provider_timeout(profile)
+    with tempfile.TemporaryDirectory(prefix="queue-ai-broker.") as td:
+        req_path = pathlib.Path(td) / "request.json"
+        resp_path = pathlib.Path(td) / "response.json"
+        req_path.write_text(json.dumps(req, indent=2, sort_keys=True), encoding="utf-8")
+        try:
+            proc = subprocess.run(
+                [helper, "--request-json", str(req_path), "--output-json", str(resp_path)],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=timeout_s,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"{provider}_provider_timeout_after_{int(timeout_s)}s") from exc
+        if not resp_path.exists() or resp_path.stat().st_size == 0:
+            detail = (proc.stderr or proc.stdout or "provider_returned_no_response")[:500]
+            raise RuntimeError(f"{provider}_provider_no_response:{detail}")
+        try:
+            data = json.loads(resp_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"{provider}_provider_invalid_json:{exc}") from exc
+        if proc.returncode != 0 or data.get("status") == "error" or data.get("ok") is False:
+            reason = data.get("reason") or data.get("decision") or (proc.stderr or "provider_failed")[:500]
+            raise RuntimeError(f"{provider}_provider_failed:{reason}")
+        data["broker_helper"] = helper_name
+        return data
+
+
+def normalise_provider_response(
+    operation: str,
+    args: argparse.Namespace,
+    registry: Dict[str, Any],
+    profile: Dict[str, str],
+    profile_path: str,
+    registry_path: str,
+    caps: List[str],
+    selected: Dict[str, Any],
+    provider_data: Dict[str, Any],
+    attempted: List[Dict[str, str]],
+    text: str,
+) -> Dict[str, Any]:
+    answer = provider_data.get("answer_markdown") or provider_data.get("answer") or provider_data.get("text") or ""
+    usage = provider_data.get("usage") if isinstance(provider_data.get("usage"), dict) else {}
+    usage.setdefault("estimated_cost_gbp", selected.get("estimated_cost_gbp", 0))
+    usage.setdefault("input_bytes", len(text.encode("utf-8")))
+    obj: Dict[str, Any] = {
+        "schema": SCHEMA_RESPONSE,
+        "ok": True,
+        "operation": operation,
+        "profile": args.profile,
+        "profile_path": profile_path,
+        "registry_path": registry_path,
+        "capabilities_requested": caps,
+        "selected_provider": selected.get("provider"),
+        "selected_model": args.model or selected.get("name"),
+        "policy_links": policy_links_for_selection(registry, profile, selected),
+        "fallback": {"used": len(attempted) > 1, "attempted": attempted[:-1], "reason": "first_viable_provider_failed" if len(attempted) > 1 else "first_viable_candidate_selected"},
+        "usage": usage,
+        "advisory_only": True,
+        "live_call_performed": True,
+        "provider_execution": "brokered_live_provider_call",
+        "answer_markdown": answer,
+        "provider_response_schema": provider_data.get("schema"),
+    }
+    if operation == "json":
+        obj["json"] = provider_data.get("json") if isinstance(provider_data.get("json"), (dict, list)) else {"answer_markdown": answer}
+    return obj
+
+
+def command_live_call(args: argparse.Namespace, registry: Dict[str, Any], registry_path: str, root: pathlib.Path, operation: str, profile: Dict[str, str], profile_path: str, caps: List[str], selection: Dict[str, Any], text: str) -> int:
+    if os.environ.get("QUEUEBASH_AI_LIVE_ENABLED", "0") != "1":
+        return emit({
+            "schema": SCHEMA_ERROR,
+            "ok": False,
+            "operation": operation,
+            "profile": args.profile,
+            "capabilities_requested": caps,
+            "reason": "live_ai_provider_not_enabled",
+            "hint": "set QUEUEBASH_AI_LIVE_ENABLED=1 after policy approval",
+            "policy_links": policy_links_for_selection(registry, profile, selection.get("selected")),
+            "live_call_performed": False,
+        }, True if args.json else False) or 1
+    if not bool_env(profile.get("AI_FALLBACK_ENABLED", "1"), True):
+        candidates = [selection["selected"]] if selection.get("selected") else []
+    else:
+        candidates = selection.get("candidates") or []
+    attempted: List[Dict[str, str]] = []
+    failures: List[Dict[str, str]] = []
+    for candidate in candidates:
+        if not candidate:
+            continue
+        provider = str(candidate.get("provider") or "")
+        model = str(args.model or candidate.get("name") or "")
+        attempted.append({"provider": provider, "model": model})
+        try:
+            provider_data = call_provider_helper(root, operation, args, profile, profile_path, caps, candidate, text)
+            obj = normalise_provider_response(operation, args, registry, profile, profile_path, registry_path, caps, candidate, provider_data, attempted, text)
+            return emit(obj, args.json)
+        except Exception as exc:
+            failures.append({"provider": provider, "model": model, "reason": str(exc)[:500]})
+            continue
+    return emit({
+        "schema": SCHEMA_ERROR,
+        "ok": False,
+        "operation": operation,
+        "profile": args.profile,
+        "capabilities_requested": caps,
+        "reason": "all_brokered_provider_attempts_failed",
+        "attempted": attempted,
+        "failures": failures,
+        "policy_links": policy_links_for_selection(registry, profile, selection.get("selected")),
+        "live_call_performed": False,
+    }, True if args.json else False) or 1
+
+
+def command_call(args: argparse.Namespace, registry: Dict[str, Any], registry_path: str, root: pathlib.Path, operation: str) -> int:
+    profile, profile_path = load_profile(root, args.profile)
+    caps = requested_capabilities(args, profile)
+    if operation == "json" and "json" not in caps:
+        caps.append("json")
+    selection = select_model(registry, profile, caps)
+    text = read_input(args)
+    selected = selection["selected"]
+    if not selected:
+        return emit({
+            "schema": SCHEMA_ERROR,
+            "ok": False,
+            "operation": operation,
+            "profile": args.profile,
+            "capabilities_requested": caps,
+            "policy_links": policy_links_for_selection(registry, profile, None),
+            "reason": "no_provider_satisfies_profile",
+            "rejected": selection["rejected"][:20],
+            "live_call_performed": False,
+        }, True if args.json else False) or 1
+    if getattr(args, "live", False):
+        return command_live_call(args, registry, registry_path, root, operation, profile, profile_path, caps, selection, text)
+    answer = "AI broker selected {provider}/{model} for {op}. No live provider call was performed; add --live with QUEUEBASH_AI_LIVE_ENABLED=1 for brokered provider execution.".format(
+        provider=selected.get("provider"), model=selected.get("name"), op=operation
+    )
+    obj: Dict[str, Any] = {
+        "schema": SCHEMA_RESPONSE,
+        "ok": True,
+        "operation": operation,
+        "profile": args.profile,
+        "profile_path": profile_path,
+        "registry_path": registry_path,
+        "capabilities_requested": caps,
+        "selected_provider": selected.get("provider"),
+        "selected_model": selected.get("name"),
+        "policy_links": policy_links_for_selection(registry, profile, selected),
+        "fallback": {"used": False, "attempted": [], "reason": "first_viable_candidate_selected"},
+        "usage": {"estimated_cost_gbp": selected.get("estimated_cost_gbp", 0), "input_bytes": len(text.encode("utf-8"))},
+        "advisory_only": True,
+        "live_call_performed": False,
+        "provider_execution": "broker_selection_only_no_live_call",
+        "answer_markdown": answer,
+    }
+    if operation == "json":
+        obj["json"] = {"selected_provider": selected.get("provider"), "selected_model": selected.get("name"), "live_call_performed": False}
+    return emit(obj, args.json)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="queue-ai-broker")
+    sub = parser.add_subparsers(dest="command", required=True)
+    for name in ("providers", "models", "health"):
+        p = sub.add_parser(name)
+        p.add_argument("--json", action="store_true")
+        if name == "models":
+            p.add_argument("--provider")
+    p = sub.add_parser("explain")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--profile", default=DEFAULT_PROFILE)
+    p.add_argument("--capability", default="chat")
+    for name in ("chat", "json"):
+        p = sub.add_parser(name)
+        p.add_argument("--json", action="store_true")
+        p.add_argument("--profile", default=DEFAULT_PROFILE)
+        p.add_argument("--capability", default="chat")
+        p.add_argument("--message")
+        p.add_argument("--input-file")
+        p.add_argument("--model")
+        p.add_argument("--live", action="store_true")
+    return parser
+
+
+def main(argv: List[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    root = source_dir()
+    try:
+        registry, registry_path = load_registry(root)
+        if args.command == "providers":
+            return command_providers(args, registry, registry_path)
+        if args.command == "models":
+            return command_models(args, registry, registry_path)
+        if args.command == "health":
+            return command_health(args, registry, registry_path)
+        if args.command == "explain":
+            return command_explain(args, registry, registry_path, root)
+        if args.command in {"chat", "json"}:
+            return command_call(args, registry, registry_path, root, args.command)
+        raise RuntimeError("unknown_command")
+    except Exception as exc:
+        as_json = bool(getattr(args, "json", False))
+        obj = {"schema": SCHEMA_ERROR, "ok": False, "reason": str(exc)[:500], "live_call_performed": False}
+        return emit(obj, as_json) or 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

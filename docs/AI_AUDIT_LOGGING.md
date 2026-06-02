@@ -197,3 +197,7 @@ Cerebras live calls use the same queue ask audit path as other live providers. A
 ## Perplexity Sonar provider
 
 The Perplexity provider is fixture-gated by default, uses the same advisory-only `queue ask` contract, and requires explicit live enablement plus a site-managed API key for live calls.
+
+## Baseten provider note
+
+Baseten Model APIs are represented as an OpenAI-compatible cloud inference provider. Live use is gated, credential lookup is file/env based, and AI broker decisions should surface applicable corporate/vendor, privacy, data-residency, and audit policy references when configured.
