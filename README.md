@@ -1,3 +1,7 @@
+# 0.18.87 BOB13 queue command JSON contract wave 1
+
+Adds the first command-surface JSON cleanup wave: `docs/QUEUE_COMMAND_CONTRACT.md`, JSON smoke coverage, a fix for `queue env list --json`, structured JSON for draft list/show/create/state paths, ACL help/operations JSON, and version/queue-user informational JSON. Legacy command forms remain intact; this is not a syntax rename pass.
+
 # 0.18.86 BOB_MERGER13 mobile fetch client enablement merge
 
 Merges the rebuilt mobile fetch patch onto the accepted 0.18.85 Baseten ask-provider base. Adds `queue fetch` for policy-gated mobile/client retrieval of completed job metadata, mobile-oriented class examples, fetch/mobile docs, and fixture/static tests. Baseten remains AI-provider-only; this delivery does not merge the earlier stale mobile patch and does not change cloud compute/provisioning behaviour.

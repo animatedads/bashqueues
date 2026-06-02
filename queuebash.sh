@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.86"
+QUEUEBASH_VERSION="0.18.87"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -1717,15 +1717,21 @@ _queue_env_validate_one() {
 # QBTEST:END
 
 _queue_env_list() {
-    local json=0 root f first=1 name
+    local json=0 root f first=0 name
     while [[ "$#" -gt 0 ]]; do case "$1" in --json|-j) json=1; shift ;; *) shift ;; esac; done
     root="$(_queue_root)"; mkdir -p "$root/envs.d"
     if [[ "$json" -eq 1 ]]; then
-        printf '{"queue_root":"%s","profiles":[' "$(_queue_json_escape "$root")"
+        printf '{"schema":"queuebash.env.list.v1","queue_root":"%s","profiles":[' "$(_queue_json_escape "$root")"
         shopt -s nullglob
-        for f in "$root/envs.d"/*.env; do [[ -f "$f" ]] || continue; name="$(basename "$f" .env)"; _queue_json_comma first; printf '{"name":"%s","file":"%s"}' "$(_queue_json_escape "$name")" "$(_queue_json_escape "$f")"; done
+        for f in "$root/envs.d"/*.env; do
+            [[ -f "$f" ]] || continue
+            name="$(basename "$f" .env)"
+            _queue_json_comma first
+            printf '{"name":"%s","file":"%s"}' "$(_queue_json_escape "$name")" "$(_queue_json_escape "$f")"
+        done
         shopt -u nullglob
-        printf ']}\n'
+        printf ']}
+'
     else
         printf '%-20s %s\n' "PROFILE" "FILE"
         shopt -s nullglob
@@ -3317,13 +3323,17 @@ _queue_draft_create() {
     local on_success=()
     local on_failure=()
     local on_retry_failure=()
-    local draft_id draft_file now delay_seconds
+    local draft_id draft_file now delay_seconds json=0
 
     [[ -n "$name" ]] || { echo "Usage: queue draft create <name> [options] -- <command...>" >&2; return 2; }
     shift || true
 
     while [[ "$#" -gt 0 ]]; do
         case "$1" in
+            --json|-j)
+                json=1
+                shift
+                ;;
             --priority|-p)
                 [[ -n "${2:-}" ]] || { echo "queue draft create: --priority needs a value" >&2; return 2; }
                 priority="$2"
@@ -3520,8 +3530,16 @@ _queue_draft_create() {
         printf ' )\n'
     } > "$draft_file"
 
-    echo "Created draft $draft_id"
-    echo "$draft_file"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.draft.create.v1","ok":true,"id":"%s","state":"draft","name":"%s","file":"%s","command":"%s"}\n' \
+            "$(_queue_json_escape "$draft_id")" \
+            "$(_queue_json_escape "$name")" \
+            "$(_queue_json_escape "$draft_file")" \
+            "$(_queue_json_escape "$(_queue_security_guidance_shell_join "$@")")"
+    else
+        echo "Created draft $draft_id"
+        echo "$draft_file"
+    fi
 }
 
 _queue_draft_create_from_job() {
@@ -3574,9 +3592,43 @@ _queue_draft_create_from_job() {
 }
 
 _queue_draft_list() {
+    local json=0 f first=0
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            *) shift ;;
+        esac
+    done
     _queue_draft_init
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.draft.list.v1","queue_root":"%s","drafts":[' "$(_queue_json_escape "$(_queue_root)")"
+        shopt -s nullglob
+        for f in "$(_queue_draft_dir)"/*.env; do
+            [[ -f "$f" ]] || continue
+            (
+                DRAFT_ID=""
+                DRAFT_STATE=""
+                DRAFT_UPDATED_AT=""
+                JOB_NAME=""
+                COMMAND=()
+                # shellcheck disable=SC1090
+                source "$f" 2>/dev/null || true
+                _queue_json_comma first
+                printf '{"id":"%s","state":"%s","updated_at":"%s","job_name":"%s","command":"%s","file":"%s"}' \
+                    "$(_queue_json_escape "${DRAFT_ID:-$(basename "$f" .env)}")" \
+                    "$(_queue_json_escape "${DRAFT_STATE:-draft}")" \
+                    "$(_queue_json_escape "${DRAFT_UPDATED_AT:-}")" \
+                    "$(_queue_json_escape "${JOB_NAME:-}")" \
+                    "$(_queue_json_escape "$(_queue_security_guidance_shell_join "${COMMAND[@]}")")" \
+                    "$(_queue_json_escape "$f")"
+            )
+        done
+        shopt -u nullglob
+        printf ']}
+'
+        return 0
+    fi
     printf '%-34s %-10s %-22s %-20s %s\n' "DRAFT_ID" "STATE" "UPDATED" "JOB_NAME" "COMMAND"
-    local f
     for f in "$(_queue_draft_dir)"/*.env; do
         [[ -f "$f" ]] || continue
         (
@@ -3592,17 +3644,51 @@ _queue_draft_list() {
                 "${DRAFT_STATE:-draft}" \
                 "${DRAFT_UPDATED_AT:-}" \
                 "${JOB_NAME:-}" \
-                "$(_queue_shell_join "${COMMAND[@]}")"
+                "$(_queue_security_guidance_shell_join "${COMMAND[@]}")"
         )
     done | sort
 }
 
 _queue_draft_show() {
-    local id="${1:-}"
-    local f
-    [[ -n "$id" ]] || { echo "Usage: queue draft show <draft_id>" >&2; return 2; }
+    local id="" json=0 f content_b64
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            *) [[ -z "$id" ]] && id="$1"; shift ;;
+        esac
+    done
+    [[ -n "$id" ]] || { echo "Usage: queue draft show <draft_id> [--json]" >&2; return 2; }
     f="$(_queue_draft_file "$id")"
     [[ -f "$f" ]] || { echo "queue draft show: not found: $id" >&2; return 1; }
+    if [[ "$json" -eq 1 ]]; then
+        (
+            DRAFT_ID=""
+            DRAFT_STATE="draft"
+            DRAFT_NAME=""
+            DRAFT_CREATED_AT=""
+            DRAFT_UPDATED_AT=""
+            JOB_NAME=""
+            PRIORITY=""
+            JOB_CLASS=""
+            COMMAND=()
+            # shellcheck disable=SC1090
+            source "$f" 2>/dev/null || true
+            content_b64="$(base64 < "$f" | tr -d '\n')"
+            printf '{"schema":"queuebash.draft.show.v1","id":"%s","state":"%s","name":"%s","job_name":"%s","priority":"%s","class":"%s","created_at":"%s","updated_at":"%s","command":"%s","file":"%s","content_base64":"%s"}\n' \
+                "$(_queue_json_escape "${DRAFT_ID:-$id}")" \
+                "$(_queue_json_escape "${DRAFT_STATE:-draft}")" \
+                "$(_queue_json_escape "${DRAFT_NAME:-}")" \
+                "$(_queue_json_escape "${JOB_NAME:-}")" \
+                "$(_queue_json_escape "${PRIORITY:-}")" \
+                "$(_queue_json_escape "${JOB_CLASS:-}")" \
+                "$(_queue_json_escape "${DRAFT_CREATED_AT:-}")" \
+                "$(_queue_json_escape "${DRAFT_UPDATED_AT:-}")" \
+                "$(_queue_json_escape "$(_queue_security_guidance_shell_join "${COMMAND[@]}")")" \
+                "$(_queue_json_escape "$f")" \
+                "$(_queue_json_escape "$content_b64")"
+        )
+        return 0
+    fi
     echo "=============================================================================="
     echo "QUEUEBASH DRAFT: $id"
     echo "=============================================================================="
@@ -3610,10 +3696,20 @@ _queue_draft_show() {
 }
 
 _queue_draft_set_state() {
-    local id="${1:-}"
-    local state="${2:-}"
+    local id="" state="" json=0
     local f tmp now
-    [[ -n "$id" && -n "$state" ]] || { echo "Usage: queue draft state <draft_id> <draft|ready|submitted|abandoned>" >&2; return 2; }
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            *)
+                if [[ -z "$id" ]]; then id="$1"
+                elif [[ -z "$state" ]]; then state="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+    [[ -n "$id" && -n "$state" ]] || { echo "Usage: queue draft state <draft_id> <draft|ready|submitted|abandoned> [--json]" >&2; return 2; }
     case "$state" in draft|ready|submitted|abandoned) ;; *) echo "queue draft state: invalid state: $state" >&2; return 2 ;; esac
     f="$(_queue_draft_file "$id")"
     [[ -f "$f" ]] || { echo "queue draft state: not found: $id" >&2; return 1; }
@@ -3622,21 +3718,32 @@ _queue_draft_set_state() {
     awk -v st="$state" -v now="$now" '
         BEGIN { saw_state=0; saw_updated=0 }
         /^DRAFT_STATE=/ { print "DRAFT_STATE=" st; saw_state=1; next }
-        /^DRAFT_UPDATED_AT=/ { printf "DRAFT_UPDATED_AT=%q\n", now; saw_updated=1; next }
+        /^DRAFT_UPDATED_AT=/ { printf "DRAFT_UPDATED_AT=%s\n", now; saw_updated=1; next }
         { print }
         END {
             if (!saw_state) print "DRAFT_STATE=" st
-            if (!saw_updated) printf "DRAFT_UPDATED_AT=%q\n", now
+            if (!saw_updated) printf "DRAFT_UPDATED_AT=%s\n", now
         }
     ' "$f" > "$tmp"
     mv "$tmp" "$f"
-    echo "Draft $id state=$state"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.draft.state.v1","ok":true,"id":"%s","state":"%s","updated_at":"%s","file":"%s"}\n' \
+            "$(_queue_json_escape "$id")" "$(_queue_json_escape "$state")" "$(_queue_json_escape "$now")" "$(_queue_json_escape "$f")"
+    else
+        echo "Draft $id state=$state"
+    fi
 }
 
 _queue_draft_submit() {
-    local id="${1:-}"
+    local id="" json=0
     local f job_name pri cls not_before retries backoff runner cpu mem maxlog submit_user pwd_at
-    [[ -n "$id" ]] || { echo "Usage: queue draft submit <draft_id>" >&2; return 2; }
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            *) [[ -z "$id" ]] && id="$1"; shift ;;
+        esac
+    done
+    [[ -n "$id" ]] || { echo "Usage: queue draft submit <draft_id> [--json]" >&2; return 2; }
     f="$(_queue_draft_file "$id")"
     [[ -f "$f" ]] || { echo "queue draft submit: not found: $id" >&2; return 1; }
 
@@ -3676,6 +3783,7 @@ _queue_draft_submit() {
         job_name="${job_name// /_}"
 
         args=(submit "$job_name" --priority "${PRIORITY:-10}")
+        [[ "${json:-0}" -eq 1 ]] && args+=(--json)
         [[ -n "${JOB_CLASS:-}" ]] && args+=(--class "$JOB_CLASS")
         [[ -n "${RUNNER:-}" ]] && args+=(--runner "$RUNNER")
         [[ -n "${SANDBOX_LEVEL:-}" ]] && args+=(--sandbox "$SANDBOX_LEVEL")
@@ -3728,9 +3836,19 @@ _queue_draft_submit() {
 }
 
 _queue_draft_abandon() {
-    local id="${1:-}"
-    [[ -n "$id" ]] || { echo "Usage: queue draft abandon <draft_id>" >&2; return 2; }
-    _queue_draft_set_state "$id" abandoned
+    local id="" json=0
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            *) [[ -z "$id" ]] && id="$1"; shift ;;
+        esac
+    done
+    [[ -n "$id" ]] || { echo "Usage: queue draft abandon <draft_id> [--json]" >&2; return 2; }
+    if [[ "$json" -eq 1 ]]; then
+        _queue_draft_set_state "$id" abandoned --json
+    else
+        _queue_draft_set_state "$id" abandoned
+    fi
 }
 
 _queue_draft_command() {
@@ -3743,9 +3861,9 @@ _queue_draft_command() {
         create-from-job|copy-from-job) _queue_draft_create_from_job "$@" ;;
         submit) _queue_draft_submit "$@" ;;
         state) _queue_draft_set_state "$@" ;;
-        ready) _queue_draft_set_state "${1:-}" ready ;;
+        ready) local id="${1:-}"; shift || true; _queue_draft_set_state "$id" ready "$@" ;;
         abandon) _queue_draft_abandon "$@" ;;
-        *) echo "Usage: queue draft list|show <id>|create <name> [options] -- <command...>|create-from-job <qid>|submit <id>|ready <id>|abandon <id>|state <id> <state>" >&2; return 2 ;;
+        *) echo "Usage: queue draft list|show|create|create-from-job|submit|state|ready|abandon [--json]" >&2; return 2 ;;
     esac
 }
 
@@ -15385,14 +15503,39 @@ EOF
     _queue_acl_file_mutate "$action" "$operation" "$subject" "$resource" "$decision" "$reason"
 }
 
+_queue_acl_help_json() {
+    cat <<'EOF'
+{"schema":"queuebash.acl.help.v1","commands":["check SUBJECT OPERATION RESOURCE","explain SUBJECT OPERATION RESOURCE","operations","set module provider:NAME OPERATION SUBJECT","remove module provider:NAME OPERATION SUBJECT"],"json":true}
+EOF
+}
+
+_queue_acl_operations_json() {
+    local first=0 op
+    printf '{"schema":"queuebash.acl.operations.v1","operations":['
+    while IFS= read -r op; do
+        [[ -n "$op" ]] || continue
+        _queue_json_comma first
+        printf '"%s"' "$(_queue_json_escape "$op")"
+    done < <(_queue_acl_known_operations_text)
+    printf ']}\n'
+}
+
 _queue_acl_command() {
-    case "${1:-help}" in
-        help|--help|-h|"") _queue_acl_command_help ;;
-        operations|ops) _queue_acl_known_operations_text ;;
-        check) shift; _queue_acl_check "$@" ;;
-        explain) shift; _queue_acl_explain "$@" ;;
-        set|add) shift; _queue_acl_set_remove set "$@" ;;
-        remove|rm|delete) shift; _queue_acl_set_remove remove "$@" ;;
+    local sub="${1:-help}" json=0
+    shift || true
+    case "${sub}" in
+        help|--help|-h|"")
+            while [[ "$#" -gt 0 ]]; do case "$1" in --json|-j) json=1; shift ;; *) shift ;; esac; done
+            [[ "$json" -eq 1 ]] && _queue_acl_help_json || _queue_acl_command_help
+            ;;
+        operations|ops)
+            while [[ "$#" -gt 0 ]]; do case "$1" in --json|-j) json=1; shift ;; *) shift ;; esac; done
+            [[ "$json" -eq 1 ]] && _queue_acl_operations_json || _queue_acl_known_operations_text
+            ;;
+        check) _queue_acl_check "$@" ;;
+        explain) _queue_acl_explain "$@" ;;
+        set|add) _queue_acl_set_remove set "$@" ;;
+        remove|rm|delete) _queue_acl_set_remove remove "$@" ;;
         *) echo "Usage: queue acl help|operations|check|explain|set|remove" >&2; return 2 ;;
     esac
 }
@@ -20581,21 +20724,46 @@ queue() {
             ;;
 
         version|--version|-V)
-            echo "queuebash $QUEUEBASH_VERSION"
+            if [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]]; then
+                printf '{"schema":"queuebash.version.v1","version":"%s"}\n' "$(_queue_json_escape "$QUEUEBASH_VERSION")"
+            else
+                echo "queuebash $QUEUEBASH_VERSION"
+            fi
             ;;
 
         dev|developer)
             _queue_dev_command "$@"
             ;;
         queue-user|queue-owner)
-            echo "selected user: $(_queue_selected_user_for_display)"
-            echo "queue root:    $(_queue_root)"
-            [[ -n "${QUEUEBASH_SELECTED_ROOT:-}" ]] && echo "selected root: ${QUEUEBASH_SELECTED_ROOT}"
-            echo "root owner:    $(_queue_root_owner_user 2>/dev/null || echo unknown)"
+            if [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]]; then
+                printf '{"schema":"queuebash.selected_user.v1","selected_user":"%s","queue_root":"%s","selected_root":"%s","root_owner":"%s"}\n' \
+                    "$(_queue_json_escape "$(_queue_selected_user_for_display)")" \
+                    "$(_queue_json_escape "$(_queue_root)")" \
+                    "$(_queue_json_escape "${QUEUEBASH_SELECTED_ROOT:-}")" \
+                    "$(_queue_json_escape "$(_queue_root_owner_user 2>/dev/null || echo unknown)")"
+            else
+                echo "selected user: $(_queue_selected_user_for_display)"
+                echo "queue root:    $(_queue_root)"
+                [[ -n "${QUEUEBASH_SELECTED_ROOT:-}" ]] && echo "selected root: ${QUEUEBASH_SELECTED_ROOT}"
+                echo "root owner:    $(_queue_root_owner_user 2>/dev/null || echo unknown)"
+            fi
             ;;
 
         queue-users)
-            if [[ "$(id -u 2>/dev/null || echo 99999)" != "0" ]]; then
+            if [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]]; then
+                local __first=0 __u __home
+                printf '{"schema":"queuebash.queue_users.v1","users":['
+                if [[ "$(id -u 2>/dev/null || echo 99999)" != "0" ]]; then
+                    __u="$(id -un)"; _queue_json_comma __first; printf '{"user":"%s","queue_root":"%s"}' "$(_queue_json_escape "$__u")" "$(_queue_json_escape "$(_queue_root)")"
+                else
+                    while IFS=: read -r __u _ _ _ _ __home _; do
+                        [[ -n "$__u" && "$__home" == /home/* ]] || continue
+                        _queue_json_comma __first
+                        printf '{"user":"%s","queue_root":"%s/.queuebash"}' "$(_queue_json_escape "$__u")" "$(_queue_json_escape "$__home")"
+                    done < <(getent passwd | awk -F: '$3 >= 1000 && $6 ~ /^\/home\//')
+                fi
+                printf ']}\n'
+            elif [[ "$(id -u 2>/dev/null || echo 99999)" != "0" ]]; then
                 id -un
             else
                 getent passwd | awk -F: '$3 >= 1000 && $6 ~ /^\/home\// {print $1 "\t" $6 "/.queuebash"}' | sort

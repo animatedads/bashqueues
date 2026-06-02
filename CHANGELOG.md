@@ -1,3 +1,12 @@
+# 0.18.87 - BOB13 queue command JSON contract wave 1
+
+- Add `docs/QUEUE_COMMAND_CONTRACT.md` defining the dual human/JSON command contract.
+- Fix invalid JSON from `queue env list --json`.
+- Add JSON support for high-value draft commands: list, show, create, create-from-job, state, ready, and abandon.
+- Add `queue acl help --json` and `queue acl operations --json`.
+- Add `queue version --json`, `queue queue-user --json`, and `queue queue-users --json`.
+- Add static and smoke tests for the first JSON cleanup wave.
+
 # 0.18.86 - BOB_MERGER13 mobile fetch client enablement merge
 
 - Merge rebuilt mobile fetch support onto 0.18.85 Baseten ask-provider line.
