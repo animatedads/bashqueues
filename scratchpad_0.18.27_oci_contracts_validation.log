@@ -1,0 +1,11 @@
+## syntax
+## oci tests
+PASS oci_provider_contracts_static
+PASS oci fixture json
+PASS oci_provider_fixture_smoke
+PASS oci_provider_json_contract_static
+PASS oci_explain_static
+## scratchpad regressions
+PASS dev_scratchpad_static
+PASS dev_scratchpad_smoke
+PASS dev_scratchpad_json_contract_static

@@ -1,3 +1,23 @@
+# 0.18.77 - BOB_MERGER13 embedded API contract and ask inventory merge
+
+- Merge Bob11 embedded application/session API contract docs, app-scope policy examples, and static/JSON tests.
+- Preserve 0.18.76 ask command-surface backfill, usage inventory, and asset inventory grounding.
+- Preserve grid-energy cost model material and QBTEST installer/add/extract support.
+- Keep embedded API work contract-only: no runtime broker, socket listener, language binding, queue dispatch refactor, live API posture change, or provisioning behaviour.
+
+# 0.18.76 - BOB11 embedded application session API contract
+
+- Add contract-first embedded application/session API design for language bindings and installers.
+- Define `queue api serve --stdio`, JSON protocol envelopes, app-scope policy examples, operation categories, audit requirements, and static/JSON contract tests.
+- Keep this as a contract/documentation/test lane only; no runtime broker, socket listener, language binding, or dispatch refactor is introduced.
+
+# 0.18.76 - BOB_MERGER13 ask inventory command-surface backfill
+
+- Add `_queue_ai_usage_inventory_text` to extract installed `Usage: queue ...` strings from the current tree for `queue ask` command grounding.
+- Expand `_queue_ai_command_inventory_text` so ask sees subcommands not listed in the compact top-level help, including asset, cron, dev patchset, ACL, module, key-provider, and other installed command surfaces.
+- Expand `_queue_ai_asset_inventory_text` with bundled asset facility/example lines, including grid_energy price/carbon/negative-price gates, without executing asset plugins in the ask-context path.
+- Add focused QBTEST coverage for the expanded ask command and asset inventories.
+
 # 0.18.75 - BOB_MERGER13 ask command inventory remote-add repair
 
 - Expand `queue ask` commands context to include remote helper `--help` output.

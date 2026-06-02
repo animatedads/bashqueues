@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.75"
+QUEUEBASH_VERSION="0.18.77"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -13012,20 +13012,44 @@ _queue_ai_source_dir() {
 # ZD0iJChfcXVldWVfYWlfc291cmNlX2RpcikiCltbIC1uICIkZCIgXV0KW1sgLWQgIiRkIiBdXQ==
 # QBTEST:END
 
+_queue_ai_usage_inventory_text() {
+    local source="${BASH_SOURCE[0]}" bin_dir helper file
+    echo "Discovered installed queue usage strings (extracted from this installed tree):"
+    if [[ -f "$source" ]]; then
+        grep -E 'Usage: (queue|queuemgr|overdir|overfiles)' "$source" 2>/dev/null |             sed -E 's/^.*Usage: /Usage: /; s/["'"'"';][[:space:]]*(>&2)?[[:space:]]*(;|\|\||$).*//; s/["'"'"']$//' |             sort -u | sed -n '1,260p' | sed 's/^/  /'
+    else
+        echo "  queuebash.sh source unavailable"
+    fi
+    bin_dir="$(_queue_ai_source_dir 2>/dev/null || true)/bin"
+    if [[ -d "$bin_dir" ]]; then
+        for file in "$bin_dir"/*; do
+            [[ -f "$file" ]] || continue
+            grep -E 'Usage: (queue|queuemgr|queue-|bashqueues)' "$file" 2>/dev/null |                 sed -E 's/^.*Usage: /Usage: /; s/["'"'"';][[:space:]]*(>&2)?[[:space:]]*(;|\|\||$).*//; s/["'"'"']$//' |                 sed "s#^#  $(basename "$file"): #"
+        done | sort -u | sed -n '1,160p' || true
+    fi
+    return 0
+}
+# QBTEST:BEGIN name=ai-usage-inventory-command-surface function=_queue_ai_usage_inventory_text language=bash
+# QBTEST:B64
+# b3V0PSIkKF9xdWV1ZV9haV91c2FnZV9pbnZlbnRvcnlfdGV4dCkiCmdyZXAgLUZxICJVc2FnZTogcXVldWUgYXNzZXRzIHNob3cgPGZhbWlseT4iIDw8PCAiJG91dCIKZ3JlcCAtRnEgIlVzYWdlOiBxdWV1ZSBhc3NldHMgbGlzdHxzaG93IDxmYW1pbHk+IiA8PDwgIiRvdXQiCmdyZXAgLUZxICJVc2FnZTogcXVldWUgZGV2IHBhdGNoc2V0IGNyZWF0ZSIgPDw8ICIkb3V0IgpncmVwIC1GcSAiVXNhZ2U6IHF1ZXVlIGNyb24gcm9vdHxzdGF0dXMiIDw8PCAiJG91dCIK
+# QBTEST:END
+
 _queue_ai_command_inventory_text() {
     local helper=""
-    echo "Installed queue command inventory (from this queuebash.sh help text and helper command help):"
+    echo "Installed queue command inventory (from this queuebash.sh help text, discovered usage strings, and helper command help):"
     if declare -F _queue_help >/dev/null 2>&1; then
-        _queue_help 2>/dev/null | sed -n '1,220p' | sed 's/^/  /'
+        _queue_help 2>/dev/null | sed -n '1,260p' | sed 's/^/  /'
     else
         echo "  queue help unavailable"
     fi
+    echo
+    _queue_ai_usage_inventory_text
     echo
     echo "Installed queue remote command inventory:"
     if declare -F _queue_remote_helper_path >/dev/null 2>&1; then
         helper="$(_queue_remote_helper_path 2>/dev/null || true)"
         if [[ -n "$helper" && -x "$helper" ]]; then
-            "$helper" --help 2>/dev/null | sed -n '1,160p' | sed 's/^/  /'
+            "$helper" --help 2>/dev/null | sed -n '1,180p' | sed 's/^/  /'
         else
             echo "  queue remote helper unavailable"
         fi
@@ -13033,11 +13057,11 @@ _queue_ai_command_inventory_text() {
         echo "  queue remote helper unavailable"
     fi
     echo
-    echo "Grounding rule: prefer installed idioms shown above. Do not invent commands such as queue status/log/events unless they are actually present in the installed help or implementation evidence. For remote configuration, installed idioms include queue remote add SERVICE --url URL (--secret SECRET|--secret-file FILE|--secret-env ENV) [--json] when shown above. For job inspection, installed idioms include queue explain <job_id>, queue show <job_id>, queue tail <job_id>, queue history <job_id>, queue pids <job_id>, and queue metrics <job_id> when present above."
+    echo "Grounding rule: prefer installed idioms shown above. Do not say a command is absent unless it is missing from both queue help and the discovered usage strings. For asset discovery, use installed idioms such as queue assets list, queue assets show <family>, and queue assets explain <family|family:check> when present above; do not invent queue assets show if only explain is present, and do not invent facility names not shown by the installed asset inventory. For remote configuration, installed idioms include queue remote add SERVICE --url URL (--secret SECRET|--secret-file FILE|--secret-env ENV) [--json] when shown above. For job inspection, installed idioms include queue explain <job_id>, queue show <job_id>, queue tail <job_id>, queue history <job_id>, queue pids <job_id>, and queue metrics <job_id> when present above."
 }
-# QBTEST:BEGIN name=ai-command-inventory-remote-add function=_queue_ai_command_inventory_text language=bash
+# QBTEST:BEGIN name=ai-command-inventory-expanded-usage function=_queue_ai_command_inventory_text language=bash
 # QBTEST:B64
-# b3V0PSIkKF9xdWV1ZV9haV9jb21tYW5kX2ludmVudG9yeV90ZXh0KSIKZWNobyAiJG91dCIgfCBncmVwIC1GcSAicXVldWUgcmVtb3RlIGFkZCBTRVJWSUNFIC0tdXJsIFVSTCIKZWNobyAiJG91dCIgfCBncmVwIC1GcSAicXVldWUgcmVtb3RlIGxpc3QiCmVjaG8gIiRvdXQiIHwgZ3JlcCAtRnEgInF1ZXVlIHJlbW90ZSBzaG93IFNFUlZJQ0UiCmVjaG8gIiRvdXQiIHwgZ3JlcCAtRnEgIkluc3RhbGxlZCBxdWV1ZSByZW1vdGUgY29tbWFuZCBpbnZlbnRvcnkiCg==
+# b3V0PSIkKF9xdWV1ZV9haV9jb21tYW5kX2ludmVudG9yeV90ZXh0KSIKZ3JlcCAtRnEgInF1ZXVlIHJlbW90ZSBhZGQgU0VSVklDRSAtLXVybCBVUkwiIDw8PCAiJG91dCIKZ3JlcCAtRnEgIlVzYWdlOiBxdWV1ZSBhc3NldHMgc2hvdyA8ZmFtaWx5PiIgPDw8ICIkb3V0IgpncmVwIC1GcSAiVXNhZ2U6IHF1ZXVlIGRldiBwYXRjaHNldCBjcmVhdGUiIDw8PCAiJG91dCIKZ3JlcCAtRnEgIkRpc2NvdmVyZWQgaW5zdGFsbGVkIHF1ZXVlIHVzYWdlIHN0cmluZ3MiIDw8PCAiJG91dCIK
 # QBTEST:END
 
 
@@ -13045,7 +13069,7 @@ _queue_ai_asset_inventory_text() {
     local source_dir asset_dir f name first=1
     source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
     asset_dir="$source_dir/assets.d"
-    echo "Installed asset/facility inventory (from assets.d/*.sh):"
+    echo "Installed asset families (from assets.d/*.sh):"
     if [[ -d "$asset_dir" ]]; then
         for f in "$asset_dir"/*.sh; do
             [[ -f "$f" ]] || continue
@@ -13061,8 +13085,26 @@ _queue_ai_asset_inventory_text() {
     else
         echo "  assets.d unavailable"
     fi
-    echo "Grounding rule: installed asset facilities above are authoritative for this package. secaudit/secprofile/netprofile/fileprofile/integrity/finops/legal/env are valid only if present above."
+    echo "Installed queue-root asset facilities and examples:"
+    local root_asset_dir="$(_queue_root)/assets.d"
+    if [[ -d "$root_asset_dir" ]]; then
+        grep -hE '^[[:space:]]*[A-Za-z0-9_]+:[A-Za-z0-9_]+[[:space:]]' "$root_asset_dir"/*.sh 2>/dev/null |             sed -E 's/^[[:space:]]*//' | sort -u | sed -n '1,240p' | sed 's/^/  /' || true
+    else
+        echo "  queue-root assets.d unavailable"
+    fi
+    echo "Installed bundled asset facilities and examples:"
+    if [[ -d "$asset_dir" ]]; then
+        grep -hE '^[[:space:]]*[A-Za-z0-9_]+:[A-Za-z0-9_]+[[:space:]]' "$asset_dir"/*.sh 2>/dev/null |             sed -E 's/^[[:space:]]*//' | sort -u | sed -n '1,240p' | sed 's/^/  /' || true
+    else
+        echo "  bundled assets.d unavailable"
+    fi
+    echo "Grounding rule: installed asset facilities above are authoritative for this package. Use the exact family:check names and example syntax shown above. For grid energy, prefer grid_energy:price_below, grid_energy:carbon_below, and grid_energy:negative_price only when those facilities are shown above."
+    return 0
 }
+# QBTEST:BEGIN name=ai-asset-inventory-grid-energy-facilities function=_queue_ai_asset_inventory_text language=bash
+# QBTEST:B64
+# b3V0PSIkKF9xdWV1ZV9haV9hc3NldF9pbnZlbnRvcnlfdGV4dCkiCmdyZXAgLUZxICJJbnN0YWxsZWQgYXNzZXQgZmFtaWxpZXMiIDw8PCAiJG91dCIKZ3JlcCAtRnEgIkluc3RhbGxlZCBidW5kbGVkIGFzc2V0IGZhY2lsaXRpZXMiIDw8PCAiJG91dCIKaWYgZ3JlcCAtRnEgImdyaWRfZW5lcmd5OnByaWNlX2JlbG93IiA8PDwgIiRvdXQiOyB0aGVuCiAgZ3JlcCAtRnEgImdyaWRfZW5lcmd5OmNhcmJvbl9iZWxvdyIgPDw8ICIkb3V0IgogIGdyZXAgLUZxICJncmlkX2VuZXJneTpuZWdhdGl2ZV9wcmljZSIgPDw8ICIkb3V0IgpmaQo=
+# QBTEST:END
 
 _queue_ai_queue_status_text() {
     local root state count

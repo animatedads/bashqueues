@@ -1,3 +1,15 @@
+# 0.18.77 BOB_MERGER13 embedded API contract and ask inventory merge
+
+Merges Bob11's contract-first embedded application/session API documentation, app-scope policy examples, and static/JSON contract tests onto the accepted 0.18.76 ask command-surface and asset-inventory backfill line. Preserves grid-energy cost model grounding, queue ask command/usage inventory backfill, QBTEST installer/add/extract support, and cleanup-clean delivery discipline. No runtime broker, socket listener, language binding, queue dispatch refactor, live API posture, or provisioning behaviour is introduced.
+
+# 0.18.76 BOB11 embedded application session API contract
+
+Adds a contract-first embedded application/session API design for language bindings and installers. Defines `queue api serve --stdio`, JSON protocol envelopes, app-scope policy files, operation categories, audit requirements, and static/JSON tests. No runtime broker, socket listener, language binding, or queue dispatch refactor is introduced in this merge input.
+
+# 0.18.76 BOB_MERGER13 ask inventory command-surface backfill
+
+Expands `queue ask` command grounding beyond the top-level help summary by adding a discovered installed usage-string inventory from `queuebash.sh` and bundled helper scripts. The ask context now exposes subcommand surfaces such as `queue assets show`, `queue assets explain`, `queue cron ...`, `queue dev patchset ...`, and similar installed command forms, while preserving the 0.18.75 `queue remote add` backfill. Asset context now includes bundled asset facility lines, including grid_energy examples, without executing asset plugins during ask-context generation.
+
 # 0.18.75 BOB_MERGER13 ask command inventory remote-add repair
 
 Repairs `queue ask` command grounding so the commands context includes the installed `queue remote add` syntax from current help/helper output. This fixes the case where `queue remote --help` advertised `add`, but live ask providers were told the command was absent from the installed inventory.

@@ -1,0 +1,33 @@
+== bash -lc bash -n queuebash.sh
+rc=0
+== bash -lc bash -n tests/dev_remote_runner_static.sh
+rc=0
+== bash -lc python3 -m py_compile tests/dev_remote_runner_json_contract_static.py
+rc=0
+== bash -lc python3 -m py_compile tests/dev_remote_runner_smoke.py
+rc=0
+== bash -lc bash -n tests/dev_scratchpad_static.sh
+rc=0
+== bash -lc bash -n tests/dev_scratchpad_smoke.sh
+rc=0
+== bash -lc python3 -m py_compile tests/dev_scratchpad_json_contract_static.py
+rc=0
+== bash -lc tests/dev_remote_runner_static.sh
+PASS dev_remote_runner_static
+rc=0
+== bash -lc tests/dev_remote_runner_json_contract_static.py
+PASS dev_remote_runner_json_contract_static
+rc=0
+== bash -lc tests/dev_remote_runner_smoke.py
+PASS dev_remote_runner_smoke
+rc=0
+== bash -lc tests/dev_scratchpad_static.sh
+PASS dev_scratchpad_static
+rc=0
+== bash -lc tests/dev_scratchpad_smoke.sh
+PASS dev_scratchpad_smoke
+rc=0
+== bash -lc tests/dev_scratchpad_json_contract_static.py
+PASS dev_scratchpad_json_contract_static
+rc=0
+PASS=13 FAIL=0

@@ -1,0 +1,17 @@
+== syntax ==
+== focused ==
+PASS dev_scratchpad_static
+PASS dev_scratchpad_smoke
+PASS dev_scratchpad_json_contract_static
+== regressions ==
+-- tests/dev_splice_tool_static.sh
+FAIL: version not bumped to 0.18.22
+FAILED:tests/dev_splice_tool_static.sh
+-- tests/dev_splice_tool_json_contract_static.py
+PASS dev_splice_tool_json_contract_static
+-- tests/internal_refactor_job_resolution_behaviour_lock_static.sh
+FAIL: version not bumped to 0.18.22
+FAILED:tests/internal_refactor_job_resolution_behaviour_lock_static.sh
+-- tests/internal_refactor_job_resolution_inventory_static.sh
+FAIL: version not bumped to 0.18.22
+FAILED:tests/internal_refactor_job_resolution_inventory_static.sh
