@@ -1,3 +1,31 @@
+# 0.18.84 BOB_MERGER13 cloud job intent and AI live broker merge
+
+Merges Bob10 cloud job intent submit metadata and Bob11 AI broker live-call delegation onto the accepted 0.18.83 dev merge-plan manifest normalization line. Cloud job intent records advisory-only cloud profile/capability/provider/region/service/cost/policy references in job files without binding dispatch or provisioning. AI broker live calls remain policy-gated by `QUEUEBASH_AI_LIVE_ENABLED=1` and delegate through existing ask-provider helpers. Preserves dev merge-plan, cloud broker, deterministic class inference, ask inventory, grid-energy, embedded API, and QBTEST support.
+
+# 0.18.83 BOB_MERGER13 dev merge-plan manifest normalization
+
+Merges Bob2's merge-plan manifest normalization repair onto the accepted 0.18.82 dev merge-plan integration base. The planner now recognises alternate manifest dialects, nested patchset containers, same-path/function overlaps across synthetic Bob patchsets, and release identity overlaps from noncanonical manifests while remaining read-only and bounded by default. Preserves cloud broker, AI broker, deterministic class inference, ask inventory, grid-energy, embedded API, and QBTEST support.
+
+# 0.18.82 BOB_MERGER13 dev merge-plan integration
+
+Merges Bob2's read-only `queue dev merge-plan` tool onto the accepted 0.18.81 cloud/AI policy-linkage line. Adds bounded zip-aware multi-patchset merge planning, function-level overlap reporting, release/version reconciliation advice, delivery-evidence relocation recommendations, validation-plan generation, and human/JSON plan explanation. Preserves cloud broker front, AI broker policy links, deterministic class inference, AI broker runtime, ask inventory grounding, grid-energy cost model, embedded API, QBTEST add/extract/installer support, and no-live/no-auto-merge boundaries.
+
+# 0.18.81 BOB_MERGER13 great big cloud/AI policy linkage merge
+
+Merges Bob10 cloud broker front, Bob10 cloud broker policy-reference linkage, and Bob11 AI broker policy-link evidence onto the accepted 0.18.80 deterministic class inference base. Adds the unified `queue cloud ...` broker front, local cloud-signal policy references, AI broker policy links, and keeps delivery evidence under `.queuebash/dev/deliveries/`. Preserves AI broker runtime, embedded API, ask inventory backfill, grid energy cost model, deterministic class inference, QBTEST add/extract/installer support, and no-live/no-dispatch-refactor boundaries.
+
+# 0.18.80 BOB_MERGER13 deterministic class inference contract merge
+
+Merges Bob2 deterministic class inference contract material onto the accepted 0.18.79 AI broker runtime line. Adds the offline `queue class-infer` / `queue class-recommend` helper wrapper, deterministic command fingerprinting and recommendation fixtures, class inference policy examples, and focused static/JSON tests. This is contract/offline helper work only: no submit-path enforcement, live API calls, provisioning, queue dispatch refactor, or automatic class mutation is introduced.
+
+# 0.18.79 BOB11 queue AI broker runtime implementation
+
+Adds the first fixture-first `queue ai` broker runtime surface: providers/models/health/explain plus selection-only chat/json responses from AI profiles and provider registry. No live provider calls, credentials, dispatch refactor, or provider mutation are introduced.
+
+# 0.18.78 BOB_MERGER13 embedded API and AI broker contract merge
+
+Merges Bob11's queue AI broker contract documentation, provider-neutral profile/registry policy examples, job `uses_ai` guidance, and static/JSON contract tests onto the accepted 0.18.77 embedded API plus ask-inventory line. Preserves grid-energy cost grounding, ask command/usage/asset inventory backfill, QBTEST installer/add/extract support, and embedded API contract docs/tests. This remains contract/policy/test only: no runtime broker, live AI calls, credentials, queue dispatch refactor, provisioning, or provider mutation behaviour is introduced.
+
 # 0.18.77 BOB_MERGER13 embedded API contract and ask inventory merge
 
 Merges Bob11's contract-first embedded application/session API documentation, app-scope policy examples, and static/JSON contract tests onto the accepted 0.18.76 ask command-surface and asset-inventory backfill line. Preserves grid-energy cost model grounding, queue ask command/usage inventory backfill, QBTEST installer/add/extract support, and cleanup-clean delivery discipline. No runtime broker, socket listener, language binding, queue dispatch refactor, live API posture, or provisioning behaviour is introduced.

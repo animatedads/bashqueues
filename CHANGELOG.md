@@ -1,3 +1,57 @@
+# 0.18.84 - BOB_MERGER13 cloud job intent and AI live broker merge
+
+- Merge Bob10 cloud job intent submit contract: `queue submit --uses-cloud` plus cloud profile/capability/provider/region/service/cost/policy-reference metadata.
+- Persist cloud job intent as advisory-only job metadata with `CLOUD_BROKER_DECISION=advisory-only` and `CLOUD_BROKER_BINDING=not-bound-to-dispatch`.
+- Merge Bob11 AI broker live-call delegation: `queue ai chat|json --live` delegates through existing ask-provider helpers only when live AI is explicitly enabled by policy.
+- Preserve 0.18.83 dev merge-plan manifest normalization, cloud broker, AI broker runtime, deterministic class inference, ask inventory, grid-energy, embedded API, and QBTEST support.
+
+# 0.18.83 - BOB_MERGER13 dev merge-plan manifest normalization
+
+- Merge Bob2 manifest normalization repair for `queue dev merge-plan`.
+- Support alternate patchset manifest shapes using `manifest.files[]` as well as canonical `manifest.entries[]`.
+- Support container zips that hold multiple nested patchset zips.
+- Report same-path and same-function overlaps for synthetic Bob merge-planning fixtures.
+- Detect release identity overlaps across noncanonical manifests while preserving `ledger_overlap_not_runtime_conflict`.
+- Keep merge-plan read-only and bounded: no automatic merge/apply, no full unzip by default, no live provider calls.
+
+# 0.18.82 - BOB_MERGER13 dev merge-plan integration
+
+- Merge Bob2 `queue dev merge-plan` read-only merge intelligence tool.
+- Add `bin/queue-dev-merge-plan.py`, docs, fixtures, static/smoke/JSON contract tests, and `queue dev merge-plan explain|summary`.
+- Support bounded zip inspection, root/nested patchset layouts, function-level queuebash analysis, same-file/same-function overlap reports, scratchpad item-merge classification, release identity overlap handling, delivery evidence relocation recommendations, and validation-plan generation.
+- Preserve 0.18.81 cloud broker front, cloud/AI policy-reference linkage, deterministic class inference, AI broker runtime, ask inventory grounding, QBTEST support, and cleanup-clean delivery layout.
+- Keep merge-plan read-only: no automatic conflict resolution, no target tree writes, no live provider calls, no dispatch refactor beyond additive dev subcommand wrapper.
+
+# 0.18.81 - BOB_MERGER13 great big cloud/AI policy linkage merge
+
+- Merge Bob10 `queue cloud ...` broker front routing and non-mutating cloud broker explanation helper.
+- Merge Bob10 cloud broker policy-reference linkage for local regulatory/corporate policy evidence in cloud-signals and cloud broker explain output.
+- Merge Bob11 AI broker policy links for provider/profile/model policy references in broker explain/response output.
+- Move root-level delivery records into `.queuebash/dev/deliveries/legacy-root-evidence/` and write current delivery evidence under `.queuebash/dev/deliveries/0.18.81_BOB_MERGER13_big_cloud_ai_policy_linkage_merge/`.
+- Preserve deterministic class inference, AI broker runtime, embedded API, ask inventory backfill, grid energy cost model, QBTEST add/extract/installer support, and no-live/no-dispatch-refactor boundaries.
+
+# 0.18.80 - BOB_MERGER13 deterministic class inference contract merge
+
+- Merge Bob2 deterministic class inference contract onto the accepted 0.18.79 AI broker runtime full delivery.
+- Add `bin/queue-class-infer.py` and `queue class-infer` / `queue class-recommend` wrapper dispatch for offline fingerprint/recommend/explain operations.
+- Add class inference, fingerprint, anomaly-policy docs, policy examples, fixtures, and static/JSON contract tests.
+- Preserve AI broker runtime, embedded API contract, ask command/asset inventory backfill, grid energy cost model, and QBTEST installer/add/extract support.
+- Keep deterministic class inference advisory/contract-only: no submit-path enforcement, live API calls, provisioning, queue dispatch refactor, or automatic class mutation.
+
+# 0.18.79 - BOB11 queue AI broker runtime implementation
+
+- Add `bin/queue-ai-broker` and `queue ai` command dispatch for provider/model inventory, health, explain, and selection-only chat/json operations.
+- Load AI profiles and provider registry from policy locations with fixture fallbacks.
+- Add focused static/smoke/JSON tests; live provider calls remain out of scope.
+
+# 0.18.78 - BOB_MERGER13 embedded API and AI broker contract merge
+
+- Merge Bob11 queue AI broker contract materials onto the accepted 0.18.77 embedded API and ask-inventory full delivery.
+- Add provider-neutral AI broker documentation covering profiles, provider registries, model aliases, health/fallback, cost/privacy routing, brokered-call, and brokered-lease contracts.
+- Add policy examples for AI broker/provider selection and fixture-only static/JSON tests for broker contract, job `uses_ai` metadata, and JSON schema examples.
+- Preserve ask command-surface/asset-inventory grounding, grid-energy cost model support, QBTEST installer/add/extract support, and embedded API contract material.
+- No live AI calls, credentials, runtime broker, provider mutation, queue dispatch refactor, provisioning, or cloud behaviour changes are introduced.
+
 # 0.18.77 - BOB_MERGER13 embedded API contract and ask inventory merge
 
 - Merge Bob11 embedded application/session API contract docs, app-scope policy examples, and static/JSON tests.

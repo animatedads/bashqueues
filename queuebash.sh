@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.77"
+QUEUEBASH_VERSION="0.18.84"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -3779,6 +3779,18 @@ _queue_print_selected_user_banner() {
     else
         printf 'QUEUE USER: %s  shell-user=%s  root=%s\n' "$selected_user" "$shell_user" "$selected_root"
     fi
+}
+
+_queue_class_infer_command() {
+    local helper="${QUEUEBASH_CLASS_INFER_HELPER:-}"
+    if [[ -z "$helper" ]]; then
+        helper="$(_queue_bundled_file "bin/queue-class-infer.py" 2>/dev/null || true)"
+    fi
+    if [[ -z "$helper" || ! -f "$helper" ]]; then
+        helper="$(dirname "${BASH_SOURCE[0]}")/bin/queue-class-infer.py"
+    fi
+    [[ -f "$helper" ]] || { echo "queue class-infer: helper not found: $helper" >&2; return 1; }
+    "${QUEUEBASH_PYTHON:-/usr/bin/python3}" "$helper" "$@"
 }
 
 # -----------------------------------------------------------------------------
@@ -15671,6 +15683,8 @@ Usage:
   queue dev files begin|finish|add|remove|list|changed|scan|path
   queue dev patchset create --output ZIP [--registry FILE] [--json]
   queue dev patchset inspect --patchset ZIP [--target DIR] [--json]
+  queue dev merge-plan --base DIR --patchset ZIP [--patchset ZIP...] [--target-version VERSION] [--json]
+  queue dev merge-plan explain|summary PLAN.json [--json]
   queue dev validate [--json] [--quick] [--timeout SEC] [--file FILE...]
   queue dev scope-check [--json] [--allow GLOB...] [--deny GLOB...] [--file FILE...]
 
@@ -15688,6 +15702,9 @@ queuebash.dev_test_result.v1 status without wiring results into scratchpad. file
 edit-session baselines, purposes, file checksums, function checksums, and changed-file
 state. patchset creates a minimal changed-files zip with diffs, manifest, and guarded
 merge/apply scripts using old file/function MD5 preconditions for multistream work.
+merge-plan provides bounded, read-only, zip-aware merge intelligence across multiple
+patchsets, reporting file/function scope, collisions, release identity overlaps,
+scratchpad item-merge concerns, delivery evidence relocation, and validation steps.
 attempt and evidence create a bounded development-attempt ledger under the queue root,
 linking validation evidence to named attempts without granting acceptance authority.
 context, think, and handover provide bounded working-set context loading,
@@ -18777,6 +18794,17 @@ except Exception as e:
 PYDEV_FILE_REGISTRY
 }
 
+_queue_dev_merge_plan_command() {
+    local helper
+    helper="$(_queue_bundled_file "bin/queue-dev-merge-plan.py" 2>/dev/null || true)"
+    if [[ -z "$helper" || ! -f "$helper" ]]; then
+        helper="$(dirname "${BASH_SOURCE[0]}")/bin/queue-dev-merge-plan.py"
+    fi
+    [[ -f "$helper" ]] || { echo "queue dev merge-plan: helper not found: $helper" >&2; return 1; }
+    "${QUEUEBASH_PYTHON:-/usr/bin/python3}" "$helper" "$@"
+}
+
+
 _queue_dev_patchset_command() {
     local sub="${1:-}" registry="" output="" patchset="" target="" backup_dir="" json=0 check=0
     shift || true
@@ -19566,6 +19594,7 @@ _queue_dev_command() {
         handover) _queue_dev_handover_command "$@" ;;
         files|file-registry|registry) _queue_dev_file_registry_command "$@" ;;
         patchset) _queue_dev_patchset_command "$@" ;;
+        merge-plan|mergeplan) _queue_dev_merge_plan_command "$@" ;;
         validate) _queue_dev_validate_command "$@" ;;
         scope-check|scopecheck) _queue_dev_scope_check_command "$@" ;;
         help|--help|-h|"") _queue_dev_usage ;;
@@ -19617,6 +19646,76 @@ _queue_cloud_signals_command() {
         return 1
     }
     "$helper" "$@"
+}
+
+_queue_cloud_provider_helper_path() {
+    local family="${1:-}" helper="${2:-}" here cand
+    [[ -n "$family" && -n "$helper" ]] || return 1
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    for cand in \
+        "$here/providers.d/$family/$helper" \
+        "$here/../providers.d/$family/$helper" \
+        "/usr/local/share/bashqueues/providers.d/$family/$helper" \
+        "$HOME/.queuebash/providers.d/$family/$helper"; do
+        [[ -x "$cand" ]] && { printf '%s\n' "$cand"; return 0; }
+    done
+    return 1
+}
+
+_queue_cloud_command_help() {
+    cat <<'EOF'
+queue cloud - unified cloud broker front
+
+Usage:
+  queue cloud providers [--json]
+  queue cloud services [--json]
+  queue cloud signals ...
+  queue cloud resource list|check|claim|release|reconcile|explain ...
+  queue cloud provision templates|plan|validate|dry-run|approval-request|live-gate|handoff ...
+  queue cloud infra list|explain|plan|start|stop|status ...
+  queue cloud broker explain --capability CAP --profile PROFILE [--json]
+
+This command is a broker front over existing cloud provider layers. It does not
+add live cloud discovery, provisioning/destruction, dispatch refactors, or job
+lifecycle binding. Live behaviour remains owned by the underlying gated helpers.
+EOF
+}
+
+_queue_cloud_command() {
+    local sub="${1:-help}" helper
+    shift || true
+    case "$sub" in
+        help|--help|-h|"") _queue_cloud_command_help ;;
+        providers)
+            helper="$(_queue_cloud_signals_helper_path)" || { echo "queue cloud providers: cloud_signals helper not found" >&2; return 1; }
+            "$helper" platforms "$@"
+            ;;
+        services)
+            helper="$(_queue_cloud_provider_helper_path cloud_infra cloud_infra.sh)" || { echo "queue cloud services: cloud_infra helper not found" >&2; return 1; }
+            "$helper" list "$@"
+            ;;
+        signals|signal|cost|availability|cloud-signals)
+            helper="$(_queue_cloud_signals_helper_path)" || { echo "queue cloud signals: helper not found" >&2; return 1; }
+            "$helper" "$@"
+            ;;
+        resource|resources|cloud-resource)
+            helper="$(_queue_cloud_provider_helper_path cloud_resource cloud_resource_provider.sh)" || { echo "queue cloud resource: cloud_resource helper not found" >&2; return 1; }
+            "$helper" "$@"
+            ;;
+        provision|provisioning|cloud-provision)
+            helper="$(_queue_cloud_provider_helper_path cloud_provision cloud_provision.sh)" || { echo "queue cloud provision: cloud_provision helper not found" >&2; return 1; }
+            "$helper" "$@"
+            ;;
+        infra|infrastructure|cloud-infra)
+            helper="$(_queue_cloud_provider_helper_path cloud_infra cloud_infra.sh)" || { echo "queue cloud infra: cloud_infra helper not found" >&2; return 1; }
+            "$helper" "$@"
+            ;;
+        broker)
+            helper="$(_queue_cloud_provider_helper_path cloud_broker cloud_broker_provider.sh)" || { echo "queue cloud broker: cloud_broker helper not found" >&2; return 1; }
+            "$helper" "$@"
+            ;;
+        *) echo "queue cloud: unknown subcommand: $sub" >&2; _queue_cloud_command_help >&2; return 2 ;;
+    esac
 }
 
 _queue_remote_admin_helper_path() {
@@ -20279,6 +20378,56 @@ sys.exit(result("allow", "profile_signatures_file_verifier_valid", False, signer
 PYSIGVERIFY
 }
 
+_queue_ai_broker_command() {
+    local source_dir helper
+    source_dir="$(_queue_ai_source_dir 2>/dev/null || pwd)"
+    helper="${QUEUEBASH_AI_BROKER_HELPER:-}"
+    if [[ -z "$helper" ]]; then
+        if [[ -x "$source_dir/bin/queue-ai-broker" ]]; then
+            helper="$source_dir/bin/queue-ai-broker"
+        else
+            helper="$(command -v queue-ai-broker 2>/dev/null || true)"
+        fi
+    fi
+    if [[ -z "$helper" || ! -x "$helper" ]]; then
+        echo "queue ai: helper not found: bin/queue-ai-broker" >&2
+        return 1
+    fi
+    case "${1:-}" in
+        providers|models|health|explain|chat|json)
+            "$helper" "$@"
+            ;;
+        help|-h|--help|"")
+            cat <<'EOF'
+Usage:
+  queue ai providers [--json]
+  queue ai models [--provider NAME] [--json]
+  queue ai health [--json]
+  queue ai explain [--profile NAME] [--capability csv] [--json]
+  queue ai chat [--profile NAME] [--capability csv] [--message TEXT|--input-file FILE] [--live] [--json]
+  queue ai json [--profile NAME] [--schema FILE] [--message TEXT|--input-file FILE] [--live] [--json]
+
+Purpose:
+  Resolve provider/model choices from AI profiles, provider registry, health,
+  capability, cost, and locality constraints. By default it performs selection
+  only; --live delegates to an existing ask-provider helper only when
+  QUEUEBASH_AI_LIVE_ENABLED=1 is set by policy.
+
+Policy inputs:
+  /etc/bashqueues/policies.d/ai-profiles/*.env
+  /etc/bashqueues/policies.d/ai-broker/provider-registry.json
+
+Important:
+  queue ai broker output is advisory data. It is never evaluated as shell.
+EOF
+            ;;
+        *)
+            echo "Usage: queue ai providers|models|health|explain|chat|json [options]" >&2
+            return 2
+            ;;
+    esac
+}
+
 _queue_profile_multisig_command() {
     local sub="${1:-help}"
     shift || true
@@ -20379,12 +20528,24 @@ queue() {
             _queue_ai_ask_command "$@"
             ;;
 
+        ai|ai-broker)
+            _queue_ai_broker_command "$@"
+            ;;
+
         remote|remote-queue|rq)
             _queue_remote_command "$@"
             ;;
 
         remote-admin|remote_admin|remote-admin-policy)
             _queue_remote_admin_command "$@"
+            ;;
+
+        class-infer|class_infer|class-recommend|class-recommendation)
+            _queue_class_infer_command "$@"
+            ;;
+
+        cloud|cloud-broker|cloud_broker)
+            _queue_cloud_command "$@"
             ;;
 
         cloud-signals|cloud_signals|cloud-cost|cloud-availability)
@@ -20565,6 +20726,15 @@ queue() {
             local schedule_label="${QUEUEBASH_SUBMIT_SCHEDULE_LABEL:-}"
             local local_dryrun="$dryrun"
             local json_output=0
+            local cloud_uses=0
+            local cloud_profile=""
+            local cloud_capability=""
+            local cloud_provider=""
+            local cloud_region=""
+            local cloud_service=""
+            local cloud_estimated_hourly_usd=""
+            local cloud_monthly_budget_usd=""
+            local cloud_policy_refs=()
             local name="$1"
             shift || true
 
@@ -20712,6 +20882,42 @@ queue() {
                         exception_add_port="${exception_add_port:+$exception_add_port,}$2"
                         shift 2
                         ;;
+                    --uses-cloud)
+                        cloud_uses=1
+                        shift
+                        ;;
+                    --cloud-profile)
+                        [[ -z "$2" ]] && { echo "queue submit: --cloud-profile needs a profile name" >&2; return 2; }
+                        cloud_profile="$2"; cloud_uses=1; shift 2
+                        ;;
+                    --cloud-capability)
+                        [[ -z "$2" ]] && { echo "queue submit: --cloud-capability needs a capability such as vm|gpu|object-storage" >&2; return 2; }
+                        cloud_capability="$2"; cloud_uses=1; shift 2
+                        ;;
+                    --cloud-provider)
+                        [[ -z "$2" ]] && { echo "queue submit: --cloud-provider needs a provider such as aws|oci|azure|gcp|ibm" >&2; return 2; }
+                        cloud_provider="$2"; cloud_uses=1; shift 2
+                        ;;
+                    --cloud-region)
+                        [[ -z "$2" ]] && { echo "queue submit: --cloud-region needs a region" >&2; return 2; }
+                        cloud_region="$2"; cloud_uses=1; shift 2
+                        ;;
+                    --cloud-service)
+                        [[ -z "$2" ]] && { echo "queue submit: --cloud-service needs a service such as compute|gpu|object-storage" >&2; return 2; }
+                        cloud_service="$2"; cloud_uses=1; shift 2
+                        ;;
+                    --cloud-estimated-hourly-usd)
+                        [[ -z "$2" ]] && { echo "queue submit: --cloud-estimated-hourly-usd needs a numeric estimate" >&2; return 2; }
+                        cloud_estimated_hourly_usd="$2"; cloud_uses=1; shift 2
+                        ;;
+                    --cloud-monthly-budget-usd|--cloud-budget-usd)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a numeric budget" >&2; return 2; }
+                        cloud_monthly_budget_usd="$2"; cloud_uses=1; shift 2
+                        ;;
+                    --cloud-policy-ref|--cloud-policy-reference)
+                        [[ -z "$2" ]] && { echo "queue submit: $1 needs a policy reference" >&2; return 2; }
+                        cloud_policy_refs+=( "$2" ); cloud_uses=1; shift 2
+                        ;;
                     --reason)
                         [[ -z "$2" ]] && { echo "queue submit: --reason needs text" >&2; return 2; }
                         security_reason="$2"
@@ -20762,6 +20968,16 @@ queue() {
             [[ "$priority" =~ ^-?[0-9]+$ ]] || priority=10
             [[ "$retries_max" =~ ^[0-9]+$ ]] || retries_max=0
             [[ "$retry_backoff" =~ ^[0-9]+$ ]] || retry_backoff=0
+            if [[ "$cloud_uses" -eq 1 ]]; then
+                [[ -n "$cloud_profile" ]] || { echo "queue submit: --uses-cloud requires --cloud-profile PROFILE" >&2; return 2; }
+                [[ -n "$cloud_capability" ]] || { echo "queue submit: --uses-cloud requires --cloud-capability CAPABILITY" >&2; return 2; }
+                case "$cloud_profile" in *$'	'*|*$'
+'*|*$'
+'*) echo "queue submit: invalid --cloud-profile" >&2; return 2 ;; esac
+                case "$cloud_capability" in *$'	'*|*$'
+'*|*$'
+'*) echo "queue submit: invalid --cloud-capability" >&2; return 2 ;; esac
+            fi
 
             local dep
             for dep in "${depends_after_success[@]}"; do
@@ -20812,6 +21028,16 @@ queue() {
                 fi
                 if [[ "${not_before_epoch:-0}" =~ ^[0-9]+$ && "${not_before_epoch:-0}" -gt 0 ]]; then
                     echo "  scheduled: $(date -d "@$not_before_epoch" -Is 2>/dev/null || echo "$not_before_epoch") ${schedule_label:+($schedule_label)}"
+                fi
+                if [[ "$cloud_uses" -eq 1 ]]; then
+                    echo "  uses-cloud: yes"
+                    echo "  cloud-profile: ${cloud_profile}"
+                    echo "  cloud-capability: ${cloud_capability}"
+                    [[ -n "$cloud_provider" ]] && echo "  cloud-provider: ${cloud_provider}"
+                    [[ -n "$cloud_region" ]] && echo "  cloud-region: ${cloud_region}"
+                    [[ -n "$cloud_service" ]] && echo "  cloud-service: ${cloud_service}"
+                    [[ -n "$cloud_estimated_hourly_usd" ]] && echo "  cloud-estimated-hourly-usd: ${cloud_estimated_hourly_usd}"
+                    [[ -n "$cloud_monthly_budget_usd" ]] && echo "  cloud-monthly-budget-usd: ${cloud_monthly_budget_usd}"
                 fi
                 echo "  state:    pending"
                 echo "  jobfile:  $job"
@@ -20868,6 +21094,19 @@ queue() {
                     _auth_norm="$(_queue_authorisation_normalise_code "$authorisation_code" 2>/dev/null || printf '%s' "$authorisation_code")"
                     printf 'SECURITY_AUTHORISATION_CODE=%q\n' "$_auth_norm"
                 fi
+                if [[ "$cloud_uses" -eq 1 ]]; then
+                    printf 'USES_CLOUD=%q\n' "1"
+                    printf 'CLOUD_PROFILE=%q\n' "$cloud_profile"
+                    printf 'CLOUD_CAPABILITY=%q\n' "$cloud_capability"
+                    [[ -n "$cloud_provider" ]] && printf 'CLOUD_PROVIDER=%q\n' "$cloud_provider"
+                    [[ -n "$cloud_region" ]] && printf 'CLOUD_REGION=%q\n' "$cloud_region"
+                    [[ -n "$cloud_service" ]] && printf 'CLOUD_SERVICE=%q\n' "$cloud_service"
+                    [[ -n "$cloud_estimated_hourly_usd" ]] && printf 'CLOUD_ESTIMATED_HOURLY_USD=%q\n' "$cloud_estimated_hourly_usd"
+                    [[ -n "$cloud_monthly_budget_usd" ]] && printf 'CLOUD_MONTHLY_BUDGET_USD=%q\n' "$cloud_monthly_budget_usd"
+                    [[ "${#cloud_policy_refs[@]}" -gt 0 ]] && printf 'CLOUD_POLICY_REFERENCES=%q\n' "${cloud_policy_refs[*]}"
+                    printf 'CLOUD_BROKER_DECISION=%q\n' "advisory-only"
+                    printf 'CLOUD_BROKER_BINDING=%q\n' "not-bound-to-dispatch"
+                fi
                 printf 'JOB_CLASS=%q\n' "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}"
                 if [[ "${#depends_after_success[@]}" -gt 0 ]]; then
                     deps_join="${depends_after_success[*]}"
@@ -20905,6 +21144,9 @@ queue() {
                 echo "Submitted $id : $name priority=$priority"
                 if [[ "${not_before_epoch:-0}" =~ ^[0-9]+$ && "${not_before_epoch:-0}" -gt 0 ]]; then
                     echo "  scheduled for: $(date -d "@$not_before_epoch" -Is 2>/dev/null || echo "$not_before_epoch") ${schedule_label:+($schedule_label)}"
+                fi
+                if [[ "$cloud_uses" -eq 1 ]]; then
+                    echo "  cloud intent: profile=${cloud_profile} capability=${cloud_capability} binding=not-bound-to-dispatch"
                 fi
             fi
             _queue_log_event "submitted" "$id" "$name" "pending" "priority=$priority"
