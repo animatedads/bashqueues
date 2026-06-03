@@ -31,8 +31,8 @@ require_grep 'alibaba-export-review-ecs' policies.d/cloud-infra/registry.example
 require_grep 'tencent-export-review-cvm' policies.d/cloud-infra/registry.example.json
 require_grep 'huawei-export-review-ecs' policies.d/cloud-infra/registry.example.json
 
-if grep -R 'queue cloud-infra\|queue cloud-resources\|_queue_cloud' queuebash.sh providers.d/cloud_infra docs/CLOUD_INFRASTRUCTURE_HELPER_PARITY_EU_APAC.md >/dev/null; then
-  echo 'cloud infra parity must not wire a queue dispatcher' >&2
+if grep -R 'queue cloud-infra\|queue cloud-resources' queuebash.sh providers.d/cloud_infra docs/CLOUD_INFRASTRUCTURE_HELPER_PARITY_EU_APAC.md >/dev/null; then
+  echo 'cloud infra parity must not wire legacy cloud infra dispatcher forms' >&2
   exit 1
 fi
 

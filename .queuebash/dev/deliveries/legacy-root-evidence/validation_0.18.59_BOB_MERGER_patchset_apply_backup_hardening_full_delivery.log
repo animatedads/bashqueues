@@ -1,0 +1,25 @@
+PASS source queuebash.sh before patchset inspection
+PASS queue dev patchset inspect --patchset BOB12 --json
+PASS apply_patchset.sh --help does not run preconditions
+PASS apply_patchset.sh --check --json TARGET
+PASS apply_patchset.sh --json TARGET creates backup_manifest before overwrite
+PASS bash -n queuebash.sh
+PASS bash -n bin/queue-dev-timeout
+PASS bash -n tests/dev_patchset_apply_hardening_static.sh
+PASS bash -n tests/dev_patchset_apply_hardening_smoke.sh
+PASS tests/dev_patchset_apply_hardening_static.sh
+PASS tests/dev_patchset_apply_hardening_smoke.sh
+PASS dev_qbtest_static
+PASS dev_qbtest_smoke
+PASS dev_qbtest_json_contract_static
+PASS direct queue dev test qbtest --file queuebash.sh --function _queue_now --json
+PASS queue_dev_contract_static
+PASS queue_dev_json_contract_static
+PASS dev_scratchpad_static
+PASS dev_scratchpad_json_contract_static
+PASS dev_scratchpad_required_fields_static
+PASS remote_admin_policy_commands_static
+PASS remote_admin_policy_commands_json_contract_static
+PASS docs/QUEUE_DEV_QBTEST.md example markers are escaped as EXAMPLE_QBTEST
+PASS banned fake QBTEST placeholder tokens absent
+PASS malformed my-test placeholder absent

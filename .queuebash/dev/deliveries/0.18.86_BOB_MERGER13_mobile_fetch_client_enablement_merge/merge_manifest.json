@@ -1,0 +1,19 @@
+{
+  "schema": "queuebash.delivery_manifest.v1",
+  "version": "0.18.86",
+  "delivery": "0.18.86_BOB_MERGER13_mobile_fetch_client_enablement_merge",
+  "base": "0.18.85_BOB_MERGER13_baseten_ask_provider_merge",
+  "inputs": [
+    "mobile_fetch_patch_v2.zip"
+  ],
+  "excluded": [
+    "mobile_fetch_patch.zip"
+  ],
+  "created_at": "2026-06-02T18:16:35.404740+00:00",
+  "changes": [
+    "queue fetch command",
+    "mobile class examples",
+    "fetch/mobile docs",
+    "fetch/mobile tests"
+  ]
+}

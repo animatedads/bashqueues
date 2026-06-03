@@ -1,0 +1,47 @@
+0.18.58 BOB_MERGER remote admin ACL-gated policy commands full delivery validation
+
+Route:
+PASS source queuebash.sh first
+PASS queue dev patchset inspect --patchset PATCH --json first where supported
+PASS apply_patchset.sh first where preconditions allowed
+PASS manual reconciliation only for expected independent queuebash/ledger overlaps
+PASS bin/queue-dev-timeout used for bounded validation
+
+Focused validation:
+PASS bash -n queuebash.sh
+PASS bash -n bin/queue-dev-timeout
+PASS python3 -m py_compile bin/queue-ai-ask-cerebras
+PASS bash -n providers.d/ask/cerebras.sh
+PASS bash -n providers.d/remote_admin/remote_admin_policy.sh
+PASS python3 -m py_compile providers.d/remote_admin/remote_admin_policy.py
+PASS python3 tests/dev_scratchpad_required_fields_static.py
+PASS bash tests/ask_cerebras_provider_static.sh
+PASS bash tests/ask_cerebras_provider_smoke.sh
+PASS bash tests/cloud_provision_gpu_templates_static.sh
+PASS bash tests/cloud_provision_gpu_templates_smoke.sh
+PASS python3 tests/cloud_provision_gpu_templates_json_contract_static.py
+PASS bash tests/dev_validate_scope_static.sh
+PASS bash tests/dev_validate_scope_smoke.sh
+PASS python3 tests/dev_validate_scope_json_contract_static.py
+PASS bash tests/remote_admin_policy_commands_static.sh
+PASS bash tests/remote_admin_policy_commands_smoke.sh
+PASS python3 tests/remote_admin_policy_commands_json_contract_static.py
+PASS bash tests/dev_qbtest_static.sh
+PASS bash tests/dev_qbtest_smoke.sh
+PASS python3 tests/dev_qbtest_json_contract_static.py
+PASS direct queue dev test qbtest --file queuebash.sh --function _queue_now --json
+PASS direct queue dev validate --quick --timeout 30 --json
+PASS direct queue dev scope-check --file queuebash.sh --allow queuebash.sh --json
+
+Repairs during merge:
+PASS tests/cloud_provision_gpu_templates_static.sh no longer pins exact historical runtime version
+PASS tests/dev_validate_scope_static.sh matches current expanded usage text
+PASS scratchpad required-field normalization preserved
+PASS remote_admin smoke/json tests executed with bounded timeout helper because individual helper subprocess imports are slow in this sandbox
+
+Preservation:
+PASS fake malformed QBTEST placeholder absent
+PASS real _queue_now embedded QBTEST present
+PASS EXAMPLE_QBTEST markers retained for documentation examples
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present

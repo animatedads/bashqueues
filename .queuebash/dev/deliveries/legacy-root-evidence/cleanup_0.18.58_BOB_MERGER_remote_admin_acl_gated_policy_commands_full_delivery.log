@@ -1,0 +1,14 @@
+PASS absent -name __pycache__
+PASS absent -name .pytest_cache
+PASS absent -name *.pyc
+PASS absent -name *.pyo
+PASS absent -name *.lock
+PASS absent -name *.dev.lock
+PASS absent -name *.devpatch.*
+PASS absent -name *.orig
+PASS absent -name *.rej
+PASS absent -name *.MERGE_CONFLICT
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS scratchpad JSON valid
+PASS merge manifest JSON valid

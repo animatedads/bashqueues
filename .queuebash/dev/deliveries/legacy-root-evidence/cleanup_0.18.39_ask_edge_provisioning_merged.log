@@ -1,0 +1,11 @@
+CLEANUP 0.18.39 ask edge provisioning merged final
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no __pycache__
+PASS no .pyc
+PASS no *.lock
+PASS no *.dev.lock
+PASS no *.devpatch.*
+PASS no queuebash.sh.bak.*
+PASS scratchpad JSON valid
+PASS merge manifest JSON valid

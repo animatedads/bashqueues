@@ -1,0 +1,66 @@
+{
+  "schema": "queuebash.merge_delivery.v1",
+  "delivery": "0.18.77_BOB_MERGER13_embedded_api_contract_ask_inventory_merge",
+  "created_at": "2026-06-02T09:09:43.587046+00:00",
+  "base": "bashqueues_0.18.76_BOB_MERGER13_ask_inventory_command_surface_backfill_full_delivery.zip",
+  "inputs": [
+    "bashqueues_0.18.76_BOB11_embedded_api_contract_patchset.zip"
+  ],
+  "summary": {
+    "modified_files": 3,
+    "new_files": 7,
+    "runtime_version": "0.18.77"
+  },
+  "entries": [
+    {
+      "path": "queuebash.sh",
+      "md5": "a6eb63b71bab4f36a11147d7e7c6830f",
+      "size": 1060321
+    },
+    {
+      "path": "README.md",
+      "md5": "cb1593ed0211cad0d793dd265100a313",
+      "size": 140717
+    },
+    {
+      "path": "CHANGELOG.md",
+      "md5": "4bd39eb78b45c8359331204678e29ac9",
+      "size": 171646
+    },
+    {
+      "path": "docs/QUEUE_API_EMBEDDED.md",
+      "md5": "e3bac5803a69fd10e6b7df10513975b9",
+      "size": 4678
+    },
+    {
+      "path": "docs/QUEUE_API_PROTOCOL.md",
+      "md5": "fc687dfb227ebde1ebc7b2c44b0ac47b",
+      "size": 3294
+    },
+    {
+      "path": "policies.d/app-scope/installer.env.example",
+      "md5": "ee7e5256a073a741424fac40779de370",
+      "size": 596
+    },
+    {
+      "path": "policies.d/app-scope/qms.env.example",
+      "md5": "e2d502ef3bea8a03b3cbcd4bceeb2d38",
+      "size": 631
+    },
+    {
+      "path": "tests/queue_api_protocol_static.sh",
+      "md5": "a5b07facb3ef3771d325b940f2aa645f",
+      "size": 1334
+    },
+    {
+      "path": "tests/queue_api_scope_static.sh",
+      "md5": "f3c7dfba94f1097eab0d61218c220ba8",
+      "size": 1212
+    },
+    {
+      "path": "tests/queue_api_protocol_json_contract_static.py",
+      "md5": "12489ae2ba7363c3c5d0281299fd7e43",
+      "size": 1144
+    }
+  ]
+}

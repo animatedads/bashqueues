@@ -1,0 +1,32 @@
+== bash -n queuebash.sh
+PASS bash -n queuebash.sh
+== bash -n providers.d/cloud_provision/cloud_provision.sh
+PASS bash -n providers.d/cloud_provision/cloud_provision.sh
+== bash -n providers.d/cloud_resource/cloud_resource_provider.sh
+PASS bash -n providers.d/cloud_resource/cloud_resource_provider.sh
+== bash -n tests/cloud_provision_registry_handoff_static.sh
+PASS bash -n tests/cloud_provision_registry_handoff_static.sh
+== bash -n tests/cloud_provision_registry_handoff_smoke.sh
+PASS bash -n tests/cloud_provision_registry_handoff_smoke.sh
+== python3 -m py_compile tests/cloud_provision_registry_handoff_json_contract_static.py
+PASS python3 -m py_compile tests/cloud_provision_registry_handoff_json_contract_static.py
+== python3 -m py_compile tests/cloud_provision_registry_preview_static.py
+PASS python3 -m py_compile tests/cloud_provision_registry_preview_static.py
+== python3 -m py_compile tests/queue_dev_json_contract_static.py
+PASS python3 -m py_compile tests/queue_dev_json_contract_static.py
+== tests/cloud_provision_registry_handoff_static.sh
+PASS cloud_provision_registry_handoff_static
+PASS tests/cloud_provision_registry_handoff_static.sh
+== tests/cloud_provision_registry_handoff_json_contract_static.py
+PASS cloud_provision_registry_handoff_json_contract_static
+PASS tests/cloud_provision_registry_handoff_json_contract_static.py
+== tests/cloud_provision_registry_handoff_smoke.sh
+PASS cloud_provision_registry_handoff_smoke
+PASS tests/cloud_provision_registry_handoff_smoke.sh
+== tests/cloud_provision_contract_static.sh
+[PASS] cloud provision contract static checks pass
+PASS tests/cloud_provision_contract_static.sh
+== tests/cloud_provision_json_contract_static.py
+PASS cloud_provision_json_contract_static
+PASS tests/cloud_provision_json_contract_static.py
+== tests/cloud_provision_dry_run_smoke.sh

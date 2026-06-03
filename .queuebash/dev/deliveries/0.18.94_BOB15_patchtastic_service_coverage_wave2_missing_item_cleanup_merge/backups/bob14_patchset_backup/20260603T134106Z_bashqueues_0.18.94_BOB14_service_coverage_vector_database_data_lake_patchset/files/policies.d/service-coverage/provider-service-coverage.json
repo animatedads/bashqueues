@@ -1,0 +1,47 @@
+{
+  "schema": "queuebash.provider_service_coverage.v1",
+  "created_for": "0.18.89_BOB14_service_coverage_model_container_registry",
+  "default_safety_contract": {
+    "fixture_first": true,
+    "live_api_default": false,
+    "credentials_required_for_default_tests": false,
+    "provisioning_default": false,
+    "queue_dispatch_refactor": false,
+    "provider_output_is_shell": false,
+    "normalized_json_only": true
+  },
+  "families": {
+    "model_registry": {
+      "status": "fixture_first_provider_family",
+      "priority": 1,
+      "provider_dir": "model_registry",
+      "policy_dir": "model_registry",
+      "fixture_dir": "model_registry",
+      "doc_prefix": "MODEL_REGISTRY",
+      "schemas": [
+        "queuebash.model_registry.detect.v1",
+        "queuebash.model_registry.catalog.v1",
+        "queuebash.model_registry.model.v1",
+        "queuebash.model_registry.governance.v1"
+      ],
+      "non_goals": ["inference", "deployment", "ask-provider-runtime", "provisioning"]
+    },
+    "container_registry": {
+      "status": "fixture_first_provider_family",
+      "priority": 2,
+      "provider_dir": "container_registry",
+      "policy_dir": "container_registry",
+      "fixture_dir": "container_registry",
+      "doc_prefix": "CONTAINER_REGISTRY",
+      "schemas": [
+        "queuebash.container_registry.detect.v1",
+        "queuebash.container_registry.image.v1",
+        "queuebash.container_registry.provenance.v1",
+        "queuebash.container_registry.vulnerability.v1",
+        "queuebash.container_registry.retention.v1"
+      ],
+      "non_goals": ["pull", "push", "delete", "repository-create", "job-runtime-mutation"]
+    }
+  },
+  "next_candidates": ["vector_database", "data_lake", "gpu_marketplace", "distributed_framework"]
+}

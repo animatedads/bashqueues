@@ -1,0 +1,11 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "package": "0.18.35_apac_china_cloud_provider_contracts",
+  "base": "bashqueues_0.18.34_eu_sovereign_cloud_provider_contracts.zip",
+  "scope": [
+    "Bob2 APAC/China provider contract pack for Alibaba Cloud, Tencent Cloud, and Huawei Cloud",
+    "fixture-first provider helpers, docs, policies, classes, fixtures and tests",
+    "no live APAC/China provider API calls, no credentials, no provisioning/destruction, no queue dispatcher refactor",
+    "legal/compliance posture is mapped pending primary-source validation and not a first-tier parity claim"
+  ]
+}

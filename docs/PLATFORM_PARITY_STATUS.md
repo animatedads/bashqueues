@@ -35,3 +35,17 @@ The platform parity labels in this document are engineering status labels, not l
 ## 0.18.52 update
 
 Azure and GCP are now first-tier contract coverage entries. This is an engineering status: it confirms comparable docs, provider contracts, assets, classes, policies, fixtures, explainability, FinOps/cost posture, ITAR/export-control posture, and tests. It does not certify compliance, enable live APIs, permit provisioning, or change queue dispatch.
+
+
+## 0.18.88 Bob14 continuity update
+
+Bob14's continuity review confirms that provider-family presence is not the same
+as first-tier parity or compliance acceptance. IBM has actual helper, policy,
+fixture, docs, and tests in the tree, so the machine-readable consistency policy
+now records those real locations. IBM remains `high_standard_reference`; this is
+not a first-tier promotion and does not imply live provider support.
+
+The next service-coverage expansion should prioritise fixture-first model
+registry and container registry contract candidates before niche cloud additions,
+and must remain advisory/provider-fact work rather than provisioning or queue
+scheduling control.

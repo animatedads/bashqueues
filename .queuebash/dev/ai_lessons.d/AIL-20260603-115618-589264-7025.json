@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T11:56:18Z",
+  "created_from_session": "AIS-20260603-115349-588679-8019-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-115618-589264-7025",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "0.18.92 external signed display resources merge preserved queuebash.sh shell syntax; queue dev ai try allowlisted 'bash -n queuebash.sh' and recorded a pass."
+}

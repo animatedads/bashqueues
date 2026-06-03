@@ -1,0 +1,7 @@
+cleanup checks for 0.18.82
+QUEUEBASH_VERSION: QUEUEBASH_VERSION="0.18.82"
+root delivery evidence:
+pycache:
+pyc:
+assets net_usage:
+PASS cleanup clean

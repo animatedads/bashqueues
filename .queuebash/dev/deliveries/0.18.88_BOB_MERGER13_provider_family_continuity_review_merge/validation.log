@@ -1,0 +1,14 @@
+PASS patchset precondition check against 0.18.87 base
+PASS patchset apply with scratchpad item-level merge
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS bash tests/provider_family_continuity_bob14_static.sh
+PASS python3 tests/provider_family_consistency_json_contract_static.py
+PASS bash tests/queue_command_contract_static.sh
+PASS bash tests/queue_command_json_smoke.sh
+PASS bash tests/dev_merge_plan_static.sh
+PASS python3 tests/dev_merge_plan_json_contract_static.py
+PASS queue version --json parseable
+PASS queue dev test qbtest --file queuebash.sh --list --json reports 161 listed / 0 invalid
+PASS assets.d/net_usage.sh absent
+PASS cleanup cache/debris absent after cleanup

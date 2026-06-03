@@ -1,0 +1,16 @@
+{
+  "capabilities": [
+    "collection_inventory",
+    "index_metadata",
+    "embedding_policy",
+    "retention_evidence"
+  ],
+  "decision": "allow",
+  "fail_closed": true,
+  "live_checks": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "vector_database",
+  "schema": "queuebash.vector_database.detect.v1",
+  "service": "fixture-vector-store"
+}

@@ -1,0 +1,8 @@
+assets.d/net_usage.sh absent: ok
+caps.d/net_usage.sh present: ok
+no __pycache__: ok
+no .pyc: ok
+no *.lock: ok
+no *.dev.lock: ok
+no *.devpatch.*: ok
+no queuebash.sh.bak.*: ok

@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T13:18:35Z",
+  "created_from_session": "AIS-20260603-130758-386224-8397-bob14",
+  "created_from_try": "",
+  "kind": "failure_lesson",
+  "lesson_id": "AIL-20260603-131835-454092-8922",
+  "match": {
+    "command_glob": "tests/*_provider_contracts_static.sh",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "bash -x tests/NAME_provider_contracts_static.sh",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "Static grep phrase checks are brittle across line wrapping. If docs intentionally say a phrase split across lines, either add a stable contract-check phrase or make the test match smaller stable fragments."
+}

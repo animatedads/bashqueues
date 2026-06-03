@@ -1,0 +1,5 @@
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no __pycache__ / .pyc / .pyo / .pytest_cache in patchset staging
+PASS no lock/devpatch/backup debris in patchset staging
+PASS patchset zip integrity clean

@@ -1,0 +1,107 @@
+{
+  "base": "bashqueues_0.18.59_BOB_MERGER_patchset_apply_backup_hardening_full_delivery.zip",
+  "boundaries": [
+    "no live IBM/OCI API calls",
+    "no provider credentials required for default tests",
+    "no provisioning/destruction",
+    "no queue dispatch refactor"
+  ],
+  "created_at": "2026-05-30T18:05:15Z",
+  "entries": [
+    {
+      "md5": "537e56603c5f440f7f21e6764e41424b",
+      "path": "assets.d/oci.sh",
+      "size": 6985
+    },
+    {
+      "md5": "c5bf1d99c0147fc644152a71a0712188",
+      "path": "providers.d/ibm/ibm_provider.sh",
+      "size": 2375
+    },
+    {
+      "md5": "96ca2adc313dde130a6e823110cc1659",
+      "path": "docs/IBM_PROVIDER_CONTRACTS.md",
+      "size": 3011
+    },
+    {
+      "md5": "59963c52d7a2e50d1d47b31958aa772a",
+      "path": "docs/IBM_CLASS_CRITERIA.md",
+      "size": 2565
+    },
+    {
+      "md5": "4546b863f5cbdd1be14af087fc2db5ae",
+      "path": "docs/IBM_EXPLAINABILITY.md",
+      "size": 2372
+    },
+    {
+      "md5": "ca1ae82e52bc2459a7c841772564544a",
+      "path": "docs/IBM_LEGAL_COMPLIANCE.md",
+      "size": 2916
+    },
+    {
+      "md5": "e499332b95212c6ed085defa48b9a950",
+      "path": "policies.d/ibm/regions.tsv",
+      "size": 1095
+    },
+    {
+      "md5": "8d4e8e3cbd269435622b546bcfbc362a",
+      "path": "policies.d/ibm/identity.env",
+      "size": 408
+    },
+    {
+      "md5": "5b5f1d03551340eaff053917803124ab",
+      "path": "policies.d/ibm/finops.env",
+      "size": 431
+    },
+    {
+      "md5": "6c1d293e5e18b0203902f74a00bd70c9",
+      "path": "tests/ibm_provider_contracts_static.sh",
+      "size": 2233
+    },
+    {
+      "md5": "356a3bda89ee070281203703a0645dfb",
+      "path": "tests/ibm_provider_fixture_smoke.sh",
+      "size": 2470
+    },
+    {
+      "md5": "b6d9df2d1997815bb851ddab02d0e7fa",
+      "path": "tests/ibm_provider_json_contract_static.py",
+      "size": 4336
+    },
+    {
+      "md5": "83d436c7c3fca45d63e69bf5433398e4",
+      "path": "tests/ibm_explain_static.sh",
+      "size": 1528
+    },
+    {
+      "md5": "8a47b7028f4b23d3a7fa63afe2d0cfb3",
+      "path": "README.md",
+      "size": 133012
+    },
+    {
+      "md5": "2eb8e876b9a5991e173e8dc820207dae",
+      "path": "CHANGELOG.md",
+      "size": 163261
+    },
+    {
+      "md5": "5cecf5024ca7ca1bce7e6e7b9ebb4ec0",
+      "path": "queuebash.sh",
+      "size": 971336
+    },
+    {
+      "md5": "dee5c04264332be24078f07f34491b3f",
+      "path": ".queuebash/dev/scratchpad.json",
+      "size": 215987
+    },
+    {
+      "md5": "c9afc327f92df95f3c08215a5eae233f",
+      "path": "BOB_MERGER_FULL_DELIVERY_NOTE_0.18.60_IBM_OCI.md",
+      "size": 829
+    }
+  ],
+  "patch": "cloud_enablement_ibm_oci.zip",
+  "schema": "queuebash.merge_manifest.v1",
+  "scope": "additive IBM provider contract pack and OCI asset helper",
+  "title": "BOB_MERGER IBM/OCI cloud enablement provider contracts",
+  "version": "0.18.60"
+}

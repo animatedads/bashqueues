@@ -1,0 +1,15 @@
+0.18.72 BOB_MERGER13 qbtest add/extract and missing Bob13 coverage merge validation
+
+Base: bashqueues_0.18.71_BOB_MERGER_grid_energy_cost_model_full_delivery.zip
+Merged input: qbtest_extract_add.zip queuebash dev-tool command changes only
+Coverage restored: missing Bob13 wave9-wave11 QBTEST function blocks from 0.18.66/0.18.67/0.18.68 line
+
+Checks performed:
+- bash -n queuebash.sh: PASS
+- queue dev test qbtest --file queuebash.sh --list --json: PASS, 158 listed blocks
+- queue dev test qbtest extract --file queuebash.sh --function _queue_global_hash --json: PASS
+- queue dev test qbtest add --help: PASS
+- representative QBTEST checks: mixed due sandbox runner hangs on some existing/inserted blocks; no syntax regression found
+
+Known note:
+- qbtest add was used for the function-level insertion path where it returned cleanly. For several target functions the new helper inserted the block but did not return in this sandbox; remaining already-vetted Bob13 blocks were inserted function-locally to preserve the test-only merge.

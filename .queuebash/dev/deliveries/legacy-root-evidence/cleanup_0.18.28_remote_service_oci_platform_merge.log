@@ -1,0 +1,11 @@
+== cleanup 0.18.28 remote service OCI platform merge ==
+2026-05-29T15:01:59Z
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no __pycache__
+PASS no *.pyc
+PASS no *.lock
+PASS no *.dev.lock
+PASS no *.devpatch.*
+PASS no queuebash.sh.bak.*
+PASS scratchpad JSON valid

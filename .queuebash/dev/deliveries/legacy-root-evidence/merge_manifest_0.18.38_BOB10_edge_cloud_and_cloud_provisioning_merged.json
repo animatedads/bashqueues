@@ -1,0 +1,19 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "version": "0.18.38",
+  "package": "0.18.38_BOB10_edge_cloud_and_cloud_provisioning_merged",
+  "base": "accepted 0.18.36 GPU cloud provider contracts via the two accepted 0.18.37 branch packages",
+  "branches": [
+    "bashqueues_0.18.37_edge_cloud_provider_contracts.zip",
+    "bashqueues_0.18.37_cloud_provisioning_contract.zip"
+  ],
+  "merge_rules": [
+    "Keep edge cloud provider contracts fixture-first and non-mutating.",
+    "Keep cloud provisioning dry-run-only and contract-first.",
+    "Do not let cloud_provision absorb edge provider logic.",
+    "Do not let edge provider contracts imply live deployment or provisioning.",
+    "Do not refactor queue dispatch, worker execution semantics, or job state transitions."
+  ],
+  "bob_owner_label": "BOB10",
+  "notes": "Filename includes BOB10 per Architect instruction for future version drops. Bob2 edge work is included as an accepted branch input while Bob10 merge/package ownership is explicit."
+}

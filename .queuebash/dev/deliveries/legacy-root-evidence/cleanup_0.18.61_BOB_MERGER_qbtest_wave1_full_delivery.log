@@ -1,0 +1,7 @@
+CLEANUP 0.18.61 QBTEST WAVE1
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no cache dirs
+PASS no debris
+PASS scratchpad JSON valid
+PASS merge manifest JSON valid

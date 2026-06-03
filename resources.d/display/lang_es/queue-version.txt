@@ -1,0 +1,1 @@
+Bashqueue versión {{VERSION}}

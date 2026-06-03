@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 fail(){ echo "FAIL $*" >&2; exit 1; }
 
 for cls in CLOUD_IBM_GDPR CLOUD_IBM_FINREG CLOUD_IBM_LEGAL_READONLY CLOUD_IBM_LEGAL_COMPLIANCE; do

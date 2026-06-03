@@ -1,0 +1,9 @@
+focused validation
+RUN tests/dev_ai_contract_static.sh
+PASS dev_ai_contract_static
+RUN tests/dev_ai_session_lesson_smoke.sh
+PASS dev_ai_session_lesson_smoke
+RUN tests/dev_ai_json_contract_static.py
+PASS dev_ai_json_contract_static
+RUN tests/dev_ai_session_lesson_smoke.py
+PASS dev_ai_session_lesson_smoke

@@ -1,0 +1,1 @@
+cleanup: removed Python bytecode/cache artefacts before packaging; root-level delivery evidence absent; delivery records under .queuebash/dev/deliveries/.

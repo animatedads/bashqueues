@@ -1,0 +1,10 @@
+PASS bash -n queuebash.sh
+PASS bash -n providers.d/cloud_signals/cloud_signals_provider.sh
+PASS bash -n providers.d/cloud_broker/cloud_broker_provider.sh
+PASS python3 -m py_compile tests/cloud_broker_front_json_contract_static.py tests/cloud_broker_policy_references_static.py
+PASS tests/cloud_broker_front_json_contract_static.py
+PASS tests/cloud_broker_policy_references_static.py
+PASS tests/cloud_broker_front_smoke.sh
+PASS queue dev test qbtest --file queuebash.sh --function _queue_now
+PASS queue cloud broker explain emits policy_references with regulatory and corporate references
+PASS cloud_signals explain emits policy_references in availability, cost, and top-level explain output

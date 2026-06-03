@@ -1,0 +1,63 @@
+RUN bash -n queuebash.sh
+RUN bash -n qbtest_installer.sh
+RUN bash -n providers.d/vector_database/vector_database_provider.sh
+RUN bash -n providers.d/data_lake/data_lake_provider.sh
+RUN python3 -m py_compile tests/vector_database_provider_json_contract_static.py tests/data_lake_provider_json_contract_static.py tests/provider_service_coverage_wave2_bob14_static.py
+RUN bash tests/vector_database_provider_contracts_static.sh
+PASS vector_database_provider_contracts_static
+RUN bash tests/vector_database_provider_fixture_smoke.sh
+PASS vector_database_provider_fixture_smoke
+RUN python3 tests/vector_database_provider_json_contract_static.py
+PASS vector_database_provider_json_contract_static
+RUN bash tests/data_lake_provider_contracts_static.sh
+PASS data_lake_provider_contracts_static
+RUN bash tests/data_lake_provider_fixture_smoke.sh
+PASS data_lake_provider_fixture_smoke
+RUN python3 tests/data_lake_provider_json_contract_static.py
+PASS data_lake_provider_json_contract_static
+RUN python3 tests/provider_service_coverage_wave2_bob14_static.py
+PASS provider_service_coverage_wave2_bob14_static
+RUN bash tests/ai_advisory_provider_contract_static.sh
+PASS
+RUN bash tests/cloud_infra_eu_apac_helper_parity_static.sh
+cloud_infra_eu_apac_helper_parity_static: PASS
+RUN bash tests/dev_splice_tool_static.sh
+PASS dev_splice_tool_static
+RUN bash tests/modules_caps_enable_disable_static.sh
+[PASS] modules/caps/class enable-disable management and Shift-Tab support are present
+[PASS] functional cap module enable/disable smoke test passed
+RUN bash tests/remote_queue_command_static.sh
+[PASS] remote queue command static checks pass
+RUN bash tests/remote_queue_management_listener_smoke.sh
+RUN bash -n bin/bashqueues-crontab
+RUN bash -n reporters.d/ms.sh
+RUN bash -n reporters.d/prom.sh
+RUN bash -n reporters.d/snmp.sh
+RUN bash tests/dev_ai_contract_static.sh
+PASS dev_ai_contract_static
+RUN python3 tests/dev_ai_json_contract_static.py
+PASS dev_ai_json_contract_static
+RUN bash tests/dev_ai_session_lesson_smoke.sh
+PASS dev_ai_session_lesson_smoke
+RUN python3 tests/dev_ai_session_lesson_smoke.py
+RUN bash tests/display_resource_contract_static.sh
+RUN bash tests/display_resource_no_shell_eval_static.sh
+RUN bash tests/queue_command_contract_static.sh
+queue command contract static checks passed
+RUN bash tests/queue_command_json_smoke.sh
+queue command JSON smoke checks passed
+RUN bash tests/queue_command_json_wave3_smoke.sh
+RUN bash tests/provider_family_continuity_bob14_static.sh
+PASS provider_family_continuity_bob14_static
+RUN python3 tests/provider_family_consistency_json_contract_static.py
+PASS provider_family_consistency_json_contract_static
+RUN bash tests/container_registry_provider_contracts_static.sh
+PASS container_registry_provider_contracts_static
+RUN bash tests/model_registry_provider_contracts_static.sh
+PASS model_registry_provider_contracts_static
+RUN python3 tests/container_registry_provider_json_contract_static.py
+PASS container_registry_provider_json_contract_static
+RUN python3 tests/model_registry_provider_json_contract_static.py
+PASS model_registry_provider_json_contract_static
+RUN python3 tests/provider_service_coverage_bob14_static.py
+PASS provider_service_coverage_bob14_static

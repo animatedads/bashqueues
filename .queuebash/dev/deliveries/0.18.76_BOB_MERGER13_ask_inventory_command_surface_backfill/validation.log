@@ -1,0 +1,11 @@
+Validation summary for 0.18.76:
+
+PASS bash -n queuebash.sh
+PASS _queue_ai_usage_inventory_text QBTEST
+PASS _queue_ai_command_inventory_text QBTEST
+PASS _queue_ai_asset_inventory_text QBTEST
+PASS QBTEST --list --json: 161 listed, 0 invalid
+PASS command inventory contains queue assets show <family>
+PASS command inventory contains queue dev patchset create
+PASS asset inventory contains grid_energy:price_below and grid_energy:carbon_below
+NOTE full-file QBTEST run was attempted in sandbox but timed out; focused changed-function QBTEST checks passed.

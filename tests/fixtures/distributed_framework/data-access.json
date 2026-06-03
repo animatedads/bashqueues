@@ -1,0 +1,14 @@
+{
+  "credential_passthrough_permitted": false,
+  "dataset_mounts": [
+    "fixture://readonly"
+  ],
+  "decision": "allow",
+  "egress_review_required": true,
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "distributed_framework",
+  "read_only": true,
+  "schema": "queuebash.distributed_framework.data_access.v1"
+}

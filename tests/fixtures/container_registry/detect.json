@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.container_registry.detect.v1",
+  "provider_family": "container_registry",
+  "provider": "fixture",
+  "detected": true,
+  "registry_id": "fixture-container-registry",
+  "registry_kind": "oci_registry",
+  "endpoint_class": "private_or_fixture",
+  "decision": "allow",
+  "reason": "fixture_container_registry_detected",
+  "fail_closed": true,
+  "mutated": false
+}

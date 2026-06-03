@@ -1,0 +1,15 @@
+{
+  "accelerator": "A100",
+  "decision": "allow",
+  "fail_closed": true,
+  "memory_gb": 80,
+  "mutated": false,
+  "offer_id": "fixture-a100-hourly",
+  "price_observation_only": true,
+  "provider": "fixture",
+  "provider_family": "gpu_marketplace",
+  "region": "fixture-eu",
+  "reservation_permitted": false,
+  "schema": "queuebash.gpu_marketplace.offer.v1",
+  "spot": true
+}

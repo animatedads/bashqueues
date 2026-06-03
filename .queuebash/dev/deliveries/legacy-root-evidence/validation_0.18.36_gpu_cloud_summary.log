@@ -1,0 +1,12 @@
+0.18.36 GPU cloud provider contracts validation summary
+PASS gpu_cloud provider static/fixture/json/explain
+PASS cloud platform parity static
+PASS APAC/China, EU sovereign, Azure, GCP, AWS provider focused checks after version-pin updates for current 0.18.36 base
+PASS remote queue command static/smoke
+PASS remote queue management listener static/smoke
+PASS cloud resource provider static/smoke/json
+PASS scratchpad static/smoke/json
+PASS dev remote runner static/json
+PASS dev test runner static/json
+PASS OCI provider static/fixture/json
+PASS OCI governance static/json

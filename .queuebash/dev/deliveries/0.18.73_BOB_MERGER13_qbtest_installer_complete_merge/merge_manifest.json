@@ -1,0 +1,16 @@
+{
+  "schema": "queuebash.delivery_manifest.v1",
+  "delivery_id": "0.18.73_BOB_MERGER13_qbtest_installer_complete_merge",
+  "base": "bashqueues_0.18.71_BOB_MERGER_grid_energy_cost_model_full_delivery.zip",
+  "merged_inputs": [
+    "bashqueues_0.18.72_BOB_MERGER13_qbtest_add_extract_wave9_11_merge.patchset.zip",
+    "qbtest_installer.sh"
+  ],
+  "summary": {
+    "queuebash_version": "0.18.73",
+    "qbtest_blocks": 168,
+    "installer_functions": 131,
+    "installer_route": "queue dev test qbtest add",
+    "runtime_behaviour_changed": false
+  }
+}

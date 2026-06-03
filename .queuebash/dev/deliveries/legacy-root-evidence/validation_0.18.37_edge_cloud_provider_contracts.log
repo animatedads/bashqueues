@@ -1,0 +1,17 @@
+PASS bash -n queuebash.sh
+PASS edge cloud provider static / fixture / JSON / explain
+PASS cloud platform parity static
+PASS GPU cloud provider static / fixture / JSON
+PASS APAC/China provider static / fixture / JSON
+PASS EU sovereign provider static / fixture / JSON
+PASS Azure provider static / fixture / JSON
+PASS GCP provider static / fixture / JSON
+PASS AWS provider static / fixture / JSON
+PASS remote queue command static/smoke
+PASS remote queue management listener static/smoke
+PASS cloud resource contract/smoke/JSON
+PASS scratchpad static/smoke/JSON
+PASS dev remote runner static/JSON
+PASS dev test runner static/JSON
+PASS OCI provider static/fixture/JSON/explain
+PASS OCI governance static/JSON

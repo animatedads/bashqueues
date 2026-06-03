@@ -1,0 +1,15 @@
+Validation 0.18.69 BOB10 cloud cost and service availability wiring
+PASS bash -n queuebash.sh
+PASS bash -n providers.d/cloud_signals/cloud_signals_provider.sh
+PASS python3 -m py_compile tests/cloud_cost_service_availability_json_contract_static.py
+PASS tests/cloud_cost_service_availability_static.sh
+PASS tests/cloud_cost_service_availability_smoke.sh
+PASS tests/cloud_cost_service_availability_json_contract_static.py
+PASS tests/dev_qbtest_static.sh
+PASS tests/dev_qbtest_smoke.sh
+PASS tests/dev_qbtest_json_contract_static.py
+PASS tests/cloud_platform_parity_static.py
+PASS queue dev test qbtest --file queuebash.sh --function _queue_now
+PASS patchset --check against fresh 0.18.68 base
+PASS patchset apply with backup_manifest.json against fresh 0.18.68 base
+PASS post-apply cloud cost/service availability tests

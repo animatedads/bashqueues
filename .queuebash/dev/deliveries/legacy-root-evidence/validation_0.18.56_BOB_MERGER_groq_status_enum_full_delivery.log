@@ -1,0 +1,34 @@
+== bash -n queuebash.sh
+PASS bash -n queuebash.sh
+== bash -n bin/queue-dev-timeout
+PASS bash -n bin/queue-dev-timeout
+== bash -n providers.d/ask/groq.sh
+PASS bash -n providers.d/ask/groq.sh
+== python3 -m py_compile bin/queue-ai-ask-groq tests/dev_scratchpad_status_enum_static.py tests/dev_qbtest_json_contract_static.py
+PASS python3 -m py_compile bin/queue-ai-ask-groq tests/dev_scratchpad_status_enum_static.py tests/dev_qbtest_json_contract_static.py
+== bash tests/ask_groq_provider_static.sh
+PASS
+PASS bash tests/ask_groq_provider_static.sh
+== bash tests/ask_groq_provider_smoke.sh
+PASS
+PASS bash tests/ask_groq_provider_smoke.sh
+== python3 tests/dev_scratchpad_status_enum_static.py
+PASS dev_scratchpad_status_enum_static
+PASS python3 tests/dev_scratchpad_status_enum_static.py
+== bash tests/dev_qbtest_static.sh
+PASS bash tests/dev_qbtest_static.sh
+== bash tests/dev_qbtest_smoke.sh
+PASS dev_qbtest_smoke
+PASS dev_qbtest_smoke
+PASS direct timeout bash tests/dev_qbtest_smoke.sh
+PASS dev_qbtest_json_contract_static
+PASS
+PASS
+PASS python3 tests/dev_qbtest_json_contract_static.py
+PASS ask_deepseek_provider_static/smoke
+PASS ask_mistral_provider_static/smoke
+PASS queue_dev_contract_static/json
+PASS dev_scratchpad_static/json
+PASS direct queue dev test qbtest --file queuebash.sh --json
+PASS direct queue dev test qbtest --file queuebash.sh --function _queue_now --json
+PASS fake QBTEST placeholder absent from package-visible help/docs

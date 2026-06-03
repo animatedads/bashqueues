@@ -1,0 +1,150 @@
+{
+  "created_for": "0.18.95_BOB14_service_coverage_gpu_marketplace_distributed_framework",
+  "default_safety_contract": {
+    "credentials_required_for_default_tests": false,
+    "fixture_first": true,
+    "live_api_default": false,
+    "normalized_json_only": true,
+    "provider_output_is_shell": false,
+    "provisioning_default": false,
+    "queue_dispatch_refactor": false
+  },
+  "families": {
+    "container_registry": {
+      "doc_prefix": "CONTAINER_REGISTRY",
+      "fixture_dir": "container_registry",
+      "non_goals": [
+        "pull",
+        "push",
+        "delete",
+        "repository-create",
+        "job-runtime-mutation"
+      ],
+      "policy_dir": "container_registry",
+      "priority": 2,
+      "provider_dir": "container_registry",
+      "schemas": [
+        "queuebash.container_registry.detect.v1",
+        "queuebash.container_registry.image.v1",
+        "queuebash.container_registry.provenance.v1",
+        "queuebash.container_registry.vulnerability.v1",
+        "queuebash.container_registry.retention.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "data_lake": {
+      "doc_prefix": "DATA_LAKE",
+      "fixture_dir": "data_lake",
+      "non_goals": [
+        "table-query",
+        "sample-read",
+        "bucket-create",
+        "object-delete",
+        "partition-mutate",
+        "job-runtime-mutation"
+      ],
+      "policy_dir": "data_lake",
+      "priority": 4,
+      "provider_dir": "data_lake",
+      "schemas": [
+        "queuebash.data_lake.detect.v1",
+        "queuebash.data_lake.catalog.v1",
+        "queuebash.data_lake.dataset.v1",
+        "queuebash.data_lake.governance.v1",
+        "queuebash.data_lake.retention.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "distributed_framework": {
+      "doc_prefix": "DISTRIBUTED_FRAMEWORK",
+      "fixture_dir": "distributed_framework",
+      "non_goals": [
+        "cluster-start",
+        "cluster-scale",
+        "job-submit",
+        "provider-worker-code-execution",
+        "queue-scheduler-rewrite"
+      ],
+      "policy_dir": "distributed_framework",
+      "priority": 6,
+      "provider_dir": "distributed_framework",
+      "schemas": [
+        "queuebash.distributed_framework.detect.v1",
+        "queuebash.distributed_framework.runtime.v1",
+        "queuebash.distributed_framework.cluster.v1",
+        "queuebash.distributed_framework.data_access.v1",
+        "queuebash.distributed_framework.governance.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "gpu_marketplace": {
+      "doc_prefix": "GPU_MARKETPLACE",
+      "fixture_dir": "gpu_marketplace",
+      "non_goals": [
+        "gpu-reservation",
+        "spot-bidding",
+        "driver-install",
+        "live-training",
+        "job-runtime-mutation"
+      ],
+      "policy_dir": "gpu_marketplace",
+      "priority": 5,
+      "provider_dir": "gpu_marketplace",
+      "schemas": [
+        "queuebash.gpu_marketplace.detect.v1",
+        "queuebash.gpu_marketplace.offer.v1",
+        "queuebash.gpu_marketplace.capability.v1",
+        "queuebash.gpu_marketplace.quota.v1",
+        "queuebash.gpu_marketplace.compliance.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "model_registry": {
+      "doc_prefix": "MODEL_REGISTRY",
+      "fixture_dir": "model_registry",
+      "non_goals": [
+        "inference",
+        "deployment",
+        "ask-provider-runtime",
+        "provisioning"
+      ],
+      "policy_dir": "model_registry",
+      "priority": 1,
+      "provider_dir": "model_registry",
+      "schemas": [
+        "queuebash.model_registry.detect.v1",
+        "queuebash.model_registry.catalog.v1",
+        "queuebash.model_registry.model.v1",
+        "queuebash.model_registry.governance.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "vector_database": {
+      "doc_prefix": "VECTOR_DATABASE",
+      "fixture_dir": "vector_database",
+      "non_goals": [
+        "retrieval-runtime",
+        "live-embedding",
+        "index-create",
+        "vector-delete",
+        "job-runtime-mutation"
+      ],
+      "policy_dir": "vector_database",
+      "priority": 3,
+      "provider_dir": "vector_database",
+      "schemas": [
+        "queuebash.vector_database.detect.v1",
+        "queuebash.vector_database.collection.v1",
+        "queuebash.vector_database.index.v1",
+        "queuebash.vector_database.embedding_policy.v1",
+        "queuebash.vector_database.retention.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    }
+  },
+  "next_candidates": [
+    "secret_manager",
+    "feature_store"
+  ],
+  "schema": "queuebash.provider_service_coverage.v1"
+}

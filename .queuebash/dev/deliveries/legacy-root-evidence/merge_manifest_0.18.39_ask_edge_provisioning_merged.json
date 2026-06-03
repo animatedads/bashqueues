@@ -1,0 +1,15 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "version": "0.18.39",
+  "base": "bashqueues_0.18.38_BOB10_edge_cloud_and_cloud_provisioning_merged.zip",
+  "overlay": "bashqueues_0.18.37_ask_provider_contract_discovery_fixture_exec_repaired.zip",
+  "summary": "Merged Bob11 repaired ask provider contract/discovery into accepted 0.18.38 edge cloud and cloud provisioning base.",
+  "boundaries": [
+    "ask provider fixture remains non-live and no-network",
+    "edge cloud remains fixture-first",
+    "cloud_provision remains dry-run-only",
+    "no live provider API calls or credentials required",
+    "no provisioning/destruction",
+    "no queue dispatch refactor beyond accepted ask provider command surface"
+  ]
+}

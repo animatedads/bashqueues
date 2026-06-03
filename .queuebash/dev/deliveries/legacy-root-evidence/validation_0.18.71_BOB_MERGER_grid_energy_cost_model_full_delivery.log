@@ -1,0 +1,40 @@
+## version
+QUEUEBASH_VERSION="0.18.71"
+## bash -n
+bash_n=0
+## syntax scripts
+asset_syntax=0
+provider_syntax=0
+test_static_syntax=0
+test_smoke_syntax=0
+## py compile
+py_compile=0
+## grid static
+[PASS] grid energy provider static checks pass
+grid_static=0
+## grid smoke
+[PASS] grid energy provider fixture smoke passes
+grid_smoke=0
+## grid json
+PASS grid energy JSON contract
+grid_json=0
+## cloud signals preserve
+PASS cloud_cost_service_availability_static
+cloud_signals_static=0
+PASS cloud_cost_service_availability_smoke
+cloud_signals_smoke=0
+PASS cloud_cost_service_availability_json_contract_static
+cloud_signals_json=0
+## qbtest
+dev_qbtest_static=0
+PASS dev_qbtest_json_contract_static
+dev_qbtest_json=0
+{"count":1,"counts":{"fail":0,"infrastructure_error":0,"invalid":0,"listed":0,"no_match":0,"pass":1,"timeout":0},"created_at":"2026-05-30T21:39:58Z","function":"_queue_now","language":"","results":[{"duration_seconds":0.081,"exit_code":0,"function":"_queue_now","id":"QBTEST-4a2df28519a3","language":"bash","line":539,"name":"queue-now-format","status":"pass","stderr_tail":"","stdout_tail":""}],"schema":"queuebash.dev_qbtest_result.v1","source_file":"/mnt/data/work_1870_grid/bashqueues_0.18.69_BOB_MERGER_remote_connection_entry_command_full_delivery/queuebash.sh","status":"pass"}
+qbtest_now=0
+qbtest_list=0
+queue dev test qbtest: pass 105 test(s) from /mnt/data/work_1870_grid/bashqueues_0.18.69_BOB_MERGER_remote_connection_entry_command_full_delivery/queuebash.sh
+{"schema":"queuebash.dev_validate_result.v1","status":"pass","total":4,"passed":4,"failed":0,"results":[{"status":"pass","name":"bash-n-queuebash","exit_code":0,"tail":""},{"status":"pass","name":"dev-qbtest-static","exit_code":0,"tail":""},{"status":"pass","name":"dev-qbtest-json-contract","exit_code":0,"tail":"PASS dev_qbtest_json_contract_static "},{"status":"pass","name":"qbtest-queuebash","exit_code":0,"tail":""}]}
+dev_validate=0
+## dev_qbtest_smoke bounded
+PASS dev_qbtest_smoke
+dev_qbtest_smoke=0

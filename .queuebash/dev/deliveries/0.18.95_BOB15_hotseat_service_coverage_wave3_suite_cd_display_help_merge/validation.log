@@ -1,0 +1,38 @@
+0.18.95 validation summary
+
+PASS queue dev merge-plan --base --patchset --target-version --json for Bob12, Bob14, Bob16 inputs
+PASS Bob12 apply_patchset.sh --check --json and --json --backup-dir from target-tree cwd
+PASS Bob16 apply_patchset.sh --check --json and --json --backup-dir from target-tree cwd
+PASS Bob14 controlled manual apply: README/CHANGELOG excluded, scratchpad merged by item id, provider/docs/policies/tests/fixtures copied
+PASS queue dev ai session used; lessons recorded and copied into package-local .queuebash/dev/ai_lessons.d
+PASS queue dev functions --file queuebash.sh
+PASS queue dev extract _queue_dev_command --file queuebash.sh
+PASS queue dev test qbtest --file queuebash.sh --list --json
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS bash -n providers.d/gpu_marketplace/gpu_marketplace_provider.sh providers.d/distributed_framework/distributed_framework_provider.sh
+PASS py_compile GPU/distributed JSON contract tests and provider_service_coverage_wave3 static test
+PASS gpu_marketplace provider static/smoke/JSON tests
+PASS distributed_framework provider static/smoke/JSON tests
+PASS provider_service_coverage_wave3_bob14_static.py
+PASS display_help_resources_static.sh
+PASS direct resource-fetch-i18nl/help and dev-resource help probes passed; display_help_resources_smoke.sh was not claimed because fresh-root source/install is slow in this sandbox and timed out
+PASS json_programmatic_surfaces_static.sh; json_programmatic_surfaces_smoke.sh was not claimed because it remained slow/hang-prone in this sandbox
+PASS queue_dev_contract_static.sh
+PASS queue_dev_workflow_contract_static.sh
+PASS dev_scratchpad_static.sh
+PASS dev_scratchpad_lifecycle_static.sh
+PASS ask_baseten_provider_static.sh
+PASS ask_cerebras_provider_static.sh
+PASS remote_queue_management_listener_static.sh
+PASS queue_command_contract_static.sh
+PASS queue_command_json_smoke.sh
+PASS provider_family_continuity_bob14_static.sh
+PASS provider_family_consistency_json_contract_static.py
+PASS container/model/vector/data_lake service coverage static regressions
+PASS scratchpad JSON valid
+PASS AI lesson JSON valid
+PASS QUEUEBASH_VERSION/README/CHANGELOG are 0.18.95
+PASS assets.d/net_usage.sh absent
+PASS cleanup debris absent
+PASS zip integrity

@@ -1,3 +1,76 @@
+# 0.18.95 BOB15 hot-seat service coverage wave3, suite cd cleanup, and display-help extraction merge
+
+Merges three patch streams onto the Bob15 0.18.94 patchtastic base: Bob12 suite root-cd continuation, Bob14 fixture-first service-coverage wave 3 for GPU marketplace and distributed framework discovery, and Bob16 display/help resource extraction.
+
+Service-coverage wave 3 adds normalized JSON-only provider helpers, fixtures, policies, docs, and tests for GPU marketplace and distributed-framework discovery. These helpers remain fixture-first: no live credentials, no GPU allocation, no framework launch, no provisioning, no workload mutation, and no queue dispatch refactor.
+
+Bob12 suite root-cd continuation keeps legacy/static tests rooted in the repository before inspecting files, reducing false failures when tests are invoked from harnesses or queue jobs. Bob16 moves large human help displays into non-executable display resources while preserving locale-independent JSON contracts.
+
+# 0.18.94 BOB15 service coverage wave2 and missing-item suite cleanup merge
+
+Merges Bob14 fixture-first service-coverage wave 2 for vector database and data lake provider-family contracts together with Bob12 missing-item suite cleanup onto the Bob15 0.18.93 queue-dev-ai dogfood reconciliation base.
+
+Service-coverage wave 2 adds normalized JSON-only provider helpers, fixtures, policies, docs, and tests for vector database and data lake discovery. These helpers remain fixture-first: no live credentials, no inference, no object mutation, no provisioning, and no queue dispatch refactor.
+
+Bob12 missing-item cleanup tightens stale static-test assumptions and smoke-test behaviour, including bounded dynamic ports for remote management listener smoke coverage and narrower module/caps test setup.
+
+# 0.18.94 BOB16 display help resource extraction patchset
+
+Moves the largest human-facing shell help displays out of `queuebash.sh` and into non-executable display resources under `resources.d/display/`. This patchset externalizes `queue help`, `queue resource-fetch-i18nl --help`, and `queue dev resource --help`, preserves JSON command contracts, fixes fallback resource insertion, and adds focused static/smoke coverage.
+
+# 0.18.93 BOB15 queue-dev-ai dogfood reconciliation merge
+
+Merges Bob14 queue-dev-ai dogfood reconciliation onto the refreshed Bob15 0.18.92 external signed display-resource base. The merge passes `QUEUEBASH_SCRIPT_PATH` from the queue-dev dispatcher into `bin/queue-dev-ai`, allows read-only queue-dev-ai self-inspection through bounded `queue dev ai try`, adds `learn` as a compatibility alias for `lesson`, extends dogfood smoke coverage, and carries forward directory-scanned AI lesson records.
+
+This remains development-session tooling only: it is not an AI provider, not an authority source, and does not bypass ACLs, reviewer acceptance, or security policy. Recursive/mutating AI commands remain blocked inside `try`.
+
+# 0.18.92 BOB15 external signed display resources merge
+
+Merges Bob12 external signed display-resource support onto Bob15 0.18.91 queue-dev-ai base. Adds external non-executable display resources under `resources.d/display/`, locale fallback, validation/fetch helpers, documentation, static tests, and smoke coverage while preserving command JSON contracts as structured output independent of localized display text.
+
+Display resources are presentation data only. They must not be shell-evaluated, must not replace JSON contracts, and must remain separate from queue dispatch, provider runtime, provisioning, and policy authority.
+
+# 0.18.91 BOB15 queue-dev-ai session lessons merge
+
+Merges Bob14 queue-dev-ai session/try/lesson tooling onto Bob15 0.18.90 command JSON wave 3. Adds an LLM-oriented development session ledger, bounded allowlisted command tries, and directory-scanned AI lesson records under `.queuebash/dev/ai_lessons.d/` to avoid patch-stream collisions.
+
+This is not an AI provider and does not grant authority. Lesson confirmation records that a lesson was considered; it does not bypass ACLs, reviewer acceptance, or security policy.
+
+# 0.18.90 BOB15 queue command JSON contract wave3 merge
+
+Merges Bob13 queue command JSON contract wave 3 onto the Bob15 0.18.89 service-coverage full delivery. Adds JSON output contracts for `queue show JOB --json`, `queue history JOB --json`, and `queue tail JOB --json --no-follow`, while preserving legacy human output. Streaming `queue tail --json` without `--no-follow` remains rejected with `queuebash.error.v1` because follow mode is not a single bounded JSON object.
+
+# 0.18.89 BOB15 service coverage model/container registry merge
+
+Merges Bob14's fixture-first service-coverage model registry and container registry provider contracts onto the accepted 0.18.88 provider-family continuity base. The merged helpers return normalized JSON facts only, require no live credentials for tests, store no secrets, perform no inference, do not pull/push/delete images, do not provision resources, and do not alter queue dispatch or ask-provider runtime.
+
+Service-coverage provider contracts:
+
+- `docs/MODEL_REGISTRY_PROVIDER_CONTRACTS.md`
+- `docs/CONTAINER_REGISTRY_PROVIDER_CONTRACTS.md`
+- `policies.d/service-coverage/provider-service-coverage.json`
+- `providers.d/model_registry/model_registry_provider.sh`
+- `providers.d/container_registry/container_registry_provider.sh`
+
+# 0.18.88 BOB14 provider-family continuity review
+
+Adds Bob14 provider-family continuity review docs and static tests, records the Bob14/Bob2 lane handover in scratchpad, adds provider-family quick links, and fixes stale IBM provider-family metadata in the machine-readable consistency policy while keeping IBM at `high_standard_reference`. No live APIs, no provisioning, no queue dispatch refactor, and no runtime command-surface changes.
+
+## Provider-family continuity quick links
+
+Provider-family and platform-parity material lives in:
+
+- `docs/PROVIDER_FAMILY_CONSISTENCY.md`
+- `docs/PLATFORM_PARITY_STATUS.md`
+- `docs/PROVIDER_FAMILY_CONTINUITY_REVIEW_0.18.88.md`
+- `docs/PROVIDER_SERVICE_COVERAGE_ROADMAP.md`
+- `policies.d/cloud-resource/provider-family-consistency.json`
+
+Provider-family packs are fixture-first and non-live by default. Presence in the
+tree is not first-tier parity or legal/compliance acceptance. Bob10 owns cloud
+provisioning/resource lifecycle, Bob11 owns ask-provider runtime, and Bob13 owns
+queue-dev/display-resource/command-contract work.
+
 # 0.18.87 BOB13 queue command JSON contract wave 1
 
 Adds the first command-surface JSON cleanup wave: `docs/QUEUE_COMMAND_CONTRACT.md`, JSON smoke coverage, a fix for `queue env list --json`, structured JSON for draft list/show/create/state paths, ACL help/operations JSON, and version/queue-user informational JSON. Legacy command forms remain intact; this is not a syntax rename pass.
@@ -3635,3 +3708,8 @@ Canonical system paths use `/etc/queuebash`, for example
 ### 0.18.19 policy installer backfill
 
 Bundled policy installation now covers newer ACL/key/profile-signature/IBM/governance policy example families while preserving local no-overwrite and `.disabled` behaviour.
+
+### Queue dev AI session lessons
+
+`queue dev ai` provides an LLM-oriented development session ledger: `discover`, `session start/list/lessons/stop`, `try`, `lesson`, and the compatibility alias `learn`. `try` executes only bounded allowlisted commands and records rc/stdout/stderr tails and lesson matches. Lessons are stored as separate JSON files under `.queuebash/dev/ai_lessons.d/` so future sessions can scan them without scratchpad merge collisions. In 0.18.93, allowlisted read-only `queue dev ai discover` and `queue dev ai session list/lessons` can be dogfooded through `queue dev ai try`; mutating recursive AI commands remain blocked.
+

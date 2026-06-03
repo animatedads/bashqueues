@@ -1,0 +1,16 @@
+RUN bash -n queuebash.sh
+PASS bash -n queuebash.sh
+RUN bash -n qbtest_installer.sh
+PASS bash -n qbtest_installer.sh
+RUN bash -n tests/queue_command_contract_static.sh tests/queue_command_json_smoke.sh tests/queue_command_json_wave3_smoke.sh
+PASS bash -n tests/queue_command_contract_static.sh tests/queue_command_json_smoke.sh tests/queue_command_json_wave3_smoke.sh
+RUN python3 -m py_compile bin/queue-dev-merge-plan.py tests/provider_service_coverage_bob14_static.py tests/container_registry_provider_json_contract_static.py tests/model_registry_provider_json_contract_static.py
+PASS python3 -m py_compile bin/queue-dev-merge-plan.py tests/provider_service_coverage_bob14_static.py tests/container_registry_provider_json_contract_static.py tests/model_registry_provider_json_contract_static.py
+RUN bash tests/queue_command_contract_static.sh
+queue command contract static checks passed
+PASS bash tests/queue_command_contract_static.sh
+RUN timeout 60 bash tests/queue_command_json_smoke.sh
+queue command JSON smoke checks passed
+PASS queue_command_json_smoke
+RUN timeout 60 bash tests/queue_command_json_wave3_smoke.sh
+queue command JSON wave 3 smoke checks passed

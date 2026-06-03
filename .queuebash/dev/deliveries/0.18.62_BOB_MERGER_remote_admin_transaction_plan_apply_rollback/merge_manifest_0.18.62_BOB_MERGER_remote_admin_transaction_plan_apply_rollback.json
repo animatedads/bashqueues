@@ -1,0 +1,15 @@
+{
+  "schema": "queuebash.bob_merger.delivery_manifest.v1",
+  "version": "0.18.62",
+  "base": "bashqueues_0.18.61_BOB_MERGER_qbtest_wave1_full_delivery.zip",
+  "merged_patchsets": [
+    "bashqueues_0.18.60_BOB10_remote_admin_transaction_plan_apply_rollback.patchset.zip"
+  ],
+  "version_decision": "incoming 0.18.60 treated as Bob10 patch identity; merged as current line 0.18.62",
+  "boundaries": [
+    "no generic editor",
+    "no arbitrary shell",
+    "no secret disclosure",
+    "no queue dispatch refactor"
+  ]
+}

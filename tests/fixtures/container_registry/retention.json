@@ -1,0 +1,15 @@
+{
+  "schema": "queuebash.container_registry.retention.v1",
+  "provider_family": "container_registry",
+  "provider": "fixture",
+  "check": "retention",
+  "repository": "bashqueues/worker-fixture",
+  "retention_policy": "keep_signed_release_tags_180d",
+  "delete_untagged_after_days": 30,
+  "legal_hold": false,
+  "replication_regions": ["fixture-eu", "fixture-uk"],
+  "decision": "allow",
+  "reason": "fixture_retention_policy_documented",
+  "fail_closed": true,
+  "mutated": false
+}

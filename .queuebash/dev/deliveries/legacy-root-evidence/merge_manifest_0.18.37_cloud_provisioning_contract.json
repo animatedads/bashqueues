@@ -1,0 +1,27 @@
+{
+  "schema": "queuebash.package_manifest.v1",
+  "package": "bashqueues_0.18.37_cloud_provisioning_contract",
+  "base": "bashqueues_0.18.36_gpu_cloud_provider_contracts.zip",
+  "version": "0.18.37",
+  "summary": "Adds Bob10 contract/dry-run cloud provisioning layer beside cloud_resource and cloud_infra.",
+  "non_goals": [
+    "no live cloud API calls",
+    "no provider credentials required",
+    "no provisioning or destruction",
+    "no queue dispatch refactor",
+    "no ordinary queue dispatch path creates servers"
+  ],
+  "added": [
+    "docs/CLOUD_PROVISIONING_CONTRACT.md",
+    "docs/CLOUD_PROVISIONING_SECURITY_MODEL.md",
+    "docs/CLOUD_PROVISIONING_WORKFLOWS.md",
+    "providers.d/cloud_provision/cloud_provision.sh",
+    "policies.d/cloud-provision/default.env.example",
+    "policies.d/cloud-provision/approval-policy.example.json",
+    "policies.d/cloud-provision/templates.example.json",
+    "examples/cloud-provision/*-plan.example.json",
+    "tests/cloud_provision_contract_static.sh",
+    "tests/cloud_provision_json_contract_static.py",
+    "tests/cloud_provision_dry_run_smoke.sh"
+  ]
+}

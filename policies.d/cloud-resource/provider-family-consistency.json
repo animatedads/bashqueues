@@ -107,11 +107,11 @@
     },
     "ibm": {
       "class_prefix": "CLOUD_IBM",
-      "doc_prefix": "IBM_CLOUD",
-      "fixture_dir": null,
-      "notes": "High-standard governance/FinOps/class reference material; not a Bob2 fixture pack.",
-      "policy_dir": null,
-      "provider_dir": null,
+      "doc_prefix": "IBM",
+      "fixture_dir": "ibm",
+      "notes": "High-standard IBM provider/governance/FinOps/class material with actual docs, helper, fixtures, policies, and tests present. Reference posture remains high_standard_reference, not first-tier parity or live integration.",
+      "policy_dir": "ibm",
+      "provider_dir": "ibm",
       "status": "high_standard_reference"
     },
     "oci": {

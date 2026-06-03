@@ -1,0 +1,29 @@
+{
+  "applied_patchsets": [
+    "bashqueues_0.18.50_BOB12_dev_context_think_handover.patchset.zip"
+  ],
+  "base": "bashqueues_0.18.51_BOB_MERGER_version_guard_repaired_full_delivery.zip",
+  "classification": {
+    "ledger_hits": "expected",
+    "runtime_change": "queue dev context/think/handover command surface added",
+    "version_decision": "advanced runtime version from 0.18.51 to 0.18.52",
+    "version_hits": "expected unless tied to runtime semantic change"
+  },
+  "cleanup_log": "cleanup_0.18.52_BOB_MERGER_dev_context_think_handover_full_delivery.log",
+  "created_at": "2026-05-30T10:46:58Z",
+  "key_files_added": [
+    "docs/QUEUE_DEV_CONTEXT_THINK_HANDOVER.md",
+    "tests/dev_context_think_handover_static.sh",
+    "tests/dev_context_think_handover_smoke.sh"
+  ],
+  "key_files_modified": [
+    "queuebash.sh",
+    "README.md",
+    "CHANGELOG.md",
+    ".queuebash/dev/scratchpad.json"
+  ],
+  "package": "bashqueues_0.18.52_BOB_MERGER_dev_context_think_handover_full_delivery.zip",
+  "runtime_version": "0.18.52",
+  "schema": "queuebash.bob_merger.full_delivery_manifest.v1",
+  "validation_log": "validation_0.18.52_BOB_MERGER_dev_context_think_handover_full_delivery.log"
+}

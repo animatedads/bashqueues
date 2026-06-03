@@ -1,0 +1,15 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "package": "0.18.32_remote_queue_command_aws_gcp_parity_merged_repaired",
+  "inputs": [
+    "bashqueues_0.18.31_remote_queue_command_plugin.zip",
+    "bashqueues_0.18.31_aws_first_tier_cloud_platform_parity.zip",
+    "bashqueues_0.18.32_gcp_provider_contract.zip"
+  ],
+  "scope": [
+    "Bob9 remote queue command plugin remains client-side signed read-only remote-service work",
+    "Bob10 AWS parity remains cloud/provider contract work",
+    "Bob2 GCP provider contract pack is added as accepted fixture-first provider coverage",
+    "no live AWS/GCP provisioning, no credentialed cloud mutation, no queue dispatcher refactor"
+  ]
+}

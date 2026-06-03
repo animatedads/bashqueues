@@ -1,0 +1,11 @@
+RUN bash tests/remote_admin_policy_plan_apply_smoke.sh
+remote_admin_policy_plan_apply_smoke: ok
+PASS bash tests/remote_admin_policy_plan_apply_smoke.sh
+RUN python3 tests/remote_admin_policy_plan_apply_json_contract_static.py
+remote_admin_policy_plan_apply_json_contract_static: ok
+PASS python3 tests/remote_admin_policy_plan_apply_json_contract_static.py
+RUN bash tests/remote_admin_policy_commands_static.sh
+remote_admin_policy_commands_static: ok
+PASS bash tests/remote_admin_policy_commands_static.sh
+RUN python3 tests/remote_admin_policy_commands_json_contract_static.py
+remote_admin_policy_commands_json_contract_static: ok

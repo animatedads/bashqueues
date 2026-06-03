@@ -1,0 +1,108 @@
+{
+  "base": "bashqueues_0.18.70_BOB_MERGER_cloud_cost_service_availability_wiring_full_delivery.zip",
+  "created_at": "2026-05-30T21:40:25Z",
+  "entries": [
+    {
+      "path": "queuebash.sh",
+      "sha256": "569609297bea1e08bf5c17de6053c6b5cb443eddedc1777506a7c283a0e68a1c",
+      "size": 1020991
+    },
+    {
+      "path": "README.md",
+      "sha256": "3f849201fe2608e9f34f666c4ca99c758b3d67c17c04ab16f7d91b440dca572a",
+      "size": 137277
+    },
+    {
+      "path": "CHANGELOG.md",
+      "sha256": "50a04776aa2dea53e044a37c96112d46fefd3aecdabb88bffce5e2802a9766cb",
+      "size": 167868
+    },
+    {
+      "path": "docs/ASK_PROVIDER_CONTRACT.md",
+      "sha256": "4499578a7acfa3972cdc1d23e594bea9f96c3fc33b4a5cc2b9769c4e84cd058a",
+      "size": 5069
+    },
+    {
+      "path": "assets.d/grid_energy.sh",
+      "sha256": "7e6f833fe406afd1920bac41a67b03d5eedde12144271ef897eaa3e7cd395667",
+      "size": 5171
+    },
+    {
+      "path": "providers.d/grid_energy/grid_energy_provider.sh",
+      "sha256": "a00cdc23544b96cadce523dce9047cb01942384c8f38c7a7fa41b55da1d8c6bf",
+      "size": 5270
+    },
+    {
+      "path": "classes/ENERGY_AWARE_BATCH.env",
+      "sha256": "ce46e573b5bcbe0a86c6d4f832d4b7919fa38bf3e5997d340ed7a8746e83ed8e",
+      "size": 472
+    },
+    {
+      "path": "classes/ENERGY_NEGATIVE_PRICE_BATCH.env",
+      "sha256": "0a741e747f623b5e4f6f692600d1c27714cd61603af2437a7c88a7183681406e",
+      "size": 334
+    },
+    {
+      "path": "docs/GRID_ENERGY_COST_MODEL.md",
+      "sha256": "e27fa2c567c7431a2b6b78e42b750c35e1d9fcc35ba48130fb026ae5cbd8fb80",
+      "size": 2433
+    },
+    {
+      "path": "docs/GRID_ENERGY_PROVIDER_CONTRACT.md",
+      "sha256": "59dca608e3e26a38ff5a9bfd0ca62f7bdd91960b1b0424bc74a026cf32dd0517",
+      "size": 987
+    },
+    {
+      "path": "policies.d/grid-energy/default.env.example",
+      "sha256": "dc3ab17c78c0746e52bbbd3666e18dd843c193e23e9edbaf12ba402a4af4c03c",
+      "size": 477
+    },
+    {
+      "path": "policies.d/grid-energy/markets.tsv.example",
+      "sha256": "28e7402be6a63a3e0c4497881bfc10448225293dc7c5b732a85cf7df1f81471c",
+      "size": 662
+    },
+    {
+      "path": "tests/fixtures/grid_energy/allow_cheap_green.json",
+      "sha256": "168445637c2712538c88b5f0266d5d7170d1f7d4d409fd171fdd8499af4574f7",
+      "size": 201
+    },
+    {
+      "path": "tests/fixtures/grid_energy/allow_negative.json",
+      "sha256": "538aab98cd6a163c2582f0208dda43c4f045a6ddd8576f2f2d63158fed03a3d8",
+      "size": 205
+    },
+    {
+      "path": "tests/fixtures/grid_energy/deny_expensive.json",
+      "sha256": "4211d85e806de476dd28eb378105c9fc192b46c83f30f546b096200aaec09c88",
+      "size": 201
+    },
+    {
+      "path": "tests/grid_energy_provider_static.sh",
+      "sha256": "40e67bb38cd3b67798b9b3743650a70f0483b40566de9132c9c911fec32546ea",
+      "size": 1895
+    },
+    {
+      "path": "tests/grid_energy_provider_fixture_smoke.sh",
+      "sha256": "e0d553fd4ecabd7d2d8aa46fe7b1c5f17de9dd4c2c983dd10e7acc84252d8bd1",
+      "size": 2802
+    },
+    {
+      "path": "tests/grid_energy_provider_json_contract_static.py",
+      "sha256": "4a9d90f9de04b79c89fe42a5e9efe52faa32862a7072eabbed764516645f7b4d",
+      "size": 1208
+    },
+    {
+      "path": ".queuebash/dev/scratchpad.json",
+      "sha256": "e525f3853e380d39babdfdf7a9ec80976cdacb7a7ff0d945af6ad077499339c0",
+      "size": 224936
+    }
+  ],
+  "folded": [
+    "bashqueues_0.18.69_BOB11_grid_energy_cost_model_patchset.zip"
+  ],
+  "schema": "queuebash.bob_merger.full_delivery_manifest.v1",
+  "title": "BOB_MERGER grid energy cost model contract merge",
+  "validation_log": "validation_0.18.71_BOB_MERGER_grid_energy_cost_model_full_delivery.log",
+  "version": "0.18.71"
+}

@@ -1,0 +1,7 @@
+== syntax
+== pycompile
+== new tests
+remote_admin_policy_commands_static: ok
+remote_admin_policy_commands_smoke: ok
+remote_admin_policy_commands_json_contract_static: ok
+== remote listener regressions

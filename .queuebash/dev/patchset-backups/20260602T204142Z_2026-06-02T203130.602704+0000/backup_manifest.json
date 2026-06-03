@@ -1,0 +1,48 @@
+{
+  "backup_dir": "/mnt/data/merge87/work/.queuebash/dev/patchset-backups/20260602T204142Z_2026-06-02T203130.602704+0000",
+  "created_at": "2026-06-02T20:41:42.599048+00:00",
+  "entries": [
+    {
+      "action": "replace",
+      "backup_path": "files/queuebash.sh",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "5daa0049bff4e61c85d5977956226cd6",
+      "old_size": 1081825,
+      "relpath": "queuebash.sh"
+    },
+    {
+      "action": "create",
+      "change_type": "new_or_unbaselined_file",
+      "existed": false,
+      "relpath": "docs/QUEUE_COMMAND_CONTRACT.md",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "new_or_unbaselined_file",
+      "existed": false,
+      "relpath": "tests/queue_command_contract_static.sh",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "new_or_unbaselined_file",
+      "existed": false,
+      "relpath": "tests/queue_command_json_smoke.sh",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "merge_scratchpad",
+      "backup_path": "files/.queuebash/dev/scratchpad.json",
+      "change_type": "scratchpad_item_merge",
+      "existed": true,
+      "old_md5": "60157728d232c7619006462daadc836c",
+      "old_size": 233159,
+      "relpath": ".queuebash/dev/scratchpad.json"
+    }
+  ],
+  "patchset_created_at": "2026-06-02T20:31:30.602704+00:00",
+  "schema": "queuebash.dev_patchset.backup_manifest.v1",
+  "target": "/mnt/data/merge87/work"
+}

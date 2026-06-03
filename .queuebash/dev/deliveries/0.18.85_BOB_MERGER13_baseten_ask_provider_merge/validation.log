@@ -1,0 +1,30 @@
+0.18.85 BOB_MERGER13 Baseten ask-provider merge validation
+
+PASS merge input limited to bashqueues_0.18.84_BOB11_ask_baseten_provider_pack_patchset.zip
+PASS mobile_fetch_patch.zip intentionally excluded
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS bash -n providers.d/ask/baseten.sh
+PASS python3 -m py_compile bin/queue-ai-ask-baseten bin/queue-ai-broker bin/queue-dev-merge-plan.py
+PASS bash tests/ask_baseten_provider_static.sh
+PASS bash tests/ask_baseten_provider_smoke.sh
+PASS bash tests/queue_ai_broker_runtime_static.sh
+PASS python3 tests/queue_ai_broker_runtime_json_contract_static.py
+PASS python3 tests/queue_ai_broker_json_contract_static.py
+PASS bash tests/queue_ai_job_usage_static.sh
+PASS bash tests/cloud_job_intent_submit_static.sh
+PASS python3 tests/cloud_job_intent_submit_json_contract_static.py
+PASS bash tests/dev_merge_plan_static.sh
+PASS python3 tests/dev_merge_plan_json_contract_static.py
+PASS bash tests/class_inference_contract_static.sh
+PASS bash tests/grid_energy_provider_static.sh
+PASS _queue_ai_provider_discovery_json baseten
+PASS _queue_ai_provider_list contains baseten
+PASS bin/queue-ai-broker providers --json contains baseten
+PASS bin/queue-ai-ask-baseten missing-key fail-closed response
+PASS queue dev test qbtest --file queuebash.sh --list --json count=161 invalid=0
+PASS cleanup: no __pycache__/.pyc/.pyo/.pytest_cache retained
+PASS assets.d/net_usage.sh absent
+
+NOTE tests/queue_ai_broker_runtime_smoke.sh and tests/cloud_job_intent_submit_smoke.sh are slow/hang-prone in this sandbox due queue/init fixture setup; their covered broker/cloud JSON/static paths were validated with bounded commands above.
+NOTE queue dev merge-plan against the incoming Baseten patchset reported zero entries for this older manifest dialect; Bob Merger reconciled manually and recorded this limitation.

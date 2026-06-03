@@ -1,0 +1,3 @@
+cleanup check
+assets.d/net_usage.sh absent: ok
+caps.d/net_usage.sh present: ok

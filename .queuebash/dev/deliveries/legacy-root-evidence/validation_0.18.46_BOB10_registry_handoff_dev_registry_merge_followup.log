@@ -1,0 +1,31 @@
+== tests/cloud_provision_dry_run_smoke.sh
+[PASS] cloud provision dry-run smoke checks pass
+PASS tests/cloud_provision_dry_run_smoke.sh
+== tests/cloud_resource_provider_contract_static.sh
+[PASS] cloud resource provider contract static checks pass
+PASS tests/cloud_resource_provider_contract_static.sh
+== tests/cloud_resource_json_contract_static.py
+PASS cloud_resource_json_contract_static
+PASS tests/cloud_resource_json_contract_static.py
+== tests/cloud_resource_file_provider_smoke.sh
+[PASS] cloud resource file provider smoke checks pass
+PASS tests/cloud_resource_file_provider_smoke.sh
+== tests/queue_dev_contract_static.sh
+PASS queue_dev_contract_static
+PASS tests/queue_dev_contract_static.sh
+== tests/queue_dev_docs_consistency_static.sh
+PASS queue_dev_docs_consistency_static
+PASS tests/queue_dev_docs_consistency_static.sh
+== tests/queue_dev_json_contract_static.py
+PASS queue_dev_json_contract_static
+PASS tests/queue_dev_json_contract_static.py
+== tests/dev_file_registry_static.sh
+FAIL(1) tests/dev_file_registry_static.sh
+== tests/dev_file_registry_smoke.sh
+PASS dev_file_registry_smoke
+PASS tests/dev_file_registry_smoke.sh
+== tests/queue_dev_patchset_static.sh
+timeout: failed to run command 'tests/queue_dev_patchset_static.sh': No such file or directory
+FAIL(127) tests/queue_dev_patchset_static.sh
+== tests/dev_scratchpad_json_contract_static.py
+PASS dev_scratchpad_json_contract_static

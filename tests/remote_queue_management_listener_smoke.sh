@@ -1,8 +1,21 @@
 #!/usr/bin/env bash
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec bash "$0" "$@"
+fi
 set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
 root="$(mktemp -d)"
+port="$(python3 - <<'PYPORT'
+import socket
+s=socket.socket()
+s.bind(('127.0.0.1',0))
+print(s.getsockname()[1])
+s.close()
+PYPORT
+)"
 cleanup(){
   if [[ -n "${listener_pid:-}" ]]; then kill "$listener_pid" 2>/dev/null || true; wait "$listener_pid" 2>/dev/null || true; fi
   rm -rf "$root"
@@ -21,7 +34,7 @@ queue-admin@example.invalid	version	*	allow	version allowed
 TSV
 cat > "$root/policy/remote-management.env" <<EOFENV
 QUEUE_REMOTE_MANAGEMENT_HOST=127.0.0.1
-QUEUE_REMOTE_MANAGEMENT_PORT=18765
+QUEUE_REMOTE_MANAGEMENT_PORT=$port
 QUEUE_REMOTE_MANAGEMENT_ENDPOINT=/remote-queue
 QUEUE_REMOTE_MANAGEMENT_LOOPBACK_ONLY=1
 QUEUE_REMOTE_MANAGEMENT_QUEUEBASH_SOURCE=$PWD/queuebash.sh
@@ -33,7 +46,7 @@ QUEUE_REMOTE_MANAGEMENT_AUDIT_LOG=$root/log/audit.jsonl
 QUEUE_REMOTE_MANAGEMENT_MAX_RUNTIME_SECONDS=5
 EOFENV
 cat > "$root/client-remote.d/local.env" <<EOFCLIENT
-QUEUE_REMOTE_URL=http://127.0.0.1:18765
+QUEUE_REMOTE_URL=http://127.0.0.1:$port
 QUEUE_REMOTE_ENDPOINT=/remote-queue
 QUEUE_REMOTE_CLIENT_ID=queue-admin
 QUEUE_REMOTE_KEY_ID=default
@@ -45,16 +58,16 @@ EOFCLIENT
 python3 bin/queue-remote-management-listener.py --config "$root/policy/remote-management.env" >"$root/listener.out" 2>"$root/listener.err" &
 listener_pid=$!
 for _ in $(seq 1 50); do
-  if python3 - <<'PY' >/dev/null 2>&1
+  if QUEUE_REMOTE_TEST_PORT="$port" python3 - <<'PY' >/dev/null 2>&1
 import urllib.request
-urllib.request.urlopen('http://127.0.0.1:18765/healthz', timeout=0.2).read()
+urllib.request.urlopen('http://127.0.0.1:%s/healthz' % __import__('os').environ['QUEUE_REMOTE_TEST_PORT'], timeout=0.2).read()
 PY
   then break; fi
   sleep 0.1
 done
-python3 - <<'PY'
+QUEUE_REMOTE_TEST_PORT="$port" python3 - <<'PY'
 import urllib.request
-urllib.request.urlopen('http://127.0.0.1:18765/healthz', timeout=2).read()
+urllib.request.urlopen('http://127.0.0.1:%s/healthz' % __import__('os').environ['QUEUE_REMOTE_TEST_PORT'], timeout=2).read()
 PY
 
 QUEUE_REMOTE_CONFIG_DIR="$root/client-remote.d" python3 bin/queue-remote-service-client.py local health --json > "$root/health.json"
@@ -81,7 +94,7 @@ assert d['reason']=='no_matching_remote_queue_acl_rule'
 PY
 
 cat > "$root/client-remote.d/bad.env" <<EOFBAD
-QUEUE_REMOTE_URL=http://127.0.0.1:18765
+QUEUE_REMOTE_URL=http://127.0.0.1:$port
 QUEUE_REMOTE_ENDPOINT=/remote-queue
 QUEUE_REMOTE_CLIENT_ID=queue-admin
 QUEUE_REMOTE_KEY_ID=default
@@ -102,7 +115,7 @@ assert 'signature' in d['reason']
 PY
 
 cat > "$root/client-remote.d/unknown.env" <<EOFUNKNOWN
-QUEUE_REMOTE_URL=http://127.0.0.1:18765
+QUEUE_REMOTE_URL=http://127.0.0.1:$port
 QUEUE_REMOTE_ENDPOINT=/remote-queue
 QUEUE_REMOTE_CLIENT_ID=unknown-client
 QUEUE_REMOTE_KEY_ID=default

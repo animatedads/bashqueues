@@ -1,0 +1,19 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "version": "0.18.57",
+  "package": "BOB12 dev validate scope gates",
+  "base": "bashqueues_0.18.56_BOB_MERGER_groq_status_enum_full_delivery.zip",
+  "delivery_type": "patchset",
+  "summary": "Adds bounded queue dev validate and scope-check reporting gates using timeout/QBTEST validation without scratchpad mutation or acceptance authority.",
+  "changed_files": [
+    "queuebash.sh",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/QUEUE_DEV_VALIDATE_SCOPE.md",
+    "tests/dev_validate_scope_static.sh",
+    "tests/dev_validate_scope_smoke.sh",
+    "tests/dev_validate_scope_json_contract_static.py",
+    "validation_0.18.57_BOB12_dev_validate_scope_gates.log",
+    "cleanup_0.18.57_BOB12_dev_validate_scope_gates.log"
+  ]
+}

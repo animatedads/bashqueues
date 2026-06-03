@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T13:09:43Z",
+  "created_from_session": "AIS-20260603-130758-386224-8397-bob14",
+  "created_from_try": "",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260603-130943-099535-6304",
+  "match": {
+    "command_glob": "find providers.d docs policies.d tests/fixtures tests *",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "queue dev files list --json",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "queue dev ai try rejects broad find provider tree discovery in this base; use queue dev files/context or bounded tests/provider docs commands instead, or inspect with non-try only when bootstrapping a patch."
+}

@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T11:35:57Z",
+  "created_from_session": "AIS-20260603-112520-486509-6031-GPT-5.5",
+  "created_from_try": "",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260603-113557-900119-8563",
+  "match": {
+    "command_glob": "queue dev ai try *queue dev patchset*",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "queue dev ai try can only execute command names directly from its allowlist. In extracted source trees, queue may not be installed on PATH, so use queue dev ai try for bash -n and executable shell tests; run sourced queue commands directly outside try or provide an installed queue wrapper."
+}

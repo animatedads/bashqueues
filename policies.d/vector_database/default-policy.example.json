@@ -1,0 +1,10 @@
+{
+  "fixture_first": true,
+  "live_api_default": false,
+  "mutation_default": false,
+  "normalized_json_only": true,
+  "provider_family": "vector_database",
+  "provider_output_is_shell": false,
+  "provisioning_default": false,
+  "schema": "queuebash.vector_database.policy.v1"
+}

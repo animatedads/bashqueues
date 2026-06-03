@@ -1,0 +1,10 @@
+{
+  "schema": "queuebash.container_registry.provenance_policy.v1",
+  "policy_id": "container-registry-provenance-fixture",
+  "require_signature": true,
+  "require_sbom": true,
+  "max_critical_vulnerabilities": 0,
+  "max_high_vulnerabilities": 0,
+  "deny_if_scan_missing": true,
+  "audit_events": ["container_image_fact_read", "container_provenance_fact_read"]
+}

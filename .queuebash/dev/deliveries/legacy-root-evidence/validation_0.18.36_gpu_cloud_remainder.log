@@ -1,0 +1,103 @@
+BEGIN bash tests/apac_china_provider_contracts_static.sh
+PASS apac_china_provider_contracts_static
+PASS bash tests/apac_china_provider_contracts_static.sh
+BEGIN bash tests/apac_china_provider_fixture_smoke.sh
+PASS apac china fixture json
+PASS apac_china_provider_fixture_smoke
+PASS bash tests/apac_china_provider_fixture_smoke.sh
+BEGIN /usr/bin/python3 tests/apac_china_provider_json_contract_static.py
+PASS apac_china_provider_json_contract_static
+PASS /usr/bin/python3 tests/apac_china_provider_json_contract_static.py
+BEGIN bash tests/eu_sovereign_provider_contracts_static.sh
+PASS eu_sovereign_provider_contracts_static
+PASS bash tests/eu_sovereign_provider_contracts_static.sh
+BEGIN bash tests/eu_sovereign_provider_fixture_smoke.sh
+PASS eu sovereign fixture json
+PASS eu_sovereign_provider_fixture_smoke
+PASS bash tests/eu_sovereign_provider_fixture_smoke.sh
+BEGIN /usr/bin/python3 tests/eu_sovereign_provider_json_contract_static.py
+PASS eu_sovereign_provider_json_contract_static
+PASS /usr/bin/python3 tests/eu_sovereign_provider_json_contract_static.py
+BEGIN bash tests/azure_provider_contracts_static.sh
+FAIL rc=1 bash tests/azure_provider_contracts_static.sh
+BEGIN bash tests/azure_provider_fixture_smoke.sh
+PASS azure fixture json
+PASS azure_provider_fixture_smoke
+PASS bash tests/azure_provider_fixture_smoke.sh
+BEGIN /usr/bin/python3 tests/azure_provider_json_contract_static.py
+PASS azure_provider_json_contract_static
+PASS /usr/bin/python3 tests/azure_provider_json_contract_static.py
+BEGIN bash tests/gcp_provider_contracts_static.sh
+PASS gcp_provider_contracts_static
+PASS bash tests/gcp_provider_contracts_static.sh
+BEGIN bash tests/gcp_provider_fixture_smoke.sh
+PASS gcp fixture json
+PASS gcp_provider_fixture_smoke
+PASS bash tests/gcp_provider_fixture_smoke.sh
+BEGIN /usr/bin/python3 tests/gcp_provider_json_contract_static.py
+PASS gcp_provider_json_contract_static
+PASS /usr/bin/python3 tests/gcp_provider_json_contract_static.py
+BEGIN bash tests/aws_provider_contracts_static.sh
+[FAIL] version not bumped to 0.18.31 or newer
+FAIL rc=1 bash tests/aws_provider_contracts_static.sh
+BEGIN bash tests/aws_provider_fixture_smoke.sh
+[PASS] aws provider fixture smoke checks pass
+PASS bash tests/aws_provider_fixture_smoke.sh
+BEGIN /usr/bin/python3 tests/aws_provider_json_contract_static.py
+PASS aws_provider_json_contract_static
+PASS /usr/bin/python3 tests/aws_provider_json_contract_static.py
+BEGIN bash tests/remote_queue_command_static.sh
+[FAIL] version not bumped to 0.18.31 or newer
+FAIL rc=1 bash tests/remote_queue_command_static.sh
+BEGIN bash tests/remote_queue_command_smoke.sh
+[PASS] remote queue command smoke checks pass
+PASS bash tests/remote_queue_command_smoke.sh
+BEGIN bash tests/remote_queue_management_listener_static.sh
+[PASS] remote queue management listener static checks pass
+PASS bash tests/remote_queue_management_listener_static.sh
+BEGIN bash tests/remote_queue_management_listener_smoke.sh
+[PASS] remote queue management listener smoke checks pass
+PASS bash tests/remote_queue_management_listener_smoke.sh
+BEGIN bash tests/cloud_resource_provider_contract_static.sh
+[FAIL] version not bumped to 0.18.30 or newer
+FAIL rc=1 bash tests/cloud_resource_provider_contract_static.sh
+BEGIN bash tests/cloud_resource_file_provider_smoke.sh
+[PASS] cloud resource file provider smoke checks pass
+PASS bash tests/cloud_resource_file_provider_smoke.sh
+BEGIN /usr/bin/python3 tests/cloud_resource_json_contract_static.py
+PASS cloud_resource_json_contract_static
+PASS /usr/bin/python3 tests/cloud_resource_json_contract_static.py
+BEGIN bash tests/dev_scratchpad_static.sh
+FAIL: queuebash version must be 0.18.28 or newer
+FAIL rc=1 bash tests/dev_scratchpad_static.sh
+BEGIN bash tests/dev_scratchpad_smoke.sh
+PASS dev_scratchpad_smoke
+PASS bash tests/dev_scratchpad_smoke.sh
+BEGIN /usr/bin/python3 tests/dev_scratchpad_json_contract_static.py
+PASS dev_scratchpad_json_contract_static
+PASS /usr/bin/python3 tests/dev_scratchpad_json_contract_static.py
+BEGIN bash tests/dev_remote_runner_static.sh
+PASS dev_remote_runner_static
+PASS bash tests/dev_remote_runner_static.sh
+BEGIN /usr/bin/python3 tests/dev_remote_runner_json_contract_static.py
+PASS dev_remote_runner_json_contract_static
+PASS /usr/bin/python3 tests/dev_remote_runner_json_contract_static.py
+BEGIN bash tests/dev_test_runner_class_static.sh
+FAIL queuebash version not bumped to 0.18.28 or newer
+FAIL rc=1 bash tests/dev_test_runner_class_static.sh
+BEGIN /usr/bin/python3 tests/dev_test_runner_json_contract_static.py
+PASS dev_test_runner_json_contract_static
+PASS /usr/bin/python3 tests/dev_test_runner_json_contract_static.py
+BEGIN bash tests/oci_provider_contracts_static.sh
+PASS oci_provider_contracts_static
+PASS bash tests/oci_provider_contracts_static.sh
+BEGIN bash tests/oci_provider_fixture_smoke.sh
+PASS oci fixture json
+PASS oci_provider_fixture_smoke
+PASS bash tests/oci_provider_fixture_smoke.sh
+BEGIN /usr/bin/python3 tests/oci_provider_json_contract_static.py
+PASS oci_provider_json_contract_static
+PASS /usr/bin/python3 tests/oci_provider_json_contract_static.py
+BEGIN bash tests/oci_governance_provider_contract_static.sh
+[FAIL] version not bumped to 0.18.28 or newer
+FAIL rc=1 bash tests/oci_governance_provider_contract_static.sh

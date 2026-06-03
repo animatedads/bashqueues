@@ -1,0 +1,7 @@
+cleanup checks for 0.18.55 BOB10 EU/APAC cloud infra helper parity
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no cleanup debris
+PASS scratchpad JSON valid
+PASS cloud-infra registry JSON valid
+PASS cloud-infra fixture JSON valid

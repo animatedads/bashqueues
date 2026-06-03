@@ -1,0 +1,39 @@
+{
+  "base": "0.18.48 full delivery acceptance base plus 0.18.49 BOB12 patchset applied sequentially",
+  "boundaries": [
+    "no validation self-acceptance",
+    "no dispatcher refactor",
+    "no live-provider expansion",
+    "patch-only delivery"
+  ],
+  "changed_files": [
+    "CHANGELOG.md",
+    "README.md",
+    "queuebash.sh",
+    "docs/QUEUE_DEV_CONTEXT_THINK_HANDOVER.md",
+    "tests/dev_context_think_handover_static.sh",
+    "tests/dev_context_think_handover_smoke.sh",
+    "tests/dev_file_registry_static.sh",
+    "tests/dev_patchset_new_file_smoke.sh",
+    "tests/dev_patchset_hardening_static.sh",
+    "tests/dev_attempt_evidence_static.sh",
+    "tests/ask_openai_provider_static.sh",
+    "tests/ask_anthropic_provider_static.sh",
+    "tests/hybrid_onprem_provider_contracts_static.sh",
+    "tests/provider_primary_source_validation_static.sh",
+    "tests/provider_family_consistency_static.sh",
+    "tests/provider_explainability_standard_static.sh",
+    "validation_0.18.50_BOB12_dev_context_think_handover.log",
+    "cleanup_0.18.50_BOB12_dev_context_think_handover.log",
+    "merge_manifest_0.18.50_BOB12_dev_context_think_handover.json"
+  ],
+  "commands_added": [
+    "queue dev context",
+    "queue dev think",
+    "queue dev handover"
+  ],
+  "created_at": "2026-05-30T10:14:20Z",
+  "delivery_type": "patchset",
+  "package": "0.18.50 BOB12 dev context think handover",
+  "schema": "queuebash.merge_manifest.v1"
+}

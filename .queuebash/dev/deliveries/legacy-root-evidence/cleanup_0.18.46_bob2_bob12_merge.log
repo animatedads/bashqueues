@@ -1,0 +1,10 @@
+assets.d/net_usage.sh absent: ok
+caps.d/net_usage.sh present: ok
+__pycache__ 0
+*.pyc 0
+*.pyo 0
+.pytest_cache 0
+*.lock 0
+*.dev.lock 0
+*.devpatch.* 0
+queuebash.sh.bak.* 0

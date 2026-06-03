@@ -1,0 +1,47 @@
+=== syntax ===
+$ bash -n queuebash.sh
+$ bash -n queuebash.sh
+rc=0
+$ bash -n providers.d/cloud_provision/cloud_provision.sh
+$ bash -n providers.d/cloud_provision/cloud_provision.sh
+rc=0
+$ bash -n tests/apac_china_provider_contracts_static.sh
+$ bash -n tests/apac_china_provider_contracts_static.sh
+rc=0
+$ bash -n tests/edge_cloud_provider_contracts_static.sh
+$ bash -n tests/edge_cloud_provider_contracts_static.sh
+rc=0
+$ bash -n tests/eu_sovereign_provider_contracts_static.sh
+$ bash -n tests/eu_sovereign_provider_contracts_static.sh
+rc=0
+$ bash -n tests/gpu_cloud_provider_contracts_static.sh
+$ bash -n tests/gpu_cloud_provider_contracts_static.sh
+rc=0
+$ bash -n tests/remote_queue_service_provider_contract_static.sh
+$ bash -n tests/remote_queue_service_provider_contract_static.sh
+rc=0
+$ bash -n tests/cloud_provision_approval_live_gate_static.sh
+$ bash -n tests/cloud_provision_approval_live_gate_static.sh
+rc=0
+$ bash -n tests/cloud_provision_approval_live_gate_smoke.sh
+$ bash -n tests/cloud_provision_approval_live_gate_smoke.sh
+rc=0
+$ python3 -m py_compile tests/cloud_provision_approval_live_gate_json_contract_static.py
+$ python3 -m py_compile tests/cloud_provision_approval_live_gate_json_contract_static.py
+rc=0
+syntax OK
+=== queue dev targeted contract ===
+$ queue version
+$ queue version
+queuebash 0.18.49
+rc=0
+$ queue dev extract _queue_dev_command --file queuebash.sh --json
+$ queue dev extract _queue_dev_command --file queuebash.sh --json
+{"function":"_queue_dev_command","file":"queuebash.sh","body":"_queue_dev_command() {\n    local sub=\"${1:-}\"\n    shift || true\n    case \"$sub\" in\n        functions|list) _queue_dev_functions \"$@\" ;;\n        locate) _queue_dev_locate \"$@\" ;;\n        extract) _queue_dev_extract \"$@\" ;;\n        scope) _queue_dev_scope \"$@\" ;;\n        patch) _queue_dev_patch \"$@\" ;;\n        comment) _queue_dev_comment \"$@\" ;;\n        diff) _queue_dev_diff \"$@\" ;;\n        strip|rollback) _queue_dev_strip \"$@\" ;;\n        symbols) _queue_dev_symbols \"$@\" ;;\n        flow|graph|paths) _queue_dev_flow \"$@\" ;;\n        splice) _queue_dev_splice \"$@\" ;;\n        test) _queue_dev_test_command \"$@\" ;;\n        scratchpad) _queue_dev_scratchpad_command \"$@\" ;;\n        attempt) _queue_dev_attempt_command \"$@\" ;;\n        evidence) _queue_dev_evidence_command \"$@\" ;;\n        files|file-registry|registry) _queue_dev_file_registry_command \"$@\" ;;\n        patchset) _queue_dev_patchset_command \"$@\" ;;\n        help|--help|-h|\"\") _queue_dev_usage ;;\n        *) echo \"queue dev: unknown subcommand: $sub\" >&2; _queue_dev_usage >&2; return 2 ;;\n    esac\n}"}
+rc=0
+$ queue dev extract _queue_dev_patch --file queuebash.sh --json
+$ queue dev extract _queue_dev_patch --file queuebash.sh --json
+{"function":"_queue_dev_patch","file":"queuebash.sh","body":"_queue_dev_patch() {\n    local file=\"\" fn=\"\" source=\"\" json=0 syntax_check=1 backup=\"\" tmp status=0 message=\"patched\" locked=0 lock_was_held=0\n    while [[ \"$#\" -gt 0 ]]; do\n        case \"${1:-}\" in\n            --file) file=\"${2:-}\"; shift 2 ;;\n            --function) fn=\"${2:-}\"; shift 2 ;;\n            --source) source=\"${2:-}\"; shift 2 ;;\n            --json|-j) json=1; shift ;;\n            --no-syntax-check) syntax_check=0; shift ;;\n            --help|-h) _queue_dev_usage; return 0 ;;\n            *) echo \"queue dev patch: unexpected argument: $1\" >&2; return 2 ;;\n        esac\n    done\n    [[ -n \"$file\" && -n \"$fn\" && -n \"$source\" ]] || { echo \"Usage: queue dev patch --file FILE --function FUNCTION --source SOURCE [--json]\" >&2; return 2; }\n    _queue_dev_valid_function_name \"$fn\" || { echo \"queue dev patch: invalid function name: $fn\" >&2; return 2; }\n    [[ -f \"$file\" ]] || { echo \"queue dev patch: target file not found: $file\" >&2; return 1; }\n    [[ -f \"$source\" ]] || { echo \"queue dev patch: source file not found: $source\" >&2; return 1; }\n\n    lock_was_held=\"${QUEUEBASH_DEV_LOCK_HELD:-0}\"\n    _queue_dev_lock \"$file\" || return 1\n    [[ \"$lock_was_held\" == \"1\" ]] || locked=1\n\n    tmp=\"${file}.devpatch.$$\"\n    backup=\"${file}.bak.$(date +%Y%m%d%H%M%S).$$\"\n\n    if ! python3 - \"$file\" \"$fn\" \"$source\" \"$tmp\" <<'PYDEV_PATCH'\nimport re, sys, pathlib\nfile, fn, source, out = sys.argv[1:5]\ntext = pathlib.Path(file).read_text()\nnew = pathlib.Path(source).read_text()\nif not new.endswith('\\n'):\n    new += '\\n'\nlines = text.splitlines(True)\npat1 = re.compile(r'^(\\s*)' + re.escape(fn) + r'\\s*\\(\\s*\\)\\s*(\\{)?\\s*(?:#.*)?$')\npat2 = re.compile(r'^(\\s*)function\\s+' + re.escape(fn) + r'(?:\\s*\\(\\s*\\))?\\s*(\\{)?\\s*(?:#.*)?$')\nstart = None\nfor i, line in enumerate(lines):\n    if pat1.match(line) or pat2.match(line):\n        start = i\n        break\nif start is None:\n    print(f'function not found: {fn}', file=sys.stderr)\n    sys.exit(3)\n\ndef brace_delta(line):\n    delta = 0\n    sq = dq = esc = False\n    i = 0\n    while i < len(line):\n        ch = line[i]\n        if esc:\n            esc = False; i += 1; continue\n        if ch == '\\\\' and not sq:\n            esc = True; i += 1; continue\n        if ch == \"'\" and not dq:\n            sq = not sq; i += 1; continue\n        if ch == '\"' and not sq:\n            dq = not dq; i += 1; continue\n        if ch == '#' and not sq and not dq:\n            break\n        if not sq and not dq:\n            if ch == '{': delta += 1\n            elif ch == '}': delta -= 1\n        i += 1\n    return delta\n\ndepth = 0\nseen_open = False\nend = None\nfor i in range(start, len(lines)):\n    d = brace_delta(lines[i])\n    if d > 0:\n        seen_open = True\n    depth += d\n    if seen_open and depth <= 0:\n        end = i\n        break\nif end is None:\n    print(f'function end not found: {fn}', file=sys.stderr)\n    sys.exit(4)\npatched = ''.join(lines[:start]) + new + ''.join(lines[end+1:])\npathlib.Path(out).write_text(patched)\nprint(f'{start+1}\\t{end+1}')\nPYDEV_PATCH\n    then\n        status=$?; message=\"patch construction failed\"\n        [[ \"$json\" -eq 1 ]] && printf '{\"status\":\"error\",\"function\":\"%s\",\"file\":\"%s\",\"message\":\"%s\"}\\n' \"$(_queue_json_escape \"$fn\")\" \"$(_queue_json_escape \"$file\")\" \"$(_queue_json_escape \"$message\")\"\n        rm -f -- \"$tmp\" \"${tmp}.range\" 2>/dev/null || true\n        [[ \"$locked\" -eq 1 ]] && _queue_dev_unlock\n        return \"$status\"\n    fi > \"${tmp}.range\"\n\n    if [[ \"$syntax_check\" -eq 1 ]]; then\n        if ! bash -n \"$tmp\" >/dev/null 2>\"${tmp}.syntax.err\"; then\n            message=\"syntax check failed\"\n            if [[ \"$json\" -eq 1 ]]; then\n                printf '{\"status\":\"error\",\"function\":\"%s\",\"file\":\"%s\",\"message\":\"%s\",\"stderr\":\"%s\"}\\n' \\\n                    \"$(_queue_json_escape \"$fn\")\" \"$(_queue_json_escape \"$file\")\" \"$(_queue_json_escape \"$message\")\" \"$(_queue_json_escape \"$(cat \"${tmp}.syntax.err\" 2>/dev/null)\")\"\n            else\n                echo \"queue dev patch: syntax check failed; target not changed: $file\" >&2\n                cat \"${tmp}.syntax.err\" >&2 2>/dev/null || true\n            fi\n            rm -f -- \"$tmp\" \"${tmp}.range\" \"${tmp}.syntax.err\" 2>/dev/null || true\n            [[ \"$locked\" -eq 1 ]] && _queue_dev_unlock\n            return 1\n        fi\n    fi\n\n    if ! _queue_dev_backup_verify \"$file\" \"$backup\"; then\n        rm -f -- \"$tmp\" \"${tmp}.range\" \"${tmp}.syntax.err\" 2>/dev/null || true\n        [[ \"$locked\" -eq 1 ]] && _queue_dev_unlock\n        [[ \"$json\" -eq 1 ]] && printf '{\"status\":\"error\",\"function\":\"%s\",\"file\":\"%s\",\"message\":\"backup verification failed\"}\\n' \"$(_queue_json_escape \"$fn\")\" \"$(_queue_json_escape \"$file\")\" || echo \"queue dev patch: backup verification failed: $backup\" >&2\n        return 1\n    fi\n    if ! mv -- \"$tmp\" \"$file\"; then\n        cp -p -- \"$backup\" \"$file\" 2>/dev/null || true\n        rm -f -- \"$tmp\" \"${tmp}.range\" 2>/dev/null || true\n        [[ \"$locked\" -eq 1 ]] && _queue_dev_unlock\n        return 1\n    fi\n    local line_start line_end\n    IFS=$'\\t' read -r line_start line_end < \"${tmp}.range\" || true\n    rm -f -- \"${tmp}.range\" \"${tmp}.syntax.err\" 2>/dev/null || true\n    _queue_dev_prune_backups \"$file\"\n    [[ \"$locked\" -eq 1 ]] && _queue_dev_unlock\n    if [[ \"$json\" -eq 1 ]]; then\n        printf '{\"status\":\"patched\",\"function\":\"%s\",\"file\":\"%s\",\"line_start\":%s,\"line_end\":%s,\"backup\":\"%s\",\"syntax_checked\":%s,\"atomic\":true,\"locked\":true}\\n' \\\n            \"$(_queue_json_escape \"$fn\")\" \"$(_queue_json_escape \"$file\")\" \"${line_start:-0}\" \"${line_end:-0}\" \"$(_queue_json_escape \"$backup\")\" \"$(_queue_dev_json_bool \"$syntax_check\")\"\n    else\n        echo \"patched: $fn in $file\"\n        echo \"backup:  $backup\"\n        [[ \"$syntax_check\" -eq 1 ]] && echo \"syntax:  ok\"\n    fi\n}"}
+rc=0
+$ queue dev extract _queue_dev_scratchpad_command --file queuebash.sh --json
+$ queue dev extract _queue_dev_scratchpad_command --file queuebash.sh --json

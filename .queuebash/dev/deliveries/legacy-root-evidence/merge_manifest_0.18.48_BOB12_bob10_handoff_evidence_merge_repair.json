@@ -1,0 +1,39 @@
+{
+  "base": "bashqueues_0.18.47_BOB12_multistream_registry_scan_merge.zip",
+  "changed_files": [
+    "README.md",
+    "CHANGELOG.md",
+    "queuebash.sh",
+    ".queuebash/dev/scratchpad.json",
+    "docs/CLOUD_PROVISIONING_REGISTRY_HANDOFF_CONTROLLED.md",
+    "tests/cloud_provision_registry_handoff_static.sh",
+    "tests/cloud_provision_registry_handoff_smoke.sh",
+    "tests/cloud_provision_registry_handoff_json_contract_static.py",
+    "tests/azure_provider_contracts_static.sh",
+    "validation_0.18.46_BOB10_registry_handoff_dev_registry_merge.log",
+    "validation_0.18.46_BOB10_registry_handoff_dev_registry_merge_final.log",
+    "validation_0.18.46_BOB10_registry_handoff_dev_registry_merge_followup.log",
+    "cleanup_0.18.46_BOB10_registry_handoff_dev_registry_merge.log",
+    "merge_manifest_0.18.46_BOB10_registry_handoff_dev_registry_merge.json",
+    "validation_0.18.48_BOB12_bob10_handoff_evidence_merge_repair.log",
+    "cleanup_0.18.48_BOB12_bob10_handoff_evidence_merge_repair.log",
+    "merge_manifest_0.18.48_BOB12_bob10_handoff_evidence_merge_repair.json"
+  ],
+  "cleanup": "cleanup_0.18.48_BOB12_bob10_handoff_evidence_merge_repair.log",
+  "created_at": "2026-05-30T09:12:30Z",
+  "inputs": [
+    "bashqueues_0.18.46_BOB10_registry_handoff_dev_registry_merge.zip",
+    "review confirmations for Bob2 and Bob11 inclusion",
+    "0.18.48 scratchpad milestone notes"
+  ],
+  "not_changed": [
+    "No live cloud API calls added",
+    "No dispatcher refactor",
+    "No restoration of assets.d/net_usage.sh"
+  ],
+  "package": "bashqueues_0.18.48_BOB12_bob10_handoff_evidence_merge_repair",
+  "schema": "queuebash.merge_manifest.v1",
+  "summary": "Repair 0.18.47 big merge by importing missing Bob10 controlled handoff docs/tests/evidence, preserving Bob2/Bob11/Bob12 work, updating stale Azure version pin, and recording multistream merge milestone/follow-up.",
+  "validation": "validation_0.18.48_BOB12_bob10_handoff_evidence_merge_repair.log",
+  "version": "0.18.48"
+}

@@ -1,0 +1,17 @@
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS python3 -m py_compile bin/queue-ai-broker tests/queue_ai_broker_runtime_json_contract_static.py tests/queue_ai_broker_json_contract_static.py tests/queue_api_protocol_json_contract_static.py
+PASS bash tests/queue_ai_broker_contract_static.sh
+PASS python3 tests/queue_ai_broker_json_contract_static.py
+PASS bash tests/queue_ai_job_usage_static.sh
+PASS bash tests/queue_ai_broker_runtime_static.sh
+PASS bash tests/queue_ai_broker_runtime_smoke.sh
+PASS python3 tests/queue_ai_broker_runtime_json_contract_static.py
+PASS bash tests/queue_api_protocol_static.sh
+PASS bash tests/queue_api_scope_static.sh
+PASS python3 tests/queue_api_protocol_json_contract_static.py
+PASS bash tests/grid_energy_provider_static.sh
+PASS bash tests/grid_energy_provider_fixture_smoke.sh
+PASS source queuebash.sh; queue ai providers --json
+PASS source queuebash.sh; queue ai explain --profile balanced --capability chat,json --json
+PASS assets.d/net_usage.sh absent

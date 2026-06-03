@@ -1,0 +1,7 @@
+=== cleanup checks ===
+assets.d/net_usage.sh absent ok
+caps.d/net_usage.sh present ok
+no conflict artifacts
+no editor backup artifacts
+scratchpad_items 177
+scratchpad_bob2_followup_added 1

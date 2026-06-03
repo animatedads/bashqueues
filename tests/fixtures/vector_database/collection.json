@@ -1,0 +1,15 @@
+{
+  "collection_id": "kb-fixture-public-docs",
+  "data_residency": "fixture-region-eu",
+  "decision": "allow",
+  "embedding_model_ref": "model-registry:fixture-embed-small",
+  "fail_closed": true,
+  "mutated": false,
+  "namespace": "docs",
+  "pii_classification": "synthetic_or_public",
+  "provider": "fixture",
+  "provider_family": "vector_database",
+  "query_runtime_permitted": false,
+  "record_count": 1250,
+  "schema": "queuebash.vector_database.collection.v1"
+}

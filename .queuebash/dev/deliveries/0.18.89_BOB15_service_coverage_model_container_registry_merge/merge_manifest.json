@@ -1,0 +1,16 @@
+{
+  "schema": "queuebash.delivery.merge_manifest.v1",
+  "delivery_id": "0.18.89_BOB15_service_coverage_model_container_registry_merge",
+  "version": "0.18.89",
+  "base": "bashqueues_0.18.88_BOB_MERGER13_provider_family_continuity_review_full_delivery.zip",
+  "inputs": ["bashqueues_0.18.89_BOB14_service_coverage_model_container_registry_patchset.zip"],
+  "strategy": "queue dev merge-plan; safe additive files copied; README/CHANGELOG/version reconciled manually; scratchpad item-level merge",
+  "boundaries": [
+    "no live inference API calls",
+    "no container pull/push/delete",
+    "no repository mutation",
+    "no provisioning",
+    "no queue dispatch refactor",
+    "normalized JSON facts only from fixtures"
+  ]
+}

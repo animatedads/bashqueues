@@ -1,0 +1,3 @@
+cleanup: no __pycache__, pyc/pyo, pytest cache, lock/devpatch/reject/orig debris retained.
+root evidence files absent; delivery evidence is under this delivery directory.
+assets.d/net_usage.sh remains absent.

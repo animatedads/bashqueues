@@ -1,0 +1,5 @@
+== cleanup check after pycache removal ==
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS cleanup patterns absent
+PASS scratchpad JSON valid

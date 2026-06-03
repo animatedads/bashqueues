@@ -1,0 +1,14 @@
+== syntax ==
+== new tests ==
+cloud_infra_eu_apac_helper_parity_static: PASS
+cloud_infra_eu_apac_helper_parity_smoke: PASS
+cloud_infra_eu_apac_helper_parity_json_contract_static: PASS
+== regressions ==
+cloud_infra_helpers_static: PASS
+cloud_infra_helpers_smoke: PASS
+cloud_infra_json_contract_static: PASS
+PASS eu_sovereign_provider_contracts_static
+PASS apac_china_provider_contracts_static
+PASS cloud_platform_parity_static
+PASS dev_qbtest_json_contract_static
+== qbtest ==

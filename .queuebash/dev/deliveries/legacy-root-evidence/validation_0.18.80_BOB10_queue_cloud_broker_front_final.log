@@ -1,0 +1,28 @@
+PASS bash -n queuebash.sh
+PASS bash -n providers.d/cloud_broker/cloud_broker_provider.sh
+PASS bash -n providers.d/cloud_resource/cloud_resource_provider.sh
+PASS bash -n providers.d/cloud_provision/cloud_provision.sh
+PASS bash -n providers.d/cloud_infra/cloud_infra.sh
+PASS bash -n providers.d/cloud_signals/cloud_signals_provider.sh
+PASS tests/cloud_broker_front_static.sh
+PASS tests/cloud_broker_front_smoke.sh
+PASS tests/cloud_broker_front_json_contract_static.py
+PASS tests/cloud_cost_service_availability_static.sh
+PASS tests/cloud_cost_service_availability_smoke.sh
+PASS tests/cloud_cost_service_availability_json_contract_static.py
+PASS tests/cloud_resource_provider_contract_static.sh
+PASS tests/cloud_resource_json_contract_static.py
+PASS tests/cloud_resource_file_provider_smoke.sh
+PASS tests/cloud_provision_contract_static.sh
+PASS tests/cloud_provision_json_contract_static.py
+PASS tests/cloud_provision_dry_run_smoke.sh
+PASS tests/cloud_infra_helpers_static.sh
+PASS tests/cloud_infra_json_contract_static.py
+PASS tests/dev_qbtest_static.sh
+PASS tests/dev_qbtest_smoke.sh
+PASS tests/dev_qbtest_json_contract_static.py
+PASS queue dev test qbtest --file queuebash.sh --function _queue_now
+PASS queue cloud providers --json
+PASS queue cloud services --json
+PASS queue cloud broker explain --capability vm --profile gdpr-compute --provider aws --region eu-west-2 --service compute --estimated-hourly-usd 0.50 --json
+NOTE full all-function QBTEST not rerun for this patch; focused QBTEST and dev_qbtest suite passed. This patch does not add QBTEST blocks.

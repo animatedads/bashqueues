@@ -1,0 +1,16 @@
+{
+  "base": "bashqueues_0.18.65_BOB_MERGER_qbtest_wave3_wave8_function_coverage_full_delivery.zip",
+  "classification": "provider branch payload rebased onto current merger head",
+  "created_at_utc": "2026-05-30T20:20:40Z",
+  "merged": [
+    "bashqueues_0.18.60_BOB11_ask_perplexity_live_provider_pack_patchset(1).zip"
+  ],
+  "notes": [
+    "Older Bob11 patchset expected 0.18.59/0.18.60; version treated as branch identity only.",
+    "Perplexity integration manually reconciled onto current ask-provider list while preserving 0.18.65 QBTEST blocks.",
+    "README/CHANGELOG top ordering normalized with 0.18.66 then 0.18.65."
+  ],
+  "queuebash_version": "0.18.66",
+  "schema": "queuebash.bob_merger.full_delivery_manifest.v1",
+  "version": "0.18.66"
+}

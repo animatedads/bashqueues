@@ -1,0 +1,11 @@
+{
+  "base": "bashqueues_0.18.69_BOB_MERGER_remote_connection_entry_command_full_delivery.zip",
+  "merged": [
+    "bashqueues_0.18.69_BOB10_cloud_cost_service_availability_wiring.patchset.zip"
+  ],
+  "notes": [
+    "patchset manifest was older sha256 shape; queue dev inspect reported precondition_failed, so independent cloud-signals files and small queuebash dispatch were reconciled manually."
+  ],
+  "schema": "queuebash.bob_merger.full_delivery.v1",
+  "version": "0.18.70"
+}

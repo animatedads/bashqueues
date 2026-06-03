@@ -1,0 +1,9 @@
+{
+  "cluster_mutation_default": false,
+  "fixture_first": true,
+  "live_api_default": false,
+  "normalized_json_only": true,
+  "provider_output_is_shell": false,
+  "schema": "queuebash.distributed_framework.policy.v1",
+  "submit_job_default": false
+}

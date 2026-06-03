@@ -76,3 +76,24 @@ See `docs/PROVIDER_PRIMARY_SOURCE_VALIDATION.md` and `policies.d/cloud-resource/
 ## 0.18.52 Bob10 update
 
 Azure and GCP are promoted from `fixture_first_provider_family` to `first_tier_contract` status. The promotion is still fixture-first and non-mutating, and legal/compliance mappings remain pending validation unless separately accepted.
+
+
+## 0.18.88 Bob14 continuity review
+
+Bob14 inherits Bob2's provider-family coverage lane. The continuity review keeps
+provider packs fixture-first, normalized, no-live, no-dispatch-refactor, and
+separate from Bob10 provisioning/resource lifecycle, Bob11 ask-provider runtime,
+and Bob13 queue-dev/display-resource work.
+
+The review found one concrete metadata defect: IBM was correctly described as a
+`high_standard_reference`, but the machine-readable consistency policy still
+left IBM structural fields as null. The actual base contains IBM provider helper,
+policy directory, fixtures, provider docs, class criteria, explainability,
+legal/compliance docs, fixture smoke test, JSON contract test, and explainability
+test. `policies.d/cloud-resource/provider-family-consistency.json` now records
+those actual IBM locations while keeping IBM at `high_standard_reference` rather
+than promoting it to first-tier parity.
+
+See `docs/PROVIDER_FAMILY_CONTINUITY_REVIEW_0.18.88.md` for the review evidence
+and `docs/PROVIDER_SERVICE_COVERAGE_ROADMAP.md` for Bob14's fixture-first service
+coverage roadmap.

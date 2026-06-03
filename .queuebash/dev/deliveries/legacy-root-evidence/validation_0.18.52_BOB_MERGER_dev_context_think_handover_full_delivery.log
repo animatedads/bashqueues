@@ -1,0 +1,42 @@
+0.18.52 BOB_MERGER dev context think handover full delivery validation
+
+Base:
+  bashqueues_0.18.51_BOB_MERGER_version_guard_repaired_full_delivery.zip
+
+Applied:
+  bashqueues_0.18.50_BOB12_dev_context_think_handover.patchset.zip
+
+Merge notes:
+  - Patchset preconditions reported expected conflicts against current master because 0.18.51 had already advanced README, CHANGELOG, queuebash.sh, and version-guarded static tests.
+  - README/CHANGELOG/version overlaps treated as expected ledger/version hits.
+  - Runtime version advanced to QUEUEBASH_VERSION="0.18.52" because queue dev context, think, and handover add real runtime command surface.
+  - Bob12 queue dev command additions merged manually into current master without overwriting 0.18.51 version-guard cleanup.
+  - dev_context smoke heredoc/stdin issue repaired before acceptance testing.
+  - queue dev patchset inspect --target path preserved/repaired with bounded subprocess timeout and manifest-path precondition evaluation.
+
+Focused validation passed:
+  PASS bash -n queuebash.sh
+  PASS bash -n tests/dev_context_think_handover_static.sh
+  PASS bash -n tests/dev_context_think_handover_smoke.sh
+  PASS dev_context_think_handover_static
+  PASS dev_context_think_handover_smoke
+  PASS dev_file_registry_static
+  PASS dev_file_registry_smoke
+  PASS dev_file_registry_json_contract_static
+  PASS dev_patchset_hardening_static
+  PASS dev_patchset_hardening_smoke
+  PASS dev_patchset_new_file_smoke
+  PASS provider_static_version_pin_policy_static
+  PASS queue_dev_contract_static
+  PASS queue_dev_json_contract_static
+  PASS dev_scratchpad_static
+  PASS dev_scratchpad_json_contract_static
+  PASS ask_openai_compat_provider_static
+  PASS ask_openai_compat_provider_smoke
+  PASS ask_watsonx_provider_static
+  PASS ask_watsonx_provider_smoke
+  PASS cloud_resource_reconcile_enhancement_static
+  PASS cloud_resource_reconcile_enhancement_smoke
+  PASS cloud_resource_reconcile_enhancement_json_contract_static
+  PASS provider_family_consistency_static
+  PASS provider_family_consistency_json_contract_static

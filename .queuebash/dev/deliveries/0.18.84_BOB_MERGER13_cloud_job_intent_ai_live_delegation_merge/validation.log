@@ -1,0 +1,18 @@
+0.18.84 validation summary
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS python3 -m py_compile bin/queue-ai-broker bin/queue-dev-merge-plan.py
+PASS cloud_job_intent_submit_static
+PASS cloud_job_intent_submit_smoke
+PASS cloud_job_intent_submit_json_contract_static
+PASS queue_ai_broker_runtime_static
+PASS queue_ai_broker_runtime_smoke
+PASS queue_ai_broker_runtime_json_contract_static
+PASS dev_merge_plan_static
+PASS dev_merge_plan_smoke
+PASS dev_merge_plan_json_contract_static
+PASS queue ai --help includes --live
+PASS queue --dryrun submit --uses-cloud records dry-run cloud intent
+PASS queue ai providers --json schema checked
+PASS assets.d/net_usage.sh absent
+NOTE: inherited cloud/class/grid focused tests were not fully rerun to completion in this sandbox due timeout rough edges; merge does not touch those components.

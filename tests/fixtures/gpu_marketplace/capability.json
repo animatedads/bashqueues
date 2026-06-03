@@ -1,0 +1,18 @@
+{
+  "accelerators": [
+    "A100",
+    "H100",
+    "L40S"
+  ],
+  "cuda_major": [
+    12
+  ],
+  "decision": "allow",
+  "driver_install_permitted": false,
+  "fail_closed": true,
+  "multi_node_supported": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "gpu_marketplace",
+  "schema": "queuebash.gpu_marketplace.capability.v1"
+}

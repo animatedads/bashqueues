@@ -1,0 +1,3 @@
+cleanup: no root delivery evidence retained; delivery records are under .queuebash/dev/deliveries/0.18.93_BOB15_queue_dev_ai_dogfood_reconciliation_merge/.
+cleanup: remove __pycache__, pyc/pyo, pytest cache, lock/devpatch/rej/orig debris before packaging.
+cleanup: assets.d/net_usage.sh remains absent.

@@ -1,0 +1,14 @@
+{
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_default": false,
+  "marketplaces": [
+    "fixture-gpu-market"
+  ],
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "gpu_marketplace",
+  "reservation_permitted": false,
+  "schema": "queuebash.gpu_marketplace.detect.v1"
+}

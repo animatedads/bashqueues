@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.delivery.merge_manifest.v1",
+  "version": "0.18.95",
+  "delivery": "0.18.95_BOB15_hotseat_service_coverage_wave3_suite_cd_display_help_merge",
+  "base": "bashqueues_0.18.94_BOB15_patchtastic_service_coverage_wave2_missing_item_cleanup_full_delivery.zip",
+  "inputs": [
+    "bashqueues_0.18.95_BOB12_suite_root_cd_continuation.patchset.zip",
+    "bashqueues_0.18.95_BOB14_service_coverage_gpu_marketplace_distributed_framework_patchset.zip",
+    "bashqueues_0.18.94_BOB16_display_help_resource_extraction.patchset.zip"
+  ],
+  "strategy": "queue dev merge-plan plus canonical apply where clean; manual README/CHANGELOG reconciliation for final Bob15 release identity; scratchpad item-level merge",
+  "boundary": "fixture-first normalized JSON service coverage, test-suite root-cd cleanup, and non-executable display-help resources only"
+}

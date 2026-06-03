@@ -1,0 +1,30 @@
+==bash -n queuebash.sh==
+==bash -n tests/ask_provider_fixture_smoke.sh==
+==tests/ask_provider_contract_static.sh==
+PASS
+==python3 tests/ask_provider_json_contract_static.py==
+PASS
+==timeout 60 tests/ask_provider_fixture_smoke.sh==
+PASS
+==tests/edge_cloud_provider_contracts_static.sh==
+PASS edge_cloud_provider_contracts_static
+==timeout 60 tests/edge_cloud_provider_fixture_smoke.sh==
+PASS edge cloud fixture json
+PASS edge_cloud_provider_fixture_smoke
+==python3 tests/edge_cloud_provider_json_contract_static.py==
+PASS edge_cloud_provider_json_contract_static
+==tests/edge_cloud_explain_static.sh==
+PASS edge_cloud_explain_static
+==tests/cloud_provision_contract_static.sh==
+[PASS] cloud provision contract static checks pass
+==python3 tests/cloud_provision_json_contract_static.py==
+PASS cloud_provision_json_contract_static
+==timeout 60 tests/cloud_provision_dry_run_smoke.sh==
+[PASS] cloud provision dry-run smoke checks pass
+==tests/dev_scratchpad_static.sh==
+==tests/dev_scratchpad_static.sh==
+PASS dev_scratchpad_static
+==python3 tests/dev_scratchpad_json_contract_static.py==
+PASS dev_scratchpad_json_contract_static
+==timeout 60 tests/dev_scratchpad_smoke.sh==
+PASS dev_scratchpad_smoke

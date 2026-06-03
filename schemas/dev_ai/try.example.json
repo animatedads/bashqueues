@@ -1,0 +1,17 @@
+{
+  "schema": "queuebash.dev_ai.try.v1",
+  "status": "ok",
+  "session_id": "AIS-...",
+  "try_id": "AIT-...",
+  "intent": "Run focused QBTEST",
+  "command": ["queue", "dev", "test", "qbtest", "--file", "queuebash.sh", "--function", "_queue_now", "--json"],
+  "command_text": "queue dev test qbtest --file queuebash.sh --function _queue_now --json",
+  "allowed": true,
+  "allow_reason": "allowlisted_queue_dev",
+  "exit_code": 0,
+  "duration_ms": 123,
+  "outcome": "pass",
+  "lesson_context": {"matched": [], "confirmed": [], "lesson_directed": []},
+  "stdout_tail": "{}",
+  "stderr_tail": ""
+}

@@ -1,0 +1,3 @@
+RUN timeout 60 bash tests/dev_scratchpad_smoke.sh
+PASS dev_scratchpad_smoke
+PASS dev_scratchpad_smoke followup

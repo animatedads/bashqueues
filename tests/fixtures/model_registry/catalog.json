@@ -1,0 +1,33 @@
+{
+  "schema": "queuebash.model_registry.catalog.v1",
+  "provider_family": "model_registry",
+  "provider": "fixture",
+  "check": "catalog",
+  "catalog_id": "fixture-model-catalog",
+  "models": [
+    {
+      "model_id": "fixture.llm.governance-small",
+      "provider_label": "fixture",
+      "capabilities": ["text-generation", "summarization"],
+      "endpoint_class": "offline-fixture",
+      "data_residency": "fixture-only",
+      "context_window_tokens": 8192,
+      "cost_tier": "test-fixture",
+      "validation_status": "fixture_validated"
+    },
+    {
+      "model_id": "fixture.embedding.policy-v1",
+      "provider_label": "fixture",
+      "capabilities": ["embedding"],
+      "endpoint_class": "offline-fixture",
+      "data_residency": "fixture-only",
+      "context_window_tokens": 512,
+      "cost_tier": "test-fixture",
+      "validation_status": "fixture_validated"
+    }
+  ],
+  "decision": "allow",
+  "reason": "fixture_catalog_available",
+  "fail_closed": true,
+  "mutated": false
+}

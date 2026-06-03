@@ -1,0 +1,12 @@
+== remote listener static bounded
+[PASS] remote queue management listener static checks pass
+== qbtest bounded
+PASS dev_qbtest_smoke
+PASS dev_qbtest_json_contract_static
+queue dev test qbtest: pass 1 test(s) from /mnt/data/bq_work/work58/queuebash.sh
+pass	bash	_queue_now	queue-now-format	line=531
+queue dev test qbtest: pass 1 test(s) from /mnt/data/bq_work/work58/queuebash.sh
+pass	bash	_queue_now	queue-now-format	line=531
+== scratchpad
+PASS dev_scratchpad_static
+PASS dev_scratchpad_json_contract_static

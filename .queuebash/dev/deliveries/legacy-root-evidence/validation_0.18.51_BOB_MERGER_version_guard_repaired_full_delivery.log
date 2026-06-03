@@ -1,0 +1,13 @@
+0.18.51 BOB_MERGER version guard repaired full delivery validation
+PASS bash -n queuebash.sh
+PASS provider_static_version_pin_policy_static
+PASS ask_openai_compat_provider_static
+PASS ask_watsonx_provider_static
+PASS dev_file_registry_static
+PASS dev_patchset_hardening_static
+PASS provider_family_consistency_static/json
+PASS cloud_provision_approval_live_gate_static
+PASS cloud_resource_reconcile_enhancement static/smoke/json
+PASS dev_scratchpad static/json
+PASS queue_dev contract/json
+PASS legacy exact QUEUEBASH_VERSION pins removed from shell static tests

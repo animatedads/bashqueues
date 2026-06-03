@@ -1,0 +1,6 @@
+0.18.59 cleanup
+
+PASS assets.d/net_usage.sh absent from target tree
+PASS caps.d/net_usage.sh present in target tree
+PASS no __pycache__ / .pyc / .pyo / .pytest_cache included in patchset
+PASS no *.lock / *.dev.lock / *.devpatch.* / queuebash.sh.bak.* included in patchset

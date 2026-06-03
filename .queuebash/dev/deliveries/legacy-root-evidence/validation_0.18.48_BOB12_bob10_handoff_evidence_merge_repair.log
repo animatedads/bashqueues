@@ -1,0 +1,54 @@
+VALIDATION 0.18.48
+Sat May 30 09:08:24 UTC 2026
+-- bash -n queuebash.sh
+-- bash -n providers.d/cloud_provision/cloud_provision.sh
+-- bash -n tests/cloud_provision_registry_handoff_static.sh
+-- bash -n tests/cloud_provision_registry_handoff_smoke.sh
+-- bash -n tests/azure_provider_contracts_static.sh
+-- py compile handoff json
+-- RUN tests/cloud_provision_contract_static.sh
+[PASS] cloud provision contract static checks pass
+-- RUN tests/cloud_provision_dry_run_smoke.sh
+[PASS] cloud provision dry-run smoke checks pass
+-- RUN tests/cloud_provision_json_contract_static.py
+PASS cloud_provision_json_contract_static
+-- RUN tests/cloud_provision_registry_preview_static.py
+PASS cloud_provision_registry_preview_static
+-- RUN tests/cloud_provision_registry_handoff_static.sh
+PASS cloud_provision_registry_handoff_static
+-- RUN tests/cloud_provision_registry_handoff_smoke.sh
+PASS cloud_provision_registry_handoff_smoke
+-- RUN tests/cloud_provision_registry_handoff_json_contract_static.py
+PASS cloud_provision_registry_handoff_json_contract_static
+-- RUN tests/azure_provider_contracts_static.sh
+PASS azure_provider_contracts_static
+-- RUN tests/ask_openai_provider_static.sh
+PASS
+-- RUN tests/ask_anthropic_provider_static.sh
+PASS
+-- RUN tests/dev_file_registry_scan_smoke.sh
+
+FOLLOWUP VALIDATION after sandbox timeout split
+Sat May 30 09:10:09 UTC 2026
+-- RUN tests/dev_file_registry_scan_smoke.sh
+PASS dev_file_registry_scan_smoke
+-- RUN tests/dev_patchset_new_file_smoke.sh
+PASS dev_patchset_new_file_smoke
+-- RUN tests/dev_attempt_evidence_static.sh
+PASS dev_attempt_evidence_static
+-- RUN tests/dev_attempt_evidence_json_contract_static.py
+PASS dev_attempt_evidence_json_contract_static
+-- RUN tests/dev_attempt_evidence_smoke.sh
+
+INDIVIDUAL FOLLOWUP
+Sat May 30 09:11:12 UTC 2026
+-- RUN tests/dev_attempt_evidence_smoke.sh
+PASS dev_attempt_evidence_smoke
+-- RUN tests/provider_primary_source_validation_static.sh
+PASS provider_primary_source_validation_static
+-- RUN tests/provider_family_consistency_static.sh
+PASS provider_family_consistency_static
+-- RUN tests/provider_explainability_standard_static.sh
+PASS provider_explainability_standard_static
+-- RUN tests/cloud_platform_parity_static.py
+PASS cloud_platform_parity_static

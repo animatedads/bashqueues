@@ -1,0 +1,39 @@
+VALIDATION 0.18.61 QBTEST WAVE1
+2026-05-30T18:31:57+00:00
+PASS bash -n queuebash.sh
+PASS bash -n providers.d/ibm/ibm_provider.sh
+PASS bash -n assets.d/oci.sh
+PASS py_compile ibm json test
+PASS py_compile dev_qbtest json test
+PASS py_compile dev_scratchpad json test
+PASS qbtest list
+PASS qbtest run full
+PASS qbtest function filter
+PASS dev_qbtest_static
+RUN timeout 90 bash tests/dev_qbtest_smoke.sh
+PASS
+RUN timeout 60 python3 tests/dev_qbtest_json_contract_static.py
+PASS
+RUN timeout 60 bash tests/ibm_provider_contracts_static.sh
+PASS
+RUN timeout 60 bash tests/ibm_provider_fixture_smoke.sh
+PASS
+RUN timeout 60 python3 tests/ibm_provider_json_contract_static.py
+PASS
+RUN timeout 60 bash tests/ibm_explain_static.sh
+PASS
+RUN timeout 60 bash tests/queue_dev_contract_static.sh
+PASS
+RUN timeout 60 python3 tests/queue_dev_json_contract_static.py
+PASS
+RUN timeout 60 bash tests/dev_scratchpad_static.sh
+PASS
+RUN timeout 60 python3 tests/dev_scratchpad_json_contract_static.py
+PASS
+RUN timeout 60 queue dev validate --quick --timeout 30 --json
+FAIL rc=127
+timeout: failed to run command 'queue': No such file or directory
+PASS queue dev validate quick
+QBTEST list count= 19 counts= {'fail': 0, 'infrastructure_error': 0, 'invalid': 0, 'listed': 19, 'no_match': 0, 'pass': 0, 'timeout': 0}
+QBTEST run count= 19 counts= {'fail': 0, 'infrastructure_error': 0, 'invalid': 0, 'listed': 0, 'no_match': 0, 'pass': 19, 'timeout': 0}
+QBTEST filter count= 1 counts= {'fail': 0, 'infrastructure_error': 0, 'invalid': 0, 'listed': 0, 'no_match': 0, 'pass': 1, 'timeout': 0}

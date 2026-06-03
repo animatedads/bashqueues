@@ -1,0 +1,23 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "package": "0.18.50_BOB10_cloud_resource_reconcile_enhancement",
+  "base": "0.18.48 full delivery acceptance base plus sequential 0.18.49 BOB10 approval/live-gate patch",
+  "delivery_type": "patchset",
+  "owner": "BOB10",
+  "summary": "Enhances the file-backed cloud_resource reconcile path with observation-file imports, stale-resource marking, suspect-claim evidence, and local-only mutation evidence.",
+  "boundaries": [
+    "no live cloud API calls",
+    "no provider credentials required",
+    "no provisioning or destruction",
+    "no queue dispatch refactor",
+    "reconcile mutates only the local file-backed cloud_resource registry"
+  ],
+  "new_files": [
+    "docs/CLOUD_RESOURCE_RECONCILE_ENHANCEMENT.md",
+    "tests/cloud_resource_reconcile_enhancement_static.sh",
+    "tests/cloud_resource_reconcile_enhancement_smoke.sh",
+    "tests/cloud_resource_reconcile_enhancement_json_contract_static.py"
+  ],
+  "validation": "validation_0.18.50_BOB10_cloud_resource_reconcile_enhancement.log",
+  "cleanup": "cleanup_0.18.50_BOB10_cloud_resource_reconcile_enhancement.log"
+}

@@ -1,0 +1,16 @@
+0.18.59 BOB12 patchset apply backup hardening validation
+
+PASS bash -n queuebash.sh
+PASS bash -n tests/dev_patchset_apply_hardening_static.sh
+PASS bash -n tests/dev_patchset_apply_hardening_smoke.sh
+PASS tests/queue_dev_contract_static.sh
+PASS tests/queue_dev_json_contract_static.py
+PASS tests/dev_patchset_hardening_static.sh
+PASS tests/dev_patchset_apply_hardening_static.sh
+PASS bin/queue-dev-timeout --timeout 60 -- bash tests/dev_patchset_apply_hardening_smoke.sh
+PASS tests/dev_qbtest_static.sh
+PASS bin/queue-dev-timeout --timeout 30 -- bash tests/dev_qbtest_smoke.sh
+PASS tests/remote_admin_policy_commands_static.sh
+PASS tests/remote_admin_policy_commands_json_contract_static.py
+
+NOTE: remote_admin_policy_commands_smoke remains subject to the known sandbox timeout envelope and was not used as a blocker for this patchset hardening package.

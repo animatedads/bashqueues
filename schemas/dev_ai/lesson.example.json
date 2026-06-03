@@ -1,0 +1,17 @@
+{
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "lesson_id": "AIL-20260603-120100-000000-1234",
+  "kind": "failure_lesson",
+  "status": "active",
+  "severity": "warn",
+  "text": "Check disk space and extracted archive size before unzipping large archives.",
+  "precheck": "df -h . && unzip -l {{ZIPFILE}} | tail -1",
+  "match": {
+    "command_glob": "unzip *.zip*",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "created_from_session": "AIS-...",
+  "created_from_try": "AIT-...",
+  "created_at": "2026-06-03T12:01:00Z"
+}

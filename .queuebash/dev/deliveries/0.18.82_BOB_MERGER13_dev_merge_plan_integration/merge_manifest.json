@@ -1,0 +1,21 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "delivery_id": "0.18.82_BOB_MERGER13_dev_merge_plan_integration",
+  "base": "bashqueues_0.18.81_BOB_MERGER13_great_big_cloud_ai_policy_linkage_merge_full_delivery.zip",
+  "inputs": [
+    "bashqueues_0.18.81_BOB2_dev_merge_plan_patchset.zip"
+  ],
+  "version": "0.18.82",
+  "summary": "Merge Bob2 read-only queue dev merge-plan tool onto the 0.18.81 cloud/AI policy-linkage line.",
+  "merge_repairs": [
+    "Restored QUEUEBASH_VERSION from patchset-downgraded 0.18.79 to 0.18.82.",
+    "Restored 0.18.81 queue cloud broker front function and dispatcher case after older-lane patch application."
+  ],
+  "boundaries": [
+    "read_only_merge_planning",
+    "no_automatic_conflict_resolution",
+    "no_live_provider_calls",
+    "no_scratchpad_wholesale_merge",
+    "no_dispatch_refactor_beyond_additive_dev_subcommand"
+  ]
+}

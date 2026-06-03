@@ -1,0 +1,186 @@
+$ bash -n queuebash.sh
+rc=0
+$ bash -n qbtest_installer.sh
+rc=0
+$ python3 -m py_compile bin/queue-dev-merge-plan.py tests/dev_merge_plan_json_contract_static.py
+rc=0
+$ bash tests/dev_merge_plan_static.sh
+PASS dev_merge_plan_static
+rc=0
+$ bash tests/dev_merge_plan_smoke.sh
+PASS merge plan json smoke
+PASS queue dev merge-plan dispatch smoke
+PASS dev_merge_plan_smoke
+rc=0
+$ python3 tests/dev_merge_plan_json_contract_static.py
+PASS dev_merge_plan_json_contract_static
+rc=0
+$ bash tests/dev_scratchpad_static.sh
+PASS dev_scratchpad_static
+rc=0
+$ bash tests/dev_qbtest_static.sh
+rc=0
+$ bash tests/queue_dev_contract_static.sh
+PASS queue_dev_contract_static
+rc=0
+$ bash tests/cloud_broker_front_static.sh
+rc=0
+$ bash tests/cloud_broker_front_smoke.sh
+Terminated
+$ timeout 60 bash tests/cloud_broker_front_smoke.sh
+rc=0
+$ python3 tests/cloud_broker_front_json_contract_static.py
+rc=0
+$ python3 tests/cloud_broker_policy_references_static.py
+rc=0
+$ bash tests/queue_ai_broker_runtime_static.sh
+PASS queue_ai_broker_runtime_static
+rc=0
+$ python3 tests/queue_ai_broker_runtime_json_contract_static.py
+$ timeout 60 python3 tests/queue_ai_broker_runtime_json_contract_static.py
+PASS queue_ai_broker_runtime_json_contract_static
+rc=0
+$ bash tests/class_inference_contract_static.sh
+PASS class_inference_contract_static
+rc=0
+$ python3 tests/class_inference_json_contract_static.py
+PASS class_inference_json_contract_static
+rc=0
+$ bash tests/grid_energy_provider_static.sh
+[PASS] grid energy provider static checks pass
+rc=0
+$ bash tests/grid_energy_provider_fixture_smoke.sh
+[PASS] grid energy provider fixture smoke passes
+rc=0
+$ queue --version
+queuebash 0.18.82
+rc=0
+$ queue dev test qbtest --file queuebash.sh --list --json
+{"count":161,"counts":{"fail":0,"infrastructure_error":0,"invalid":0,"listed":161,"no_match":0,"pass":0,"timeout":0},"created_at":"2026-06-02T13:21:28Z","function":"","language":"","results":[{"function":"_over_quote_cmd","id":"QBTEST-aef7961a2287","language":"bash","line":27,"name":"over-quote-cmd-basic","status":"listed"},{"function":"_queue_root","id":"QBTEST-50ada3424983","language":"bash","line":239,"name":"queue-root","status":"listed"},{"function":"_queue_bundled_script_dir","id":"QBTEST-d0003b4304de","language":"bash","line":252,"name":"bundled-script-dir","status":"listed"},{"function":"_queue_resolve_bundled_source_dir","id":"QBTEST-fa64250d6bb3","language":"bash","line":284,"name":"resolve-bundled-source-dir","status":"listed"},{"function":"_queue_now","id":"QBTEST-e2d501f1fbbf","language":"bash","line":547,"name":"queue-now-format","status":"listed"},{"function":"_queue_now_nonce","id":"QBTEST-78d5d7a1a2f6","language":"bash","line":561,"name":"now-nonce","status":"listed"},{"function":"_queue_id","id":"QBTEST-6f037cd7eafe","language":"bash","line":570,"name":"queue-id","status":"listed"},{"function":"_queue_job_name","id":"QBTEST-ca9e5897d90e","language":"bash","line":579,"name":"job-name","status":"listed"},{"function":"_queue_job_pri","id":"QBTEST-5f2fa1b9abdd","language":"bash","line":593,"name":"job-pri","status":"listed"},{"function":"_queue_pending_bucket_key","id":"QBTEST-7e81208ae439","language":"bash","line":606,"name":"pending-bucket-key","status":"listed"},{"function":"_queue_pending_path_for_priority","id":"QBTEST-48e87df9967c","language":"bash","line":617,"name":"pending-path-for-priority","status":"listed"},{"function":"_queue_job_pending_path_by_id","id":"QBTEST-bbfea5b43761","language":"bash","line":676,"name":"job-pending-path-by-id","status":"listed"},{"function":"_queue_job_is_pending_path","id":"QBTEST-999c2a850212","language":"bash","line":689,"name":"job-is-pending-path","status":"listed"},{"function":"_queue_state_for_job_path","id":"QBTEST-46db86fb851d","language":"bash","line":707,"name":"state-for-job-path","status":"listed"},{"function":"_queue_job_field_fast","id":"QBTEST-9d187e33f404","language":"bash","line":775,"name":"job-field-fast","status":"listed"},{"function":"_queue_exact_name_count","id":"QBTEST-e114def0be57","language":"bash","line":897,"name":"exact-name-count","status":"listed"},{"function":"_queue_job_has_array","id":"QBTEST-86c8e16f690c","language":"bash","line":946,"name":"job-has-array","status":"listed"},{"function":"_queue_dep_token_done","id":"QBTEST-771c3085c255","language":"bash","line":995,"name":"dep-token-done","status":"listed"},{"function":"_queue_dep_token_failed_or_cancelled","id":"QBTEST-dca33efdbd2a","language":"bash","line":1016,"name":"dep-token-failed-or-cancelled","status":"listed"},{"function":"_queue_job_dependency_tokens","id":"QBTEST-d947d2ac9ec5","language":"bash","line":1041,"name":"job-dependency-tokens","status":"listed"},{"function":"_queue_job_dependencies_satisfied","id":"QBTEST-76f77ac468b0","language":"bash","line":1058,"name":"job-dependencies-satisfied","status":"listed"},{"function":"_queue_job_dependencies_status","id":"QBTEST-57587c3b0df2","language":"bash","line":1079,"name":"job-dependencies-status","status":"listed"},{"function":"_queue_job_dependencies_blocked","id":"QBTEST-921c31e5ed5d","language":"bash","line":1097,"name":"job-dependencies-blocked","status":"listed"},{"function":"_queue_now_epoch","id":"QBTEST-9c928af538cc","language":"bash","line":1105,"name":"now-epoch","status":"listed"},{"function":"_queue_now_iso","id":"QBTEST-d8dc4e9cb68e","language":"bash","line":1119,"name":"now-iso","status":"listed"},{"function":"_queue_parse_delay_seconds","id":"QBTEST-d484e07de9fb","language":"bash","line":1155,"name":"parse-delay-seconds","status":"listed"},{"function":"_queue_parse_at_epoch","id":"QBTEST-042b3320d7de","language":"bash","line":1184,"name":"parse-at-epoch","status":"listed"},{"function":"_queue_job_not_before_epoch","id":"QBTEST-2a0bb1f48c2c","language":"bash","line":1204,"name":"job-not-before-epoch","status":"listed"},{"function":"_queue_job_schedule_due","id":"QBTEST-41058116bea4","language":"bash","line":1215,"name":"job-schedule-due","status":"listed"},{"function":"_queue_job_schedule_status","id":"QBTEST-eac848f8c6ae","language":"bash","line":1233,"name":"job-schedule-status","status":"listed"},{"function":"_queue_class_name_for_job","id":"QBTEST-ec2b67208ebe","language":"bash","line":1248,"name":"class-name-for-job","status":"listed"},{"function":"_queue_class_safe_token","id":"QBTEST-bbee9add0b90","language":"bash","line":1258,"name":"class-safe-token","status":"listed"},{"function":"_queue_class_file","id":"QBTEST-024f53f9441f","language":"bash","line":1287,"name":"class-file-case-insensitive","status":"listed"},{"function":"_queue_class_plugin_path","id":"QBTEST-53902aca41b9","language":"bash","line":1302,"name":"class-plugin-path","status":"listed"},{"function":"_queue_asset_check_function_name","id":"QBTEST-4fcb32efea53","language":"bash","line":1315,"name":"asset-check-function-name","status":"listed"},{"function":"_queue_asset_facility_valid_name","id":"QBTEST-164c5260d314","language":"bash","line":1325,"name":"asset-facility-valid-name","status":"listed"},{"function":"_queue_asset_helper_path","id":"QBTEST-7f869aeb3ab4","language":"bash","line":1399,"name":"asset-helper-path","status":"listed"},{"function":"_queue_asset_facility_is_published","id":"QBTEST-be1b6c6c2929","language":"bash","line":1416,"name":"asset-facility-is-published","status":"listed"},{"function":"_queue_asset_family_valid_name","id":"QBTEST-54245b326fd3","language":"bash","line":1426,"name":"asset-family-valid-name","status":"listed"},{"function":"_queue_class_archive_dir","id":"QBTEST-4bd32b59a635","language":"bash","line":1434,"name":"class-archive-dir","status":"listed"},{"function":"_queue_class_backup_dir","id":"QBTEST-45ec8011bbec","language":"bash","line":1439,"name":"class-backup-dir","status":"listed"},{"function":"_queue_class_valid_name","id":"QBTEST-50aafea5b547","language":"bash","line":1444,"name":"class-valid-name","status":"listed"},{"function":"_queue_class_latest_backup","id":"QBTEST-25dc7a15d423","language":"bash","line":1521,"name":"class-latest-backup","status":"listed"},{"function":"_queue_class_latest_archive","id":"QBTEST-addc100d404a","language":"bash","line":1549,"name":"class-latest-archive","status":"listed"},{"function":"_queue_class_backups","id":"QBTEST-83c9de05f06e","language":"bash","line":1566,"name":"class-backups","status":"listed"},{"function":"_queue_class_archives","id":"QBTEST-d6f38d520796","language":"bash","line":1571,"name":"class-archives","status":"listed"},{"function":"_queue_class_name_from_file","id":"QBTEST-9140be69a25b","language":"bash","line":1587,"name":"class-name-from-file","status":"listed"},{"function":"_queue_env_valid_name","id":"QBTEST-392419012153","language":"bash","line":1666,"name":"env-valid-name","status":"listed"},{"function":"_queue_env_dir","id":"QBTEST-7888574b334a","language":"bash","line":1671,"name":"env-dir","status":"listed"},{"function":"_queue_env_file","id":"QBTEST-03ddbba5eb37","language":"bash","line":1677,"name":"env-file-valid-name-path","status":"listed"},{"function":"_queue_env_load","id":"QBTEST-b8ac16b29139","language":"bash","line":1693,"name":"env-load-validates-name","status":"listed"},{"function":"_queue_env_validate_one","id":"QBTEST-a794c1e7e080","language":"bash","line":1714,"name":"env-validate-json-reasons","status":"listed"},{"function":"_queue_asset_check_uses_legacy_token_target_contract","id":"QBTEST-4b54d21b62ea","language":"bash","line":1919,"name":"asset-uses-legacy-contract","status":"listed"},{"function":"_queue_asset_archive_dir","id":"QBTEST-6957835bbc1b","language":"bash","line":1960,"name":"asset-archive-dir","status":"listed"},{"function":"_queue_asset_latest_archive_for_family","id":"QBTEST-c06ecfad6244","language":"bash","line":2027,"name":"asset-latest-archive-for-family","status":"listed"},{"function":"_queue_asset_list_archives","id":"QBTEST-16df61062bb4","language":"bash","line":2054,"name":"asset-list-archives","status":"listed"},{"function":"_queue_asset_replace_backup_dir","id":"QBTEST-9c56fccfb788","language":"bash","line":2089,"name":"asset-replace-backup-dir","status":"listed"},{"function":"_queue_asset_latest_backup_for_family","id":"QBTEST-ca5ef6901f2e","language":"bash","line":2206,"name":"asset-latest-backup-for-family","status":"listed"},{"function":"_queue_asset_list_backups","id":"QBTEST-4e1b4e3b587d","language":"bash","line":2255,"name":"asset-list-backups","status":"listed"},{"function":"_queue_asset_plugin_looks_like_plugin","id":"QBTEST-1e8d225222c7","language":"bash","line":2308,"name":"asset-plugin-looks-like-plugin","status":"listed"},{"function":"_queue_exception_dir","id":"QBTEST-2f2246c6f6d7","language":"bash","line":2403,"name":"exception-dir-root","status":"listed"},{"function":"_queue_exception_file","id":"QBTEST-3524abfb917b","language":"bash","line":2412,"name":"exception-file-path","status":"listed"},{"function":"_queue_exception_normalize_key","id":"QBTEST-d979d5a5145e","language":"bash","line":2434,"name":"exception-normalize-key","status":"listed"},{"function":"_queue_security_guidance_shell_join","id":"QBTEST-4d5d68158db6","language":"bash","line":2635,"name":"security-guidance-shell-join","status":"listed"},{"function":"_queue_security_guidance_extract_port","id":"QBTEST-8cbcd0c08843","language":"bash","line":2661,"name":"security-guidance-extract-port","status":"listed"},{"function":"_queue_root_for_user","id":"QBTEST-5c69528b1460","language":"bash","line":3198,"name":"root-for-current-user","status":"listed"},{"function":"_queue_draft_file","id":"QBTEST-4ab7195fc189","language":"bash","line":3266,"name":"draft-file-path","status":"listed"},{"function":"_queue_current_shell_user_for_display","id":"QBTEST-3f99232aba37","language":"bash","line":3756,"name":"current-shell-user-display","status":"listed"},{"function":"_queue_has_selected_user_context","id":"QBTEST-47259c02228e","language":"bash","line":3764,"name":"selected-user-context","status":"listed"},{"function":"_queue_path_owner_user","id":"QBTEST-81bbb914f039","language":"bash","line":3814,"name":"path-owner-user-existing","status":"listed"},{"function":"_queue_running_as_root","id":"QBTEST-4a003d5fcd5e","language":"bash","line":3826,"name":"running-as-root-boolean","status":"listed"},{"function":"_queue_global_root","id":"QBTEST-914520b4b012","language":"bash","line":3937,"name":"global-root-override-and-default","status":"listed"},{"function":"_queue_global_claim_policy","id":"QBTEST-6c38d0c4651e","language":"bash","line":3948,"name":"global-claim-policy-override-and-default","status":"listed"},{"function":"_queue_global_enabled","id":"QBTEST-48a5599152f8","language":"bash","line":3959,"name":"global-enabled-toggle","status":"listed"},{"function":"_queue_global_hash","id":"QBTEST-ff484072140e","language":"bash","line":3974,"name":"global-hash-stable","status":"listed"},{"function":"_queue_global_json_event","id":"QBTEST-3aee401e15fd","language":"bash","line":4015,"name":"global-json-event-writes-log","status":"listed"},{"function":"_queue_global_slots_from_args","id":"QBTEST-872c6a3bb9cc","language":"bash","line":4034,"name":"global-slots-args","status":"listed"},{"function":"_queue_global_claim_holder_state","id":"QBTEST-d4c732fa1f91","language":"bash","line":4091,"name":"global-claim-holder-state-detects-state","status":"listed"},{"function":"_queue_global_claim_holder_count","id":"QBTEST-33218419c75f","language":"bash","line":4134,"name":"global-claim-holder-count-holder-lines","status":"listed"},{"function":"_queue_global_claim_has_holder","id":"QBTEST-40791e8b2c6a","language":"bash","line":4167,"name":"global-claim-has-holder-matches-qid-qroot","status":"listed"},{"function":"_queue_normalize_systemd_cpu_quota","id":"QBTEST-99e7bf66d00a","language":"bash","line":4952,"name":"normalize-cpu-quota","status":"listed"},{"function":"_queue_json_escape","id":"QBTEST-08092ef94e4b","language":"bash","line":5384,"name":"json-escape-basic","status":"listed"},{"function":"_queue_csv_contains_word","id":"QBTEST-c14ee83d0c8e","language":"bash","line":6275,"name":"csv-contains-word","status":"listed"},{"function":"_queue_epoch_now","id":"QBTEST-1b33767c237a","language":"bash","line":6532,"name":"epoch-now","status":"listed"},{"function":"_queue_parse_size_to_bytes","id":"QBTEST-954a8d781a2c","language":"bash","line":6643,"name":"parse-size-to-bytes","status":"listed"},{"function":"_queue_duration_to_seconds","id":"QBTEST-2f628a824520","language":"bash","line":6814,"name":"duration-to-seconds","status":"listed"},{"function":"_queue_seconds_to_duration","id":"QBTEST-c054e549ab4b","language":"bash","line":6824,"name":"seconds-to-duration","status":"listed"},{"function":"_queue_cap_plugin_dirs","id":"QBTEST-bbf4e9b52edd","language":"bash","line":6934,"name":"cap-plugin-dirs","status":"listed"},{"function":"_queue_parse_bytes","id":"QBTEST-ffa2254ab90e","language":"bash","line":7048,"name":"parse-bytes","status":"listed"},{"function":"_queue_policy_words_merge_unique","id":"QBTEST-85477337852a","language":"bash","line":7325,"name":"policy-words-merge-unique","status":"listed"},{"function":"_queue_policy_source_file_var","id":"QBTEST-61a13cfb2d69","language":"bash","line":7426,"name":"policy-source-file-var-reads-one-var","status":"listed"},{"function":"_queue_security_sandbox_rank","id":"QBTEST-9d7df970bdfa","language":"bash","line":7544,"name":"security-sandbox-rank-order","status":"listed"},{"function":"_queue_security_seccomp_rank","id":"QBTEST-55e3bbe5a9ce","language":"bash","line":7557,"name":"security-seccomp-rank-order","status":"listed"},{"function":"_queue_authorisation_normalise_code","id":"QBTEST-c262f33f797c","language":"bash","line":7568,"name":"authorisation-normalise-code","status":"listed"},{"function":"_queue_command_shell_words_from_args","id":"QBTEST-303c2ac3f98e","language":"bash","line":7593,"name":"command-shell-words-quotes","status":"listed"},{"function":"_queue_authorisation_key_name_ok","id":"QBTEST-5631e758829c","language":"bash","line":7644,"name":"authorisation-key-name-ok","status":"listed"},{"function":"_queue_authorisation_key_suffix","id":"QBTEST-57de7fa8d063","language":"bash","line":7656,"name":"authorisation-key-suffix","status":"listed"},{"function":"_queue_authorisation_actor_user","id":"QBTEST-5575ad488a5f","language":"bash","line":7664,"name":"authorisation-actor-user","status":"listed"},{"function":"_queue_authorisation_private_key_file","id":"QBTEST-3058e5cf1d67","language":"bash","line":7739,"name":"authorisation-private-key-file","status":"listed"},{"function":"_queue_authorisation_public_key_file","id":"QBTEST-da5f74fb9053","language":"bash","line":7756,"name":"authorisation-public-key-file","status":"listed"},{"function":"_queue_authorisation_key_meta_file","id":"QBTEST-28607d38b92a","language":"bash","line":7766,"name":"authorisation-key-meta-file","status":"listed"},{"function":"_queue_base64_one_line","id":"QBTEST-78b93306d504","language":"bash","line":7774,"name":"base64-one-line","status":"listed"},{"function":"_queue_base64_decode","id":"QBTEST-00ca83755309","language":"bash","line":7782,"name":"base64-decode","status":"listed"},{"function":"_queue_authorisation_signature_requirement","id":"QBTEST-af1e0edbbc18","language":"bash","line":7914,"name":"authorisation-signature-requirement","status":"listed"},{"function":"_queue_authorisation_dir","id":"QBTEST-4e6ef6b1622c","language":"bash","line":8050,"name":"authorisation-dir","status":"listed"},{"function":"_queue_policy_valid_name","id":"QBTEST-ea2a8af42c03","language":"bash","line":8843,"name":"policy-valid-name-safe-chars","status":"listed"},{"function":"_queue_policy_shared_root","id":"QBTEST-089c357fe5ac","language":"bash","line":8853,"name":"policy-shared-root-override","status":"listed"},{"function":"_queue_policy_source_root","id":"QBTEST-292dc4eb1f53","language":"bash","line":8870,"name":"policy-source-root-override","status":"listed"},{"function":"_queue_policy_file","id":"QBTEST-c87be829ad04","language":"bash","line":8908,"name":"policy-file-personal-precedence","status":"listed"},{"function":"_queue_policy_exists","id":"QBTEST-96099751588c","language":"bash","line":8926,"name":"policy-exists-uses-policy-file","status":"listed"},{"function":"_queue_policy_origin","id":"QBTEST-cbba65b35f34","language":"bash","line":8963,"name":"policy-origin-classifies-paths","status":"listed"},{"function":"_queue_policy_sha256","id":"QBTEST-6f9477f14f88","language":"bash","line":9046,"name":"policy-sha256-file-digest","status":"listed"},{"function":"_queue_policy_quote_array_assignment","id":"QBTEST-212f50ad584b","language":"bash","line":9098,"name":"policy-quote-array-assignment","status":"listed"},{"function":"_queue_json_comma","id":"QBTEST-2c0f1e89162b","language":"bash","line":9878,"name":"json-comma","status":"listed"},{"function":"_queue_add_inherited_env_key","id":"QBTEST-2a7e3d46512b","language":"bash","line":10514,"name":"add-inherited-env-key","status":"listed"},{"function":"_queue_human_bytes","id":"QBTEST-445592a31141","language":"bash","line":10945,"name":"human-bytes","status":"listed"},{"function":"_queue_parse_age_seconds","id":"QBTEST-cbf9bddaf579","language":"bash","line":11633,"name":"parse-age-seconds","status":"listed"},{"function":"_queue_cron_spool_dir","id":"QBTEST-73cf25d8841e","language":"bash","line":12289,"name":"cron-spool-dir-env-default","status":"listed"},{"function":"_queue_cron_system_dir","id":"QBTEST-444b812b5e50","language":"bash","line":12294,"name":"cron-system-dir-env-default","status":"listed"},{"function":"_queue_cron_state_dir","id":"QBTEST-4d20566ebd30","language":"bash","line":12312,"name":"cron-state-dir-env-default","status":"listed"},{"function":"_queue_cron_line_description","id":"QBTEST-2f024f46debf","language":"bash","line":12336,"name":"cron-line-description-human-hint","status":"listed"},{"function":"_queue_cron_entry_hash","id":"QBTEST-8d6d91682bde","language":"bash","line":12349,"name":"cron-entry-hash-stable","status":"listed"},{"function":"_queue_cron_stable_class","id":"QBTEST-d02ee5e2ece7","language":"bash","line":12359,"name":"cron-stable-class-prefix","status":"listed"},{"function":"_queue_cron_trim","id":"QBTEST-10606b67e1c0","language":"bash","line":12383,"name":"cron-trim-whitespace","status":"listed"},{"function":"_queue_cron_comment_directive_value","id":"QBTEST-bc6f0d5735c6","language":"bash","line":12401,"name":"cron-comment-directive-value-forms","status":"listed"},{"function":"_queue_cron_is_assignment_line","id":"QBTEST-72519a43a9f7","language":"bash","line":12410,"name":"cron-assignment-line-detects-env","status":"listed"},{"function":"_queue_cron_is_entry_line","id":"QBTEST-62a05484bff8","language":"bash","line":12432,"name":"cron-entry-line-detects-schedules","status":"listed"},{"function":"_queue_ai_context_allowed","id":"QBTEST-09c627bee459","language":"bash","line":12915,"name":"ai-context-allowed","status":"listed"},{"function":"_queue_ai_audit_log_path","id":"QBTEST-dc51ddd61072","language":"bash","line":12930,"name":"ai-audit-log-path","status":"listed"},{"function":"_queue_ai_redact_question","id":"QBTEST-a15f36b77587","language":"bash","line":12945,"name":"ai-redact-question","status":"listed"},{"function":"_queue_ai_list_contains","id":"QBTEST-7a5f335ca3db","language":"bash","line":13003,"name":"ai-list-contains","status":"listed"},{"function":"_queue_ai_detect_job_ids","id":"QBTEST-5e698625ab3c","language":"bash","line":13012,"name":"ai-detect-job-ids","status":"listed"},{"function":"_queue_ai_source_dir","id":"QBTEST-8e615bd2890e","language":"bash","line":13022,"name":"ai-source-dir","status":"listed"},{"function":"_queue_ai_usage_inventory_text","id":"QBTEST-ab95d79d6ac0","language":"bash","line":13044,"name":"ai-usage-inventory-command-surface","status":"listed"},{"function":"_queue_ai_command_inventory_text","id":"QBTEST-5955177d6068","language":"bash","line":13074,"name":"ai-command-inventory-expanded-usage","status":"listed"},{"function":"_queue_ai_asset_inventory_text","id":"QBTEST-526a89f79e27","language":"bash","line":13116,"name":"ai-asset-inventory-grid-energy-facilities","status":"listed"},{"function":"_queue_ai_safety_log_path","id":"QBTEST-9a3e941028cf","language":"bash","line":13297,"name":"ai-safety-log-path","status":"listed"},{"function":"_queue_ai_safety_response_text","id":"QBTEST-5e093ecb28c9","language":"bash","line":13433,"name":"ai-safety-response-text","status":"listed"},{"function":"_queue_ai_high_risk_operation_response_text","id":"QBTEST-1d5feba8529e","language":"bash","line":13461,"name":"ai-high-risk-response-text","status":"listed"},{"function":"_queue_ai_ask_provider_known","id":"QBTEST-ca425ae5e144","language":"bash","line":13476,"name":"ai-ask-provider-known","status":"listed"},{"function":"_queue_ai_provider_requires_network","id":"QBTEST-07db523c7894","language":"bash","line":13487,"name":"ai-provider-requires-network","status":"listed"},{"function":"_queue_ai_provider_supports_json","id":"QBTEST-8769b3fe3803","language":"bash","line":13498,"name":"ai-provider-supports-json","status":"listed"},{"function":"_queue_ai_provider_live_supported","id":"QBTEST-0a52f734314f","language":"bash","line":13509,"name":"ai-provider-live-supported","status":"listed"},{"function":"_queue_ai_provider_list","id":"QBTEST-5c0a72957239","language":"bash","line":13596,"name":"ai-provider-list","status":"listed"},{"function":"_queue_array_contains","id":"QBTEST-d1f3bd2ee80d","language":"bash","line":14544,"name":"array-contains","status":"listed"},{"function":"_queue_module_valid_kind","id":"QBTEST-d6c244239b44","language":"bash","line":14557,"name":"module-valid-kind-aliases","status":"listed"},{"function":"_queue_module_normal_kind","id":"QBTEST-518b4bd11eb7","language":"bash","line":14571,"name":"module-normal-kind-aliases","status":"listed"},{"function":"_queue_module_paths","id":"QBTEST-fcc044601393","language":"bash","line":14587,"name":"module-paths-by-kind","status":"listed"},{"function":"_queue_module_status","id":"QBTEST-da3a5d151fc4","language":"bash","line":14600,"name":"module-status-enabled-disabled-missing","status":"listed"},{"function":"_queue_acl_known_operations_text","id":"QBTEST-b7ad91d35e64","language":"bash","line":14981,"name":"acl-known-operations-text","status":"listed"},{"function":"_queue_acl_operation_known","id":"QBTEST-07f9b2fb1b82","language":"bash","line":14991,"name":"acl-operation-known","status":"listed"},{"function":"_queue_acl_decision_json","id":"QBTEST-7d283e5fd836","language":"bash","line":15020,"name":"acl-decision-json","status":"listed"},{"function":"_queue_acl_file_policy_path","id":"QBTEST-3c6a0ec785c9","language":"bash","line":15032,"name":"acl-file-policy-path","status":"listed"},{"function":"_queue_acl_provider_active","id":"QBTEST-834cd5dbd7c5","language":"bash","line":15043,"name":"acl-provider-active","status":"listed"},{"function":"_queue_acl_tsv_field_valid","id":"QBTEST-9313a52e95bd","language":"bash","line":15054,"name":"acl-tsv-field-valid","status":"listed"},{"function":"_queue_acl_file_rule_json","id":"QBTEST-06508d4a53a4","language":"bash","line":15063,"name":"acl-file-rule-json","status":"listed"},{"function":"_queue_dev_valid_function_name","id":"QBTEST-6804a37f6b6c","language":"bash","line":15721,"name":"dev-valid-function-name","status":"listed"},{"function":"_queue_dev_json_bool","id":"QBTEST-a88f4efd0919","language":"bash","line":15729,"name":"dev-json-bool","status":"listed"},{"function":"_queue_dev_function_location","id":"QBTEST-a2d6a5e9ce0f","language":"bash","line":15744,"name":"dev-function-location","status":"listed"},{"function":"_queue_dev_scratchpad_path","id":"QBTEST-f1da1954ed8d","language":"bash","line":17165,"name":"dev-scratchpad-path","status":"listed"},{"function":"_queue_dev_attempt_store_path","id":"QBTEST-cc2f29fb3ed9","language":"bash","line":19142,"name":"dev-attempt-store-path","status":"listed"}],"schema":"queuebash.dev_qbtest_result.v1","source_file":"/mnt/data/work82/base/queuebash.sh","status":"pass"}
+rc=0
+$ timeout 60 queue dev test qbtest --file queuebash.sh --function _queue_now --json
+timeout: failed to run command 'queue': No such file or directory
+rc=127
+$ timeout 60 bash -lc 'cd /mnt/data/work82/base; export QUEUEBASH_ALLOW_NONINTERACTIVE=1 QUEUEBASH_ROOT=/mnt/data/work82/qroot-final3; source ./queuebash.sh; queue dev test qbtest --file queuebash.sh --function _queue_now --json'
+{"count":1,"counts":{"fail":0,"infrastructure_error":0,"invalid":0,"listed":0,"no_match":0,"pass":1,"timeout":0},"created_at":"2026-06-02T13:21:45Z","function":"_queue_now","language":"","results":[{"duration_seconds":0.097,"exit_code":0,"function":"_queue_now","id":"QBTEST-e2d501f1fbbf","language":"bash","line":547,"name":"queue-now-format","status":"pass","stderr_tail":"","stdout_tail":""}],"schema":"queuebash.dev_qbtest_result.v1","source_file":"/mnt/data/work82/base/queuebash.sh","status":"pass"}
+rc=0
+$ timeout 60 bash -lc 'cd /mnt/data/work82/base; export QUEUEBASH_ALLOW_NONINTERACTIVE=1 QUEUEBASH_ROOT=/mnt/data/work82/qroot-final3; source ./queuebash.sh; queue dev merge-plan --base . --patchset /mnt/data/bashqueues_0.18.80_BOB10_queue_cloud_broker_front.patchset.zip --json'
+{"base":"/mnt/data/work82/base","collisions":[],"merge_plan":[],"mode":"read_only_plan","non_goals":["no automatic conflict resolution","no full tree unzip by default","no automatic writes to target tree","no scratchpad wholesale merge recommendation","no assumption that newer version number means newer code"],"patchsets":[{"created_at":null,"delivery_evidence":[],"entries":[],"extracted_bytes":0,"function_changes":[],"manifest_schema":"queuebash.patchset.v1","members_extracted":1,"members_scanned":52,"name":"bashqueues_0.18.80_BOB10_queue_cloud_broker_front.patchset.zip","patchset_root":"","path":"/mnt/data/bashqueues_0.18.80_BOB10_queue_cloud_broker_front.patchset.zip","release_claims":[],"scratchpad":{"items_added":0,"malformed":0,"strategy":"item_level_required"},"space_safety":"bounded","summary":{},"zip_bytes":730139}],"release_reconciliation":{"recommended_changelog_bullets":["Merge safe additive docs, provider/helper files, tests and fixtures first.","Manually reconcile queuebash.sh function/dispatcher overlaps.","Normalize README, CHANGELOG and QUEUEBASH_VERSION after merge scope is accepted."],"recommended_readme_heading":"<target-version> BOB_MERGER multi-stream merge","recommended_version":"<set-by-merger>","release_claims":[],"release_identity_overlap":false,"version_overlap_policy":"ledger_overlap_not_runtime_conflict","versions_seen":[]},"schema":"queuebash.dev_merge_plan.v1","status":"ok","summary":{"auto_apply_safe_steps":0,"collisions":0,"entries":0,"high_risk_collisions":0,"manual_review_steps":0,"patchsets":1},"target_version":null,"validation_plan":["bash -n queuebash.sh","find . -name __pycache__ -o -name '*.pyc' -o -name '*.dev.lock' -o -name '*.devpatch.*'","queue dev test qbtest --file queuebash.sh --list --json","test ! -e assets.d/net_usage.sh"]}
+rc=0
+$ bash -lc 'cd /mnt/data/work82/base; export QUEUEBASH_ALLOW_NONINTERACTIVE=1 QUEUEBASH_ROOT=/mnt/data/work82/qroot-final3; source ./queuebash.sh; queue cloud --help'
+queue cloud - unified cloud broker front
+
+Usage:
+  queue cloud providers [--json]
+  queue cloud services [--json]
+  queue cloud signals ...
+  queue cloud resource list|check|claim|release|reconcile|explain ...
+  queue cloud provision templates|plan|validate|dry-run|approval-request|live-gate|handoff ...
+  queue cloud infra list|explain|plan|start|stop|status ...
+  queue cloud broker explain --capability CAP --profile PROFILE [--json]
+
+This command is a broker front over existing cloud provider layers. It does not
+add live cloud discovery, provisioning/destruction, dispatch refactors, or job
+lifecycle binding. Live behaviour remains owned by the underlying gated helpers.
+rc=0
+$ timeout 60 bash -lc 'cd /mnt/data/work82/base; export QUEUEBASH_ALLOW_NONINTERACTIVE=1 QUEUEBASH_ROOT=/mnt/data/work82/qroot-final3; source ./queuebash.sh; queue ai providers --json'
+{
+  "providers": [
+    {
+      "enabled": true,
+      "location_type": "local",
+      "model_count": 1,
+      "policy_refs": {
+        "audit": [],
+        "corporate": [],
+        "data_residency": [],
+        "export_control": [],
+        "privacy": [],
+        "regulatory": []
+      },
+      "provider": "ollama"
+    },
+    {
+      "enabled": true,
+      "location_type": "private",
+      "model_count": 1,
+      "policy_refs": {
+        "audit": [
+          {
+            "id": "AI_AUDIT_REQUIRED",
+            "label": "AI broker audit required",
+            "uri": "policy://audit/ai-broker"
+          }
+        ],
+        "corporate": [
+          {
+            "id": "CORP_PRIVATE_ENDPOINT",
+            "label": "Corporate private endpoint policy",
+            "uri": "policy://corporate/private-endpoints"
+          }
+        ],
+        "data_residency": [],
+        "export_control": [],
+        "privacy": [],
+        "regulatory": []
+      },
+      "provider": "openai_compat"
+    },
+    {
+      "enabled": true,
+      "location_type": "cloud",
+      "model_count": 1,
+      "policy_refs": {
+        "audit": [],
+        "corporate": [],
+        "data_residency": [
+          {
+            "id": "DATA_RESIDENCY_REVIEW",
+            "label": "Cloud data residency review",
+            "uri": "policy://data-residency/default"
+          }
+        ],
+        "export_control": [],
+        "privacy": [],
+        "regulatory": [
+          {
+            "id": "CLOUD_AI_REVIEW",
+            "label": "Cloud AI provider review",
+            "uri": "policy://regulatory/cloud-ai-review"
+          }
+        ]
+      },
+      "provider": "anthropic"
+    }
+  ],
+  "registry_path": "/mnt/data/work82/base/policies.d/ai-broker/provider-registry.example.json",
+  "schema": "queuebash.ai_broker.providers.v1"
+}
+rc=0
+$ bash -lc 'cd /mnt/data/work82/base; export QUEUEBASH_ALLOW_NONINTERACTIVE=1 QUEUEBASH_ROOT=/mnt/data/work82/qroot-final3; source ./queuebash.sh; queue class-infer fingerprint --json -- echo hello'
+{
+  "arg_shape": "echo hello",
+  "argc": 2,
+  "argv0": "echo",
+  "command_display": "echo hello",
+  "command_family_hash": "sha256:584a331fd6b02dcb1ecbe2eba731f609a2e1e3dac0bb73ae998dfad14c309a77",
+  "command_raw_hash": "sha256:6d9387f23a79ea8f3b0f1b033f7c1990e31eea0d290d3a889e37ae698c8b5eb4",
+  "command_shape_hash": "sha256:584a331fd6b02dcb1ecbe2eba731f609a2e1e3dac0bb73ae998dfad14c309a77",
+  "cwd_family": "//mnt/data",
+  "family": "echo hello",
+  "generated_at": "2026-06-02T13:22:01Z",
+  "normalizer": {
+    "dates": "<date>",
+    "hashes": "<hash>",
+    "numbers": "<num>",
+    "paths": "<path.ext>",
+    "ranges": "<range>",
+    "secret_bearing_names": "<secret-key>",
+    "urls": "<url>",
+    "uuids": "<uuid>"
+  },
+  "requested_class": "",
+  "schema": "queuebash.class_inference.fingerprint.v1",
+  "script": ""
+}
+rc=0

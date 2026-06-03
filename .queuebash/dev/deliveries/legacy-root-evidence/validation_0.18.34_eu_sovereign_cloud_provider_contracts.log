@@ -1,0 +1,48 @@
+BEGIN bash -n queuebash.sh
+BEGIN bash -n providers.d/eu_sovereign/eu_sovereign_provider.sh
+BEGIN bash tests/eu_sovereign_provider_contracts_static.sh
+OUT PASS eu_sovereign_provider_contracts_static
+BEGIN bash tests/eu_sovereign_provider_fixture_smoke.sh
+OUT PASS eu sovereign fixture json
+OUT PASS eu_sovereign_provider_fixture_smoke
+BEGIN /usr/bin/python3 tests/eu_sovereign_provider_json_contract_static.py
+OUT PASS eu_sovereign_provider_json_contract_static
+BEGIN bash tests/eu_sovereign_explain_static.sh
+OUT PASS eu_sovereign_explain_static
+BEGIN /usr/bin/python3 tests/cloud_platform_parity_static.py
+OUT PASS cloud_platform_parity_static
+BEGIN bash tests/azure_provider_contracts_static.sh
+OUT PASS azure_provider_contracts_static
+BEGIN bash tests/azure_provider_fixture_smoke.sh
+OUT PASS azure fixture json
+OUT PASS azure_provider_fixture_smoke
+BEGIN /usr/bin/python3 tests/azure_provider_json_contract_static.py
+OUT PASS azure_provider_json_contract_static
+BEGIN bash tests/gcp_provider_contracts_static.sh
+OUT PASS gcp_provider_contracts_static
+BEGIN bash tests/gcp_provider_fixture_smoke.sh
+OUT PASS gcp fixture json
+OUT PASS gcp_provider_fixture_smoke
+BEGIN /usr/bin/python3 tests/gcp_provider_json_contract_static.py
+OUT PASS gcp_provider_json_contract_static
+BEGIN bash tests/aws_provider_contracts_static.sh
+OUT [PASS] aws provider contracts static checks pass
+BEGIN bash tests/aws_provider_fixture_smoke.sh
+OUT [PASS] aws provider fixture smoke checks pass
+BEGIN /usr/bin/python3 tests/aws_provider_json_contract_static.py
+OUT PASS aws_provider_json_contract_static
+BEGIN bash tests/remote_queue_command_static.sh
+OUT [PASS] remote queue command static checks pass
+BEGIN bash tests/remote_queue_command_smoke.sh
+OUT [PASS] remote queue command smoke checks pass
+BEGIN bash tests/cloud_resource_provider_contract_static.sh
+OUT [PASS] cloud resource provider contract static checks pass
+BEGIN bash tests/cloud_resource_file_provider_smoke.sh
+OUT [PASS] cloud resource file provider smoke checks pass
+BEGIN /usr/bin/python3 tests/cloud_resource_json_contract_static.py
+OUT PASS cloud_resource_json_contract_static
+BEGIN bash tests/dev_scratchpad_static.sh
+OUT PASS dev_scratchpad_static
+BEGIN bash tests/dev_scratchpad_smoke.sh
+PASS dev_scratchpad_json_contract_static
+NOTE dev_scratchpad_smoke hit a transient timeout in the long sequential validation pass, then passed standalone under bounded timeout.

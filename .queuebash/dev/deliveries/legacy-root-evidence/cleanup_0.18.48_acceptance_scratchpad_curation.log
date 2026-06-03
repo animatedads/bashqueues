@@ -1,0 +1,13 @@
+== cleanup 0.18.48 acceptance scratchpad curation ==
+2026-05-30T09:27:56Z
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no __pycache__
+PASS no *.pyc
+PASS no *.pyo
+PASS no .pytest_cache
+PASS no *.lock
+PASS no *.dev.lock
+PASS no *.devpatch*
+PASS no queuebash.sh.bak.*
+PASS scratchpad JSON valid

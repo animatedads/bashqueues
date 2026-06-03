@@ -1,0 +1,28 @@
+BEGIN bash -n queuebash.sh
+PASS bash -n queuebash.sh
+BEGIN bash -n tests/gpu_cloud_provider_contracts_static.sh
+PASS bash -n tests/gpu_cloud_provider_contracts_static.sh
+BEGIN bash -n tests/gpu_cloud_provider_fixture_smoke.sh
+PASS bash -n tests/gpu_cloud_provider_fixture_smoke.sh
+BEGIN bash -n tests/gpu_cloud_explain_static.sh
+PASS bash -n tests/gpu_cloud_explain_static.sh
+BEGIN /usr/bin/python3 -m py_compile tests/gpu_cloud_provider_json_contract_static.py tests/cloud_platform_parity_static.py
+PASS /usr/bin/python3 -m py_compile tests/gpu_cloud_provider_json_contract_static.py tests/cloud_platform_parity_static.py
+BEGIN bash tests/gpu_cloud_provider_contracts_static.sh
+PASS gpu_cloud_provider_contracts_static
+PASS bash tests/gpu_cloud_provider_contracts_static.sh
+BEGIN bash tests/gpu_cloud_provider_fixture_smoke.sh
+PASS gpu cloud fixture json
+PASS gpu_cloud_provider_fixture_smoke
+PASS bash tests/gpu_cloud_provider_fixture_smoke.sh
+BEGIN /usr/bin/python3 tests/gpu_cloud_provider_json_contract_static.py
+PASS gpu_cloud_provider_json_contract_static
+PASS /usr/bin/python3 tests/gpu_cloud_provider_json_contract_static.py
+BEGIN bash tests/gpu_cloud_explain_static.sh
+PASS gpu_cloud_explain_static
+PASS bash tests/gpu_cloud_explain_static.sh
+BEGIN /usr/bin/python3 tests/cloud_platform_parity_static.py
+PASS cloud_platform_parity_static
+PASS /usr/bin/python3 tests/cloud_platform_parity_static.py
+BEGIN bash tests/apac_china_provider_contracts_static.sh
+FAIL rc=1 bash tests/apac_china_provider_contracts_static.sh

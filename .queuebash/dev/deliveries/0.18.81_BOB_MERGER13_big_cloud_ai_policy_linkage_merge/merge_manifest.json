@@ -1,0 +1,21 @@
+{
+  "base": "bashqueues_0.18.80_BOB_MERGER13_deterministic_class_inference_contract_merge_full_delivery.zip",
+  "boundaries": [
+    "no live cloud API calls",
+    "no provisioning/destruction",
+    "no provider mutation by default",
+    "no dispatch refactor beyond additive queue cloud routing",
+    "no AI live call posture change"
+  ],
+  "delivery_id": "0.18.81_BOB_MERGER13_big_cloud_ai_policy_linkage_merge",
+  "input_delivery_records_relocated": 8,
+  "inputs": [
+    "bashqueues_0.18.80_BOB10_queue_cloud_broker_front.patchset.zip",
+    "bashqueues_0.18.81_BOB10_cloud_broker_policy_reference_linkage.patchset.zip",
+    "bashqueues_0.18.80_BOB11_ai_broker_policy_links_patchset.zip"
+  ],
+  "root_delivery_records_policy": "root-level merge_manifest/validation/cleanup/notes moved under .queuebash/dev/deliveries/legacy-root-evidence/",
+  "schema": "queuebash.merge_manifest.v1",
+  "scratchpad_items_added": 2,
+  "version": "0.18.81"
+}

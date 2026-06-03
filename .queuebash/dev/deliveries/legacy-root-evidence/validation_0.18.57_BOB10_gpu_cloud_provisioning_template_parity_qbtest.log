@@ -1,0 +1,4 @@
+queue dev test qbtest: pass 1 test(s) from /mnt/data/work_bob10_1857/work/queuebash.sh
+pass	bash	_queue_now	queue-now-format	line=531
+queue dev test qbtest: pass 1 test(s) from /mnt/data/work_bob10_1857/work/queuebash.sh
+pass	bash	_queue_now	queue-now-format	line=531

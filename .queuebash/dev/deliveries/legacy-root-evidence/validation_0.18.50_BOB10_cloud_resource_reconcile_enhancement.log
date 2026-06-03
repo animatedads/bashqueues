@@ -1,0 +1,12 @@
+0.18.50 BOB10 cloud resource reconcile enhancement validation
+Base: 0.18.48 full delivery + sequential 0.18.49 BOB10 approval/live-gate patch
+PASS bash -n queuebash.sh
+PASS bash -n providers.d/cloud_resource/cloud_resource_provider.sh
+PASS cloud_resource_reconcile_enhancement_static
+PASS cloud_resource_reconcile_enhancement_smoke
+PASS cloud_resource_reconcile_enhancement_json_contract_static
+PASS cloud_resource provider static/json/smoke regressions
+PASS cloud_provision approval/live-gate regressions
+PASS cloud_provision registry-handoff regressions
+PASS dev_scratchpad and queue_dev contract regressions
+NOTE combined regression command exceeded sandbox timeout after passing early tests; remaining focused tests were rerun individually and passed.

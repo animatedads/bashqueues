@@ -1,0 +1,10 @@
+Cleanup 0.18.69 BOB10 cloud cost and service availability wiring
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no __pycache__ in patchset
+PASS no *.pyc / *.pyo in patchset
+PASS no .pytest_cache in patchset
+PASS no lock/devpatch/backup debris in patchset
+PASS scratchpad JSON valid
+PASS cloud-signals availability policy JSON valid
+PASS cloud-signals cost catalog JSON valid

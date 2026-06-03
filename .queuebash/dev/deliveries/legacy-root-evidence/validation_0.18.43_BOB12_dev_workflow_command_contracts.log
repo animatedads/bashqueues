@@ -1,0 +1,10 @@
+== bash syntax ==
+== python compile ==
+== tests ==
+PASS queue_dev_contract_static
+PASS queue_dev_docs_consistency_static
+PASS queue_dev_json_contract_static
+PASS queue_dev_workflow_contract_static
+PASS queue_dev_workflow_json_contract_static
+PASS dev_scratchpad_static
+PASS dev_scratchpad_json_contract_static

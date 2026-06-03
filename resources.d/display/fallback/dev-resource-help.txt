@@ -1,0 +1,3 @@
+Usage: queue dev resource extract --name NAME [--lang LANG] [--output FILE] [--json]
+       queue dev resource insert --dir DIR --name NAME --lang LANG --input FILE [--json]
+       queue dev resource validate --file FILE|--dir DIR [--json]

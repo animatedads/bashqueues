@@ -1,0 +1,74 @@
+BEGIN bash -n queuebash.sh
+PASS bash -n queuebash.sh
+BEGIN bash tests/dev_file_registry_static.sh
+PASS dev_file_registry_static
+PASS bash tests/dev_file_registry_static.sh
+BEGIN bash tests/dev_file_registry_smoke.sh
+PASS dev_file_registry_smoke
+PASS bash tests/dev_file_registry_smoke.sh
+BEGIN /usr/bin/python3 tests/dev_file_registry_json_contract_static.py
+PASS dev_file_registry_json_contract_static
+PASS /usr/bin/python3 tests/dev_file_registry_json_contract_static.py
+BEGIN bash tests/provider_primary_source_validation_static.sh
+PASS provider_primary_source_validation_static
+PASS bash tests/provider_primary_source_validation_static.sh
+BEGIN /usr/bin/python3 tests/provider_primary_source_validation_json_contract_static.py
+PASS provider_primary_source_validation_json_contract_static
+PASS /usr/bin/python3 tests/provider_primary_source_validation_json_contract_static.py
+BEGIN bash tests/provider_explainability_standard_static.sh
+PASS provider_explainability_standard_static
+PASS bash tests/provider_explainability_standard_static.sh
+BEGIN /usr/bin/python3 tests/provider_explainability_standard_json_contract_static.py
+PASS provider_explainability_standard_json_contract_static
+PASS /usr/bin/python3 tests/provider_explainability_standard_json_contract_static.py
+BEGIN bash tests/provider_family_consistency_static.sh
+PASS provider_family_consistency_static
+PASS bash tests/provider_family_consistency_static.sh
+BEGIN /usr/bin/python3 tests/provider_family_consistency_json_contract_static.py
+PASS provider_family_consistency_json_contract_static
+PASS /usr/bin/python3 tests/provider_family_consistency_json_contract_static.py
+BEGIN bash tests/gcp_provider_contracts_static.sh
+PASS gcp_provider_contracts_static
+PASS bash tests/gcp_provider_contracts_static.sh
+BEGIN bash tests/azure_provider_contracts_static.sh
+PASS azure_provider_contracts_static
+PASS bash tests/azure_provider_contracts_static.sh
+BEGIN bash tests/eu_sovereign_provider_contracts_static.sh
+PASS eu_sovereign_provider_contracts_static
+PASS bash tests/eu_sovereign_provider_contracts_static.sh
+BEGIN bash tests/apac_china_provider_contracts_static.sh
+PASS apac_china_provider_contracts_static
+PASS bash tests/apac_china_provider_contracts_static.sh
+BEGIN bash tests/gpu_cloud_provider_contracts_static.sh
+PASS gpu_cloud_provider_contracts_static
+PASS bash tests/gpu_cloud_provider_contracts_static.sh
+BEGIN bash tests/edge_cloud_provider_contracts_static.sh
+PASS edge_cloud_provider_contracts_static
+PASS bash tests/edge_cloud_provider_contracts_static.sh
+BEGIN bash tests/hybrid_onprem_provider_contracts_static.sh
+PASS hybrid_onprem_provider_contracts_static
+PASS bash tests/hybrid_onprem_provider_contracts_static.sh
+BEGIN bash tests/aws_provider_contracts_static.sh
+[PASS] aws provider contracts static checks pass
+PASS bash tests/aws_provider_contracts_static.sh
+BEGIN bash tests/oci_provider_contracts_static.sh
+PASS oci_provider_contracts_static
+PASS bash tests/oci_provider_contracts_static.sh
+BEGIN bash tests/dev_scratchpad_static.sh
+PASS dev_scratchpad_static
+PASS bash tests/dev_scratchpad_static.sh
+BEGIN bash tests/dev_scratchpad_smoke.sh
+PASS dev_scratchpad_smoke
+PASS bash tests/dev_scratchpad_smoke.sh
+BEGIN /usr/bin/python3 tests/dev_scratchpad_json_contract_static.py
+PASS dev_scratchpad_json_contract_static
+PASS /usr/bin/python3 tests/dev_scratchpad_json_contract_static.py
+BEGIN bash tests/queue_dev_contract_static.sh
+PASS queue_dev_contract_static
+PASS bash tests/queue_dev_contract_static.sh
+BEGIN bash tests/queue_dev_docs_consistency_static.sh
+PASS queue_dev_docs_consistency_static
+PASS bash tests/queue_dev_docs_consistency_static.sh
+BEGIN /usr/bin/python3 tests/queue_dev_json_contract_static.py
+PASS queue_dev_json_contract_static
+PASS /usr/bin/python3 tests/queue_dev_json_contract_static.py

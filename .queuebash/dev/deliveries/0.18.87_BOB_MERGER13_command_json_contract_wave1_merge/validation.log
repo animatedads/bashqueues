@@ -1,0 +1,12 @@
+0.18.87 validation
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+queue command contract static checks passed
+PASS queue_command_contract_static
+queue command JSON smoke checks passed
+PASS queue_command_json_smoke
+PASS scratchpad JSON
+PASS queue version --json parseable
+PASS acl help --json parseable
+PASS env list --json parseable
+PASS qbtest list json

@@ -1,0 +1,27 @@
+VALIDATION 0.18.81 BOB_MERGER13 great big cloud/AI policy linkage merge
+
+PASS grep QUEUEBASH_VERSION queuebash.sh -> QUEUEBASH_VERSION="0.18.81"
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS assets.d/net_usage.sh absent
+PASS no root-level merge_manifest*/validation*/cleanup*/notes* delivery records remain
+PASS bash tests/cloud_broker_front_static.sh
+PASS bash tests/cloud_broker_front_smoke.sh
+PASS python3 tests/cloud_broker_front_json_contract_static.py
+PASS python3 tests/cloud_broker_policy_references_static.py
+PASS bash tests/queue_ai_broker_runtime_static.sh
+PASS bash tests/queue_ai_broker_runtime_smoke.sh
+PASS python3 tests/queue_ai_broker_runtime_json_contract_static.py
+PASS bash tests/class_inference_contract_static.sh
+PASS python3 tests/class_inference_json_contract_static.py
+PASS bash tests/grid_energy_provider_static.sh
+PASS bash tests/grid_energy_provider_fixture_smoke.sh
+PASS queue dev test qbtest --file queuebash.sh --list --json -> count 161, invalid 0
+PASS source queuebash.sh; queue cloud --help contains queue cloud broker explain
+PASS source queuebash.sh; queue cloud providers --json emits queuebash.cloud_signals.platforms.v1
+
+Notes:
+- Patchset md5 guards did not apply cleanly because the three inputs were built on neighbouring lanes; this was merged by Bob Merger reconciliation.
+- queuebash.sh changes were merged function/dispatcher-locally for the additive queue cloud front.
+- Scratchpad changes were merged by item id.
+- Root delivery records were relocated into .queuebash/dev/deliveries/legacy-root-evidence/.

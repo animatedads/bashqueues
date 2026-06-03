@@ -1,0 +1,20 @@
+== validation 0.18.48 scratchpad acceptance curation ==
+2026-05-30T09:25:31Z
+PASS bash -n queuebash.sh
+PASS scratchpad JSON valid
+RUN tests/dev_scratchpad_static.sh
+PASS dev_scratchpad_static
+PASS tests/dev_scratchpad_static.sh
+RUN tests/dev_scratchpad_json_contract_static.py
+PASS dev_scratchpad_json_contract_static
+PASS tests/dev_scratchpad_json_contract_static.py
+RUN tests/queue_dev_contract_static.sh
+PASS queue_dev_contract_static
+PASS tests/queue_dev_contract_static.sh
+RUN tests/queue_dev_json_contract_static.py
+PASS queue_dev_json_contract_static
+PASS tests/queue_dev_json_contract_static.py
+RUN tests/cloud_provision_registry_handoff_static.sh
+PASS cloud_provision_registry_handoff_static
+PASS tests/cloud_provision_registry_handoff_static.sh
+RUN tests/cloud_provision_registry_handoff_smoke.sh

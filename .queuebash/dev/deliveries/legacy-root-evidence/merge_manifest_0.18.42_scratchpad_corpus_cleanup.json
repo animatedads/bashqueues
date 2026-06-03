@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "package": "bashqueues_0.18.42_BOB12_queue_dev_contract_cleanup_merged_scratchpad_curated",
+  "base": "bashqueues_0.18.42_BOB12_queue_dev_contract_cleanup_merged(1).zip",
+  "changes": [
+    ".queuebash/dev/scratchpad.json: added Team Leader/reviewer corpus cleanup, delivery ledger correction, future work allocation, EIR follow-up, and QBTEST roadmap notes",
+    "validation_0.18.42_scratchpad_corpus_cleanup.log",
+    "cleanup_0.18.42_scratchpad_corpus_cleanup.log"
+  ],
+  "queuebash_version": "0.18.42",
+  "live_code_changed": false,
+  "notes": "No source code changed. Scratchpad-only curation package preserving accepted 0.18.42 base."
+}

@@ -1,0 +1,4 @@
+Usage: queue resource-fetch-i18nl --name NAME [--lang LANG] [--var KEY=VALUE] [--raw] [--json]
+
+Fetch a signed external display resource with internal locale fallback. Resource
+text is never eval'd or shell-expanded; only {{TOKEN}} replacement is supported.

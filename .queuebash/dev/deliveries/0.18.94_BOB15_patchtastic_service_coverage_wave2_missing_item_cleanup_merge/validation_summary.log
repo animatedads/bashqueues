@@ -1,0 +1,27 @@
+PASS queue dev ai discover/session/try/lesson/session lessons/stop
+PASS queue dev merge-plan --json for Bob14 and Bob12 patchsets
+PASS apply_patchset.sh --check --json for Bob14 and Bob12
+PASS apply_patchset.sh --json --backup-dir for Bob14 and Bob12
+PASS queue dev functions
+PASS queue dev extract _queue_dev_command
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS bash -n vector_database/data_lake provider helpers
+PASS vector_database provider static/smoke/JSON tests
+PASS data_lake provider static/smoke/JSON tests
+PASS provider_service_coverage_wave2_bob14_static.py
+PASS Bob12 missing-item static tests: ai advisory, cloud EU/APAC, dev splice, modules/caps, remote queue command
+PASS remote queue management listener smoke with dynamic port on rerun; first grouped attempt left an orphan under outer timeout and was killed
+PASS reporter/crontab bash syntax checks
+PASS dev_ai contract/json/session shell test; Python smoke passed on bounded rerun
+PASS display_resource static/no-shell tests
+PASS queue_command_contract_static and queue_command_json_smoke
+PASS provider family continuity/consistency tests
+PASS model/container service coverage regression tests
+PASS queue dev test qbtest --file queuebash.sh --list --json via bounded timeout bash -lc sourced function route
+PASS scratchpad JSON valid
+PASS AI lesson JSON valid
+PASS zip integrity
+PASS cleanup checks
+PASS assets.d/net_usage.sh absent
+NOTE queue_command_json_wave3_smoke remained hang-prone in this sandbox during repeated sourced runs and is not claimed as passed in the final package.

@@ -1,0 +1,25 @@
+== validation 0.18.42 BOB12 queue dev contract cleanup merged repair2 ==
+PASS bash -n queuebash.sh
+PASS bash -n tests/queue_dev_contract_static.sh
+PASS bash -n tests/queue_dev_docs_consistency_static.sh
+PASS bash -n tests/dev_splice_tool_static.sh
+PASS bash -n tests/dev_test_runner_class_static.sh
+PASS bash -n tests/dev_scratchpad_static.sh
+PASS bash -n tests/ask_provider_contract_static.sh
+PASS python3 -m py_compile tests/queue_dev_json_contract_static.py
+PASS queue_dev_contract_static
+PASS tests/queue_dev_contract_static.sh
+PASS queue_dev_docs_consistency_static
+PASS tests/queue_dev_docs_consistency_static.sh
+PASS queue_dev_json_contract_static
+PASS tests/queue_dev_json_contract_static.py
+PASS dev_splice_tool_static
+PASS tests/dev_splice_tool_static.sh
+PASS dev_test_runner_class_static
+PASS tests/dev_test_runner_class_static.sh
+PASS dev_scratchpad_static
+PASS tests/dev_scratchpad_static.sh
+PASS
+PASS tests/ask_provider_contract_static.sh
+PASS dev_scratchpad_json_contract_static
+PASS tests/dev_scratchpad_json_contract_static.py

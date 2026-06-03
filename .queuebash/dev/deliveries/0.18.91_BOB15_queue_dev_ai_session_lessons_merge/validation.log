@@ -1,0 +1,28 @@
+0.18.91 validation
+PASS queue dev functions includes _queue_dev_command and _queue_dev_merge_plan_command
+PASS queue dev extract _queue_dev_command --file queuebash.sh shows ai|llm-session|ai-session helper dispatch
+PASS queue dev merge-plan --json completed with 15 entries, 0 collisions, 11 auto-apply-safe, 4 manual-review
+PASS queue dev ai discover --json
+PASS queue dev ai session start/try/lesson/session lessons/session stop
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS bash -n dev_ai shell tests
+PASS py_compile bin/queue-dev-ai and dev_ai Python tests
+PASS dev_ai_contract_static
+PASS dev_ai_json_contract_static
+PASS dev_ai_session_lesson_smoke shell
+PASS dev_ai_session_lesson_smoke Python
+PASS queue_command_contract_static
+PASS queue_command_json_smoke
+PASS queue_command_json_wave3_smoke
+PASS provider_family_continuity_bob14_static
+PASS provider_family_consistency_json_contract_static
+PASS container registry static/smoke/JSON tests
+PASS model registry static/smoke/JSON tests
+PASS provider_service_coverage_bob14_static
+PASS queue dev test qbtest --file queuebash.sh --list --json
+PASS README/CHANGELOG/QUEUEBASH_VERSION normalized to 0.18.91
+PASS scratchpad JSON valid and merged by item ID
+PASS zip integrity
+PASS cleanup checks
+PASS assets.d/net_usage.sh absent

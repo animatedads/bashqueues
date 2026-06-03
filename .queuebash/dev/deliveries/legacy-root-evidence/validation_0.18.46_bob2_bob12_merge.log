@@ -1,0 +1,78 @@
+BEGIN bash -n queuebash.sh
+PASS bash -n queuebash.sh
+BEGIN bash -n tests/dev_file_registry_static.sh
+PASS bash -n tests/dev_file_registry_static.sh
+BEGIN bash -n tests/dev_file_registry_smoke.sh
+PASS bash -n tests/dev_file_registry_smoke.sh
+BEGIN python3 -m py_compile tests/dev_file_registry_json_contract_static.py
+PASS python3 -m py_compile tests/dev_file_registry_json_contract_static.py
+BEGIN bash -n tests/provider_primary_source_validation_static.sh
+PASS bash -n tests/provider_primary_source_validation_static.sh
+BEGIN python3 -m py_compile tests/provider_primary_source_validation_json_contract_static.py
+PASS python3 -m py_compile tests/provider_primary_source_validation_json_contract_static.py
+BEGIN bash -n tests/provider_explainability_standard_static.sh
+PASS bash -n tests/provider_explainability_standard_static.sh
+BEGIN python3 -m py_compile tests/provider_explainability_standard_json_contract_static.py
+PASS python3 -m py_compile tests/provider_explainability_standard_json_contract_static.py
+BEGIN bash -n tests/provider_family_consistency_static.sh
+PASS bash -n tests/provider_family_consistency_static.sh
+BEGIN python3 -m py_compile tests/provider_family_consistency_json_contract_static.py
+PASS python3 -m py_compile tests/provider_family_consistency_json_contract_static.py
+BEGIN bash -n tests/dev_scratchpad_static.sh
+PASS bash -n tests/dev_scratchpad_static.sh
+BEGIN python3 -m py_compile tests/dev_scratchpad_json_contract_static.py
+PASS python3 -m py_compile tests/dev_scratchpad_json_contract_static.py
+BEGIN bash -n tests/queue_dev_contract_static.sh
+PASS bash -n tests/queue_dev_contract_static.sh
+BEGIN python3 -m py_compile tests/queue_dev_json_contract_static.py
+PASS python3 -m py_compile tests/queue_dev_json_contract_static.py
+BEGIN bash tests/dev_file_registry_static.sh
+PASS dev_file_registry_static
+PASS bash tests/dev_file_registry_static.sh
+BEGIN bash tests/dev_file_registry_smoke.sh
+PASS dev_file_registry_smoke
+PASS bash tests/dev_file_registry_smoke.sh
+BEGIN python3 tests/dev_file_registry_json_contract_static.py
+PASS dev_file_registry_json_contract_static
+PASS python3 tests/dev_file_registry_json_contract_static.py
+BEGIN bash tests/provider_primary_source_validation_static.sh
+PASS provider_primary_source_validation_static
+PASS bash tests/provider_primary_source_validation_static.sh
+BEGIN python3 tests/provider_primary_source_validation_json_contract_static.py
+PASS provider_primary_source_validation_json_contract_static
+BEGIN /usr/bin/python3 tests/provider_primary_source_validation_json_contract_static.py
+PASS provider_primary_source_validation_json_contract_static
+PASS /usr/bin/python3 tests/provider_primary_source_validation_json_contract_static.py
+BEGIN bash tests/provider_explainability_standard_static.sh
+[FAIL] README 0.18.44 entry missing
+FAIL rc=1 bash tests/provider_explainability_standard_static.sh
+BEGIN bash tests/provider_explainability_standard_static.sh
+PASS provider_explainability_standard_static
+PASS bash tests/provider_explainability_standard_static.sh
+BEGIN /usr/bin/python3 tests/provider_explainability_standard_json_contract_static.py
+PASS provider_explainability_standard_json_contract_static
+PASS /usr/bin/python3 tests/provider_explainability_standard_json_contract_static.py
+BEGIN bash tests/provider_family_consistency_static.sh
+PASS provider_family_consistency_static
+PASS bash tests/provider_family_consistency_static.sh
+BEGIN /usr/bin/python3 tests/provider_family_consistency_json_contract_static.py
+PASS provider_family_consistency_json_contract_static
+PASS /usr/bin/python3 tests/provider_family_consistency_json_contract_static.py
+BEGIN bash tests/dev_scratchpad_static.sh
+PASS dev_scratchpad_static
+PASS bash tests/dev_scratchpad_static.sh
+BEGIN bash tests/dev_scratchpad_smoke.sh
+PASS dev_scratchpad_smoke
+PASS bash tests/dev_scratchpad_smoke.sh
+BEGIN /usr/bin/python3 tests/dev_scratchpad_json_contract_static.py
+PASS dev_scratchpad_json_contract_static
+PASS /usr/bin/python3 tests/dev_scratchpad_json_contract_static.py
+BEGIN bash tests/queue_dev_contract_static.sh
+PASS queue_dev_contract_static
+PASS bash tests/queue_dev_contract_static.sh
+BEGIN bash tests/queue_dev_docs_consistency_static.sh
+PASS queue_dev_docs_consistency_static
+PASS bash tests/queue_dev_docs_consistency_static.sh
+BEGIN /usr/bin/python3 tests/queue_dev_json_contract_static.py
+PASS queue_dev_json_contract_static
+PASS /usr/bin/python3 tests/queue_dev_json_contract_static.py

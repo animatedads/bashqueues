@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T13:40:51Z",
+  "created_from_session": "AIS-20260603-133843-855418-7409-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-134051-727094-7639",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "0.18.94 Bob14 vector/database lake patchset and Bob12 missing-item cleanup patchset both produce zero-collision merge-plan results against the 0.18.93 Bob15 base; only README/CHANGELOG/scratchpad need manual review or item-level merge."
+}

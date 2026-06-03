@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T14:00:40Z",
+  "created_from_session": "AIS-20260603-140024-060121-4325-GPT-5.5",
+  "created_from_try": "",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260603-140040-456402-9131",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "queue dev resource insert --lang fallback must write resources.d/display/fallback because runtime _queue_resource_lang_chain searches literal fallback, not lang_fallback."
+}

@@ -1,0 +1,16 @@
+{
+  "catalog_id": "fixture-lake-catalog",
+  "classification": "synthetic_or_public",
+  "data_residency": "uk_fixture",
+  "decision": "allow",
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "data_lake",
+  "region": "fixture-region-uk",
+  "schema": "queuebash.data_lake.catalog.v1",
+  "tables": [
+    "jobs_public_summary",
+    "provider_fixture_inventory"
+  ]
+}

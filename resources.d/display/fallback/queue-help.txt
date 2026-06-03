@@ -1,0 +1,215 @@
+Usage:
+  queue [--dryrun] <command...>
+  queue submit <name> [--dryrun] [--priority N|-p N] [--on-success <cmd...>] [--on-retry-failure <cmd...>] [--on-failure <cmd...>] -- <command...>
+
+  queue list [--state all|pending|running|paused|done|failed|pol_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
+  queue ls   [--state all|pending|running|paused|done|failed|pol_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
+  queue find <text>
+  queue show <qid|exact-job-name> [--tail N|--full]
+  queue cleared [--json] [--state csv] [--limit N] [--since DATE]
+  queue tail <qid|exact-job-name>
+  queue pids <qid|exact-job-name>
+  queue metrics <qid|exact-job-name>
+  queue explain <qid|exact-job-name>
+  queue deps <qid|exact-job-name>
+  queue waiting
+  queue hooks <qid|exact-job-name>
+
+  queue onsuccess <qid|exact-job-name> -- <command...>
+  queue on-success <qid|exact-job-name> -- <command...>
+  queue onok <qid|exact-job-name> -- <command...>
+  queue onfailure <qid|exact-job-name> -- <command...>
+  queue on-failure <qid|exact-job-name> -- <command...>
+  queue onfail <qid|exact-job-name> -- <command...>
+
+  queue priority <qid|exact-job-name> <priority>
+  queue dynamic-prio <qid|exact-job-name> <priority> [--force] [--dryrun]
+  queue prio     <qid|exact-job-name> <priority> [--force]
+
+  queue pause   <qid|exact-job-name> [--force] [--dryrun]
+  queue unpause <qid|exact-job-name> [--dryrun]
+  queue resume  <qid|exact-job-name> [--dryrun]
+  queue release <qid|exact-job-name> [--dryrun]
+
+  queue delete   <qid|exact-job-name> [--force] [--dryrun]
+  queue rm       <qid|exact-job-name> [--force] [--dryrun]
+  queue undelete <qid|exact-job-name> [pending|done|failed] [--force]
+  queue restore  <qid|exact-job-name> [pending|done|failed] [--force] [--dryrun]
+
+  queue health [--fix] [--deep]
+  queue compress-logs
+  queue clean-logs [--dryrun] [--older-than AGE] [--state STATE] [--force]
+  queue stats [--name exact-job-name] [--today]
+  queue watch [--interval SEC]
+  queue events [--tail N]
+
+  queue draft list
+  queue draft show <draft-id>
+  queue draft create <name> [options] [--after-success QID] [--on-success <cmd...>] -- <command...>
+  queue draft create-from-job <qid>
+  queue draft submit <draft-id>
+  queue draft ready|abandon <draft-id>
+
+  queue run [--workers N] [--detach] [--dryrun]
+  queue sentinel [--once] [--interval SEC] [--detach]
+  queue system-daemon [--once] [--interval SEC] [--detach] [--min-workers N]
+  queue start [--workers N]
+
+  queue clear done [--dryrun]
+  queue clear failed [--dryrun]
+  queue clear paused [--dryrun]
+  queue clear deleted [--dryrun]
+  queue clear all [--dryrun]
+
+  queue env list
+  queue env show NAME [--json]
+  queue env validate NAME [--json]
+
+  queue ask [--provider NAME] [--context csv] [--json] "question"
+  queue ask providers [--json]
+  queue ask provider explain PROVIDER [--json]
+  queue remote add SERVICE --url URL (--secret SECRET|--secret-file FILE|--secret-env ENV) [--json]
+  queue remote list
+  queue remote show SERVICE
+  queue remote SERVICE health
+  queue remote SERVICE queue status
+  queue remote SERVICE job explain JOBID
+  queue remote-admin --actor ACTOR validate|config|client|acl|secret|audit ...
+  queue acl help|check|explain|set|remove
+  queue key-provider help|lookup|registry|register|revoke|rotate
+
+  queue limits
+  queue version
+  queue help
+
+Matching rules:
+  Exact QID                 -> one job
+  Unique QID prefix         -> one job
+  Ambiguous QID prefix      -> refused unless the command supports --force
+  Exact job name            -> group operation for priority/show/hooks/pause/delete/undelete
+  Job-name prefix/substr    -> never used for mutating commands
+
+Runtime PID tracking:
+  Running jobs store RUN_PID, RUN_PGID, and RUN_STARTED_AT in the job file.
+  queue pids <job> shows the recorded PID and any live child processes.
+  queue cancel/kill use RUN_PGID where safe to signal the process group.
+
+Health/recovery:
+  queue health reports queue integrity, dead worker PID files, and stale running jobs.
+  queue sentinel runs a cheap control-plane loop: policy gate, stale-worker cleanup, stale-running repair, and deadline escalation only.
+  queue system-daemon is the root multi-user control loop; it delegates per-user queue daemons and never runs user jobs as root.
+  queue health --fix creates missing directories, removes dead worker records, and moves stale running jobs to interrupted.
+
+Structured audit:
+  State transitions and operator actions append JSONL records to ~/.queuebash/events.jsonl.
+  queue stats summarizes queue states; queue events shows recent audit records.
+  queue ask appends AI advisory audit records to ~/.queuebash/logs/ai-advisory.audit.jsonl by default.
+
+States:
+  pending   waiting to run
+  running   currently claimed by a worker
+  paused    held; workers will not run it
+  done      completed successfully
+  failed    completed with non-zero exit
+  interrupted worker/session died while job was running
+  cancelled operator cancelled or killed
+  deleted   marked deleted; can be undeleted
+
+Batch 2:
+  --retries N and --backoff SEC automatically requeue transient failures.
+  --cpu PCT and --mem SIZE request systemd-run resource limits when available.
+
+Priority:
+  Higher number runs first.
+  Suggested: 100 urgent, 50 high, 10 normal/default, 0 low.
+  Exact job name updates all jobs with that exact name.
+
+Log compression:
+  Completed job logs are gzipped by default: QUEUEBASH_GZIP_LOGS=1.
+  Set QUEUEBASH_GZIP_LOGS=0 to keep completed logs as plain .log files.
+  queue show/tail read .log and .log.gz automatically.
+
+Log cap enforcement:
+  Default max log size is QUEUEBASH_MAX_LOG_SIZE_BYTES or 50MB.
+  Default overflow policy is stderr-only: stdout is suppressed at the first cap,
+  stderr continues until the next cap, and both streams are drained so the child
+  process does not receive a broken pipe.
+  Use --log-overflow kill for strict termination behaviour.
+  Use --allow-large-log or --max-log-size SIZE when huge logs are intentional.
+
+Log safety:
+  queue submit accepts --max-log-size SIZE and --log-overflow stderr-only|kill|allow.
+  Default is QUEUEBASH_MAX_LOG_SIZE_BYTES or 52428800 bytes.
+
+Execution summaries:
+  Completed jobs append EXIT_CODE, DURATION_SECONDS, LOG_BYTES, and EXEC_FINISHED_AT.
+
+Dry run:
+  queue --dryrun <command...> previews a mutating action without changing files.
+  Most mutating commands also accept --dryrun after the command or at the end.
+
+Cancellation semantics:
+  queue cancel/kill move jobs to cancelled and do NOT run ON_FAILURE.
+  ON_FAILURE is only for a command that exits non-zero by itself.
+  Future ON_CANCEL support should be separate from ON_FAILURE.
+
+Hooks:
+  Hooks run after the main job has moved to done or failed.
+  Use command + arguments, not a single quoted executable name.
+
+Examples:
+  queue submit unzip001 --priority 50 -- unzip ../file.zip
+
+  queue submit ingest_tblisi -- \
+    python forensic_helper.py --ingest ./dir --yaml tblisi.yaml
+
+  queue onsuccess ingest_tblisi -- echo complete
+  queue onfailure ingest_tblisi -- echo failed
+  queue hooks ingest_tblisi
+
+  queue list --state pending
+  queue list --state paused
+  queue list --name tblisi
+  queue list --filter unzip
+
+  queue show unzip001
+  queue tail unzip001
+  queue pids unzip001
+  queue stats
+  queue events --tail 20
+  queue ask --provider watson --context docs,commands,classes "How do I run a GDPR-safe overnight job?"
+  queue priority unzip001 100
+
+  queue pause unzip001
+  queue unpause unzip001
+
+  queue delete unzip001
+  queue undelete unzip001
+  queue resubmit failed_job_name
+  queue reevaluate [--all|QID] [--dryrun]
+  queue backup [create] [FILE.tar.gz] [--force]
+  queue backup restore FILE.tar.gz --to DIRECTORY [--force]
+  queue clear deleted
+
+  queue run --workers 4
+
+Queue manager:
+  queuemgr
+  queuemgr --state pending
+  queuemgr --name tblisi
+  queuemgr --filter unzip
+
+  Inside queuemgr:
+    r     run one worker in foreground
+    rd    dryrun one worker
+    r4    run four workers in foreground
+    rd4   dryrun four workers
+    start detached workers from the shell with: queue start --workers 4
+    sentinel control-plane loop with: queue sentinel --detach --interval 30
+
+Notes:
+  Jobs are stored in ~/.queuebash by default.
+  Set QUEUEBASH_ROOT=/some/path to use another queue root.
+
+  For shell syntax in hooks, use bash -c:
+    queue onsuccess myjob -- bash -c 'echo complete && date'

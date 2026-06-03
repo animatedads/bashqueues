@@ -1,0 +1,22 @@
+== bash tests/cloud_resource_file_provider_smoke.sh ==
+[PASS] cloud resource file provider smoke checks pass
+rc=0
+== python3 tests/cloud_platform_parity_static.py ==
+PASS cloud_platform_parity_static
+rc=0
+== bash tests/cloud_infra_helpers_static.sh ==
+cloud_infra_helpers_static: PASS
+rc=0
+== bash tests/cloud_infra_helpers_smoke.sh ==
+cloud_infra_helpers_smoke: PASS
+rc=0
+== python3 tests/cloud_infra_json_contract_static.py ==
+cloud_infra_json_contract_static: PASS
+rc=0
+== bash tests/dev_scratchpad_static.sh ==
+PASS dev_scratchpad_static
+rc=0
+== python3 tests/dev_scratchpad_json_contract_static.py ==
+PASS dev_scratchpad_json_contract_static
+rc=0
+== bash tests/dev_scratchpad_smoke.sh ==

@@ -1,0 +1,11 @@
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS ./*__pycache__* absent
+PASS ./*.pyc absent
+PASS ./*.lock absent
+PASS ./*.dev.lock absent
+PASS ./*.devpatch.* absent
+PASS ./queuebash.sh.bak.* absent
+PASS json valid .queuebash/dev/scratchpad.json
+PASS json valid policies.d/cloud-resource/platform-parity.json
+PASS json valid policies.d/cloud-provision/templates.example.json

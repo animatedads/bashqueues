@@ -1,0 +1,14 @@
+cleanup check 0.18.56 BOB_MERGER groq/status-enum full delivery
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no __pycache__
+PASS no .pytest_cache
+PASS no *.pyc
+PASS no *.pyo
+PASS no *.orig
+PASS no *.rej
+PASS no *.lock
+PASS no *.dev.lock
+PASS no *.devpatch.*
+PASS no queuebash.sh.bak.*
+PASS fake QBTEST placeholder absent

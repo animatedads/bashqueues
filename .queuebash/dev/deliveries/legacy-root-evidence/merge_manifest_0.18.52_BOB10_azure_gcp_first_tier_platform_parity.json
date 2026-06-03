@@ -1,0 +1,21 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "package": "0.18.52_BOB10_azure_gcp_first_tier_platform_parity",
+  "base": "bashqueues_0.18.51_BOB_MERGER_version_guard_repaired_full_delivery.zip",
+  "delivery_type": "patchset",
+  "scope": "Bob10 cloud platform parity follow-up: Azure and GCP first-tier contract coverage",
+  "boundaries": {
+    "live_cloud_api_calls": false,
+    "provider_credentials_required_for_default_tests": false,
+    "provisioning_or_destruction": false,
+    "queue_dispatch_refactor": false,
+    "legal_certification_claim": false
+  },
+  "changed_areas": [
+    "release wrapper",
+    "platform parity docs/status",
+    "Azure/GCP cost and export-control policy examples",
+    "Azure/GCP first-tier parity tests",
+    "scratchpad evidence"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T12:53:37Z",
+  "created_from_session": "AIS-20260603-125228-445947-8498-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-125337-538653-2310",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "0.18.93 queue-dev-ai dogfood reconciliation passes QUEUEBASH_SCRIPT_PATH so read-only queue dev ai discover can be run through queue dev ai try without assuming a standalone queue executable."
+}

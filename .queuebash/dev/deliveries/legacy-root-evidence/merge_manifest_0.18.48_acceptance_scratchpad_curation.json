@@ -1,0 +1,32 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "package": "0.18.48_BOB12_bob10_handoff_evidence_merge_repair_acceptance_scratchpad_curated",
+  "base": "bashqueues_0.18.48_BOB12_bob10_handoff_evidence_merge_repair.zip",
+  "purpose": "Add Team Leader/reviewer scratchpad acceptance notes for full delivery, individual Bob work acceptance, corpus correction, and future work allocation.",
+  "queuebash_version": "0.18.48",
+  "changed_files": [
+    ".queuebash/dev/scratchpad.json",
+    "validation_0.18.48_acceptance_scratchpad_curation_final.log",
+    "cleanup_0.18.48_acceptance_scratchpad_curation.log"
+  ],
+  "source_code_changed": false,
+  "scratchpad_items_added": 14,
+  "created_at": "2026-05-30T09:28:00Z",
+  "files": [
+    {
+      "path": ".queuebash/dev/scratchpad.json",
+      "size": 176472,
+      "md5": "924a0366628564777ca3c86cf8ad0a66"
+    },
+    {
+      "path": "validation_0.18.48_acceptance_scratchpad_curation_final.log",
+      "size": 12364,
+      "md5": "6b1dce1b24645a67f0006c68248c170b"
+    },
+    {
+      "path": "cleanup_0.18.48_acceptance_scratchpad_curation.log",
+      "size": 319,
+      "md5": "62bf9e3751d3f1b2ccb16dfe822d8e42"
+    }
+  ]
+}

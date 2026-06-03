@@ -63,11 +63,30 @@ for name in ['eu_sovereign','apac_china','gpu_cloud','edge_cloud','hybrid_onprem
     assert (root / 'tests' / f'{name}_provider_fixture_smoke.sh').exists(), (name, 'fixture smoke')
     assert (root / 'tests' / f'{name}_provider_json_contract_static.py').exists(), (name, 'json contract')
 # Reference providers have known material but are not forced through Bob2 fixture-family shape.
-assert (root / 'docs/OCI_PROVIDER_CONTRACTS.md').exists()
-assert (root / 'providers.d/oci/oci_provider.sh').exists()
-assert list((root / 'classes').glob('CLOUD_OCI*.env'))
+for name in ['oci', 'ibm']:
+    fam = families[name]
+    assert fam['status'] == 'high_standard_reference', name
+    if name == 'ibm':
+        assert fam['provider_dir'] == 'ibm'
+        assert fam['policy_dir'] == 'ibm'
+        assert fam['fixture_dir'] == 'ibm'
+        assert fam['doc_prefix'] == 'IBM'
+    provider_dir = fam.get('provider_dir')
+    policy_dir = fam.get('policy_dir')
+    fixture_dir = fam.get('fixture_dir')
+    doc_prefix = fam.get('doc_prefix')
+    if provider_dir:
+        assert (root / 'providers.d' / provider_dir).is_dir(), name
+        assert any((root / 'providers.d' / provider_dir).glob('*.sh')), name
+    if policy_dir:
+        assert (root / 'policies.d' / policy_dir).is_dir(), name
+    if fixture_dir:
+        assert (root / 'tests' / 'fixtures' / fixture_dir).is_dir(), name
+    if doc_prefix:
+        for suffix in ['PROVIDER_CONTRACTS.md','CLASS_CRITERIA.md','EXPLAINABILITY.md','LEGAL_COMPLIANCE.md']:
+            assert (root / 'docs' / f'{doc_prefix}_{suffix}').exists(), (name, suffix)
+    assert list((root / 'classes').glob(f"{fam['class_prefix']}*.env")), name
 assert (root / 'docs/IBM_CLOUD_GOVERNANCE.md').exists()
-assert list((root / 'classes').glob('CLOUD_IBM*.env'))
 # Keep consistency docs honest.
 doc = (root / 'docs/PROVIDER_FAMILY_CONSISTENCY.md').read_text(encoding='utf-8')
 assert 'Provider-family presence is not the same as first-tier parity' in doc or 'Provider/platform entries should use' in doc

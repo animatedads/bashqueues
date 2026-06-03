@@ -1,0 +1,26 @@
+{
+  "schema": "queuebash.container_registry.policy.v1",
+  "policy_id": "container-registry-fixture-default",
+  "default_decision": "deny",
+  "fixture_first": true,
+  "live_api_default": false,
+  "credentials_required_for_default_tests": false,
+  "provisioning_default": false,
+  "rules": [
+    {
+      "name": "allow_fixture_image_facts",
+      "operation": "container_registry.image.read",
+      "decision": "allow",
+      "conditions": {
+        "source": "fixture",
+        "mutated": false
+      }
+    },
+    {
+      "name": "deny_registry_mutation",
+      "operation": "container_registry.image.write_or_delete",
+      "decision": "deny",
+      "reason": "Bob14 container registry facts must not pull, push, delete, or create repositories."
+    }
+  ]
+}

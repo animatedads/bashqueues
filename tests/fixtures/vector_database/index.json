@@ -1,0 +1,15 @@
+{
+  "decision": "allow",
+  "dimensions": 384,
+  "encrypted_at_rest": true,
+  "fail_closed": true,
+  "index_type": "hnsw_fixture",
+  "last_built_at": "2026-06-03T00:00:00Z",
+  "metric": "cosine",
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "vector_database",
+  "replicas": 0,
+  "schema": "queuebash.vector_database.index.v1",
+  "validation_status": "fixture_validated"
+}

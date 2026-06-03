@@ -1,0 +1,14 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "package": "0.18.80_BOB10_queue_cloud_broker_front",
+  "base": "0.18.78_BOB_MERGER13_embedded_api_ai_broker_contract_merge_full_delivery",
+  "type": "patchset",
+  "summary": "Adds unified queue cloud broker front over cloud_resource, cloud_provision, cloud_infra, and cloud_signals, plus non-mutating broker explain helper.",
+  "boundaries": [
+    "no live cloud API discovery",
+    "no provisioning/destruction",
+    "no queue dispatch refactor",
+    "no job lifecycle binding",
+    "broker front wraps existing provider helpers"
+  ]
+}

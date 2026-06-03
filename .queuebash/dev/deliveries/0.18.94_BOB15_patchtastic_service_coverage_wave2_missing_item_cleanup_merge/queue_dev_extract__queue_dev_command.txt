@@ -1,0 +1,33 @@
+_queue_dev_command() {
+    local sub="${1:-}"
+    shift || true
+    case "$sub" in
+        functions|list) _queue_dev_functions "$@" ;;
+        locate) _queue_dev_locate "$@" ;;
+        extract) _queue_dev_extract "$@" ;;
+        scope) _queue_dev_scope "$@" ;;
+        patch) _queue_dev_patch "$@" ;;
+        comment) _queue_dev_comment "$@" ;;
+        diff) _queue_dev_diff "$@" ;;
+        strip|rollback) _queue_dev_strip "$@" ;;
+        symbols) _queue_dev_symbols "$@" ;;
+        flow|graph|paths) _queue_dev_flow "$@" ;;
+        splice) _queue_dev_splice "$@" ;;
+        test) _queue_dev_test_command "$@" ;;
+        scratchpad) _queue_dev_scratchpad_command "$@" ;;
+        ai|llm-session|ai-session) local helper; helper="$(_queue_profile_helper_path queue-dev-ai)" || { echo "queue dev ai: helper not found: queue-dev-ai" >&2; return 1; }; QUEUEBASH_ROOT="$(_queue_root)" QUEUEBASH_DEV_SCRATCHPAD="$(_queue_dev_scratchpad_path)" QUEUEBASH_VERSION="${QUEUEBASH_VERSION:-}" QUEUEBASH_SCRIPT_PATH="${BASH_SOURCE[0]}" "$helper" "$@" ;;
+        resource|resources) _queue_dev_resource_command "$@" ;;
+        attempt) _queue_dev_attempt_command "$@" ;;
+        evidence) _queue_dev_evidence_command "$@" ;;
+        context) _queue_dev_context_command "$@" ;;
+        think) _queue_dev_think_command "$@" ;;
+        handover) _queue_dev_handover_command "$@" ;;
+        files|file-registry|registry) _queue_dev_file_registry_command "$@" ;;
+        patchset) _queue_dev_patchset_command "$@" ;;
+        merge-plan|mergeplan) _queue_dev_merge_plan_command "$@" ;;
+        validate) _queue_dev_validate_command "$@" ;;
+        scope-check|scopecheck) _queue_dev_scope_check_command "$@" ;;
+        help|--help|-h|"") _queue_dev_usage ;;
+        *) echo "queue dev: unknown subcommand: $sub" >&2; _queue_dev_usage >&2; return 2 ;;
+    esac
+}

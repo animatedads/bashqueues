@@ -1,0 +1,8 @@
+{
+  "catalog_is_authoritative": false,
+  "data_residency_required": true,
+  "export_control_review_required": true,
+  "provider_family": "data_lake",
+  "sample_access_default": false,
+  "schema": "queuebash.data_lake.dataset_governance.v1"
+}

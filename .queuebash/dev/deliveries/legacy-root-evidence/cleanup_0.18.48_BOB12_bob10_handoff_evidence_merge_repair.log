@@ -1,0 +1,5 @@
+CLEANUP 0.18.48
+Sat May 30 09:12:50 UTC 2026
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no __pycache__ / .pyc / .pyo / .pytest_cache / lock/devpatch/backup files

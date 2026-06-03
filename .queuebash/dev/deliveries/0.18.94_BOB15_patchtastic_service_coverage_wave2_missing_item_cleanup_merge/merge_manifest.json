@@ -1,0 +1,18 @@
+{
+  "schema": "queuebash.delivery.merge_manifest.v1",
+  "version": "0.18.94",
+  "delivery_id": "0.18.94_BOB15_patchtastic_service_coverage_wave2_missing_item_cleanup_merge",
+  "base": "bashqueues_0.18.93_BOB15_queue_dev_ai_dogfood_reconciliation_full_delivery.zip",
+  "inputs": [
+    "bashqueues_0.18.94_BOB14_service_coverage_vector_database_data_lake_patchset.zip",
+    "bashqueues_0.18.94_BOB12_missing_item_suite_cleanup.patchset.zip"
+  ],
+  "strategy": "queue-dev-ai dogfooded merge-plan, canonical patchset apply with backups, scratchpad item-level merge, Bob15 release normalization",
+  "boundaries": [
+    "fixture-first normalized JSON",
+    "no live credentials",
+    "no provisioning",
+    "no queue dispatch refactor",
+    "assets.d/net_usage.sh remains absent"
+  ]
+}

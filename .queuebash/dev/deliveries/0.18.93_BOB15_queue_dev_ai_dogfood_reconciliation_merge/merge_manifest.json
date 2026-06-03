@@ -1,0 +1,17 @@
+{
+  "schema": "queuebash.delivery.merge_manifest.v1",
+  "version": "0.18.93",
+  "delivery_id": "0.18.93_BOB15_queue_dev_ai_dogfood_reconciliation_merge",
+  "base": "bashqueues_0.18.92_BOB15_external_signed_display_resources_full_delivery.zip",
+  "inputs": [
+    "bashqueues_0.18.93_BOB14_queue_dev_ai_dogfood_reconciliation_patchset.zip"
+  ],
+  "strategy": "queue dev merge-plan plus canonical patchset apply with backup, Bob15 release identity normalization, queue-dev-ai dogfood lessons recorded",
+  "queue_dev_ai_session": "AIS-20260603-125228-445947-8498-Bob15",
+  "boundaries": [
+    "not an AI provider",
+    "not an authority source",
+    "does not bypass ACLs",
+    "recursive/mutating ai commands blocked inside try"
+  ]
+}

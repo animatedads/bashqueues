@@ -1,0 +1,46 @@
+RUN bash -n queuebash.sh
+PASS bash -n queuebash.sh
+RUN bash -n qbtest_installer.sh
+PASS bash -n qbtest_installer.sh
+RUN bash -n providers.d/model_registry/model_registry_provider.sh providers.d/container_registry/container_registry_provider.sh
+PASS bash -n providers.d/model_registry/model_registry_provider.sh providers.d/container_registry/container_registry_provider.sh
+RUN python3 -m py_compile tests/container_registry_provider_json_contract_static.py tests/model_registry_provider_json_contract_static.py tests/provider_service_coverage_bob14_static.py bin/queue-dev-merge-plan.py
+PASS python3 -m py_compile tests/container_registry_provider_json_contract_static.py tests/model_registry_provider_json_contract_static.py tests/provider_service_coverage_bob14_static.py bin/queue-dev-merge-plan.py
+RUN bash tests/container_registry_provider_contracts_static.sh
+PASS container_registry_provider_contracts_static
+PASS bash tests/container_registry_provider_contracts_static.sh
+RUN bash tests/container_registry_provider_fixture_smoke.sh
+PASS container_registry_provider_fixture_smoke
+PASS bash tests/container_registry_provider_fixture_smoke.sh
+RUN python3 tests/container_registry_provider_json_contract_static.py
+PASS container_registry_provider_json_contract_static
+PASS python3 tests/container_registry_provider_json_contract_static.py
+RUN bash tests/model_registry_provider_contracts_static.sh
+PASS model_registry_provider_contracts_static
+PASS bash tests/model_registry_provider_contracts_static.sh
+RUN bash tests/model_registry_provider_fixture_smoke.sh
+PASS model_registry_provider_fixture_smoke
+PASS bash tests/model_registry_provider_fixture_smoke.sh
+RUN python3 tests/model_registry_provider_json_contract_static.py
+PASS model_registry_provider_json_contract_static
+PASS python3 tests/model_registry_provider_json_contract_static.py
+RUN python3 tests/provider_service_coverage_bob14_static.py
+PASS provider_service_coverage_bob14_static
+PASS python3 tests/provider_service_coverage_bob14_static.py
+RUN bash tests/provider_family_continuity_bob14_static.sh
+PASS provider_family_continuity_bob14_static
+PASS bash tests/provider_family_continuity_bob14_static.sh
+RUN python3 tests/provider_family_consistency_json_contract_static.py
+PASS provider_family_consistency_json_contract_static
+PASS python3 tests/provider_family_consistency_json_contract_static.py
+RUN bash tests/queue_command_contract_static.sh
+queue command contract static checks passed
+PASS bash tests/queue_command_contract_static.sh
+RUN timeout 45 bash tests/queue_command_json_smoke.sh
+queue command JSON smoke checks passed
+PASS timeout 45 bash tests/queue_command_json_smoke.sh
+PASS queue dev functions located _queue_dev_merge_plan_command
+PASS queue dev extract _queue_dev_merge_plan_command
+PASS queue dev scratchpad list --json with QUEUEBASH_ROOT pointed at delivery scratchpad
+PASS queue dev test qbtest --file queuebash.sh --list --json produced valid queuebash.dev_qbtest_result.v1 JSON under bounded timeout; zero embedded QBTEST blocks listed in current core
+PASS queue dev merge-plan --json: 33 entries, 0 collisions, 30 auto_apply_safe_steps, 3 manual_review_steps

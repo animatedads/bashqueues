@@ -1,0 +1,6 @@
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+FAIL cleanup patterns absent
+BAD tests/__pycache__
+BAD tests/__pycache__/cloud_broker_front_json_contract_static.cpython-313.pyc
+BAD tests/__pycache__/cloud_broker_policy_references_static.cpython-313.pyc

@@ -1,0 +1,282 @@
+{
+  "backup_dir": ".queuebash/dev/deliveries/tmp_bob14_backup/20260603T134106Z_bashqueues_0.18.94_BOB14_service_coverage_vector_database_data_lake_patchset",
+  "created_at": "2026-06-03T13:41:06.074746+00:00",
+  "entries": [
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": ".queuebash/dev/ai_lessons.d/AIL-20260603-130943-099535-6304.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": ".queuebash/dev/ai_lessons.d/AIL-20260603-131643-557316-1265.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": ".queuebash/dev/ai_lessons.d/AIL-20260603-131835-454092-8922.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": ".queuebash/dev/ai_lessons.d/AIL-20260603-132407-066595-4175.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": ".queuebash/dev/ai_lessons.d/AIL-20260603-132558-718940-2987.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "merge_scratchpad",
+      "backup_path": "files/.queuebash/dev/scratchpad.json",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "cff1bb552f3066f1d744e6965ea91289",
+      "old_size": 248682,
+      "relpath": ".queuebash/dev/scratchpad.json"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/CHANGELOG.md",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "906951c5d7fdb531d562228cb1b41d1c",
+      "old_size": 181421,
+      "relpath": "CHANGELOG.md"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/README.md",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "84ab8849c85234399b9cb35e5ac63766",
+      "old_size": 150852,
+      "relpath": "README.md"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "docs/DATA_LAKE_EXPLAINABILITY.md",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "docs/DATA_LAKE_LEGAL_COMPLIANCE.md",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "docs/DATA_LAKE_PROVIDER_CONTRACTS.md",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "docs/VECTOR_DATABASE_EXPLAINABILITY.md",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "docs/VECTOR_DATABASE_LEGAL_COMPLIANCE.md",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "docs/VECTOR_DATABASE_PROVIDER_CONTRACTS.md",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "policies.d/data_lake/dataset-governance.example.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "policies.d/data_lake/default-policy.example.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/policies.d/service-coverage/provider-service-coverage.json",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "68e13c9c443044c5f9fba9336d84586b",
+      "old_size": 1759,
+      "relpath": "policies.d/service-coverage/provider-service-coverage.json"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "policies.d/vector_database/default-policy.example.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "policies.d/vector_database/embedding-governance.example.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "providers.d/data_lake/data_lake_provider.sh",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "providers.d/vector_database/vector_database_provider.sh",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/data_lake_provider_contracts_static.sh",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/data_lake_provider_fixture_smoke.sh",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/data_lake_provider_json_contract_static.py",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/fixtures/data_lake/catalog.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/fixtures/data_lake/dataset.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/fixtures/data_lake/detect.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/fixtures/data_lake/governance.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/fixtures/data_lake/retention.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/fixtures/vector_database/collection.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/fixtures/vector_database/detect.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/fixtures/vector_database/embedding-policy.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/fixtures/vector_database/index.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/fixtures/vector_database/retention.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/provider_service_coverage_wave2_bob14_static.py",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/vector_database_provider_contracts_static.sh",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/vector_database_provider_fixture_smoke.sh",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "add_file",
+      "existed": false,
+      "relpath": "tests/vector_database_provider_json_contract_static.py",
+      "rollback": "delete_created_file"
+    }
+  ],
+  "schema": "queuebash.dev_patchset.backup_manifest.v1",
+  "target": "/mnt/data/bqmerge94/base"
+}

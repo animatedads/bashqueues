@@ -1,0 +1,16 @@
+{
+  "agent": "Bob15",
+  "authority": "coding_agent",
+  "base": "",
+  "lesson_count_at_start": 12,
+  "next": "",
+  "role": "merger",
+  "schema": "queuebash.dev_ai.session.v1",
+  "session_id": "AIS-20260603-125228-445947-8498-Bob15",
+  "started_at": "2026-06-03T12:52:28Z",
+  "status": "done",
+  "stopped_at": "2026-06-03T12:59:35Z",
+  "summary": "Bob15 0.18.93 merge validation complete",
+  "tags": [],
+  "task": "0.18.93 dogfood reconciliation validation"
+}

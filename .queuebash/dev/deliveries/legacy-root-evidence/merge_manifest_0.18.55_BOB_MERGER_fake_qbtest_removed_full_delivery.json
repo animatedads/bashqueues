@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.bob_merger.repair.v1",
+  "version": "0.18.55",
+  "package": "bashqueues_0.18.55_BOB_MERGER_fake_qbtest_removed_full_delivery.zip",
+  "base": "bashqueues_0.18.55_BOB_MERGER_eu_apac_qbtest_deepseek_full_delivery.zip",
+  "change": "remove legacy malformed QBTEST placeholder from help text and docs",
+  "runtime_semantics_changed": false,
+  "created_utc": "2026-05-30T12:35:53Z"
+}

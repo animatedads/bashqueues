@@ -1,0 +1,8 @@
+{
+  "schema": "queuebash.delivery.merge_manifest.v1",
+  "version": "0.18.92",
+  "base": "bashqueues_0.18.91_BOB15_queue_dev_ai_session_lessons_full_delivery.zip",
+  "inputs": ["bashqueues_0.18.92_BOB12_external_signed_display_resources.patchset.zip"],
+  "strategy": "canonical patchset apply with backup enabled, queue-dev merge-plan, and queue-dev-ai session lesson recording",
+  "boundary": "external signed display resources are presentation data only; no JSON contract replacement, no shell evaluation, no dispatch/provider/provisioning authority"
+}

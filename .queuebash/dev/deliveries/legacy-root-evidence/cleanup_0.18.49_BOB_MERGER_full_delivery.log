@@ -1,0 +1,11 @@
+=== cleanup check ===
+pwd:
+/mnt/data/bob_merger_work/merged
+unexpected pycache:
+unexpected pyc/tmp/bak:
+assets.d net_usage should be absent:
+version:
+QUEUEBASH_VERSION="0.18.49"
+scratchpad item count:
+176
+0.18.49 Bob2 static version-pin cleanup + Bob10 cloud provisioning approval/live-gate contract

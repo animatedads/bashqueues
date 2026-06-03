@@ -1,0 +1,6 @@
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no __pycache__ / .pytest_cache
+PASS no .pyc / .pyo
+PASS no lock/devpatch/reject/orig/merge debris
+PASS generated patchset-backups removed before packaging

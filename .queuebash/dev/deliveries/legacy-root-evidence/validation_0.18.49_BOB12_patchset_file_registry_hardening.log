@@ -1,0 +1,18 @@
+0.18.49 BOB12 patchset file-registry hardening validation
+
+PASS bash -n queuebash.sh
+PASS bash -n tests/dev_patchset_hardening_static.sh
+PASS bash -n tests/dev_patchset_hardening_smoke.sh
+PASS tests/dev_patchset_hardening_static.sh
+PASS tests/dev_patchset_hardening_smoke.sh
+PASS tests/dev_file_registry_static.sh
+PASS tests/dev_file_registry_json_contract_static.py
+PASS tests/dev_file_registry_scan_smoke.sh
+PASS tests/dev_patchset_new_file_smoke.sh
+PASS tests/queue_dev_contract_static.sh
+PASS tests/queue_dev_json_contract_static.py
+PASS tests/ask_openai_provider_static.sh
+PASS tests/ask_anthropic_provider_static.sh
+PASS tests/provider_primary_source_validation_static.sh
+PASS tests/provider_family_consistency_static.sh
+PASS tests/provider_explainability_standard_static.sh

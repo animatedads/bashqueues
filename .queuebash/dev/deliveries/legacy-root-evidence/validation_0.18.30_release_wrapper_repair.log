@@ -1,0 +1,57 @@
+== bash -n queuebash.sh ==
+rc=0
+== bash -n providers.d/cloud_resource/cloud_resource_provider.sh ==
+rc=0
+== bash -n assets.d/cloud_resource.sh ==
+rc=0
+== bash -n providers.d/cloud_infra/aws_ec2_stack.sh ==
+rc=0
+== bash -n providers.d/cloud_infra/azure_vm_stack.sh ==
+rc=0
+== bash -n providers.d/cloud_infra/cloud_infra.sh ==
+rc=0
+== bash -n providers.d/cloud_infra/gcp_compute_stack.sh ==
+rc=0
+== bash -n providers.d/cloud_infra/ibm_vpc_stack.sh ==
+rc=0
+== bash -n providers.d/cloud_infra/oci_free_stack.sh ==
+rc=0
+== bash -n tests/cloud_resource_provider_contract_static.sh ==
+rc=0
+== bash -n tests/cloud_resource_file_provider_smoke.sh ==
+rc=0
+== bash -n tests/cloud_infra_helpers_static.sh ==
+rc=0
+== bash -n tests/cloud_infra_helpers_smoke.sh ==
+rc=0
+== bash -n tests/dev_scratchpad_static.sh ==
+rc=0
+== bash -n tests/dev_scratchpad_smoke.sh ==
+rc=0
+== bash -n tests/remote_queue_service_provider_contract_static.sh ==
+rc=0
+== bash -n tests/oci_provider_contracts_static.sh ==
+rc=0
+== bash -n tests/oci_provider_fixture_smoke.sh ==
+rc=0
+== bash -n tests/oci_explain_static.sh ==
+rc=0
+== python3 -m py_compile tests/cloud_resource_json_contract_static.py ==
+rc=0
+== python3 -m py_compile tests/cloud_platform_parity_static.py ==
+rc=0
+== python3 -m py_compile tests/cloud_infra_json_contract_static.py ==
+rc=0
+== python3 -m py_compile tests/dev_scratchpad_json_contract_static.py ==
+rc=0
+== python3 -m py_compile tests/remote_queue_service_provider_json_contract_static.py ==
+rc=0
+== python3 -m py_compile tests/oci_provider_json_contract_static.py ==
+rc=0
+== bash tests/cloud_resource_provider_contract_static.sh ==
+[PASS] cloud resource provider contract static checks pass
+rc=0
+== python3 tests/cloud_resource_json_contract_static.py ==
+PASS cloud_resource_json_contract_static
+rc=0
+== bash tests/cloud_resource_file_provider_smoke.sh ==

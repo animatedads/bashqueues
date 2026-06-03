@@ -1,0 +1,22 @@
+{
+  "base": "bashqueues_0.18.79_BOB_MERGER13_ai_broker_runtime_merge_full_delivery.zip",
+  "boundaries": [
+    "offline helper only",
+    "no submit-path enforcement",
+    "no live API calls",
+    "no provisioning",
+    "no automatic class mutation",
+    "no dispatch refactor beyond additive wrapper"
+  ],
+  "created_at": "2026-06-02T12:13:56.513099+00:00",
+  "delivery_id": "0.18.80_BOB_MERGER13_deterministic_class_inference_contract_merge",
+  "merge_repairs": [
+    "Added missing --cwd parser option to queue-class-infer explain so explain can reuse recommend() safely."
+  ],
+  "merged": [
+    "bashqueues_0.18.80_BOB2_deterministic_class_inference_contract_patchset.zip"
+  ],
+  "schema": "queuebash.delivery_manifest.v1",
+  "summary": "Merged Bob2 deterministic class inference contract onto 0.18.79 AI broker runtime line.",
+  "version": "0.18.80"
+}

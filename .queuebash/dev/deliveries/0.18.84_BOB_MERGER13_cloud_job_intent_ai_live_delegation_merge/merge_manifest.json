@@ -1,0 +1,259 @@
+{
+  "created_at": "2026-06-02T14:29:28Z",
+  "files": [
+    {
+      "path": ".queuebash/assets.d/audit.sh",
+      "sha256": "027047a9e6ca407cdfcb00bdc006a5dfa5321c2123550ffe7725a8f3e0a9c58e",
+      "size": 3448
+    },
+    {
+      "path": ".queuebash/assets.d/aws.sh",
+      "sha256": "7364c99c3c2ef7f53062fa14e2588610038b01c2208f79dd1e1de6e744f31c7a",
+      "size": 7934
+    },
+    {
+      "path": ".queuebash/assets.d/azure.sh",
+      "sha256": "60008b713ee824a0f8685ffd39beddc80a1ba0a4b45a6f1cbfee02b11c9e4e59",
+      "size": 6504
+    },
+    {
+      "path": ".queuebash/assets.d/cloud_resource.sh",
+      "sha256": "b431501227a899d4023b901a4a872185032bc522f188461a14ca8e84159a16cb",
+      "size": 5185
+    },
+    {
+      "path": ".queuebash/assets.d/crypto.sh",
+      "sha256": "7ecd7eb0d034a8a4cf4b411936f6882b19d9e350987062eb98160eb23321ebdc",
+      "size": 3221
+    },
+    {
+      "path": ".queuebash/assets.d/db.sh",
+      "sha256": "777237c733de2b48a7f690efc5d394d8792d7aca0bb89525ff004e5f350875e9",
+      "size": 10422
+    },
+    {
+      "path": ".queuebash/assets.d/deadline.sh",
+      "sha256": "8b2bff43fd18bdc273a5743e42964941f5c3508b37dfb9a0ceedaa2476bf1d2d",
+      "size": 17673
+    },
+    {
+      "path": ".queuebash/assets.d/docker.sh",
+      "sha256": "780bcab746f8e09e0cc6ea2ef12f5a841d2f60f50ab4e585f26055bfd6a4cc2e",
+      "size": 10213
+    },
+    {
+      "path": ".queuebash/assets.d/endpoint.sh",
+      "sha256": "3b283d72919c6674b7ccf8e9501c8f93fe442075d0ed1f7476a6fd1edce87150",
+      "size": 13641
+    },
+    {
+      "path": ".queuebash/assets.d/entra.sh",
+      "sha256": "d3946c346f525e4231c8659dabf2f8e6cc8cb959c2e574b9f2b9828d4a8dc35b",
+      "size": 3508
+    },
+    {
+      "path": ".queuebash/assets.d/env.sh",
+      "sha256": "f919f81069b5b06eef3d7da39536b084bbe135a6c825600042fc7a4ecc12e15d",
+      "size": 7387
+    },
+    {
+      "path": ".queuebash/assets.d/exchange.sh",
+      "sha256": "d3558db9d5599bd427d9ee4c06be34e3b812affafc9cbdb7c9f1312ba2384320",
+      "size": 4551
+    },
+    {
+      "path": ".queuebash/assets.d/fileprofile.sh",
+      "sha256": "1003e45c7f0fa626b083cc025035aabe7135099b5362f52c8106ad8f64f6e6bf",
+      "size": 12580
+    },
+    {
+      "path": ".queuebash/assets.d/finops.sh",
+      "sha256": "53f8d9a2f0a1a744ebdfed2cc7cc64089cd9c36e51af60d56fdc0eebe02983f7",
+      "size": 6451
+    },
+    {
+      "path": ".queuebash/assets.d/format.sh",
+      "sha256": "a44eef5dc047fd9eb059284d11f42b1ed728f0cac89937ea161bb3c4473069f6",
+      "size": 6975
+    },
+    {
+      "path": ".queuebash/assets.d/gcp.sh",
+      "sha256": "221f6ab947c364ebeda65b1b994e4871154d436bdcd5a0215829fa6bbb97de7c",
+      "size": 4012
+    },
+    {
+      "path": ".queuebash/assets.d/git.sh",
+      "sha256": "6da6cf8dd5813c129118ed4ec53d2df1d27dbf1dee01d292d1be88134c348c62",
+      "size": 3396
+    },
+    {
+      "path": ".queuebash/assets.d/ibm_finops.sh",
+      "sha256": "5de71b2d9bd8567f3d7e041aa12329abc48b907bca8f7804642e984605fe368b",
+      "size": 11825
+    },
+    {
+      "path": ".queuebash/assets.d/ibm_identity.sh",
+      "sha256": "0366db8eddae7ac7a451a0134d1ce5f36062fdff122d6a12f031df33cf3a5af0",
+      "size": 5366
+    },
+    {
+      "path": ".queuebash/assets.d/integrity.sh",
+      "sha256": "360d4fdf1d7697b431bab8746f756637761078b6b0d256f40dfce070d9c70037",
+      "size": 9587
+    },
+    {
+      "path": ".queuebash/assets.d/k8s.sh",
+      "sha256": "7013c8a783f4072d1ac0be009bdef4e00ae2286d8b41a53178e575084bac34c0",
+      "size": 12619
+    },
+    {
+      "path": ".queuebash/assets.d/legal.sh",
+      "sha256": "cac7df0fb1cd5d40111bb044cdeaf1a5318ce743e7249fd94ac773fbc7d3d8da",
+      "size": 8811
+    },
+    {
+      "path": ".queuebash/assets.d/lxc.sh",
+      "sha256": "a3a22115b9702738b28ea0c2c9482985aebbad8c788836cac004d980de9eed24",
+      "size": 6052
+    },
+    {
+      "path": ".queuebash/assets.d/msad.sh",
+      "sha256": "472e0f017dfd87ab6744582ed05bea21e9684b61014ddf9ff274085cfe973bdc",
+      "size": 4230
+    },
+    {
+      "path": ".queuebash/assets.d/msca.sh",
+      "sha256": "5ac8bb031c9899b35602fef121faf531490bc7ea43a47ef598098f2422c6262a",
+      "size": 2282
+    },
+    {
+      "path": ".queuebash/assets.d/mscloud.sh",
+      "sha256": "33242bd58abc79646113769d79868ef83c6808b31301169b368c6668e059171d",
+      "size": 3907
+    },
+    {
+      "path": ".queuebash/assets.d/msdns.sh",
+      "sha256": "b4b0e4b7dd2ab975fc434d091ced786c35dfedad2c0f0a679e4fd0dcb98e7290",
+      "size": 1637
+    },
+    {
+      "path": ".queuebash/assets.d/msfs.sh",
+      "sha256": "b3e9e95df63dbb13b7c0ab8315467806aa5bd6e0022a0a122c147ac576e3f3a5",
+      "size": 2973
+    },
+    {
+      "path": ".queuebash/assets.d/net.sh",
+      "sha256": "c074981fc59855655430a04c252f3b975a518ff9a662b66937bb651c570e67a1",
+      "size": 12934
+    },
+    {
+      "path": ".queuebash/assets.d/netprofile.sh",
+      "sha256": "cd0fc1cd3b42cf9c850875be9387603eddc0e263e12aa4154e844da240516244",
+      "size": 12874
+    },
+    {
+      "path": ".queuebash/assets.d/path.sh",
+      "sha256": "ac0575c85d8c3b8a44854c01973055c7427a31f48196fae3f145bd95ce2c384d",
+      "size": 3056
+    },
+    {
+      "path": ".queuebash/assets.d/proc.sh",
+      "sha256": "2ce0d7737494468aa9aa6cd5bbb002ee3e4bfb158c0b79d747fd28bc9e535cc7",
+      "size": 9402
+    },
+    {
+      "path": ".queuebash/assets.d/queue.sh",
+      "sha256": "57bb4dedb2b4141b1d6fea968b0c68cf63dd4f542059136c8402b4eca60ffbbf",
+      "size": 7810
+    },
+    {
+      "path": ".queuebash/assets.d/runnable.sh",
+      "sha256": "2716c61933fd00627f8a85461ab0aa7dbd44595fa15154c388fc4e77107d59f9",
+      "size": 12088
+    },
+    {
+      "path": ".queuebash/assets.d/secaudit.sh",
+      "sha256": "f8af80dc431ccd07a42a8285de56ff90f928dad5d0350d83ae02775783ba3ac3",
+      "size": 8646
+    },
+    {
+      "path": ".queuebash/assets.d/secprofile.sh",
+      "sha256": "787551da351def23a2c806bde2553f51ce0ab9e44e8f9b5f3d7c3b8f4bd03cfa",
+      "size": 12886
+    },
+    {
+      "path": ".queuebash/assets.d/snmp.sh",
+      "sha256": "eb1d90c3133ced369a13e58888bcd072869f85bb5ddacdd864851cd0e314352d",
+      "size": 12037
+    },
+    {
+      "path": ".queuebash/assets.d/sovereign.sh",
+      "sha256": "98a94f752c1c7838d4b71716d3d0ddfa57689f274b9d931d1ae24ec5f2aec6d7",
+      "size": 4843
+    },
+    {
+      "path": ".queuebash/assets.d/sys.sh",
+      "sha256": "56c327a335d8575d8541d7b7c5782132b84ef679a3f623a8134506ed8a3e26d5",
+      "size": 7408
+    },
+    {
+      "path": ".queuebash/assets.d/teams.sh",
+      "sha256": "2ed6e16aa39b82b9de73454b8b52e24d8c0e33fc099ebcaabcab08f39625ed69",
+      "size": 3727
+    },
+    {
+      "path": ".queuebash/assets.d/time.sh",
+      "sha256": "82f9c2e34ee643b0689434df73bc6722e38f82a7509368e3561a8039206d1db2",
+      "size": 6093
+    },
+    {
+      "path": ".queuebash/assets.d/vagrant.sh",
+      "sha256": "0f1d6b06b72941cf999bd5d496caf4d06858b5dc457b81a6a261ee824da99319",
+      "size": 3961
+    },
+    {
+      "path": ".queuebash/assets.d/vault.sh",
+      "sha256": "fba61c9bebc5e0c7790f93cc5b9fbda8db2b353c7d8b5427774477feb57d908c",
+      "size": 3921
+    },
+    {
+      "path": ".queuebash/assets.d/vm.sh",
+      "sha256": "c1ebe4d566bec229992477ca2856215a3936602e8fcd46eb97949c08de11ecc6",
+      "size": 8671
+    },
+    {
+      "path": ".queuebash/assets.d/vsphere.sh",
+      "sha256": "b6cc2d50718aa47d8f843a9bc3eac5b543ba56735dd72a868889019026f356dc",
+      "size": 7630
+    },
+    {
+      "path": ".queuebash/assets.d/winrm.sh",
+      "sha256": "9b5addf4d2d17dc96237e89ba698470c5f647895c5b1713c5b915f0024755693",
+      "size": 3660
+    },
+    {
+      "path": ".queuebash/caps.d/billing.sh",
+      "sha256": "43cd42c12be8740935fb046eda5b078d9015d8810c7b6ff5ceb3904645ffc5d1",
+      "size": 831
+    },
+    {
+      "path": ".queuebash/caps.d/net_usage.sh",
+      "sha256": "27aa4aa9000cc427328c89c28451e70d9f7cd4f6fc8fa122579235d3adeeb9e6",
+      "size": 229
+    },
+    {
+      "path": ".queuebash/caps.d/runtime.sh",
+      "sha256": "7d9f9c459a7007775dd2b4276037615111a4bdf399aeecfd5b6af057903810e7",
+      "size": 2535
+    },
+    {
+      "path": ".queuebash/classes/ALERT_NOTIFICATION.env",
+      "sha256": "83d4d627916e055cef298250e6edc0969d234ba002cb0c8e13710ee73663f7e1",
+      "size": 1286
+    }
+  ],
+  "files_count": 1937,
+  "name": "0.18.84_BOB_MERGER13_cloud_job_intent_ai_live_delegation_merge",
+  "schema": "queuebash.delivery_manifest.v1",
+  "version": "0.18.84"
+}

@@ -1,0 +1,17 @@
+{
+  "schema": "queuebash.dev_ai.session_start.v1",
+  "status": "ok",
+  "session_id": "AIS-20260603-120000-000000-1234-bob14",
+  "agent": "bob14",
+  "role": "provider-family",
+  "task": "Review provider contracts",
+  "base": "0.18.88",
+  "started_at": "2026-06-03T12:00:00Z",
+  "paths": {
+    "session": ".queuebash/dev/ai_sessions/AIS-.../session.json",
+    "tries": ".queuebash/dev/ai_sessions/AIS-.../tries.jsonl",
+    "lessons": ".queuebash/dev/ai_sessions/AIS-.../lessons.jsonl",
+    "global_lessons_dir": ".queuebash/dev/ai_lessons.d"
+  },
+  "loaded_lessons": 0
+}

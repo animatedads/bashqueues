@@ -1,0 +1,3 @@
+cleanup: no __pycache__, .pyc, .pyo, .pytest_cache, lock/devpatch/reject/orig debris retained.
+root delivery evidence absent; delivery records are under .queuebash/dev/deliveries/0.18.89_BOB15_service_coverage_model_container_registry_merge/.
+assets.d/net_usage.sh absent; caps.d/net_usage.sh, if present, is permitted by standing constraint.

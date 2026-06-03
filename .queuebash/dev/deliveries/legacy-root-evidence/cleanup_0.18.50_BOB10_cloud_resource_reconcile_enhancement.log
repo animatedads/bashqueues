@@ -1,0 +1,6 @@
+0.18.50 BOB10 cleanup
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no __pycache__
+PASS cleanup patterns absent
+PASS scratchpad JSON valid

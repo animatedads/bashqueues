@@ -1,0 +1,30 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "package": "bashqueues_0.18.30_cloud_resource_provider_contract",
+  "base": "bashqueues_0.18.28_remote_queue_service_provider_contract_oci_platform_merged.zip",
+  "rolled_in_input": "bashqueues_0.18.28_remote_queue_service_provider_contract_oci_platform_cloud_infra_helpers.zip",
+  "scope": "Bob10 cloud resource provider contract with Bob2 cloud infrastructure helpers as adjacent lifecycle layer",
+  "boundaries": [
+    "no queue dispatch refactor",
+    "no live cloud mutation in cloud_resource provider",
+    "no cloud infrastructure helpers as scheduler logic",
+    "remote queue service remains Bob9 scope"
+  ],
+  "added": [
+    "docs/CLOUD_RESOURCE_PROVIDER.md",
+    "docs/CLOUD_PLATFORM_PARITY.md",
+    "providers.d/cloud_resource/cloud_resource_provider.sh",
+    "assets.d/cloud_resource.sh",
+    "policies.d/cloud-resource/platform-parity.json",
+    "examples/providers/cloud-resource-file.env.example",
+    "examples/cloud-resource/oci-vm-gdpr.example.json",
+    "classes/CLOUD_RESOURCE_GDPR.env",
+    "tests/cloud_resource_provider_contract_static.sh",
+    "tests/cloud_resource_json_contract_static.py",
+    "tests/cloud_resource_file_provider_smoke.sh",
+    "tests/cloud_platform_parity_static.py",
+    "providers.d/cloud_infra/*.sh",
+    "docs/CLOUD_INFRASTRUCTURE_HELPERS.md",
+    "tests/cloud_infra_*"
+  ]
+}

@@ -1,0 +1,8 @@
+0.18.89 BOB13 queue command JSON contract wave 3 validation
+PASS bash -n queuebash.sh
+PASS bash -n tests/queue_command_json_wave3_smoke.sh
+PASS tests/queue_command_contract_static.sh
+PASS tests/queue_command_json_smoke.sh
+PASS tests/queue_command_json_wave3_smoke.sh
+PASS queue dev test qbtest --file queuebash.sh --function _queue_now
+NOTE combined validation pipeline timed out once in sandbox; focused commands were rerun individually and passed.

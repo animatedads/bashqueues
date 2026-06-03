@@ -1,0 +1,13 @@
+_queue_dev_merge_plan_command () 
+{ 
+    local helper;
+    helper="$(_queue_bundled_file "bin/queue-dev-merge-plan.py" 2> /dev/null || true)";
+    if [[ -z "$helper" || ! -f "$helper" ]]; then
+        helper="$(dirname "${BASH_SOURCE[0]}")/bin/queue-dev-merge-plan.py";
+    fi;
+    [[ -f "$helper" ]] || { 
+        echo "queue dev merge-plan: helper not found: $helper" 1>&2;
+        return 1
+    };
+    "${QUEUEBASH_PYTHON:-/usr/bin/python3}" "$helper" "$@"
+}

@@ -1,0 +1,22 @@
+== bash tests/dev_scratchpad_smoke.sh ==
+PASS dev_scratchpad_smoke
+rc=0
+== bash tests/remote_queue_service_provider_contract_static.sh ==
+[PASS] remote queue service provider contract static checks pass
+rc=0
+== python3 tests/remote_queue_service_provider_json_contract_static.py ==
+[PASS] remote queue service provider JSON examples parse and validate
+rc=0
+== bash tests/oci_provider_contracts_static.sh ==
+PASS oci_provider_contracts_static
+rc=0
+== bash tests/oci_provider_fixture_smoke.sh ==
+PASS oci fixture json
+PASS oci_provider_fixture_smoke
+rc=0
+== python3 tests/oci_provider_json_contract_static.py ==
+PASS oci_provider_json_contract_static
+rc=0
+== bash tests/oci_explain_static.sh ==
+PASS oci_explain_static
+rc=0

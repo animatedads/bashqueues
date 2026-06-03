@@ -1,0 +1,17 @@
+{
+  "base": "bashqueues_0.18.66_BOB_MERGER_perplexity_provider_full_delivery.zip",
+  "cleanup_log": "cleanup_0.18.67_BOB_MERGER_provider_parity_report_full_delivery.log",
+  "delivery": "bashqueues_0.18.67_BOB_MERGER_provider_parity_report_full_delivery.zip",
+  "merged_patchsets": [
+    "bashqueues_0.18.66_BOB2_provider_parity_report_patchset.zip"
+  ],
+  "notes": [
+    "Folded Bob2 provider parity report onto current merger line.",
+    "Provider parity report is offline/non-mutating and performs no live cloud API calls.",
+    "Version bumped to 0.18.67 because this delivery adds provider governance helper surface.",
+    "Preserved 0.18.66 Perplexity provider and 0.18.65 QBTEST coverage."
+  ],
+  "schema": "queuebash.bob_merger.full_delivery.v1",
+  "validation_log": "validation_0.18.67_BOB_MERGER_provider_parity_report_full_delivery.log",
+  "version": "0.18.67"
+}

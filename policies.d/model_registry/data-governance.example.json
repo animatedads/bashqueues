@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.model_registry.data_governance.v1",
+  "policy_id": "model-registry-data-governance-fixture",
+  "regulated_data_requires_review": true,
+  "allowed_default_data_classes": ["public", "internal-test"],
+  "denied_default_data_classes": ["secret", "regulated-live"],
+  "audit_events": ["model_catalog_fact_read", "model_governance_fact_read"],
+  "export_control_note": "Fixture-only facts do not imply live export-control approval."
+}

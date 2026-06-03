@@ -1,0 +1,20 @@
+0.18.78 BOB_MERGER13 embedded API and AI broker contract merge validation
+
+PASS grep ^QUEUEBASH_VERSION queuebash.sh -> QUEUEBASH_VERSION="0.18.78"
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS bash tests/queue_ai_broker_contract_static.sh
+PASS python3 -m py_compile tests/queue_ai_broker_json_contract_static.py
+PASS python3 tests/queue_ai_broker_json_contract_static.py
+PASS bash tests/queue_ai_job_usage_static.sh
+PASS bash tests/queue_api_protocol_static.sh
+PASS bash tests/queue_api_scope_static.sh
+PASS python3 -m py_compile tests/queue_api_protocol_json_contract_static.py
+PASS python3 tests/queue_api_protocol_json_contract_static.py
+PASS bash tests/grid_energy_provider_static.sh
+PASS bash tests/grid_energy_provider_fixture_smoke.sh
+PASS queue dev test qbtest --file queuebash.sh --function _queue_ai_usage_inventory_text --list --json
+PASS static grep: _queue_ai_command_inventory_text and queue remote add / queue assets show inventory material preserved from 0.18.76
+NOTE focused QBTEST execution for _queue_ai_command_inventory_text timed out in this sandbox; this was an inherited 0.18.76 rough edge and is not touched by the broker-contract merge.
+PASS cleanup: assets.d/net_usage.sh absent
+PASS cleanup: no __pycache__ or .pyc retained in delivery tree

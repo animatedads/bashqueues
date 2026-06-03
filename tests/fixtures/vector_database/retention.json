@@ -1,0 +1,13 @@
+{
+  "backup_scope": "metadata_fixture",
+  "decision": "allow",
+  "delete_mode": "fixture_evidence_only",
+  "fail_closed": true,
+  "legal_hold_supported": "advisory_fact_only",
+  "mutated": false,
+  "mutation_supported": false,
+  "provider": "fixture",
+  "provider_family": "vector_database",
+  "retention_days": 30,
+  "schema": "queuebash.vector_database.retention.v1"
+}

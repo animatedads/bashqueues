@@ -1,0 +1,8 @@
+RUN tests/display_resource_contract_static.sh
+PASS display_resource_contract_static
+RUN tests/display_resource_no_shell_eval_static.sh
+PASS display_resource_no_shell_eval_static
+RUN tests/queue_command_contract_static.sh
+queue command contract static checks passed
+RUN tests/queue_command_json_smoke.sh
+queue command JSON smoke checks passed

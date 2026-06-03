@@ -1,0 +1,22 @@
+{
+  "base": "bashqueues_0.18.56_BOB_MERGER_groq_status_enum_full_delivery.zip",
+  "cleanup_expected_clean": true,
+  "delivery": "bashqueues_0.18.58_BOB_MERGER_remote_admin_acl_gated_policy_commands_full_delivery.zip",
+  "merged_patchsets": [
+    "bashqueues_0.18.57_BOB2_scratchpad_required_fields_guard_patchset.zip",
+    "bashqueues_0.18.57_BOB11_ask_cerebras_live_provider_pack_patchset.zip",
+    "bashqueues_0.18.57_BOB10_gpu_cloud_provisioning_template_parity.patchset.zip",
+    "bashqueues_0.18.57_BOB12_dev_validate_scope_gates.patchset.zip",
+    "bashqueues_0.18.58_BOB10_remote_admin_acl_gated_policy_commands_contract.patchset.zip"
+  ],
+  "queuebash_version": "0.18.58",
+  "route": [
+    "source queuebash.sh",
+    "queue dev patchset inspect --json",
+    "apply_patchset.sh first",
+    "manual reconciliation only after expected overlap evidence",
+    "bounded validation with bin/queue-dev-timeout"
+  ],
+  "schema": "queuebash.bob_merger.full_delivery_manifest.v1",
+  "version": "0.18.58"
+}

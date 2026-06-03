@@ -1,0 +1,13 @@
+{
+  "archive_tier": "metadata_only_fixture",
+  "decision": "allow",
+  "fail_closed": true,
+  "legal_hold_status": "not_asserted_by_fixture",
+  "mutated": false,
+  "mutation_supported": false,
+  "provider": "fixture",
+  "provider_family": "data_lake",
+  "purge_action_supported": false,
+  "retention_days": 90,
+  "schema": "queuebash.data_lake.retention.v1"
+}

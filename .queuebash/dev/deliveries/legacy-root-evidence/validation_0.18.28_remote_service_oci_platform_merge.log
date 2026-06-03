@@ -1,0 +1,26 @@
+== validation 0.18.28 remote queue service + OCI platform merge ==
+2026-05-29T15:00:08Z
+version: QUEUEBASH_VERSION="0.18.28"
+--- bash syntax ---
+--- python compile ---
+--- focused tests ---
+[PASS] remote queue service provider contract static checks pass
+[PASS] remote queue service provider JSON examples parse and validate
+PASS oci_provider_contracts_static
+PASS oci fixture json
+PASS oci_provider_fixture_smoke
+PASS oci_provider_json_contract_static
+PASS oci_explain_static
+PASS dev_scratchpad_static
+== continuation validation after full-suite timeout ==
+2026-05-29T15:01:12Z
+--- bash tests/dev_scratchpad_smoke.sh ---
+PASS dev_scratchpad_smoke
+--- python3 tests/dev_scratchpad_json_contract_static.py ---
+PASS dev_scratchpad_json_contract_static
+--- bash tests/dev_remote_runner_static.sh ---
+PASS dev_remote_runner_static
+--- python3 tests/dev_remote_runner_json_contract_static.py ---
+PASS dev_remote_runner_json_contract_static
+--- python3 tests/dev_remote_runner_smoke.py ---
+PASS dev_remote_runner_smoke

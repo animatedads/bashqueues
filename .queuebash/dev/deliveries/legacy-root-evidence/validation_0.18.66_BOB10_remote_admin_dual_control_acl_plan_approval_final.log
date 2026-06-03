@@ -1,0 +1,21 @@
+0.18.66 BOB10 remote-admin dual-control ACL plan approval validation
+
+PASS bash -n queuebash.sh
+PASS bash -n providers.d/remote_admin/remote_admin_policy.sh
+PASS python3 -m py_compile providers.d/remote_admin/remote_admin_policy.py
+PASS python3 -m py_compile new/changed remote_admin Python tests
+PASS tests/remote_admin_policy_dual_control_static.sh
+PASS tests/remote_admin_policy_dual_control_smoke.sh
+PASS tests/remote_admin_policy_dual_control_json_contract_static.py
+PASS tests/remote_admin_policy_plan_apply_static.sh
+PASS tests/remote_admin_policy_plan_apply_smoke.sh
+PASS tests/remote_admin_policy_plan_apply_json_contract_static.py
+PASS tests/remote_admin_policy_commands_static.sh
+PASS tests/remote_admin_policy_commands_json_contract_static.py
+PASS tests/remote_admin_policy_commands_smoke.sh
+PASS tests/dev_qbtest_static.sh
+PASS tests/dev_qbtest_smoke.sh
+PASS tests/dev_qbtest_json_contract_static.py
+PASS queue dev test qbtest --file queuebash.sh --function _queue_now
+
+NOTE: Full queuebash.sh QBTEST suite was not repeated to completion in this sandbox after the patch because the long all-function run hit the tool timeout. The patch changes remote-admin helper/docs/tests plus QUEUEBASH_VERSION only and adds no QBTEST blocks; focused QBTEST and dev_qbtest regressions passed.

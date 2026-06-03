@@ -1,0 +1,20 @@
+0.18.49 BOB10 cloud provisioning approval/live-gate contract final validation
+PASS bash -n queuebash.sh
+PASS bash -n providers.d/cloud_provision/cloud_provision.sh
+PASS bash -n tests/cloud_provision_approval_live_gate_static.sh
+PASS bash -n tests/cloud_provision_approval_live_gate_smoke.sh
+PASS python3 -m py_compile tests/cloud_provision_approval_live_gate_json_contract_static.py
+PASS policies.d/cloud-provision/approval-policy.example.json valid JSON
+PASS .queuebash/dev/scratchpad.json valid JSON
+PASS tests/cloud_provision_approval_live_gate_static.sh
+PASS tests/cloud_provision_approval_live_gate_smoke.sh
+PASS tests/cloud_provision_approval_live_gate_json_contract_static.py
+PASS tests/cloud_provision_contract_static.sh
+PASS tests/cloud_provision_json_contract_static.py
+PASS tests/cloud_provision_dry_run_smoke.sh
+PASS tests/cloud_provision_registry_handoff_static.sh
+PASS tests/cloud_provision_registry_handoff_smoke.sh
+PASS tests/cloud_provision_registry_handoff_json_contract_static.py
+PASS tests/dev_scratchpad_json_contract_static.py
+PASS tests/dev_scratchpad_static.sh
+NOTE: Two long grouped validation batches exceeded the sandbox command timeout after already completing several checks; remaining focused tests were rerun individually and passed.

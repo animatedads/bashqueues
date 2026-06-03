@@ -1,0 +1,16 @@
+{
+  "base": "bashqueues_0.18.67_BOB_MERGER_provider_parity_report_full_delivery.zip",
+  "file_count": 1778,
+  "merged_patchsets": [
+    "bashqueues_0.18.66_BOB10_remote_admin_dual_control_acl_plan_approval.patchset.zip"
+  ],
+  "preserved": [
+    "0.18.67 provider parity report",
+    "0.18.66 Perplexity provider",
+    "0.18.65 105 embedded QBTEST coverage",
+    "remote-admin transaction plan/apply/rollback"
+  ],
+  "schema": "queuebash.bob_merger.full_delivery_manifest.v1",
+  "strategy": "source-first, inspect-json-first, manual reconciliation after expected baseline precondition mismatch",
+  "version": "0.18.68"
+}

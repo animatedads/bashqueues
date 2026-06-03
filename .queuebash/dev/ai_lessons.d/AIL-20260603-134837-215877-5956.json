@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T13:48:37Z",
+  "created_from_session": "AIS-20260603-133936-715751-9550-bob14",
+  "created_from_try": "",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260603-134837-215877-5956",
+  "match": {
+    "command_glob": "queue dev ai try *; queue dev ai try *",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "run one queue dev ai try per validation command",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "Do not chain many queue dev ai try invocations in one shell call in this sandbox; split them into individual tries so a startup delay or blocked lesson does not obscure which command hung."
+}

@@ -1,0 +1,12 @@
+{
+  "data_residency_required": true,
+  "decision": "allow",
+  "export_control_review_required": true,
+  "fail_closed": true,
+  "license_review_required": true,
+  "live_training_permitted": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "gpu_marketplace",
+  "schema": "queuebash.gpu_marketplace.compliance.v1"
+}

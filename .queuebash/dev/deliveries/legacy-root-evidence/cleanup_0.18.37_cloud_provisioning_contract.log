@@ -1,0 +1,7 @@
+0.18.37 cleanup checks
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no __pycache__
+PASS no .pyc
+PASS no lock/devpatch/backup files
+PASS scratchpad and cloud-provision JSON valid

@@ -1,0 +1,34 @@
+RUN bash -n queuebash.sh
+PASS bash -n queuebash.sh
+RUN bash -n tests/dev_validate_scope_static.sh
+PASS bash -n tests/dev_validate_scope_static.sh
+RUN bash -n tests/dev_validate_scope_smoke.sh
+PASS bash -n tests/dev_validate_scope_smoke.sh
+RUN python3 -m py_compile tests/dev_validate_scope_json_contract_static.py
+PASS python3 -m py_compile tests/dev_validate_scope_json_contract_static.py
+RUN ./bin/queue-dev-timeout --timeout 60 -- bash tests/dev_validate_scope_static.sh
+PASS ./bin/queue-dev-timeout --timeout 60 -- bash tests/dev_validate_scope_static.sh
+RUN ./bin/queue-dev-timeout --timeout 120 -- bash tests/dev_validate_scope_smoke.sh
+PASS ./bin/queue-dev-timeout --timeout 120 -- bash tests/dev_validate_scope_smoke.sh
+RUN ./bin/queue-dev-timeout --timeout 30 -- python3 tests/dev_validate_scope_json_contract_static.py
+{"status": "pass", "schema": "queuebash.dev_validate_scope_contract_static.v1"}
+RUN ./bin/queue-dev-timeout --timeout 30 -- python3 tests/dev_validate_scope_json_contract_static.py
+{"status": "pass", "schema": "queuebash.dev_validate_scope_contract_static.v1"}
+PASS ./bin/queue-dev-timeout --timeout 30 -- python3 tests/dev_validate_scope_json_contract_static.py
+RUN ./bin/queue-dev-timeout --timeout 120 -- bash -lc source ./queuebash.sh >/dev/null 2>&1; queue dev validate --quick --timeout 30 --json >/tmp/queue-dev-validate-final.json; python3 -m json.tool /tmp/queue-dev-validate-final.json >/dev/null
+PASS ./bin/queue-dev-timeout --timeout 120 -- bash -lc source ./queuebash.sh >/dev/null 2>&1; queue dev validate --quick --timeout 30 --json >/tmp/queue-dev-validate-final.json; python3 -m json.tool /tmp/queue-dev-validate-final.json >/dev/null
+RUN ./bin/queue-dev-timeout --timeout 60 -- bash -lc source ./queuebash.sh >/dev/null 2>&1; queue dev scope-check --file queuebash.sh --allow "queuebash.sh" --json >/tmp/queue-dev-scope-final.json; python3 -m json.tool /tmp/queue-dev-scope-final.json >/dev/null
+PASS ./bin/queue-dev-timeout --timeout 60 -- bash -lc source ./queuebash.sh >/dev/null 2>&1; queue dev scope-check --file queuebash.sh --allow "queuebash.sh" --json >/tmp/queue-dev-scope-final.json; python3 -m json.tool /tmp/queue-dev-scope-final.json >/dev/null
+RUN ./bin/queue-dev-timeout --timeout 60 -- bash -lc source ./queuebash.sh >/dev/null 2>&1; queue dev test qbtest --file queuebash.sh --function _queue_now --json >/tmp/qbtest-final.json; python3 -m json.tool /tmp/qbtest-final.json >/dev/null
+RUN timeout 60 bash -lc source ./queuebash.sh >/dev/null 2>&1; queue dev test qbtest --file queuebash.sh --function _queue_now --json >/tmp/qbtest-final.json; python3 -m json.tool /tmp/qbtest-final.json >/dev/null
+bash: line 1: queue: command not found
+Expecting value: line 1 column 1 (char 0)
+FAIL timeout 60 bash -lc source ./queuebash.sh >/dev/null 2>&1; queue dev test qbtest --file queuebash.sh --function _queue_now --json >/tmp/qbtest-final.json; python3 -m json.tool /tmp/qbtest-final.json >/dev/null
+RUN timeout 60 bash tests/dev_qbtest_static.sh
+PASS timeout 60 bash tests/dev_qbtest_static.sh
+RUN timeout 60 bash tests/dev_timeout_helper_smoke.sh
+PASS dev_timeout_helper_smoke
+PASS timeout 60 bash tests/dev_timeout_helper_smoke.sh
+RUN timeout 60 bash tests/queue_dev_contract_static.sh
+PASS queue_dev_contract_static
+PASS timeout 60 bash tests/queue_dev_contract_static.sh

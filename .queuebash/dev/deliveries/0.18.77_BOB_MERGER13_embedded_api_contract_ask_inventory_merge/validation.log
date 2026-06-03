@@ -1,0 +1,16 @@
+0.18.77 BOB_MERGER13 embedded API contract and ask inventory merge validation
+
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS bash tests/queue_api_protocol_static.sh
+PASS bash tests/queue_api_scope_static.sh
+PASS python3 -m py_compile tests/queue_api_protocol_json_contract_static.py
+PASS python3 tests/queue_api_protocol_json_contract_static.py
+PASS tests/queue_dev_contract_static.sh
+PASS tests/dev_qbtest_static.sh
+PASS tests/grid_energy_provider_static.sh
+PASS tests/grid_energy_provider_fixture_smoke.sh
+PASS queue dev test qbtest --file queuebash.sh --function _queue_ai_command_inventory_text --json
+PASS queue dev test qbtest --file queuebash.sh --function _queue_ai_usage_inventory_text --json
+NOTE queue dev test qbtest --file queuebash.sh --function _queue_ai_asset_inventory_text --json timed out in sandbox; this was an existing 0.18.76 focused-check rough edge, not changed by the embedded API contract merge.
+PASS assets.d/net_usage.sh absent

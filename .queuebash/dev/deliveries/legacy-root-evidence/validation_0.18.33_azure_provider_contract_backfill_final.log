@@ -1,0 +1,112 @@
+BEGIN bash -n queuebash.sh
+PASS bash -n queuebash.sh
+BEGIN bash -n providers.d/azure/azure_provider.sh
+PASS bash -n providers.d/azure/azure_provider.sh
+BEGIN bash -n tests/azure_provider_contracts_static.sh
+PASS bash -n tests/azure_provider_contracts_static.sh
+BEGIN bash -n tests/azure_provider_fixture_smoke.sh
+PASS bash -n tests/azure_provider_fixture_smoke.sh
+BEGIN bash -n tests/azure_explain_static.sh
+PASS bash -n tests/azure_explain_static.sh
+BEGIN /usr/bin/python3 -m py_compile tests/azure_provider_json_contract_static.py
+PASS /usr/bin/python3 -m py_compile tests/azure_provider_json_contract_static.py
+BEGIN /usr/bin/python3 -m py_compile tests/cloud_platform_parity_static.py
+PASS /usr/bin/python3 -m py_compile tests/cloud_platform_parity_static.py
+BEGIN tests/azure_provider_contracts_static.sh
+PASS azure_provider_contracts_static
+PASS tests/azure_provider_contracts_static.sh
+BEGIN tests/azure_provider_fixture_smoke.sh
+PASS azure fixture json
+PASS azure_provider_fixture_smoke
+PASS tests/azure_provider_fixture_smoke.sh
+BEGIN /usr/bin/python3 tests/azure_provider_json_contract_static.py
+PASS azure_provider_json_contract_static
+PASS /usr/bin/python3 tests/azure_provider_json_contract_static.py
+BEGIN tests/azure_explain_static.sh
+PASS azure_explain_static
+PASS tests/azure_explain_static.sh
+BEGIN /usr/bin/python3 tests/cloud_platform_parity_static.py
+PASS cloud_platform_parity_static
+PASS /usr/bin/python3 tests/cloud_platform_parity_static.py
+BEGIN tests/aws_provider_contracts_static.sh
+[PASS] aws provider contracts static checks pass
+PASS tests/aws_provider_contracts_static.sh
+BEGIN tests/aws_provider_fixture_smoke.sh
+[PASS] aws provider fixture smoke checks pass
+PASS tests/aws_provider_fixture_smoke.sh
+BEGIN /usr/bin/python3 tests/aws_provider_json_contract_static.py
+PASS aws_provider_json_contract_static
+PASS /usr/bin/python3 tests/aws_provider_json_contract_static.py
+BEGIN tests/gcp_provider_contracts_static.sh
+PASS gcp_provider_contracts_static
+PASS tests/gcp_provider_contracts_static.sh
+BEGIN tests/gcp_provider_fixture_smoke.sh
+PASS gcp fixture json
+PASS gcp_provider_fixture_smoke
+PASS tests/gcp_provider_fixture_smoke.sh
+BEGIN /usr/bin/python3 tests/gcp_provider_json_contract_static.py
+PASS gcp_provider_json_contract_static
+PASS /usr/bin/python3 tests/gcp_provider_json_contract_static.py
+BEGIN tests/remote_queue_command_static.sh
+[PASS] remote queue command static checks pass
+PASS tests/remote_queue_command_static.sh
+BEGIN tests/remote_queue_command_smoke.sh
+[PASS] remote queue command smoke checks pass
+PASS tests/remote_queue_command_smoke.sh
+BEGIN tests/cloud_resource_provider_contract_static.sh
+[PASS] cloud resource provider contract static checks pass
+PASS tests/cloud_resource_provider_contract_static.sh
+BEGIN tests/cloud_resource_file_provider_smoke.sh
+[PASS] cloud resource file provider smoke checks pass
+PASS tests/cloud_resource_file_provider_smoke.sh
+BEGIN /usr/bin/python3 tests/cloud_resource_json_contract_static.py
+PASS cloud_resource_json_contract_static
+PASS /usr/bin/python3 tests/cloud_resource_json_contract_static.py
+BEGIN tests/remote_queue_service_provider_contract_static.sh
+[PASS] remote queue service provider contract static checks pass
+PASS tests/remote_queue_service_provider_contract_static.sh
+BEGIN /usr/bin/python3 tests/remote_queue_service_provider_json_contract_static.py
+[PASS] remote queue service provider JSON examples parse and validate
+PASS /usr/bin/python3 tests/remote_queue_service_provider_json_contract_static.py
+BEGIN tests/dev_remote_runner_static.sh
+PASS dev_remote_runner_static
+PASS tests/dev_remote_runner_static.sh
+BEGIN /usr/bin/python3 tests/dev_remote_runner_json_contract_static.py
+PASS dev_remote_runner_json_contract_static
+PASS /usr/bin/python3 tests/dev_remote_runner_json_contract_static.py
+BEGIN /usr/bin/python3 tests/dev_remote_runner_smoke.py
+PASS dev_remote_runner_smoke
+PASS /usr/bin/python3 tests/dev_remote_runner_smoke.py
+BEGIN tests/dev_scratchpad_static.sh
+PASS dev_scratchpad_static
+BEGIN tests/dev_scratchpad_smoke.sh
+PASS dev_scratchpad_smoke
+PASS tests/dev_scratchpad_smoke.sh
+BEGIN /usr/bin/python3 tests/dev_scratchpad_json_contract_static.py
+PASS dev_scratchpad_json_contract_static
+PASS /usr/bin/python3 tests/dev_scratchpad_json_contract_static.py
+BEGIN tests/dev_test_runner_class_static.sh
+PASS dev_test_runner_class_static
+PASS tests/dev_test_runner_class_static.sh
+BEGIN /usr/bin/python3 tests/dev_test_runner_json_contract_static.py
+PASS dev_test_runner_json_contract_static
+PASS /usr/bin/python3 tests/dev_test_runner_json_contract_static.py
+BEGIN tests/oci_governance_provider_contract_static.sh
+[PASS] OCI governance provider contract static checks pass
+PASS tests/oci_governance_provider_contract_static.sh
+BEGIN /usr/bin/python3 tests/oci_governance_provider_json_contract_static.py
+[PASS] OCI governance provider JSON examples parse and validate
+PASS /usr/bin/python3 tests/oci_governance_provider_json_contract_static.py
+BEGIN tests/oci_provider_contracts_static.sh
+PASS oci_provider_contracts_static
+PASS tests/oci_provider_contracts_static.sh
+BEGIN tests/oci_provider_fixture_smoke.sh
+PASS oci fixture json
+PASS oci_provider_fixture_smoke
+PASS tests/oci_provider_fixture_smoke.sh
+BEGIN /usr/bin/python3 tests/oci_provider_json_contract_static.py
+PASS oci_provider_json_contract_static
+PASS /usr/bin/python3 tests/oci_provider_json_contract_static.py
+BEGIN tests/oci_explain_static.sh
+PASS oci_explain_static
+PASS tests/oci_explain_static.sh

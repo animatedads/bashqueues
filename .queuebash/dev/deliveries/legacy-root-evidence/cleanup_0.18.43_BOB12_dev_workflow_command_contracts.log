@@ -1,0 +1,4 @@
+== cleanup checks ==
+PASS no __pycache__ / .pyc / .pyo / .pytest_cache / lock/devpatch/backup files
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present

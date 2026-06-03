@@ -1,0 +1,16 @@
+{
+  "catalog_labels": [
+    "fixture",
+    "non_live",
+    "advisory_fact"
+  ],
+  "data_subject_request_route": "external_process_required",
+  "decision": "allow",
+  "export_control_review_required": true,
+  "fail_closed": true,
+  "mutated": false,
+  "policy_source": "fixture-policy",
+  "provider": "fixture",
+  "provider_family": "data_lake",
+  "schema": "queuebash.data_lake.governance.v1"
+}

@@ -1,0 +1,110 @@
+{
+  "applied_patchsets": [
+    "bashqueues_0.18.49_BOB2_static_version_pin_cleanup_patchset.zip",
+    "bashqueues_0.18.49_BOB10_cloud_provisioning_approval_live_gate_contract.patchset.zip"
+  ],
+  "base": "bashqueues_0.18.48_full_delivery_acceptance_scratchpad_curated.zip",
+  "collision_review": {
+    "no_runtime_scope_collision": true,
+    "notes": [
+      "Bob2 remains static provider test/version-pin cleanup only.",
+      "Bob10 remains cloud provisioning approval/live-gate contract only.",
+      "queue dev command contract is preserved text-identically from accepted base."
+    ],
+    "resolved_shared_files": [
+      ".queuebash/dev/scratchpad.json"
+    ],
+    "shared_files": [
+      ".queuebash/dev/scratchpad.json"
+    ]
+  },
+  "created_at": "2026-05-30T09:52:09.466422+00:00",
+  "entries": [
+    {
+      "relpath": "README.md",
+      "sha256": "5ce52c2570a725feeb450aa6880e2a19f78d8437298e8ecdc0e70c36031a346d",
+      "size": 123530
+    },
+    {
+      "relpath": "CHANGELOG.md",
+      "sha256": "a01bd46d851390d235fa0a46d6730d182a97c0dda8a1b9f57431272f86a510c2",
+      "size": 152826
+    },
+    {
+      "relpath": "queuebash.sh",
+      "sha256": "24641554aab88827b5b569939bf6d3a2abfa4fde7cb480996839c4bb855b0b8c",
+      "size": 921159
+    },
+    {
+      "relpath": "providers.d/cloud_provision/cloud_provision.sh",
+      "sha256": "721e6a85e56815dbe38fd896aa585aa3c3f9ba215067f77c639028fb83e272c7",
+      "size": 37379
+    },
+    {
+      "relpath": "policies.d/cloud-provision/approval-policy.example.json",
+      "sha256": "8450c666f80747daa053e6b0dd4ba7ab3b9186d75f8ea7405a3aa366e5e17d08",
+      "size": 2725
+    },
+    {
+      "relpath": "docs/CLOUD_PROVISIONING_APPROVAL_LIVE_GATES.md",
+      "sha256": "c7b63e12cc2862f6a1cc9fd487de5d958ba53099cb6e9c7681e9eeb208d602d4",
+      "size": 2820
+    },
+    {
+      "relpath": "tests/apac_china_provider_contracts_static.sh",
+      "sha256": "0954521495839e06bb5f7676854036d57429f412cbb3154c795522cec1bb50cc",
+      "size": 2279
+    },
+    {
+      "relpath": "tests/edge_cloud_provider_contracts_static.sh",
+      "sha256": "0d002becdaa6e1b3ed84571e5ffadb993c4f64e4a8898727372375f11dea5660",
+      "size": 2194
+    },
+    {
+      "relpath": "tests/eu_sovereign_provider_contracts_static.sh",
+      "sha256": "585eb518b531f36f96cf8667e42fd26e81ada80dee077b6df0cc4a5f6497ec71",
+      "size": 2347
+    },
+    {
+      "relpath": "tests/gpu_cloud_provider_contracts_static.sh",
+      "sha256": "a5d8eb645fac4f068c0233302186e1c852ae1be56caa0103187a6351a4554193",
+      "size": 1823
+    },
+    {
+      "relpath": "tests/remote_queue_service_provider_contract_static.sh",
+      "sha256": "75e2e75d3e2f3c4798675b8de2ee8ed4102a9bbc27da248657fa2819f53b5f56",
+      "size": 3867
+    },
+    {
+      "relpath": "tests/cloud_provision_approval_live_gate_static.sh",
+      "sha256": "d64ecd1f0d49f072ead0f3fc31bef9e2bb59237ffb6670492c60777ab6f2432e",
+      "size": 1025
+    },
+    {
+      "relpath": "tests/cloud_provision_approval_live_gate_smoke.sh",
+      "sha256": "72e43d921ca88813acffe2e26df300a76b2d3f2434e4053dc70b32d12ae8ae13",
+      "size": 2518
+    },
+    {
+      "relpath": "tests/cloud_provision_approval_live_gate_json_contract_static.py",
+      "sha256": "e3db1c3d4dff11fecf088cd87419faf769a97414d9823500907d9aaa9933d6fa",
+      "size": 2045
+    },
+    {
+      "relpath": ".queuebash/dev/scratchpad.json",
+      "sha256": "a66eda4dfec9243c2b434f65ad8fdf1d4565cb4755f58cb5153fa59d9b356074",
+      "size": 182199
+    }
+  ],
+  "merge_policy": {
+    "order": "base -> Bob2 -> Bob10",
+    "queue_dev": "examined; queue dev region hash unchanged from accepted 0.18.48 base; Bob10 queuebash.sh patch changes version only",
+    "scratchpad": "merged by unique item id; no last-writer-wins overwrite"
+  },
+  "schema": "queuebash.bob_merger.full_delivery_manifest.v1",
+  "validation_logs": [
+    "validation_0.18.49_BOB_MERGER_full_delivery.log",
+    "focused_tests_0.18.49_BOB_MERGER.log"
+  ],
+  "version": "0.18.49"
+}

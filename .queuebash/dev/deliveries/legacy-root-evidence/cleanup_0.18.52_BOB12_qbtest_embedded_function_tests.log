@@ -1,0 +1,11 @@
+Cleanup 0.18.52 BOB12 QBTEST embedded function tests
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no __pycache__
+PASS no *.pyc
+PASS no *.pyo
+PASS no .pytest_cache
+PASS no *.lock
+PASS no *.dev.lock
+PASS no *.devpatch.*
+PASS no queuebash.sh.bak.*

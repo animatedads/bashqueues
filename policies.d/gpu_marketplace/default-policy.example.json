@@ -1,0 +1,13 @@
+{
+  "fixture_first": true,
+  "live_api_default": false,
+  "normalized_json_only": true,
+  "provider_output_is_shell": false,
+  "required_reviews": [
+    "finops",
+    "export_control",
+    "data_residency"
+  ],
+  "reservation_default": false,
+  "schema": "queuebash.gpu_marketplace.policy.v1"
+}

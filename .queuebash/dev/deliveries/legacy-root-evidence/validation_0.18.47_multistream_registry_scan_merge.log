@@ -1,0 +1,39 @@
+Validation 0.18.47 BOB12 multistream registry scan merge
+
+PASS bash -n queuebash.sh
+PASS bash -n tests/*.sh
+PASS targeted Python JSON contract compile/checks with explicit timeouts where required
+
+Focused tests passed individually or in bounded batches:
+PASS queue_dev_contract_static.sh
+PASS queue_dev_docs_consistency_static.sh
+PASS queue_dev_json_contract_static.py
+PASS queue_dev_workflow_contract_static.sh
+PASS queue_dev_workflow_json_contract_static.py
+PASS dev_scratchpad_static.sh
+PASS dev_scratchpad_json_contract_static.py
+PASS dev_scratchpad_lifecycle_static.sh
+PASS dev_scratchpad_lifecycle_json_contract_static.py
+PASS dev_file_registry_static.sh
+PASS dev_file_registry_json_contract_static.py
+PASS dev_file_registry_smoke.sh
+PASS dev_file_registry_add_smoke.sh
+PASS dev_file_registry_scoped_functions_smoke.sh
+PASS dev_file_registry_scan_smoke.sh
+PASS dev_patchset_new_file_smoke.sh
+PASS dev_attempt_evidence_static.sh
+PASS dev_attempt_evidence_json_contract_static.py
+PASS dev_attempt_evidence_smoke.sh
+PASS ask_provider_contract_static.sh
+PASS ask_openai_provider_static.sh
+PASS ask_openai_provider_smoke.sh
+PASS ask_anthropic_provider_static.sh
+PASS ask_anthropic_provider_smoke.sh
+PASS provider_primary_source_validation_static.sh
+PASS provider_family_consistency_static.sh
+PASS provider_explainability_standard_static.sh
+
+Notes:
+- Some long aggregate Python validation loops can hit the known review/sandbox timeout pattern; tests were therefore rerun individually with explicit timeouts.
+- New-file patchset behaviour was directly smoke-tested: file_old_md5=null entries are exported, absent target files pass preconditions, and apply_patchset.sh creates the new file.
+- queue dev files scan was directly smoke-tested: scan refreshes current MD5/size/function metadata and does not create a false unchanged baseline.

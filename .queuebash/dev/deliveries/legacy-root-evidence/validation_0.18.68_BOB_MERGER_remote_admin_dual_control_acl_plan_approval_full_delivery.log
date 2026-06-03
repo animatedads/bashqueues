@@ -1,0 +1,21 @@
+0.18.68 BOB_MERGER remote-admin dual-control ACL plan approval validation
+
+PASS bash -n queuebash.sh
+PASS bash -n providers.d/remote_admin/remote_admin_policy.sh
+PASS python3 -m py_compile providers.d/remote_admin/remote_admin_policy.py
+PASS python3 -m py_compile tests/remote_admin_policy_dual_control_json_contract_static.py
+PASS remote_admin_policy_dual_control_static
+PASS remote_admin_policy_dual_control_smoke
+PASS remote_admin_policy_dual_control_json_contract_static
+PASS remote_admin_policy_plan_apply_static
+PASS remote_admin_policy_plan_apply_smoke
+PASS remote_admin_policy_plan_apply_json_contract_static
+PASS remote_admin_policy_commands_static
+PASS remote_admin_policy_commands_smoke
+PASS remote_admin_policy_commands_json_contract_static
+PASS dev_qbtest_static
+PASS dev_qbtest_smoke
+PASS dev_qbtest_json_contract_static
+PASS queue dev test qbtest --file queuebash.sh --function _queue_now --json
+PASS queue dev test qbtest --file queuebash.sh --list
+PASS queue dev validate --quick --timeout 30 --json

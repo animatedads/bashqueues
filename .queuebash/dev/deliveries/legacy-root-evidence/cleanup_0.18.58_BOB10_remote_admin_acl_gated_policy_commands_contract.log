@@ -1,0 +1,5 @@
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS scratchpad JSON valid
+PASS cloud provision templates JSON valid
+PASS cleanup patterns absent

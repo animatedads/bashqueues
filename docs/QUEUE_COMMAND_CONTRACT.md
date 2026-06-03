@@ -91,3 +91,16 @@ This first cleanup wave fixes known defects and high-value JSON gaps:
 - `queue version --json`, `queue queue-user --json`, and `queue queue-users --json` provide stable informational JSON.
 
 Future waves should extend the same rules to job inspection, history, workers, stats, events, limits, metrics, pids, hooks, and mutating command result envelopes.
+
+## Wave 3 job inspection JSON
+
+The job-inspection compatibility commands now include JSON modes for the
+highest-value read-only surfaces:
+
+- `queue show JOB --json` emits `queuebash.show.v1`.
+- `queue history JOB --json` emits `queuebash.history.v1`.
+- `queue tail JOB --json --no-follow` emits `queuebash.tail.v1`.
+
+`queue tail --json` deliberately refuses follow mode unless `--no-follow` or
+`--once` is provided. A continuous log follow is a stream, not a single JSON
+object. A later JSONL stream may be added if needed.

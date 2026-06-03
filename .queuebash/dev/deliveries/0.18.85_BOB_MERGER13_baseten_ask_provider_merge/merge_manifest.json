@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.delivery.merge_manifest.v1",
+  "delivery": "0.18.85_BOB_MERGER13_baseten_ask_provider_merge",
+  "created_at": "2026-06-02T17:55:31.243918+00:00",
+  "base": "bashqueues_0.18.84_BOB_MERGER13_cloud_job_intent_ai_live_delegation_merge_full_delivery.zip",
+  "merged_inputs": [
+    "bashqueues_0.18.84_BOB11_ask_baseten_provider_pack_patchset.zip"
+  ],
+  "excluded_inputs": [
+    "mobile_fetch_patch.zip"
+  ],
+  "policy": "Baseten is AI-provider/model endpoint only; no compute/provisioning merge."
+}

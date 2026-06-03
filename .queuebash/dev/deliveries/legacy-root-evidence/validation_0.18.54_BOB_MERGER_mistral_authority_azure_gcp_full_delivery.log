@@ -1,0 +1,36 @@
+PASS bash -n queuebash.sh
+PASS bash -n providers.d/ask/mistral.sh
+PASS python3 -m py_compile bin/queue-ai-ask-mistral
+PASS ask_mistral_provider_static
+PASS ask_mistral_provider_smoke
+PASS ask_openai_compat_provider_static
+PASS ask_openai_compat_provider_smoke
+PASS ask_watsonx_provider_static
+PASS ask_watsonx_provider_smoke
+PASS ask_openai_provider_static
+PASS ask_anthropic_provider_static
+PASS ask_provider_contract_static
+PASS ask_provider_json_contract_static
+PASS ask_provider_fixture_smoke
+PASS queue ask provider explain mistral --json
+PASS queue ask provider test mistral --fixture --json
+PASS dev_scratchpad_authority_shape_static
+PASS azure_gcp_first_tier_platform_parity_static
+PASS azure_gcp_first_tier_platform_parity_json_contract_static
+PASS cloud_platform_parity_static
+PASS provider_family_consistency_json_contract_static
+PASS dev_qbtest_static
+PASS dev_qbtest_smoke
+PASS dev_qbtest_json_contract_static
+PASS dev_context_think_handover_static
+PASS dev_context_think_handover_smoke
+PASS dev_file_registry_static
+PASS dev_file_registry_smoke
+PASS dev_file_registry_json_contract_static
+PASS dev_patchset_hardening_static
+PASS dev_patchset_hardening_smoke
+PASS dev_patchset_new_file_smoke
+PASS provider_static_version_pin_policy_static
+PASS cloud_resource_reconcile_enhancement_static
+PASS cloud_resource_reconcile_enhancement_smoke
+PASS cloud_resource_reconcile_enhancement_json_contract_static

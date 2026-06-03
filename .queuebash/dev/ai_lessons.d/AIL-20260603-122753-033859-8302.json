@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T12:27:53Z",
+  "created_from_session": "AIS-20260603-122149-218998-9039-bob14",
+  "created_from_try": "AIT-20260603-122726-060486-1265",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260603-122753-033859-8302",
+  "match": {
+    "command_glob": "queue dev files begin*",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "queue dev files begin --file FILE --purpose PURPOSE --json",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "queue dev files begin requires explicit --file and --purpose; do not use it as a generic session opener."
+}

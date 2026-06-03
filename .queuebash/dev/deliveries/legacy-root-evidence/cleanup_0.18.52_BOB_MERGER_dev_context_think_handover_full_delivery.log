@@ -1,0 +1,7 @@
+0.18.52 BOB_MERGER cleanup check
+PASS no __pycache__/.pytest_cache
+PASS no .pyc/.pyo
+PASS no merge debris
+PASS no lock/devpatch debris
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present

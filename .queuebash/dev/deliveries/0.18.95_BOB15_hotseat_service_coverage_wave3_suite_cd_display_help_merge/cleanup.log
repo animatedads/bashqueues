@@ -1,0 +1,1 @@
+cleanup: removed transient apply backup directories for this sandbox run; no __pycache__, pyc/pyo, pytest cache, lock/devpatch/rej/orig debris retained; no root delivery evidence files retained.

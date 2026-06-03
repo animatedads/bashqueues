@@ -1,0 +1,9 @@
+Patchset apply validation against fresh 0.18.51 base
+
+PASS queue dev patchset inspect --target fresh-base
+PASS apply_patchset.sh fresh-base
+PASS bash -n queuebash.sh after apply
+PASS tests/azure_gcp_first_tier_platform_parity_static.sh after apply
+PASS tests/azure_gcp_first_tier_platform_parity_json_contract_static.py after apply
+PASS tests/cloud_platform_parity_static.py after apply
+PASS tests/provider_family_consistency_json_contract_static.py after apply

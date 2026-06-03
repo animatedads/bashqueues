@@ -1,0 +1,14 @@
+{
+  "schema": "queuebash.bob10.patch_manifest.v1",
+  "base": "bashqueues_0.18.68_BOB_MERGER_remote_admin_dual_control_acl_plan_approval_full_delivery.zip",
+  "version": "0.18.69",
+  "name": "BOB10 cloud cost and service availability wiring",
+  "scope": "fixture-first cost and service availability wiring for OCI/AWS/Azure/GCP/IBM",
+  "boundaries": [
+    "no live cloud API calls",
+    "no provider credentials required",
+    "no billing queries",
+    "no provisioning or destruction",
+    "no queue dispatch refactor"
+  ]
+}

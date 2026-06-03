@@ -1,0 +1,9 @@
+Cleanup checks:
+PASS no __pycache__ directories in packaged tree after final cleanup
+PASS no .pyc/.pyo files in packaged tree after final cleanup
+PASS no .pytest_cache directories in packaged tree after final cleanup
+PASS no *.MERGE_CONFLICT/*.orig/*.rej files in packaged tree
+PASS no assets.d/net_usage.sh restored
+PASS caps.d/net_usage.sh remains present
+PASS queuebash.sh.bak.* absent
+PASS *.lock transient files removed before packaging

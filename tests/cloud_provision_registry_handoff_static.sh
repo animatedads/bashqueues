@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 fail(){ echo "FAIL $*" >&2; exit 1; }
 require_grep(){ grep -q "$1" "$2" || fail "missing '$1' in $2"; }
 

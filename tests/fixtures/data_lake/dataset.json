@@ -1,0 +1,17 @@
+{
+  "contains_live_customer_data": false,
+  "dataset_id": "provider_fixture_inventory",
+  "decision": "allow",
+  "fail_closed": true,
+  "format": "parquet_fixture",
+  "mutated": false,
+  "partitioning": [
+    "provider_family",
+    "capture_date"
+  ],
+  "provider": "fixture",
+  "provider_family": "data_lake",
+  "row_count": 512,
+  "sample_access_permitted": false,
+  "schema": "queuebash.data_lake.dataset.v1"
+}

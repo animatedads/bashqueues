@@ -1,0 +1,46 @@
+BEGIN bash -n queuebash.sh
+PASS bash -n queuebash.sh
+BEGIN python3 -m py_compile bin/queue-remote-service-client.py
+PASS python3 -m py_compile bin/queue-remote-service-client.py
+BEGIN python3 -m py_compile bin/queue-dev-runner.py
+PASS python3 -m py_compile bin/queue-dev-runner.py
+BEGIN python3 -m py_compile tests/gcp_provider_json_contract_static.py
+PASS python3 -m py_compile tests/gcp_provider_json_contract_static.py
+BEGIN python3 -m py_compile tests/cloud_platform_parity_static.py
+PASS python3 -m py_compile tests/cloud_platform_parity_static.py
+BEGIN python3 -m py_compile tests/aws_provider_json_contract_static.py
+PASS python3 -m py_compile tests/aws_provider_json_contract_static.py
+BEGIN python3 -m py_compile tests/remote_queue_service_provider_json_contract_static.py
+PASS python3 -m py_compile tests/remote_queue_service_provider_json_contract_static.py
+BEGIN bash tests/remote_queue_command_static.sh
+PASS bash tests/remote_queue_command_static.sh
+[PASS] remote queue command static checks pass
+BEGIN bash tests/remote_queue_command_smoke.sh
+PASS bash tests/remote_queue_command_smoke.sh
+[PASS] remote queue command smoke checks pass
+BEGIN bash tests/aws_provider_contracts_static.sh
+PASS bash tests/aws_provider_contracts_static.sh
+[PASS] aws provider contracts static checks pass
+BEGIN bash tests/aws_provider_fixture_smoke.sh
+PASS bash tests/aws_provider_fixture_smoke.sh
+[PASS] aws provider fixture smoke checks pass
+BEGIN python3 tests/aws_provider_json_contract_static.py
+PASS python3 tests/aws_provider_json_contract_static.py
+PASS aws_provider_json_contract_static
+BEGIN bash tests/gcp_provider_contracts_static.sh
+PASS bash tests/gcp_provider_contracts_static.sh
+PASS gcp_provider_contracts_static
+BEGIN bash tests/gcp_provider_fixture_smoke.sh
+PASS bash tests/gcp_provider_fixture_smoke.sh (standalone)
+PASS gcp_provider_json_contract_static
+PASS gcp_explain_static
+PASS cloud_platform_parity_static
+[PASS] cloud resource provider contract static checks pass
+[PASS] cloud resource file provider smoke checks pass
+PASS cloud_resource_json_contract_static
+[PASS] remote queue service provider contract static checks pass
+[PASS] remote queue service provider JSON examples parse and validate
+PASS dev_remote_runner_static
+PASS dev_remote_runner_json_contract_static
+PASS dev_remote_runner_smoke
+PASS dev_scratchpad_static

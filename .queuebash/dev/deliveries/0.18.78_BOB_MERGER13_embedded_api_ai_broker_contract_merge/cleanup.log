@@ -1,0 +1,4 @@
+0.18.78 cleanup
+PASS removed Python __pycache__ after py_compile validation
+PASS no assets.d/net_usage.sh
+PASS delivery evidence under .queuebash/dev/deliveries/0.18.78_BOB_MERGER13_embedded_api_ai_broker_contract_merge/

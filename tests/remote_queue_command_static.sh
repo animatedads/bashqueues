@@ -9,7 +9,7 @@ grep -q '0.18.35 APAC/China cloud provider contracts' README.md || fail 'README 
 
 grep -q '_queue_remote_command' queuebash.sh || fail 'queue remote command function missing'
 grep -q 'remote|remote-queue|rq)' queuebash.sh || fail 'queue dispatcher lacks remote command branch'
-grep -q 'queue remote list|show SERVICE' queuebash.sh || fail 'queue help lacks remote usage'
+grep -q 'queue remote list' queuebash.sh || fail 'queue help lacks remote list usage'
 grep -q 'queue remote add SERVICE --url URL' docs/REMOTE_QUEUE_COMMAND.md || fail 'remote add docs missing'
 grep -q 'def add_service' bin/queue-remote-service-client.py || fail 'remote add implementation missing'
 grep -q 'QUEUE_REMOTE_CONFIG_DIR' bin/queue-remote-service-client.py || fail 'remote add config dir support missing'

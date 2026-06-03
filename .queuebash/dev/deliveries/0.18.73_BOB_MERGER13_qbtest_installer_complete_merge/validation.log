@@ -1,0 +1,23 @@
+0.18.73 validation
+2026-05-30T23:13:00Z
+version:
+QUEUEBASH_VERSION="0.18.73"
+qbtest blocks:
+168
+bash -n queuebash.sh
+PASS
+bash -n qbtest_installer.sh
+PASS
+qbtest_installer --help
+Usage: qbtest_installer.sh [--file QUEUEBASH_SH] [--force]
+qbtest extract _queue_global_hash
+{"code":"h1=\"$(_queue_global_hash 'alpha')\"\nh2=\"$(_queue_global_hash 'alpha')\"\nh3=\"$(_queue_global_hash 'beta')\"\n[[ -n \"$h1\" ]]\n[[ \"$h1\" == \"$h2\" ]]\n[[ \"$h1\" != \"$h3\" ]]\n","file":"/mnt/data/bq73full/work/queuebash.sh","function":"_queue_global_hash","language":"bash","line":3962,"name":"global-hash-stable","schema":"queuebash.dev_qbtest_block.v1"}
+PASS
+qbtest function _queue_global_hash
+{"count":1,"counts":{"fail":0,"infrastructure_error":0,"invalid":0,"listed":0,"no_match":0,"pass":1,"timeout":0},"created_at":"2026-05-30T23:13:35Z","function":"_queue_global_hash","language":"","results":[{"duration_seconds":0.332,"exit_code":0,"function":"_queue_global_hash","id":"QBTEST-018f19b73935","language":"bash","line":3962,"name":"global-hash-stable","status":"pass","stderr_tail":"","stdout_tail":""}],"schema":"queuebash.dev_qbtest_result.v1","source_file":"/mnt/data/bq73full/work/queuebash.sh","status":"pass"}
+qbtest function _queue_policy_valid_name
+{"count":1,"counts":{"fail":0,"infrastructure_error":0,"invalid":0,"listed":0,"no_match":0,"pass":1,"timeout":0},"created_at":"2026-05-30T23:14:15Z","function":"_queue_policy_valid_name","language":"","results":[{"duration_seconds":0.178,"exit_code":0,"function":"_queue_policy_valid_name","id":"QBTEST-f014af9ab242","language":"bash","line":8831,"name":"policy-valid-name-safe-chars","status":"pass","stderr_tail":"","stdout_tail":""}],"schema":"queuebash.dev_qbtest_result.v1","source_file":"/mnt/data/bq73full/work/queuebash.sh","status":"pass"}
+PASS
+installer compatibility static check
+{'installer_functions': 131, 'unique_installer_functions': 131, 'missing_from_queuebash_qbtests': []}
+PASS

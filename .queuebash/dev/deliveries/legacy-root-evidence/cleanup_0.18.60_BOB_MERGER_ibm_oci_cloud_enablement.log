@@ -1,0 +1,13 @@
+0.18.60 cleanup check
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS __pycache__
+PASS .pytest_cache
+PASS *.pyc
+PASS *.pyo
+PASS *.lock
+PASS *.dev.lock
+PASS *.devpatch.*
+PASS queuebash.sh.bak.*
+PASS merge/reject/orig debris
+PASS scratchpad JSON valid

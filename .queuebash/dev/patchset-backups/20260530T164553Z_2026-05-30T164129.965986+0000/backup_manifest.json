@@ -1,0 +1,77 @@
+{
+  "backup_dir": ".queuebash/dev/patchset-backups/20260530T164553Z_2026-05-30T164129.965986+0000",
+  "created_at": "2026-05-30T16:45:53.346089+00:00",
+  "entries": [
+    {
+      "action": "replace",
+      "backup_path": "files/CHANGELOG.md",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "f38770a67be706ab31144ac3b9ad7548",
+      "old_size": 162345,
+      "relpath": "CHANGELOG.md"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/README.md",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "76e41c5c6d66d5c22ae498d4e1225a3a",
+      "old_size": 132188,
+      "relpath": "README.md"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/queuebash.sh",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "7fe90300772119aae6bbd21da4f3ecc7",
+      "old_size": 964052,
+      "relpath": "queuebash.sh"
+    },
+    {
+      "action": "create",
+      "change_type": "new_or_unbaselined_file",
+      "existed": false,
+      "relpath": "validation_0.18.59_BOB12_patchset_apply_backup_hardening.log",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "new_or_unbaselined_file",
+      "existed": false,
+      "relpath": "cleanup_0.18.59_BOB12_patchset_apply_backup_hardening.log",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "new_or_unbaselined_file",
+      "existed": false,
+      "relpath": "merge_manifest_0.18.59_BOB12_patchset_apply_backup_hardening.json",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "new_or_unbaselined_file",
+      "existed": false,
+      "relpath": "docs/QUEUE_DEV_PATCHSET_APPLY_HARDENING.md",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "new_or_unbaselined_file",
+      "existed": false,
+      "relpath": "tests/dev_patchset_apply_hardening_static.sh",
+      "rollback": "delete_created_file"
+    },
+    {
+      "action": "create",
+      "change_type": "new_or_unbaselined_file",
+      "existed": false,
+      "relpath": "tests/dev_patchset_apply_hardening_smoke.sh",
+      "rollback": "delete_created_file"
+    }
+  ],
+  "schema": "queuebash.dev_patchset.backup_manifest.v1",
+  "target": "."
+}

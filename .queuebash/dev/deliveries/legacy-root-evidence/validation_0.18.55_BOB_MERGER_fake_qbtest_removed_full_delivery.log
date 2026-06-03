@@ -1,0 +1,6 @@
+PASS bash -n queuebash.sh
+PASS legacy malformed QBTEST placeholder absent from package search
+PASS dev_qbtest_static
+PASS dev_qbtest_smoke
+PASS dev_qbtest_json_contract_static
+PASS cleanup checks

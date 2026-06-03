@@ -1,0 +1,32 @@
+0.18.92 validation
+PASS queue dev ai discover
+PASS queue dev ai session start
+PASS queue dev ai try bash -n queuebash.sh
+PASS queue dev ai lesson/session lessons
+PASS queue dev merge-plan --json: entries=28, collisions=0, manual_review_steps=2
+PASS apply_patchset.sh --check --json
+PASS apply_patchset.sh --json --backup-dir
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS bash -n display resource tests
+PASS py_compile bin/queue-dev-ai and relevant Python tests
+PASS display_resource_contract_static
+PASS display_resource_no_shell_eval_static
+PASS display_resource_fetch_smoke
+PASS dev_ai_contract_static
+PASS dev_ai_json_contract_static
+PASS dev_ai_session_lesson_smoke.sh
+PASS dev_ai_session_lesson_smoke.py
+PASS queue_command_contract_static
+PASS queue_command_json_smoke
+PASS queue_command_json_wave3_smoke with bounded 180s timeout
+PASS provider_family_continuity_bob14_static
+PASS provider_family_consistency_json_contract_static
+PASS container registry static/smoke/JSON tests
+PASS model registry static/smoke/JSON tests
+PASS provider_service_coverage_bob14_static
+PASS queue dev test qbtest --file queuebash.sh --list --json
+PASS queue resource-fetch-i18nl rendered VERSION variable
+PASS scratchpad JSON valid
+PASS AI lesson JSON valid
+PASS assets.d/net_usage.sh absent

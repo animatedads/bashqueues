@@ -1,0 +1,13 @@
+{
+  "allocation_permitted": false,
+  "available_gpus_observed": 0,
+  "decision": "allow",
+  "fail_closed": true,
+  "finops_required": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "gpu_marketplace",
+  "quota_check_only": true,
+  "quota_source": "fixture",
+  "schema": "queuebash.gpu_marketplace.quota.v1"
+}

@@ -1,0 +1,4 @@
+== cleanup 0.18.42 BOB12 queue dev contract cleanup merged repair2 ==
+PASS no __pycache__ / .pyc / .pyo / .pytest_cache / .lock files
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present

@@ -1,0 +1,12 @@
+{
+  "decision": "allow",
+  "fail_closed": true,
+  "mutated": false,
+  "normalized_json_only": true,
+  "policy_gate_required": true,
+  "provider": "fixture",
+  "provider_family": "distributed_framework",
+  "queue_scheduling_authority": false,
+  "schema": "queuebash.distributed_framework.governance.v1",
+  "worker_code_from_provider_permitted": false
+}

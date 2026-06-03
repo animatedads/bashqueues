@@ -1,0 +1,6 @@
+CLEANUP 0.18.81 BOB_MERGER13 great big cloud/AI policy linkage merge
+
+PASS no __pycache__ directories retained
+PASS no .pyc files retained
+PASS root-level merge_manifest*/validation*/cleanup*/notes* delivery records absent
+PASS assets.d/net_usage.sh absent

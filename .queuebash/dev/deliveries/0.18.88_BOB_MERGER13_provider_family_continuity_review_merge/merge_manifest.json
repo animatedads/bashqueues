@@ -1,0 +1,21 @@
+{
+  "schema": "queuebash.delivery.merge_manifest.v1",
+  "delivery_id": "0.18.88_BOB_MERGER13_provider_family_continuity_review_merge",
+  "base": "bashqueues_0.18.87_BOB_MERGER13_command_json_contract_wave1_full_delivery.zip",
+  "inputs": [
+    "bashqueues_0.18.88_BOB14_provider_family_continuity_review_patchset.zip"
+  ],
+  "result_version": "0.18.88",
+  "scope": [
+    "provider-family documentation",
+    "provider-family policy metadata",
+    "provider-family tests",
+    "scratchpad item-level merge"
+  ],
+  "boundaries": {
+    "live_provider_calls": false,
+    "provisioning": false,
+    "dispatch_refactor": false,
+    "assets_d_net_usage_restored": false
+  }
+}

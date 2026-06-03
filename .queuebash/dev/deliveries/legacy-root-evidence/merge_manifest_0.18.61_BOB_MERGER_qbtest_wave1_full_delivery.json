@@ -1,0 +1,12 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "version": "0.18.61",
+  "title": "BOB_MERGER QBTEST wave1 embedded coverage merge",
+  "base": "bashqueues_0.18.60_BOB_MERGER_ibm_oci_cloud_enablement_full_delivery.zip",
+  "patches": ["qbtest_wave1.zip"],
+  "notes": [
+    "IBM/OCI files in qbtest_wave1.zip were already present in the 0.18.60 base with matching md5s.",
+    "Effective code change is additional QBTEST embedded test blocks in queuebash.sh plus release identity and evidence.",
+    "No runtime behaviour, dispatch, provider, provisioning, or live API path changed."
+  ]
+}

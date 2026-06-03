@@ -1,0 +1,46 @@
+0.18.27 OCI merge validation
+
+Merge source base:
+  bashqueues_0.18.27_internal_dev_remote_runner_bridge_exposed_api_auth_key_repaired.zip
+OCI overlay:
+  bashqueues_0.18.27_internal_dev_remote_runner_bridge_oci_provider_contracts.zip
+
+Merge method:
+  Preserved newer platform base for overlapping files.
+  Copied OCI-only docs/providers/policies/classes/fixtures/tests/scratchpad artifacts.
+  Merged unique OCI scratchpad ledger entries into .queuebash/dev/scratchpad.json.
+  Added README/CHANGELOG merge note without changing QUEUEBASH_VERSION.
+
+Validation passed:
+  PASS bash -n queuebash.sh
+  PASS bash -n providers.d/oci/oci_provider.sh
+  PASS bash -n tests/oci_provider_contracts_static.sh
+  PASS bash -n tests/oci_provider_fixture_smoke.sh
+  PASS bash -n tests/oci_explain_static.sh
+  PASS bash -n tests/dev_scratchpad_static.sh
+  PASS bash -n tests/dev_scratchpad_smoke.sh
+  PASS bash -n tests/dev_remote_runner_static.sh
+  PASS python3 -m py_compile tests/oci_provider_json_contract_static.py
+  PASS python3 -m py_compile tests/dev_scratchpad_json_contract_static.py
+  PASS python3 -m py_compile tests/dev_remote_runner_json_contract_static.py
+  PASS python3 -m py_compile tests/dev_remote_runner_smoke.py
+  PASS bash tests/oci_provider_contracts_static.sh
+  PASS bash tests/oci_provider_fixture_smoke.sh
+  PASS python3 tests/oci_provider_json_contract_static.py
+  PASS bash tests/oci_explain_static.sh
+  PASS bash tests/dev_scratchpad_static.sh
+  PASS bash tests/dev_scratchpad_smoke.sh
+  PASS python3 tests/dev_scratchpad_json_contract_static.py
+  PASS bash tests/dev_remote_runner_static.sh
+  PASS python3 tests/dev_remote_runner_json_contract_static.py
+  PASS python3 tests/dev_remote_runner_smoke.py
+
+Cleanup target:
+  assets.d/net_usage.sh absent
+  caps.d/net_usage.sh present
+  no __pycache__
+  no .pyc
+  no *.lock
+  no *.dev.lock
+  no *.devpatch.*
+  no queuebash.sh.bak.*

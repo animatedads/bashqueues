@@ -1,0 +1,30 @@
+RUN bash -n queuebash.sh
+PASS bash -n queuebash.sh
+RUN bash -n bin/queue-dev-timeout
+PASS bash -n bin/queue-dev-timeout
+RUN bash -n tests/dev_qbtest_static.sh
+PASS bash -n tests/dev_qbtest_static.sh
+RUN bash -n tests/dev_qbtest_smoke.sh
+PASS bash -n tests/dev_qbtest_smoke.sh
+RUN bash -n tests/dev_timeout_helper_smoke.sh
+PASS bash -n tests/dev_timeout_helper_smoke.sh
+RUN python3 -m py_compile tests/dev_qbtest_json_contract_static.py
+PASS python3 -m py_compile tests/dev_qbtest_json_contract_static.py
+RUN bash tests/dev_qbtest_static.sh
+PASS bash tests/dev_qbtest_static.sh
+RUN python3 tests/dev_qbtest_json_contract_static.py
+PASS dev_qbtest_json_contract_static
+PASS python3 tests/dev_qbtest_json_contract_static.py
+RUN bin/queue-dev-timeout --timeout 60 -- bash tests/dev_qbtest_smoke.sh
+PASS dev_qbtest_smoke
+PASS bin/queue-dev-timeout --timeout 60 -- bash tests/dev_qbtest_smoke.sh
+RUN bin/queue-dev-timeout --timeout 20 -- bash tests/dev_timeout_helper_smoke.sh
+PASS dev_timeout_helper_smoke
+PASS bin/queue-dev-timeout --timeout 20 -- bash tests/dev_timeout_helper_smoke.sh
+RUN bash tests/queue_dev_contract_static.sh
+PASS queue_dev_contract_static
+PASS bash tests/queue_dev_contract_static.sh
+RUN bash tests/ask_deepseek_provider_static.sh
+PASS
+PASS bash tests/ask_deepseek_provider_static.sh
+VALIDATION_OK

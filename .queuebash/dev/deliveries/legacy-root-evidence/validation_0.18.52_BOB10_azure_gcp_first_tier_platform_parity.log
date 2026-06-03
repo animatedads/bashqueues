@@ -1,0 +1,54 @@
+RUN bash -n queuebash.sh
+PASS bash -n queuebash.sh
+RUN bash -n tests/azure_gcp_first_tier_platform_parity_static.sh
+PASS bash -n tests/azure_gcp_first_tier_platform_parity_static.sh
+RUN python3 -m py_compile tests/azure_gcp_first_tier_platform_parity_json_contract_static.py tests/cloud_platform_parity_static.py tests/provider_family_consistency_json_contract_static.py tests/azure_provider_json_contract_static.py tests/gcp_provider_json_contract_static.py
+PASS python3 -m py_compile tests/azure_gcp_first_tier_platform_parity_json_contract_static.py tests/cloud_platform_parity_static.py tests/provider_family_consistency_json_contract_static.py tests/azure_provider_json_contract_static.py tests/gcp_provider_json_contract_static.py
+RUN tests/azure_gcp_first_tier_platform_parity_static.sh
+PASS azure_gcp_first_tier_platform_parity_static
+PASS tests/azure_gcp_first_tier_platform_parity_static.sh
+RUN python3 tests/azure_gcp_first_tier_platform_parity_json_contract_static.py
+PASS azure_gcp_first_tier_platform_parity_json_contract_static
+PASS python3 tests/azure_gcp_first_tier_platform_parity_json_contract_static.py
+RUN python3 tests/cloud_platform_parity_static.py
+PASS cloud_platform_parity_static
+PASS python3 tests/cloud_platform_parity_static.py
+RUN python3 tests/provider_family_consistency_json_contract_static.py
+PASS provider_family_consistency_json_contract_static
+PASS python3 tests/provider_family_consistency_json_contract_static.py
+RUN bash tests/provider_family_consistency_static.sh
+PASS provider_family_consistency_static
+PASS bash tests/provider_family_consistency_static.sh
+RUN bash tests/azure_provider_contracts_static.sh
+PASS azure_provider_contracts_static
+PASS bash tests/azure_provider_contracts_static.sh
+RUN bash tests/azure_provider_fixture_smoke.sh
+PASS azure fixture json
+PASS azure_provider_fixture_smoke
+PASS bash tests/azure_provider_fixture_smoke.sh
+RUN python3 tests/azure_provider_json_contract_static.py
+PASS azure_provider_json_contract_static
+PASS python3 tests/azure_provider_json_contract_static.py
+RUN bash tests/azure_explain_static.sh
+PASS azure_explain_static
+PASS bash tests/azure_explain_static.sh
+RUN bash tests/gcp_provider_contracts_static.sh
+PASS gcp_provider_contracts_static
+PASS bash tests/gcp_provider_contracts_static.sh
+RUN bash tests/gcp_provider_fixture_smoke.sh
+PASS gcp fixture json
+PASS gcp_provider_fixture_smoke
+PASS bash tests/gcp_provider_fixture_smoke.sh
+RUN python3 tests/gcp_provider_json_contract_static.py
+PASS gcp_provider_json_contract_static
+PASS python3 tests/gcp_provider_json_contract_static.py
+RUN bash tests/gcp_explain_static.sh
+PASS gcp_explain_static
+PASS bash tests/gcp_explain_static.sh
+RUN bash tests/dev_scratchpad_static.sh
+PASS dev_scratchpad_static
+PASS bash tests/dev_scratchpad_static.sh
+RUN python3 tests/dev_scratchpad_json_contract_static.py
+PASS dev_scratchpad_json_contract_static
+PASS python3 tests/dev_scratchpad_json_contract_static.py
+RUN bash tests/dev_scratchpad_smoke.sh

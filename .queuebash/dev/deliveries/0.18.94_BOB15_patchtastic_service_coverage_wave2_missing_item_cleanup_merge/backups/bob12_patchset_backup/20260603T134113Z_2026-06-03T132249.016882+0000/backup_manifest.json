@@ -1,0 +1,115 @@
+{
+  "backup_dir": ".queuebash/dev/deliveries/tmp_bob12_backup/20260603T134113Z_2026-06-03T132249.016882+0000",
+  "created_at": "2026-06-03T13:41:13.138549+00:00",
+  "entries": [
+    {
+      "action": "replace",
+      "backup_path": "files/tests/ai_advisory_provider_contract_static.sh",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "191d7eb908659d362dc4b8db1ea96d74",
+      "old_size": 2270,
+      "relpath": "tests/ai_advisory_provider_contract_static.sh"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/tests/cloud_infra_eu_apac_helper_parity_static.sh",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "7dacde21e0e8f2a682477e939d9bc158",
+      "old_size": 2070,
+      "relpath": "tests/cloud_infra_eu_apac_helper_parity_static.sh"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/tests/dev_splice_tool_static.sh",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "6fca5307e2f595491dea4ad789f0a562",
+      "old_size": 2132,
+      "relpath": "tests/dev_splice_tool_static.sh"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/tests/modules_caps_enable_disable_static.sh",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "80bd78c73e42abc6f610a49840ac22f3",
+      "old_size": 2384,
+      "relpath": "tests/modules_caps_enable_disable_static.sh"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/tests/remote_queue_command_static.sh",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "2b74bc74fb770db66478a2af2b210b9a",
+      "old_size": 3286,
+      "relpath": "tests/remote_queue_command_static.sh"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/tests/remote_queue_management_listener_smoke.sh",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "4cebad2ee3a434f1b6ffa4067cf59bef",
+      "old_size": 5069,
+      "relpath": "tests/remote_queue_management_listener_smoke.sh"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/bin/bashqueues-crontab",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "ded03e8332792e7b8e83fdf962395d42",
+      "old_size": 779,
+      "relpath": "bin/bashqueues-crontab"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/reporters.d/ms.sh",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "61dfddab350229f161746ddbcedd572d",
+      "old_size": 5356,
+      "relpath": "reporters.d/ms.sh"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/reporters.d/prom.sh",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "60998c0374d4f80883f9340863b47125",
+      "old_size": 1918,
+      "relpath": "reporters.d/prom.sh"
+    },
+    {
+      "action": "replace",
+      "backup_path": "files/reporters.d/snmp.sh",
+      "change_type": "modified_file",
+      "existed": true,
+      "old_md5": "b258b7286bdf8b06c4aa738ab634fa97",
+      "old_size": 2331,
+      "relpath": "reporters.d/snmp.sh"
+    },
+    {
+      "action": "merge_scratchpad",
+      "backup_path": "files/.queuebash/dev/scratchpad.json",
+      "change_type": "scratchpad_item_merge",
+      "existed": true,
+      "old_md5": "ce233fdc0fb42cae21e12d349b203e8f",
+      "old_size": 250008,
+      "relpath": ".queuebash/dev/scratchpad.json"
+    },
+    {
+      "action": "create",
+      "change_type": "new_or_unbaselined_file",
+      "existed": false,
+      "relpath": ".queuebash/dev/ai_lessons.d/AIL-20260603-132100-644635-9510.json",
+      "rollback": "delete_created_file"
+    }
+  ],
+  "patchset_created_at": "2026-06-03T13:22:49.016882+00:00",
+  "schema": "queuebash.dev_patchset.backup_manifest.v1",
+  "target": "."
+}

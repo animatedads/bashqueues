@@ -1,0 +1,7 @@
+Validation targets for 0.18.74:
+- bash -n queuebash.sh
+- bash -n qbtest_installer.sh
+- queue dev test qbtest --file queuebash.sh --list --json => listed=158 invalid=0
+- queue dev test qbtest --file queuebash.sh --function _queue_command_shell_words_from_args --json => pass
+- queue dev test qbtest --file queuebash.sh --function _queue_cron_spool_dir --json => pass
+- queue dev test qbtest --file queuebash.sh --function _queue_cron_system_dir --json => pass

@@ -1,0 +1,19 @@
+# 0.18.86 validation
+
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS bash tests/queue_fetch_static.sh
+PASS bash tests/mobile_classes_static.sh
+PASS bash tests/ask_baseten_provider_static.sh
+PASS bash tests/ask_baseten_provider_smoke.sh
+PASS python3 -m py_compile bin/queue-ai-ask-baseten bin/queue-ai-broker bin/queue-dev-merge-plan.py
+PASS python3 tests/queue_ai_broker_runtime_json_contract_static.py
+PASS bash tests/cloud_job_intent_submit_static.sh
+PASS python3 tests/cloud_job_intent_submit_json_contract_static.py
+PASS bash tests/dev_merge_plan_static.sh
+PASS bash tests/grid_energy_provider_static.sh
+PASS queue fetch unknown-job command surface probe returns rc=1
+PASS cleanup: no root delivery evidence retained
+PASS assets.d/net_usage.sh absent
+
+NOTE: inherited queue_ai_broker_runtime_smoke.sh timed out in this sandbox runner, matching previous long-running broker smoke behaviour. This merge does not modify the broker runtime. Focused Baseten static/smoke and runtime JSON contract checks passed.

@@ -1,0 +1,9 @@
+PASS bash -n queuebash.sh
+PASS python3 -m py_compile bin/queue-ai-broker
+PASS queue_ai_broker_runtime_static
+PASS queue_ai_broker_runtime_smoke
+PASS queue_ai_broker_runtime_json_contract_static
+PASS queue_ai_broker_contract_static
+PASS queue_ai_job_usage_static
+PASS queue_ai_broker_json_contract_static
+PASS queue dev test qbtest --file queuebash.sh --function _queue_now

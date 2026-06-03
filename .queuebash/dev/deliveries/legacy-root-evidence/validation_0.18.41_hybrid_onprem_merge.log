@@ -1,0 +1,14 @@
+0.18.41 BOB2 hybrid/on-prem merge validation summary
+
+PASS bash -n queuebash.sh
+PASS hybrid/on-prem provider static / fixture / JSON / explain
+PASS cloud platform parity static
+PASS cloud_provision contract / JSON / dry-run smoke / lifecycle dry-run / registry preview
+PASS ask provider contract / JSON / fixture smoke
+PASS edge cloud provider static
+PASS remote queue command static / smoke
+PASS remote queue management listener static / smoke
+PASS cloud_resource provider static / smoke / JSON
+PASS OCI provider static / fixture / JSON
+PASS GPU/APAC/EU/Azure/GCP/AWS provider statics
+PASS scratchpad static / smoke / JSON after repairing inherited string authority fields

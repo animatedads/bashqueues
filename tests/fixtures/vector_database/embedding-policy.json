@@ -1,0 +1,20 @@
+{
+  "decision": "allow",
+  "embedding_sources": [
+    "docs",
+    "manuals",
+    "policy-public-fixtures"
+  ],
+  "excluded_sources": [
+    "private-keys",
+    "raw-sensitive-chat"
+  ],
+  "fail_closed": true,
+  "live_embedding_permitted": false,
+  "mutated": false,
+  "prompt_injection_scan": "fixture_required",
+  "provider": "fixture",
+  "provider_family": "vector_database",
+  "reembed_requires_review": true,
+  "schema": "queuebash.vector_database.embedding_policy.v1"
+}

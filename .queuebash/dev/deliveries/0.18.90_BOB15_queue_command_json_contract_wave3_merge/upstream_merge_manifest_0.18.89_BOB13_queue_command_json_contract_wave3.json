@@ -1,0 +1,82 @@
+{
+  "base": "bashqueues_0.18.88_BOB_MERGER13_provider_family_continuity_review_full_delivery",
+  "created_at": "2026-06-03T00:00:00Z",
+  "items": [
+    {
+      "base_exists": true,
+      "base_md5": "df492110da9def57bc2f5edbfde04d22",
+      "base_sha256": "632f798612d517bc4f0f71d238ea83df5716026fbbbcb2f123376b306c5ca47d",
+      "new_md5": "be5c19db322ef570641815af19fcd2b4",
+      "new_sha256": "7ad53986c433ee122f0dea052fd18c97491e361ee16a6d40dc89337c9715badc",
+      "path": "README.md"
+    },
+    {
+      "base_exists": true,
+      "base_md5": "560c195a6400da22faab6ce7b19aeb0e",
+      "base_sha256": "f4df5f4bfae7437e1204496f8f800148b90d5f27e1b1aee2e8609596ffc6799b",
+      "new_md5": "950b182851108d8cacc3746b897e500f",
+      "new_sha256": "3bf258536d0f9fc781041bb4cf0595e730d53dcdbdf6544c8d2f5d281287598d",
+      "path": "CHANGELOG.md"
+    },
+    {
+      "base_exists": true,
+      "base_md5": "83e148449111e721bc0ce57858101ca6",
+      "base_sha256": "7472848d0eeeab79197acb136ea9995d1cc850aca77ebef4963a1634f5a33491",
+      "new_md5": "6b0a938cc7ba72e86957e2178535e363",
+      "new_sha256": "4a7decefbd18736d67b6a36ae5fd0db8421a59bbccb61701ff377ca0724b2508",
+      "path": "queuebash.sh"
+    },
+    {
+      "base_exists": true,
+      "base_md5": "14e2b2c297694b39667d52d2d4273f04",
+      "base_sha256": "b70204875c612c3f7f51b1183cfca6833e321b4357240e6ef4a8778c71f7ad2d",
+      "new_md5": "575f9851986b5e772df49cd770cec298",
+      "new_sha256": "ad55014b4065037bbe887c3c4fdc47e0e7d34c92eec5fedd5406548ee2eac858",
+      "path": "docs/QUEUE_COMMAND_CONTRACT.md"
+    },
+    {
+      "base_exists": true,
+      "base_md5": "567118fc9907b4de1948be999c32f2d1",
+      "base_sha256": "ba6b807f3baf01434ce7cb43432f457b86d5e7370cf0ede29b236ea639e15db6",
+      "new_md5": "50d685f0ad0beedf24f4885d48302cce",
+      "new_sha256": "9cee71d93361f6c85454d3cea563597cc79660209fa675e3c84e05c7546bfd76",
+      "path": "tests/queue_command_contract_static.sh"
+    },
+    {
+      "base_exists": false,
+      "base_md5": null,
+      "base_sha256": null,
+      "new_md5": "02905c5edfc8b1e62e0a7245d027c909",
+      "new_sha256": "1ee5685c70eb06ecc6b553e16a243c2b1398240a36615c21dd671862aa6c0df4",
+      "path": "tests/queue_command_json_wave3_smoke.sh"
+    },
+    {
+      "base_exists": true,
+      "base_md5": "61db50bf4c69903b714f3fd0a34ed1b5",
+      "base_sha256": "dec7341d65d15738919a331fd50f9fd87ff758ce801cedf3de6dcee10b1eb81b",
+      "new_md5": "5125a63a2f155caa2e92a6bc7f3495d7",
+      "new_sha256": "f6c7bebaa8d6a24b25228dd9d43ef998b2f1bae625a49dd8d60d854c68911028",
+      "path": ".queuebash/dev/scratchpad.json"
+    },
+    {
+      "base_exists": false,
+      "base_md5": null,
+      "base_sha256": null,
+      "new_md5": "dc9c0b89118d6451171eba52046f03f9",
+      "new_sha256": "d4d3f0f0b557022c978e18d4eb337d24fb21a91aabeb9be50112c6762b2e4557",
+      "path": "validation_0.18.89_BOB13_queue_command_json_contract_wave3.log"
+    },
+    {
+      "base_exists": false,
+      "base_md5": null,
+      "base_sha256": null,
+      "new_md5": "ce56e834b5826dc0bebe43f570ba24b5",
+      "new_sha256": "983cd8baf73516f6d6aeb86ee58325302dee0c2d35f82de7bc51daa27760d920",
+      "path": "cleanup_0.18.89_BOB13_queue_command_json_contract_wave3.log"
+    }
+  ],
+  "name": "bashqueues_0.18.89_BOB13_queue_command_json_contract_wave3",
+  "schema": "queuebash.patchset.v1",
+  "summary": "BOB13 queue command JSON contract wave 3: add JSON output for queue show, queue history, and non-follow queue tail.",
+  "version": "0.18.89"
+}

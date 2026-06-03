@@ -1,0 +1,13 @@
+{
+  "base": "bashqueues_0.18.62_BOB_MERGER_remote_admin_transaction_plan_apply_rollback_full_delivery.zip",
+  "removed_existing_qbtest_blocks": 19,
+  "schema": "queuebash.bob_merger.qbtest_transplant.v1",
+  "sources": [
+    "bashqueues_0.18.63_BOB13_qbtest_wave3_wave5_function_coverage.patchset.zip",
+    "bashqueues_0.18.64_BOB13_qbtest_wave6_wave7_function_coverage.patchset.zip",
+    "qbtest_wave8.zip"
+  ],
+  "strategy": "extracted QBTEST blocks from files/queuebash.sh in each patchset and reinserted by matching function name on current merger head; skipped malformed nested outer block and used earlier valid env-valid-name block",
+  "transplanted_qbtest_blocks": 105,
+  "version": "0.18.65"
+}

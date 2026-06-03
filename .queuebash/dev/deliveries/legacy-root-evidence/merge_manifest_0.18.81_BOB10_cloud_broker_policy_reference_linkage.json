@@ -1,0 +1,29 @@
+{
+  "authority": "BOB10",
+  "base": "0.18.80_BOB10_queue_cloud_broker_front",
+  "boundaries": [
+    "no live API calls",
+    "no legal advice or compliance certification",
+    "no provisioning/destruction",
+    "no queue dispatch refactor"
+  ],
+  "changed_files": [
+    ".queuebash/dev/scratchpad.json",
+    "CHANGELOG.md",
+    "README.md",
+    "queuebash.sh",
+    "providers.d/cloud_signals/cloud_signals_provider.sh",
+    "providers.d/cloud_broker/cloud_broker_provider.sh",
+    "policies.d/cloud-signals/service-availability.example.json",
+    "policies.d/cloud-signals/cost-catalog.example.json",
+    "docs/CLOUD_BROKER_FRONT.md",
+    "tests/cloud_broker_front_json_contract_static.py",
+    "tests/cloud_broker_front_smoke.sh",
+    "tests/cloud_broker_policy_references_static.py",
+    "validation_0.18.81_BOB10_cloud_broker_policy_reference_linkage.log",
+    "cleanup_0.18.81_BOB10_cloud_broker_policy_reference_linkage.log"
+  ],
+  "schema": "queuebash.merge_manifest.v1",
+  "title": "cloud broker policy reference linkage",
+  "version": "0.18.81"
+}

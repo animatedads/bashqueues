@@ -1,0 +1,2 @@
+cleanup: final package removes generated __pycache__, .pyc/.pyo, pytest cache, lock/devpatch/reject/orig debris.
+root delivery evidence remains absent; delivery records live under .queuebash/dev/deliveries/0.18.92_BOB15_external_signed_display_resources_merge/.

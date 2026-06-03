@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T13:42:52Z",
+  "created_from_session": "AIS-20260603-133843-855418-7409-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-134252-876929-8374",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "After multi-patchset apply, bump QUEUEBASH_VERSION and normalize README/CHANGELOG to the merger output version; patchsets may update changelog without changing queuebash.sh."
+}

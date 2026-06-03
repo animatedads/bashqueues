@@ -1,0 +1,40 @@
+{
+  "added_files": [
+    "cleanup_0.18.58_BOB10_remote_admin_acl_gated_policy_commands_contract.log",
+    "docs/REMOTE_ADMIN_POLICY_COMMANDS.md",
+    "merge_manifest_0.18.58_BOB10_remote_admin_acl_gated_policy_commands_contract.json",
+    "providers.d/remote_admin/remote_admin_policy.py",
+    "providers.d/remote_admin/remote_admin_policy.sh",
+    "tests/fixtures/remote_admin/acl.tsv",
+    "tests/fixtures/remote_admin/clients.tsv",
+    "tests/fixtures/remote_admin/remote-management.env",
+    "tests/remote_admin_policy_commands_json_contract_static.py",
+    "tests/remote_admin_policy_commands_smoke.sh",
+    "tests/remote_admin_policy_commands_static.sh",
+    "validation_0.18.58_BOB10_remote_admin_acl_gated_policy_commands_contract.log",
+    "validation_0.18.58_BOB10_remote_admin_acl_gated_policy_commands_contract_followup.log"
+  ],
+  "base": "0.18.57_BOB10_gpu_cloud_provisioning_template_parity (0.18.56 baseline plus 0.18.57 patch applied)",
+  "boundaries": [
+    "acl-gated before read/write paths",
+    "no generic file editor",
+    "no arbitrary shell",
+    "no secret disclosure",
+    "no queue dispatch refactor"
+  ],
+  "changed_files": [
+    ".queuebash/dev/scratchpad.json",
+    "CHANGELOG.md",
+    "README.md",
+    "queuebash.sh"
+  ],
+  "cleanup_log": "cleanup_0.18.58_BOB10_remote_admin_acl_gated_policy_commands_contract.log",
+  "created_at": "2026-05-30T13:45:42Z",
+  "release": "0.18.58_BOB10_remote_admin_acl_gated_policy_commands_contract",
+  "removed_files": [],
+  "schema": "queuebash.merge_manifest.v1",
+  "validation_logs": [
+    "validation_0.18.58_BOB10_remote_admin_acl_gated_policy_commands_contract.log",
+    "validation_0.18.58_BOB10_remote_admin_acl_gated_policy_commands_contract_followup.log"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "cluster_id": "fixture-cluster",
+  "decision": "allow",
+  "fail_closed": true,
+  "mutated": false,
+  "node_count_observed": 0,
+  "provider": "fixture",
+  "provider_family": "distributed_framework",
+  "scale_permitted": false,
+  "schema": "queuebash.distributed_framework.cluster.v1",
+  "start_stop_permitted": false
+}

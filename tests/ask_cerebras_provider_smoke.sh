@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 root="$(mktemp -d "${TMPDIR:-/tmp}/queue-ask-cerebras-smoke.XXXXXX")"
 trap 'rm -rf "$root"' EXIT
 

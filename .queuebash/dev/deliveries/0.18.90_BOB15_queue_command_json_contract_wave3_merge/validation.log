@@ -1,0 +1,28 @@
+0.18.90 Bob15 validation
+PASS queue dev functions located merge-plan/extract command surfaces
+PASS queue dev extract _queue_dev_merge_plan_command
+PASS queue dev merge-plan --json executed; warning recorded for older items[] manifest shape
+PASS queue dev functions/extract confirmed new JSON helper functions
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS bash -n tests/queue_command_contract_static.sh tests/queue_command_json_smoke.sh tests/queue_command_json_wave3_smoke.sh
+PASS python3 -m py_compile bin/queue-dev-merge-plan.py and relevant JSON contract tests
+PASS tests/queue_command_contract_static.sh
+PASS tests/queue_command_json_smoke.sh under bounded timeout
+PASS tests/queue_command_json_wave3_smoke.sh under bounded timeout
+PASS tests/provider_family_continuity_bob14_static.sh
+PASS tests/provider_family_consistency_json_contract_static.py
+PASS tests/container_registry_provider_contracts_static.sh
+PASS tests/container_registry_provider_fixture_smoke.sh
+PASS tests/container_registry_provider_json_contract_static.py
+PASS tests/model_registry_provider_contracts_static.sh
+PASS tests/model_registry_provider_fixture_smoke.sh
+PASS tests/model_registry_provider_json_contract_static.py
+PASS tests/provider_service_coverage_bob14_static.py
+PASS queue dev test qbtest --file queuebash.sh --list --json
+PASS README/CHANGELOG/QUEUEBASH_VERSION are 0.18.90
+PASS scratchpad JSON valid and item-level merged
+PASS queuebash.show.v1/history.v1/tail.v1 markers present
+PASS root delivery evidence absent
+PASS cleanup debris absent
+PASS assets.d/net_usage.sh absent

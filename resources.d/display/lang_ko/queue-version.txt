@@ -1,0 +1,1 @@
+Bashqueue 버전 {{VERSION}}

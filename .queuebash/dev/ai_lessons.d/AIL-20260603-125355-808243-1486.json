@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T12:53:55Z",
+  "created_from_session": "AIS-20260603-125228-445947-8498-Bob15",
+  "created_from_try": "",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260603-125355-808243-1486",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "apply_patchset.sh --json may emit precondition JSON followed by apply JSON as separate objects; capture as evidence text or parse line-by-line instead of assuming one JSON document."
+}

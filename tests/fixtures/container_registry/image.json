@@ -1,0 +1,16 @@
+{
+  "schema": "queuebash.container_registry.image.v1",
+  "provider_family": "container_registry",
+  "provider": "fixture",
+  "check": "image",
+  "registry": "fixture.registry.local",
+  "repository": "bashqueues/worker-fixture",
+  "tag": "2026-06-fixture",
+  "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "architectures": ["linux/amd64", "linux/arm64"],
+  "replication_regions": ["fixture-eu", "fixture-uk"],
+  "decision": "allow",
+  "reason": "fixture_image_metadata_available",
+  "fail_closed": true,
+  "mutated": false
+}

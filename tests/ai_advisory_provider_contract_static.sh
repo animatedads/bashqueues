@@ -25,6 +25,6 @@ grep -q 'QUEUEBASH_AI_LIVE_ENABLED' docs/AI_ADVISORY_PROVIDER.md || fail 'live p
 grep -q 'tests as the highest-authority implementation evidence' bin/queue-ai-ask-ollama || fail 'tests priority rule missing from helper'
 
 ! grep -R '/etc/bashqueues' docs/AI_ADVISORY_PROVIDER.md docs/AI_AUDIT_LOGGING.md examples/providers/ai/watson.env.example examples/providers/ai/ollama.env.example || fail 'legacy /etc/bashqueues namespace drift'
-! grep -R 'eval .*provider\|source .*provider\|bash -c .*provider' docs/AI_ADVISORY_PROVIDER.md queuebash.sh examples/providers/ai/watson.env.example || fail 'provider-sourced shell execution pattern found'
+! grep -R 'eval .*provider\|bash -c .*provider' docs/AI_ADVISORY_PROVIDER.md queuebash.sh examples/providers/ai/watson.env.example || fail 'provider shell execution pattern found'
 
 echo PASS

@@ -1,0 +1,26 @@
+{
+  "schema": "queuebash.model_registry.policy.v1",
+  "policy_id": "model-registry-fixture-default",
+  "default_decision": "deny",
+  "fixture_first": true,
+  "live_api_default": false,
+  "credentials_required_for_default_tests": false,
+  "provisioning_default": false,
+  "rules": [
+    {
+      "name": "allow_fixture_catalog_facts",
+      "operation": "model_registry.catalog.read",
+      "decision": "allow",
+      "conditions": {
+        "source": "fixture",
+        "mutated": false
+      }
+    },
+    {
+      "name": "deny_live_inference",
+      "operation": "model_registry.inference.call",
+      "decision": "deny",
+      "reason": "Bob11 owns ask-provider runtime; Bob14 model registry facts must not call inference APIs."
+    }
+  ]
+}

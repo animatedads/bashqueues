@@ -1,0 +1,12 @@
+{
+  "cluster_mutation_permitted": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "job_submit_permitted": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "distributed_framework",
+  "runtime": "ray",
+  "schema": "queuebash.distributed_framework.runtime.v1",
+  "version": "fixture-2.x"
+}

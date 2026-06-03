@@ -1,0 +1,52 @@
+Bob the Merger repaired full delivery validation
+
+Base: bashqueues_0.18.49_BOB_MERGER_round2_full_delivery.zip
+Reviewer blockers addressed:
+- Removed __pycache__/.pyc/.pyo/.pytest_cache debris before packaging.
+- Repaired queue dev file-registry/patchset behaviour so new/unbaselined files do not emit unrequested whole-file function precondition bundles; patchset inspect --target returns bounded deterministic JSON.
+
+Applied/merged after repair:
+- bashqueues_0.18.50_BOB11_ask_openai_compat_local_provider_pack_patchset.zip
+- bashqueues_0.18.50_BOB10_cloud_resource_reconcile_enhancement.patchset.zip
+- bashqueues_0.18.50_BOB2_followup_static_version_pin_cleanup_patchset_repaired.zip (already mostly present; preserved/merged)
+- bashqueues_0.18.51_BOB2_static_version_pin_policy_guard_patchset.zip
+
+Validation performed in sandbox:
+PASS bash -n queuebash.sh
+PASS python3 -m py_compile bin/queue-ai-ask-openai-compat
+PASS python3 -m py_compile bin/queue-ai-ask-watsonx
+PASS python3 -m py_compile tests/cloud_resource_reconcile_enhancement_json_contract_static.py
+PASS python3 -m py_compile tests/provider_static_version_pin_policy_static.py
+PASS bash -n providers.d/ask/openai_compat.sh
+PASS bash -n providers.d/ask/watsonx.sh
+PASS bash -n providers.d/cloud_resource/cloud_resource_provider.sh
+PASS tests/dev_patchset_hardening_smoke.sh
+PASS tests/dev_file_registry_static.sh
+PASS tests/dev_file_registry_json_contract_static.py
+PASS tests/dev_file_registry_smoke.sh
+PASS tests/queue_dev_contract_static.sh
+PASS tests/queue_dev_json_contract_static.py
+PASS tests/ask_watsonx_provider_static.sh
+PASS tests/ask_watsonx_provider_smoke.sh
+PASS tests/ask_openai_compat_provider_static.sh
+PASS tests/ask_openai_compat_provider_smoke.sh
+PASS tests/ask_openai_provider_static.sh
+PASS tests/ask_anthropic_provider_static.sh
+PASS tests/ask_provider_contract_static.sh
+PASS tests/ask_provider_json_contract_static.py
+PASS tests/ask_provider_fixture_smoke.sh
+PASS tests/cloud_provision_approval_live_gate_static.sh
+PASS tests/cloud_provision_approval_live_gate_smoke.sh
+PASS tests/cloud_provision_approval_live_gate_json_contract_static.py
+PASS tests/cloud_resource_reconcile_enhancement_static.sh
+PASS tests/cloud_resource_reconcile_enhancement_smoke.sh
+PASS tests/cloud_resource_reconcile_enhancement_json_contract_static.py
+PASS tests/cloud_resource_provider_contract_static.sh
+PASS tests/provider_family_consistency_static.sh
+PASS tests/provider_family_consistency_json_contract_static.py
+PASS tests/provider_static_version_pin_policy_static.py
+
+Notes:
+- Version/ledger overlaps treated as expected merger noise unless tied to runtime semantics.
+- Runtime version is 0.18.50 because Bob11 openai_compat and Bob10 reconcile add runtime/provider command surface.
+- Bob2 0.18.51 file is recorded as static-test policy guard only, not a runtime bump.

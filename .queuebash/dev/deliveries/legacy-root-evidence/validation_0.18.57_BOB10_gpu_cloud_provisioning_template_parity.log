@@ -1,0 +1,30 @@
+== bash -n queuebash.sh
+== bash -n providers.d/cloud_provision/cloud_provision.sh
+== bash -n providers.d/cloud_infra/cloud_infra.sh
+== bash -n providers.d/cloud_infra/gpu_cloud_stack.sh
+== bash -n tests/cloud_provision_gpu_templates_static.sh
+== bash -n tests/cloud_provision_gpu_templates_smoke.sh
+== python3 -m py_compile tests/cloud_provision_gpu_templates_json_contract_static.py
+== tests/cloud_provision_gpu_templates_static.sh
+== tests/cloud_provision_gpu_templates_smoke.sh
+== tests/cloud_provision_gpu_templates_json_contract_static.py
+== tests/cloud_provision_contract_static.sh
+[PASS] cloud provision contract static checks pass
+== tests/cloud_provision_json_contract_static.py
+PASS cloud_provision_json_contract_static
+== tests/cloud_provision_dry_run_smoke.sh
+[PASS] cloud provision dry-run smoke checks pass
+== tests/cloud_provision_lifecycle_dry_run_smoke.sh
+[PASS] cloud provision lifecycle dry-run smoke checks pass
+== tests/gpu_cloud_provider_contracts_static.sh
+PASS gpu_cloud_provider_contracts_static
+== tests/gpu_cloud_provider_fixture_smoke.sh
+PASS gpu cloud fixture json
+PASS gpu_cloud_provider_fixture_smoke
+== tests/gpu_cloud_provider_json_contract_static.py
+PASS gpu_cloud_provider_json_contract_static
+== tests/dev_qbtest_static.sh
+== tests/dev_qbtest_smoke.sh
+PASS dev_qbtest_smoke
+== tests/dev_qbtest_json_contract_static.py
+PASS dev_qbtest_json_contract_static

@@ -1,0 +1,102 @@
+RUN bash -n queuebash.sh
+RC 0 bash -n queuebash.sh
+RUN bash -n bin/queue-dev-timeout
+RC 0 bash -n bin/queue-dev-timeout
+RUN bash -n tests/dev_qbtest_static.sh
+RC 0 bash -n tests/dev_qbtest_static.sh
+RUN bash -n tests/dev_qbtest_smoke.sh
+RC 0 bash -n tests/dev_qbtest_smoke.sh
+RUN bash -n tests/dev_timeout_helper_smoke.sh
+RC 0 bash -n tests/dev_timeout_helper_smoke.sh
+RUN python3 -m py_compile tests/dev_qbtest_json_contract_static.py
+RC 0 python3 -m py_compile tests/dev_qbtest_json_contract_static.py
+RUN bash tests/dev_qbtest_static.sh
+RC 0 bash tests/dev_qbtest_static.sh
+RUN python3 tests/dev_qbtest_json_contract_static.py
+PASS dev_qbtest_json_contract_static
+RC 0 python3 tests/dev_qbtest_json_contract_static.py
+RUN bin/queue-dev-timeout --timeout 60 -- bash tests/dev_qbtest_smoke.sh
+PASS dev_qbtest_smoke
+RC 0 bin/queue-dev-timeout --timeout 60 -- bash tests/dev_qbtest_smoke.sh
+RUN bin/queue-dev-timeout --timeout 20 -- bash tests/dev_timeout_helper_smoke.sh
+PASS dev_timeout_helper_smoke
+RC 0 bin/queue-dev-timeout --timeout 20 -- bash tests/dev_timeout_helper_smoke.sh
+RUN bash -n providers.d/cloud_infra/alibaba_ecs_stack.sh
+RC 0 bash -n providers.d/cloud_infra/alibaba_ecs_stack.sh
+RUN bash -n providers.d/cloud_infra/aws_ec2_stack.sh
+RC 0 bash -n providers.d/cloud_infra/aws_ec2_stack.sh
+RUN bash -n providers.d/cloud_infra/azure_vm_stack.sh
+RC 0 bash -n providers.d/cloud_infra/azure_vm_stack.sh
+RUN bash -n providers.d/cloud_infra/cloud_infra.sh
+RC 0 bash -n providers.d/cloud_infra/cloud_infra.sh
+RUN bash -n providers.d/cloud_infra/gcp_compute_stack.sh
+RC 0 bash -n providers.d/cloud_infra/gcp_compute_stack.sh
+RUN bash -n providers.d/cloud_infra/hetzner_cloud_stack.sh
+RC 0 bash -n providers.d/cloud_infra/hetzner_cloud_stack.sh
+RUN bash -n providers.d/cloud_infra/huawei_ecs_stack.sh
+RC 0 bash -n providers.d/cloud_infra/huawei_ecs_stack.sh
+RUN bash -n providers.d/cloud_infra/ibm_vpc_stack.sh
+RC 0 bash -n providers.d/cloud_infra/ibm_vpc_stack.sh
+RUN bash -n providers.d/cloud_infra/oci_free_stack.sh
+RC 0 bash -n providers.d/cloud_infra/oci_free_stack.sh
+RUN bash -n providers.d/cloud_infra/otc_ecs_stack.sh
+RC 0 bash -n providers.d/cloud_infra/otc_ecs_stack.sh
+RUN bash -n providers.d/cloud_infra/ovh_vm_stack.sh
+RC 0 bash -n providers.d/cloud_infra/ovh_vm_stack.sh
+RUN bash -n providers.d/cloud_infra/scaleway_instance_stack.sh
+RC 0 bash -n providers.d/cloud_infra/scaleway_instance_stack.sh
+RUN bash -n providers.d/cloud_infra/tencent_cvm_stack.sh
+RC 0 bash -n providers.d/cloud_infra/tencent_cvm_stack.sh
+RUN bash -n providers.d/ask/anthropic.sh
+RC 0 bash -n providers.d/ask/anthropic.sh
+RUN bash -n providers.d/ask/contract.sh
+RC 0 bash -n providers.d/ask/contract.sh
+RUN bash -n providers.d/ask/deepseek.sh
+RC 0 bash -n providers.d/ask/deepseek.sh
+RUN bash -n providers.d/ask/fixture.sh
+RC 0 bash -n providers.d/ask/fixture.sh
+RUN bash -n providers.d/ask/mistral.sh
+RC 0 bash -n providers.d/ask/mistral.sh
+RUN bash -n providers.d/ask/openai.sh
+RC 0 bash -n providers.d/ask/openai.sh
+RUN bash -n providers.d/ask/openai_compat.sh
+RC 0 bash -n providers.d/ask/openai_compat.sh
+RUN bash -n providers.d/ask/watsonx.sh
+RC 0 bash -n providers.d/ask/watsonx.sh
+RUN bash tests/ask_deepseek_provider_static.sh
+PASS
+RC 0 bash tests/ask_deepseek_provider_static.sh
+RUN bash tests/ask_deepseek_provider_smoke.sh
+PASS
+RC 0 bash tests/ask_deepseek_provider_smoke.sh
+RUN bash tests/ask_mistral_provider_static.sh
+PASS
+RC 0 bash tests/ask_mistral_provider_static.sh
+RUN bash tests/ask_mistral_provider_smoke.sh
+PASS
+RC 0 bash tests/ask_mistral_provider_smoke.sh
+RUN bash tests/cloud_infra_eu_apac_helper_parity_static.sh
+cloud_infra_eu_apac_helper_parity_static: PASS
+RC 0 bash tests/cloud_infra_eu_apac_helper_parity_static.sh
+RUN bash tests/cloud_infra_eu_apac_helper_parity_smoke.sh
+cloud_infra_eu_apac_helper_parity_smoke: PASS
+RC 0 bash tests/cloud_infra_eu_apac_helper_parity_smoke.sh
+SKIP missing tests/cloud_platform_parity_static.sh
+SKIP missing tests/provider_static_version_pin_policy_static.sh
+RUN bash tests/queue_dev_contract_static.sh
+PASS queue_dev_contract_static
+RC 0 bash tests/queue_dev_contract_static.sh
+SKIP missing tests/queue_dev_json_contract_static.sh
+RUN bash tests/dev_scratchpad_static.sh
+PASS dev_scratchpad_static
+RC 0 bash tests/dev_scratchpad_static.sh
+RUN python3 tests/dev_scratchpad_json_contract_static.py
+PASS dev_scratchpad_json_contract_static
+RC 0 python3 tests/dev_scratchpad_json_contract_static.py
+RUN bash tests/dev_file_registry_static.sh
+PASS dev_file_registry_static
+
+Additional direct QBTEST probes:
+PASS queue dev test qbtest --file queuebash.sh --json
+PASS queue dev test qbtest --file queuebash.sh --function _queue_now --json
+PASS expected rc=3/no_match for queue dev test qbtest --file queuebash.sh --function my_func --json

@@ -1,0 +1,4 @@
+PASS no root-level delivery records added
+PASS patchset-backups removed from full delivery
+PASS no __pycache__/.pyc/.pyo/.pytest_cache retained
+PASS assets.d/net_usage.sh absent

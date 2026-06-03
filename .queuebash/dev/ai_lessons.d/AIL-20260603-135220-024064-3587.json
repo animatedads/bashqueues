@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T13:52:20Z",
+  "created_from_session": "AIS-20260603-133936-715751-9550-bob14",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-135220-024064-3587",
+  "match": {
+    "command_glob": "tests/*gpu_marketplace* tests/*distributed_framework* tests/provider_service_coverage_wave3*",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "use individual queue dev ai try records for each validation command",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Bob14 service coverage wave3 validation passed through focused queue dev ai try records for GPU marketplace, distributed framework, service coverage registry, and continuity JSON checks."
+}

@@ -1,0 +1,15 @@
+{
+  "decision": "allow",
+  "fail_closed": true,
+  "frameworks": [
+    "ray",
+    "spark",
+    "dask"
+  ],
+  "live_api_default": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "distributed_framework",
+  "schema": "queuebash.distributed_framework.detect.v1",
+  "submit_job_permitted": false
+}

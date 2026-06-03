@@ -1,0 +1,25 @@
+PASS bash -n queuebash.sh
+PASS bash -n providers.d/cloud_provision/cloud_provision.sh
+PASS bash -n providers.d/edge_cloud/edge_cloud_provider.sh
+PASS bash -n providers.d/ask/contract.sh
+PASS bash -n providers.d/ask/fixture.sh
+PASS python compile checks for ask/cloud_provision/edge tests
+PASS ask_provider_contract_static
+PASS ask_provider_json_contract_static
+PASS ask_provider_fixture_smoke
+PASS edge_cloud_provider_contracts_static
+PASS edge_cloud_provider_fixture_smoke
+PASS edge_cloud_provider_json_contract_static
+PASS edge_cloud_explain_static
+PASS cloud_provision_contract_static
+PASS cloud_provision_json_contract_static
+PASS cloud_provision_dry_run_smoke
+PASS cloud_provision_lifecycle_dry_run_smoke
+PASS cloud_provision_registry_preview_static
+PASS cloud_resource_provider_contract_static
+PASS cloud_resource_json_contract_static
+PASS cloud_resource_file_provider_smoke
+PASS dev_scratchpad_static
+PASS dev_scratchpad_json_contract_static
+PASS dev_scratchpad_smoke
+NOTE one long combined validation chain timed out in sandbox after cloud_resource JSON output; remaining focused tests passed individually.

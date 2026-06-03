@@ -1,0 +1,1 @@
+cleanup: removed __pycache__, .pyc, .pyo, .pytest_cache, lock/devpatch/reject/orig debris; removed ephemeral package-local .queuebash/dev/ai_sessions runtime directory; kept durable informational lesson under .queuebash/dev/ai_lessons.d/.

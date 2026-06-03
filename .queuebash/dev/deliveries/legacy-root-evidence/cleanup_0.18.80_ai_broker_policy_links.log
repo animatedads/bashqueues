@@ -1,0 +1,5 @@
+PASS assets.d/net_usage.sh absent
+PASS no __pycache__ / .pyc / .pyo in patchset zip
+PASS no .pytest_cache
+PASS no *.lock / *.dev.lock / *.devpatch.*
+PASS no queuebash.sh.bak.*

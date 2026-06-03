@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 
 grep -Eq 'queue dev validate .*\[--json\]' queuebash.sh
 grep -Eq 'queue dev scope-check .*\[--json\]' queuebash.sh

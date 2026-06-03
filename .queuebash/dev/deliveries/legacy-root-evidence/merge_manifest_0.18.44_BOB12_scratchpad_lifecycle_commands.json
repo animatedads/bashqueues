@@ -1,0 +1,29 @@
+{
+  "base": "bashqueues_0.18.43_BOB12_dev_workflow_command_contracts.zip",
+  "boundaries": [
+    "no dispatcher refactor outside scratchpad subcommand allowance",
+    "no queue dev test automatic scratchpad mutation",
+    "no context/think/attempt/evidence/handover handlers yet",
+    "no AI provider calls",
+    "assets.d/net_usage.sh remains absent"
+  ],
+  "files": {
+    "CHANGELOG.md": "cea0b5bbd73aadcb950c411ebbacb40f65d75ea25cab726e3233576d6d5db886",
+    "README.md": "5fbc306a01c1ad77bdd756ae3760cd12ef090da6235a818701fab706f126ea00",
+    "cleanup_0.18.44_BOB12_scratchpad_lifecycle_commands.log": "34e83bae68428f5f2000265f23818f855d0685c1f303aadda8d59d3f8361eefc",
+    "docs/QUEUE_DEV_SCRATCHPAD_LIFECYCLE.md": "eac72f743f97eac447d1a752036957d3ed0d224c5b4721bcb8e9a2ee7aa2d0c5",
+    "docs/QUEUE_DEV_WORKFLOW_COMMANDS.md": "45a46dbd37a84683e400c4fdfe6d70538729ba44a37fbd0962e0750f5aaf36cd",
+    "queuebash.sh": "3f798e64e4cd2918e1a5c82ae994288a49785e7d98a283e88bfef4d3c865fd31",
+    "tests/dev_scratchpad_lifecycle_json_contract_static.py": "d86237c116bc2becbacb2ab36056c7fe54caa3ef687d6e97511bd4d09dc1e63c",
+    "tests/dev_scratchpad_lifecycle_smoke.sh": "873667ebf5854217265544be8e34dd248afad0135aa73a2ab2136a89833e2e96",
+    "tests/dev_scratchpad_lifecycle_static.sh": "fce59c64caf5464902388d53c40ec4ac886a6216d3ad49c9254f0927ab3ebb2a",
+    "tests/queue_dev_contract_static.sh": "1f13cbd7d62ee7ee03d4b41cd1f6fb86e3377262f29141bb4433db6f13af9bd6",
+    "tests/queue_dev_workflow_contract_static.sh": "0b9b4eaccf334054622f6a6e8e6ebad78da41d2c32d09db0e8691f6b40039567",
+    "validation_0.18.44_BOB12_scratchpad_lifecycle_commands.log": "48c1dadc69bdc55433609776c514576a9174a738a6c4a3011d831e3b02b1bbc0"
+  },
+  "lane": "BOB12",
+  "package": "bashqueues_0.18.44_BOB12_scratchpad_lifecycle_commands",
+  "schema": "queuebash.merge_manifest.v1",
+  "summary": "Implements authority-gated scratchpad lifecycle commands status set and supersede; broader dev workflow command set remains staged.",
+  "version": "0.18.44"
+}

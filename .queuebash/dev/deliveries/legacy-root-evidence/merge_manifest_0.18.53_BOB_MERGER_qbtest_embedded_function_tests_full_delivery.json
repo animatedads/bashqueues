@@ -1,0 +1,18 @@
+{
+  "applied": [
+    "bashqueues_0.18.52_BOB12_qbtest_embedded_function_tests.patchset.zip"
+  ],
+  "base": "bashqueues_0.18.52_BOB_MERGER_dev_context_think_handover_full_delivery.zip",
+  "created_at": "2026-05-30T11:03:44Z",
+  "merge_decisions": [
+    "manual three-way merge: imported QBTEST command only, preserved repaired 0.18.52 dev-context tests",
+    "README/CHANGELOG/version overlaps classified as expected",
+    "did not overwrite existing docs/QUEUE_DEV_CONTEXT_THINK_HANDOVER.md or dev_context smoke/static repairs"
+  ],
+  "package": "0.18.53_BOB_MERGER_qbtest_embedded_function_tests_full_delivery",
+  "runtime_surface": [
+    "queue dev test qbtest --file FILE [--function NAME] [--language bash|python] [--timeout SEC] [--list] [--json]"
+  ],
+  "schema": "queuebash.bob_merger.full_delivery.v1",
+  "version": "0.18.53"
+}

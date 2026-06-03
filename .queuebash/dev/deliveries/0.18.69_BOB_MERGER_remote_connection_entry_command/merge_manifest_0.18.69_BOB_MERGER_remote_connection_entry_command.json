@@ -1,0 +1,52 @@
+{
+  "base": "bashqueues_0.18.68_BOB_MERGER_remote_admin_dual_control_acl_plan_approval_full_delivery.zip",
+  "delivery": "bashqueues_0.18.69_BOB_MERGER_remote_connection_entry_command_full_delivery.zip",
+  "entries": [
+    {
+      "md5": "7881a2d5ba147e5eff619e5f3fe1d0eb",
+      "path": "queuebash.sh",
+      "size": 1020085
+    },
+    {
+      "md5": "3a9a0f149bd8f04a5c2607a1508d20c5",
+      "path": "bin/queue-remote-service-client.py",
+      "size": 23490
+    },
+    {
+      "md5": "600d6e0dcec57b44df25c1cf17ae85b7",
+      "path": "docs/REMOTE_QUEUE_COMMAND.md",
+      "size": 5291
+    },
+    {
+      "md5": "2b74bc74fb770db66478a2af2b210b9a",
+      "path": "tests/remote_queue_command_static.sh",
+      "size": 3286
+    },
+    {
+      "md5": "34357d22f4cf08764d40257426f2c0e3",
+      "path": "tests/remote_queue_command_smoke.sh",
+      "size": 2769
+    },
+    {
+      "md5": "06b52032a52314276a3d6ba749a01ec8",
+      "path": ".queuebash/dev/scratchpad.json",
+      "size": 222236
+    },
+    {
+      "md5": "032eaa0628e4e1b9ecbb64d7fb45961e",
+      "path": "README.md",
+      "size": 136353
+    },
+    {
+      "md5": "d5c9abc20ae98f93b97eaa6acc60bdbf",
+      "path": "CHANGELOG.md",
+      "size": 166793
+    }
+  ],
+  "notes": "Remote connection entry command branch payload folded under current merger-line identity.",
+  "patches": [
+    "bashqueues_0.18.67_remote_connection_entry_command_patchset.zip"
+  ],
+  "schema": "queuebash.bob_merger.full_delivery.v1",
+  "version": "0.18.69"
+}

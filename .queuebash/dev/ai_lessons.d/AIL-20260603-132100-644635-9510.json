@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T13:21:00Z",
+  "created_from_session": "AIS-20260603-132039-880014-8302-bob12",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-132100-644635-9510",
+  "match": {
+    "command_glob": "modules_caps",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "When cleaning suite failures, verify the package tree before accepting a missing-file diagnosis. For module/cap smoke tests, set QUEUEBASH_ROOT and all plugin source directories to isolated fixture paths before sourcing queuebash.sh; otherwise queue init may bootstrap the full tree and become slow or inherit suite state."
+}

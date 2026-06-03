@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.merge_manifest.v1",
+  "package": "0.18.46_BOB2_primary_source_validation_BOB12_patchset_registry_merged",
+  "base": "bashqueues_0.18.45_BOB12_dev_file_registry_patchset_export.zip",
+  "merged_input": "bashqueues_0.18.45_BOB2_primary_source_validation_framework.zip",
+  "scope": [
+    "preserve BOB12 queue dev files registry and patchset export tooling",
+    "carry BOB2 provider primary-source validation, explainability, consistency, and parity documentation/tests forward",
+    "use queue dev files registry and queue dev patchset create during the merge",
+    "no live provider API calls, no credentials required for default tests, no provisioning/destruction, no queue dispatcher refactor beyond accepted command surfaces"
+  ],
+  "patchset_export": "patchset_0.18.46_bob2_bob12_merge.zip"
+}

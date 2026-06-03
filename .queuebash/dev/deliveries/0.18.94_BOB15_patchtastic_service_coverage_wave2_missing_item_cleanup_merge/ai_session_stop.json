@@ -1,0 +1,1 @@
+{"next":"","schema":"queuebash.dev_ai.session_stop.v1","session_id":"AIS-20260603-133843-855418-7409-Bob15","session_status":"done","status":"ok","summary":"0.18.94 patchtastic Bob14 service coverage wave2 plus Bob12 missing-item cleanup merged and validated with bounded queue-dev-ai lessons","tries":{"blocked":0,"failed":0,"passed":1,"timeout":0,"total":3}}

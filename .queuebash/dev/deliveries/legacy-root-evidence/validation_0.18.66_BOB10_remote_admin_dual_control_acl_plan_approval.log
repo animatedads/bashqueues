@@ -1,0 +1,20 @@
+RUN bash -n queuebash.sh
+PASS bash -n queuebash.sh
+RUN bash -n providers.d/remote_admin/remote_admin_policy.sh
+PASS bash -n providers.d/remote_admin/remote_admin_policy.sh
+RUN python3 -m py_compile providers.d/remote_admin/remote_admin_policy.py tests/remote_admin_policy_dual_control_json_contract_static.py tests/remote_admin_policy_plan_apply_json_contract_static.py tests/remote_admin_policy_commands_json_contract_static.py
+PASS python3 -m py_compile providers.d/remote_admin/remote_admin_policy.py tests/remote_admin_policy_dual_control_json_contract_static.py tests/remote_admin_policy_plan_apply_json_contract_static.py tests/remote_admin_policy_commands_json_contract_static.py
+RUN bash tests/remote_admin_policy_dual_control_static.sh
+remote_admin_policy_dual_control_static: ok
+PASS bash tests/remote_admin_policy_dual_control_static.sh
+RUN bash tests/remote_admin_policy_dual_control_smoke.sh
+remote_admin_policy_dual_control_smoke: ok
+PASS bash tests/remote_admin_policy_dual_control_smoke.sh
+RUN python3 tests/remote_admin_policy_dual_control_json_contract_static.py
+remote_admin_policy_dual_control_json_contract_static: ok
+PASS python3 tests/remote_admin_policy_dual_control_json_contract_static.py
+RUN bash tests/remote_admin_policy_plan_apply_static.sh
+remote_admin_policy_plan_apply_static: ok
+PASS bash tests/remote_admin_policy_plan_apply_static.sh
+RUN bash tests/remote_admin_policy_plan_apply_smoke.sh
+remote_admin_policy_plan_apply_smoke: ok

@@ -1,0 +1,20 @@
+PASS bash -n queuebash.sh
+PASS bash -n tests/dev_qbtest_static.sh
+PASS bash -n tests/dev_qbtest_smoke.sh
+PASS python3 -m py_compile tests/dev_qbtest_json_contract_static.py
+PASS dev_qbtest_static
+PASS dev_qbtest_smoke
+PASS dev_qbtest_json_contract_static
+PASS dev_context_think_handover_static
+PASS dev_context_think_handover_smoke
+PASS dev_file_registry_static/smoke/json
+PASS dev_patchset_hardening_static/smoke
+PASS dev_patchset_new_file_smoke
+PASS provider_static_version_pin_policy_static
+PASS queue_dev contract/json
+PASS dev_scratchpad static/json
+PASS ask_openai_compat static/smoke
+PASS ask_watsonx static/smoke
+PASS cloud_resource_reconcile static/smoke/json
+PASS provider_family_consistency static/json
+PASS cleanup checks

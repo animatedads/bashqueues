@@ -1,0 +1,31 @@
+0.18.30 cloud resource provider contract validation
+
+PASS bash -n queuebash.sh
+PASS bash -n providers.d/cloud_resource/cloud_resource_provider.sh
+PASS bash -n assets.d/cloud_resource.sh
+PASS bash -n providers.d/cloud_infra/*.sh
+PASS bash -n tests/cloud_resource_provider_contract_static.sh
+PASS bash -n tests/cloud_resource_file_provider_smoke.sh
+PASS bash -n tests/cloud_infra_helpers_static.sh
+PASS bash -n tests/cloud_infra_helpers_smoke.sh
+PASS python3 -m py_compile tests/cloud_resource_json_contract_static.py tests/cloud_platform_parity_static.py tests/cloud_infra_json_contract_static.py tests/remote_queue_service_provider_json_contract_static.py tests/oci_provider_json_contract_static.py tests/dev_scratchpad_json_contract_static.py
+
+PASS tests/cloud_resource_provider_contract_static.sh
+PASS tests/cloud_resource_json_contract_static.py
+PASS tests/cloud_platform_parity_static.py
+PASS tests/cloud_resource_file_provider_smoke.sh
+PASS tests/cloud_infra_helpers_static.sh
+PASS tests/cloud_infra_helpers_smoke.sh
+PASS tests/cloud_infra_json_contract_static.py
+
+PASS tests/remote_queue_service_provider_contract_static.sh
+PASS tests/remote_queue_service_provider_json_contract_static.py
+PASS tests/oci_provider_contracts_static.sh
+PASS tests/oci_provider_fixture_smoke.sh
+PASS tests/oci_provider_json_contract_static.py
+PASS tests/oci_explain_static.sh
+PASS tests/dev_scratchpad_static.sh
+PASS tests/dev_scratchpad_smoke.sh
+PASS tests/dev_scratchpad_json_contract_static.py
+
+Note: full all-in-one validation in the sandbox hit the tool timeout during slow Python/scratchpad tests, so focused commands were rerun individually with explicit timeouts and passed.

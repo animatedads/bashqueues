@@ -1,0 +1,16 @@
+{
+  "capabilities": [
+    "catalog_inventory",
+    "dataset_metadata",
+    "governance_labels",
+    "retention_evidence"
+  ],
+  "decision": "allow",
+  "fail_closed": true,
+  "live_checks": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "data_lake",
+  "schema": "queuebash.data_lake.detect.v1",
+  "service": "fixture-data-lake"
+}

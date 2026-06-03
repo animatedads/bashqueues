@@ -1,0 +1,6 @@
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS queue dev test qbtest --file queuebash.sh --list --json: 159 listed, 0 invalid
+PASS queue dev test qbtest --file queuebash.sh --function _queue_ai_command_inventory_text --json
+PASS dynamic ask context contains queue remote add syntax and remote helper help
+NOTE full-file QBTEST run timed out in this sandbox after previous known runner rough edges; user live full run completed on 0.18.74 with only the now-repaired fail/invalid cases.

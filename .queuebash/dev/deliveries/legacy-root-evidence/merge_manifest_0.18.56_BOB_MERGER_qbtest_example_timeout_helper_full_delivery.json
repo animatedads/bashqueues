@@ -1,0 +1,29 @@
+{
+  "base": "bashqueues_0.18.55_BOB_MERGER_fake_qbtest_removed_full_delivery.zip",
+  "created_at": "2026-05-30T13:00:05Z",
+  "expected_conflicts": [
+    "queuebash.sh",
+    "docs/QUEUE_DEV_QBTEST.md"
+  ],
+  "name": "BOB_MERGER_qbtest_example_timeout_helper_full_delivery",
+  "patches": [
+    "bashqueues_0.18.56_BOB12_qbtest_example_timeout_helper.patchset.zip"
+  ],
+  "route": [
+    "source queuebash.sh",
+    "queue dev patchset inspect --patchset PATCH --json",
+    "apply_patchset.sh TARGET_DIR precheck",
+    "manual reconcile only expected fake-QBTEST-removal conflicts"
+  ],
+  "schema": "queuebash.bob_merger.full_delivery_manifest.v1",
+  "validation": [
+    "bash -n queuebash.sh",
+    "bash -n bin/queue-dev-timeout",
+    "dev_qbtest static/smoke/json",
+    "dev_timeout_helper_smoke",
+    "direct queue dev qbtest probes",
+    "ask/deepseek and cloud helper preservation checks",
+    "cleanup checks"
+  ],
+  "version": "0.18.56"
+}

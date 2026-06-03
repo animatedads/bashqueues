@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T13:46:54Z",
+  "created_from_session": "AIS-20260603-133936-715751-9550-bob14",
+  "created_from_try": "",
+  "kind": "failure_lesson",
+  "lesson_id": "AIL-20260603-134654-161735-3293",
+  "match": {
+    "command_glob": "providers.d/*/*_provider.sh * explain",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "run provider fixture smoke immediately after helper generation",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "Provider helper case keys must match the exact two-word string built by case \"${1:-help} ${2:-}\"; commands with a second word use \"verb noun\" with no trailing space, while one-word commands such as detect use \"detect \"."
+}

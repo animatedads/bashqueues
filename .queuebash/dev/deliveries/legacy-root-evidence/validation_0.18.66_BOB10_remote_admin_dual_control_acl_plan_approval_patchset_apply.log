@@ -1,0 +1,8 @@
+0.18.66 patchset apply validation
+
+PASS apply_patchset.sh --check --json against fresh 0.18.65 base
+PASS apply_patchset.sh --backup-dir --json against fresh 0.18.65 base
+PASS backup_manifest.json valid JSON
+PASS QUEUEBASH_VERSION updated to 0.18.66 after apply
+PASS python3 -m py_compile providers.d/remote_admin/remote_admin_policy.py after apply
+PASS tests/remote_admin_policy_dual_control_static.sh after apply

@@ -1,0 +1,584 @@
+#!/usr/bin/env python3
+"""queue dev ai: bounded AI development session and lesson ledger.
+
+This helper is intentionally not an AI provider.  It records auditable AI
+maintenance sessions, executes only a small allowlisted command surface, and
+loads lessons from a directory of independent JSON records so patch streams can
+merge by file rather than by a shared monolithic log.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as _dt
+import fnmatch
+import json
+import os
+import random
+import re
+import shlex
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+SCHEMA_PREFIX = "queuebash.dev_ai"
+TAIL_LIMIT = 4000
+
+
+def now() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def stamp() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+
+
+def slug(value: str) -> str:
+    s = re.sub(r"[^A-Za-z0-9_.-]+", "-", (value or "ai").strip()).strip("-._")
+    return s[:48] or "ai"
+
+
+def queue_root() -> Path:
+    return Path(os.environ.get("QUEUEBASH_ROOT", str(Path.home() / ".queuebash")))
+
+
+def dev_root() -> Path:
+    sp = os.environ.get("QUEUEBASH_DEV_SCRATCHPAD")
+    if sp:
+        return Path(sp).resolve().parent
+    return queue_root() / "dev"
+
+
+def sessions_root() -> Path:
+    return dev_root() / "ai_sessions"
+
+
+def lessons_root() -> Path:
+    return dev_root() / "ai_lessons.d"
+
+
+def ensure_dirs() -> None:
+    sessions_root().mkdir(parents=True, exist_ok=True)
+    lessons_root().mkdir(parents=True, exist_ok=True)
+
+
+def rel(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(Path.cwd().resolve()))
+    except Exception:
+        return str(path)
+
+
+def read_json(path: Path, default: Any = None) -> Any:
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return default
+
+
+def write_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+
+
+def append_jsonl(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(data, sort_keys=True, separators=(",", ":")) + "\n")
+
+
+def out_json(data: Any) -> int:
+    print(json.dumps(data, sort_keys=True, separators=(",", ":")))
+    return 0
+
+
+def human_or_json(data: Any, json_mode: bool, human: str) -> int:
+    if json_mode:
+        return out_json(data)
+    print(human)
+    return 0
+
+
+def load_lessons() -> list[dict[str, Any]]:
+    ensure_dirs()
+    lessons: list[dict[str, Any]] = []
+    for path in sorted(lessons_root().glob("*.json")):
+        item = read_json(path)
+        if isinstance(item, dict):
+            item.setdefault("path", rel(path))
+            lessons.append(item)
+    return lessons
+
+
+def session_path(session_id: str) -> Path:
+    return sessions_root() / session_id
+
+
+def load_session(session_id: str) -> dict[str, Any]:
+    data = read_json(session_path(session_id) / "session.json")
+    if not isinstance(data, dict):
+        raise SystemExit(f"queue dev ai: session not found: {session_id}")
+    return data
+
+
+def next_id(prefix: str, label: str = "") -> str:
+    suffix = f"-{slug(label)}" if label else ""
+    return f"{prefix}-{stamp()}-{random.randint(1000,9999)}{suffix}"
+
+
+def command_text(argv: list[str]) -> str:
+    return shlex.join(argv)
+
+
+def tail_text(value: str) -> str:
+    if len(value) <= TAIL_LIMIT:
+        return value
+    return value[-TAIL_LIMIT:]
+
+
+def parse_common_json(args: list[str]) -> tuple[list[str], bool]:
+    json_mode = False
+    out: list[str] = []
+    for arg in args:
+        if arg in {"--json", "-j"}:
+            json_mode = True
+        else:
+            out.append(arg)
+    return out, json_mode
+
+
+def discover(argv: list[str]) -> int:
+    _, json_mode = parse_common_json(argv)
+    version = os.environ.get("QUEUEBASH_VERSION", "unknown")
+    data = {
+        "schema": f"{SCHEMA_PREFIX}.discover.v1",
+        "status": "ok",
+        "version": version,
+        "dev_root": rel(dev_root()),
+        "recommended_flow": [
+            "queue dev ai session start",
+            "queue dev context --json",
+            "queue dev ai session lessons --json",
+            "queue dev ai try -- COMMAND...",
+            "queue dev ai lesson --ok|--fail|--warn",
+            "queue dev validate --quick --json",
+            "queue dev ai session stop",
+        ],
+        "safe_tools": [
+            "queue dev functions", "queue dev extract", "queue dev symbols", "queue dev flow",
+            "queue dev files", "queue dev patchset inspect", "queue dev validate",
+            "queue dev scope-check", "queue dev test qbtest", "bash -n FILE",
+            "python3 -m py_compile FILE", "df -h", "du -sh", "unzip -l ZIP",
+        ],
+        "lesson_store": rel(lessons_root()),
+        "known_landmines": [
+            "Do not restore assets.d/net_usage.sh.",
+            "Do not use provider helpers as shell command sources.",
+            "Avoid broad queue dev functions on very large files if targeted extract/symbols will do.",
+            "Patchset and AI lessons should prefer directory-scanned records to avoid merge collisions.",
+        ],
+        "boundaries": {
+            "not_ai_provider": True,
+            "not_authority_source": True,
+            "try_run_allowlisted_only": True,
+            "lessons_do_not_bypass_acl": True,
+        },
+    }
+    human = "queue dev ai: use session start, session lessons, try -- COMMAND, lesson, session stop. Lessons are loaded from " + rel(lessons_root())
+    return human_or_json(data, json_mode, human)
+
+
+def session_start(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="queue dev ai session start")
+    ap.add_argument("--agent", required=True)
+    ap.add_argument("--role", required=True)
+    ap.add_argument("--task", required=True)
+    ap.add_argument("--base", default="")
+    ap.add_argument("--authority", default="coding_agent")
+    ap.add_argument("--tag", action="append", default=[])
+    ap.add_argument("--json", action="store_true")
+    ns = ap.parse_args(argv)
+    ensure_dirs()
+    sid = next_id("AIS", ns.agent)
+    sdir = session_path(sid)
+    sdir.mkdir(parents=True, exist_ok=False)
+    lessons = [l for l in load_lessons() if l.get("status", "active") == "active"]
+    data = {
+        "schema": f"{SCHEMA_PREFIX}.session.v1",
+        "session_id": sid,
+        "agent": ns.agent,
+        "role": ns.role,
+        "task": ns.task,
+        "base": ns.base,
+        "authority": ns.authority,
+        "tags": ns.tag,
+        "status": "active",
+        "started_at": now(),
+        "stopped_at": "",
+        "lesson_count_at_start": len(lessons),
+    }
+    write_json(sdir / "session.json", data)
+    append_jsonl(sessions_root() / "index.jsonl", {**data, "schema": f"{SCHEMA_PREFIX}.session_index.v1"})
+    for name in ["tries.jsonl", "lessons.jsonl", "evidence.jsonl"]:
+        (sdir / name).touch()
+    (sdir / "summary.md").write_text(f"# AI session {sid}\n\nTask: {ns.task}\n")
+    result = {
+        "schema": f"{SCHEMA_PREFIX}.session_start.v1",
+        "status": "ok",
+        "session_id": sid,
+        "agent": ns.agent,
+        "role": ns.role,
+        "task": ns.task,
+        "base": ns.base,
+        "started_at": data["started_at"],
+        "paths": {
+            "session": rel(sdir / "session.json"),
+            "tries": rel(sdir / "tries.jsonl"),
+            "lessons": rel(sdir / "lessons.jsonl"),
+            "global_lessons_dir": rel(lessons_root()),
+        },
+        "loaded_lessons": len(lessons),
+    }
+    return human_or_json(result, ns.json, f"Started AI session {sid}")
+
+
+def session_list(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="queue dev ai session list")
+    ap.add_argument("--session", default="")
+    ap.add_argument("--active", action="store_true")
+    ap.add_argument("--agent", default="")
+    ap.add_argument("--tries", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    ns = ap.parse_args(argv)
+    ensure_dirs()
+    sessions: list[dict[str, Any]] = []
+    roots = [session_path(ns.session)] if ns.session else sorted(p for p in sessions_root().iterdir() if p.is_dir())
+    for sdir in roots:
+        item = read_json(sdir / "session.json")
+        if not isinstance(item, dict):
+            continue
+        if ns.active and item.get("status") != "active":
+            continue
+        if ns.agent and item.get("agent") != ns.agent:
+            continue
+        tries_path = sdir / "tries.jsonl"
+        try_count = sum(1 for _ in tries_path.open()) if tries_path.exists() else 0
+        summary = {k: item.get(k, "") for k in ["session_id", "agent", "role", "status", "task", "started_at", "stopped_at"]}
+        summary["try_count"] = try_count
+        if ns.tries:
+            summary["tries"] = [json.loads(line) for line in tries_path.read_text().splitlines() if line.strip()] if tries_path.exists() else []
+        sessions.append(summary)
+    result = {"schema": f"{SCHEMA_PREFIX}.session_list.v1", "status": "ok", "sessions": sessions}
+    if ns.json:
+        return out_json(result)
+    if not sessions:
+        print("No AI sessions found.")
+    else:
+        print("SESSION_ID\tAGENT\tSTATUS\tTRIES\tTASK")
+        for s in sessions:
+            print(f"{s['session_id']}\t{s['agent']}\t{s['status']}\t{s['try_count']}\t{s['task']}")
+    return 0
+
+
+def session_lessons(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="queue dev ai session lessons")
+    ap.add_argument("--session", default="")
+    ap.add_argument("--json", action="store_true")
+    ns = ap.parse_args(argv)
+    lessons = [l for l in load_lessons() if l.get("status", "active") == "active"]
+    result = {"schema": f"{SCHEMA_PREFIX}.session_lessons.v1", "status": "ok", "session_id": ns.session, "lessons": lessons}
+    if ns.json:
+        return out_json(result)
+    if not lessons:
+        print("No active AI lessons.")
+    else:
+        print("Active AI lessons:")
+        for idx, lesson in enumerate(lessons, 1):
+            match = lesson.get("match", {}).get("command_glob") or lesson.get("match", {}).get("command_regex") or "*"
+            print(f"  [{idx}] {lesson.get('lesson_id')} {match}")
+            print(f"      {lesson.get('text','')}")
+            if lesson.get("precheck"):
+                print(f"      Suggested precheck: {lesson['precheck']}")
+    return 0
+
+
+def session_stop(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="queue dev ai session stop")
+    ap.add_argument("--session", required=True)
+    ap.add_argument("--status", choices=["done", "blocked", "failed", "abandoned"], required=True)
+    ap.add_argument("--summary", required=True)
+    ap.add_argument("--next", default="")
+    ap.add_argument("--json", action="store_true")
+    ns = ap.parse_args(argv)
+    data = load_session(ns.session)
+    sdir = session_path(ns.session)
+    data["status"] = ns.status
+    data["stopped_at"] = now()
+    data["summary"] = ns.summary
+    data["next"] = ns.next
+    write_json(sdir / "session.json", data)
+    tries = [json.loads(line) for line in (sdir / "tries.jsonl").read_text().splitlines() if line.strip()] if (sdir / "tries.jsonl").exists() else []
+    counts = {"total": len(tries), "passed": 0, "failed": 0, "blocked": 0, "timeout": 0}
+    for t in tries:
+        outcome = t.get("outcome")
+        if outcome == "pass": counts["passed"] += 1
+        elif outcome == "blocked_by_lesson": counts["blocked"] += 1
+        elif outcome == "timeout": counts["timeout"] += 1
+        elif outcome == "fail": counts["failed"] += 1
+    (sdir / "summary.md").write_text(f"# AI session {ns.session}\n\nStatus: {ns.status}\n\nSummary: {ns.summary}\n\nNext: {ns.next}\n")
+    result = {"schema": f"{SCHEMA_PREFIX}.session_stop.v1", "status": "ok", "session_id": ns.session, "session_status": ns.status, "tries": counts, "summary": ns.summary, "next": ns.next}
+    return human_or_json(result, ns.json, f"Stopped AI session {ns.session}: {ns.status}")
+
+
+def allowed_command(argv: list[str]) -> tuple[bool, str]:
+    if not argv:
+        return False, "empty_command"
+    first = argv[0]
+    if first == "queue" and len(argv) >= 3 and argv[1] == "dev":
+        allowed = {"functions", "locate", "extract", "symbols", "flow", "files", "patchset", "validate", "scope-check", "test", "context", "handover", "scratchpad", "ai"}
+        if argv[2] not in allowed:
+            return False, "queue_dev_subcommand_not_allowlisted"
+        if argv[2] == "patchset" and len(argv) >= 4 and argv[3] not in {"inspect"}:
+            return False, "queue_dev_patchset_run_not_allowlisted"
+        if argv[2] == "test" and len(argv) >= 4 and argv[3] != "qbtest":
+            return False, "queue_dev_test_only_qbtest_allowlisted"
+        if argv[2] == "ai":
+            if len(argv) >= 4 and argv[3] == "discover":
+                return True, "allowlisted_queue_dev_ai_discover"
+            if len(argv) >= 5 and argv[3] == "session" and argv[4] in {"list", "lessons"}:
+                return True, "allowlisted_queue_dev_ai_session_readonly"
+            if len(argv) >= 4 and argv[3] == "lessons":
+                return True, "allowlisted_queue_dev_ai_lessons"
+            return False, "queue_dev_ai_mutating_or_recursive_not_allowlisted"
+        return True, "allowlisted_queue_dev"
+    if first == "bash" and len(argv) == 3 and argv[1] == "-n":
+        return True, "allowlisted_bash_syntax"
+    if first == "python3" and len(argv) >= 4 and argv[1:3] == ["-m", "py_compile"]:
+        return True, "allowlisted_python_compile"
+    if first == "python3" and len(argv) == 2 and argv[1].startswith("tests/") and argv[1].endswith(".py"):
+        return True, "allowlisted_python_test"
+    if (first.startswith("tests/") or first.startswith("./tests/")) and first.endswith(".sh"):
+        return True, "allowlisted_shell_test"
+    if first == "df" and argv[1:2] == ["-h"]:
+        return True, "allowlisted_disk_free"
+    if first == "du" and len(argv) >= 2 and argv[1] in {"-sh", "-s", "-h"}:
+        return True, "allowlisted_disk_usage"
+    if first == "unzip":
+        if len(argv) >= 3 and argv[1] == "-l" and argv[2].endswith(".zip"):
+            return True, "allowlisted_unzip_list"
+        if len(argv) >= 2 and any(a.endswith(".zip") for a in argv[1:]):
+            return True, "allowlisted_unzip_extract"
+    return False, "command_not_allowlisted"
+
+
+
+def run_allowed_command(command: list[str], timeout: int) -> tuple[int, str, str, bool]:
+    """Run an allowlisted command.
+
+    queue is normally a sourced shell function, not an executable. When an AI
+    try executes `queue ...`, use the dispatcher-provided QUEUEBASH_SCRIPT_PATH
+    to source queuebash.sh in a bounded subprocess instead of assuming a queue
+    binary exists on PATH.
+    """
+    timed_out = False
+    try:
+        if command and command[0] == "queue":
+            script = os.environ.get("QUEUEBASH_SCRIPT_PATH", "")
+            if not script:
+                return 127, "", "QUEUEBASH_SCRIPT_PATH is not set; cannot run sourced queue function\n", False
+            shell = 'set -e; source "$1" >/dev/null 2>&1; shift; queue "$@"'
+            proc = subprocess.run(["bash", "-lc", shell, "queue-dev-ai-run", script, *command[1:]], text=True, capture_output=True, timeout=max(1, timeout))
+        else:
+            proc = subprocess.run(command, text=True, capture_output=True, timeout=max(1, timeout))
+        return proc.returncode, proc.stdout, proc.stderr, timed_out
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        stdout = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout or b"").decode(errors="replace")
+        stderr = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr or b"").decode(errors="replace")
+        return 124, stdout, stderr, timed_out
+
+
+def lesson_matches(lesson: dict[str, Any], cmd: str, intent: str) -> bool:
+    match = lesson.get("match") if isinstance(lesson.get("match"), dict) else {}
+    glob = match.get("command_glob") or lesson.get("command_match")
+    regex = match.get("command_regex")
+    contains = match.get("intent_contains")
+    if glob and fnmatch.fnmatch(cmd, glob):
+        return True
+    if regex:
+        try:
+            if re.search(regex, cmd):
+                return True
+        except re.error:
+            pass
+    if contains and contains.lower() in intent.lower():
+        return True
+    return False
+
+
+def try_command(argv: list[str]) -> int:
+    if "--" not in argv:
+        raise SystemExit("Usage: queue dev ai try --session ID --intent TEXT [--timeout SEC] [--lesson ID] [--confirm-lesson ID] -- COMMAND...")
+    idx = argv.index("--")
+    opt_argv = argv[:idx]
+    command = argv[idx + 1:]
+    ap = argparse.ArgumentParser(prog="queue dev ai try")
+    ap.add_argument("--session", required=True)
+    ap.add_argument("--intent", default="")
+    ap.add_argument("--timeout", type=int, default=60)
+    ap.add_argument("--lesson", action="append", default=[])
+    ap.add_argument("--confirm-lesson", action="append", default=[])
+    ap.add_argument("--override-lesson", action="append", default=[])
+    ap.add_argument("--reason", default="")
+    ap.add_argument("--expect-rc", type=int, default=None)
+    ap.add_argument("--expect-error", default="")
+    ap.add_argument("--error-kind", default="")
+    ap.add_argument("--json", action="store_true")
+    ns = ap.parse_args(opt_argv)
+    load_session(ns.session)
+    sdir = session_path(ns.session)
+    try_id = next_id("AIT")
+    cmd_text = command_text(command)
+    lessons = [l for l in load_lessons() if l.get("status", "active") == "active"]
+    matched = [l for l in lessons if lesson_matches(l, cmd_text, ns.intent)]
+    confirmed = set(ns.confirm_lesson or []) | set(ns.override_lesson or []) | set(ns.lesson or [])
+    blocking = [l for l in matched if l.get("severity", "warn") in {"warn", "block"} and l.get("lesson_id") not in confirmed]
+    base = {
+        "schema": f"{SCHEMA_PREFIX}.try.v1",
+        "status": "ok",
+        "session_id": ns.session,
+        "try_id": try_id,
+        "intent": ns.intent,
+        "command": command,
+        "command_text": cmd_text,
+        "lesson_context": {
+            "matched": [l.get("lesson_id") for l in matched],
+            "confirmed": sorted(confirmed),
+            "lesson_directed": ns.lesson,
+        },
+        "started_at": now(),
+    }
+    if blocking:
+        result = {
+            **base,
+            "status": "blocked_by_lesson",
+            "outcome": "blocked_by_lesson",
+            "matched_lessons": [{"lesson_id": l.get("lesson_id"), "severity": l.get("severity"), "text": l.get("text"), "precheck": l.get("precheck"), "match": l.get("match", {})} for l in blocking],
+            "next": "Run the recommended precheck with --lesson LESSON_ID, rerun with --confirm-lesson LESSON_ID, or use --override-lesson LESSON_ID --reason TEXT when policy permits.",
+        }
+        append_jsonl(sdir / "tries.jsonl", result)
+        return out_json(result) if ns.json else human_or_json(result, False, "Blocked by active AI lesson. Use --json for details.")
+    allowed, allow_reason = allowed_command(command)
+    if not allowed:
+        result = {**base, "status": "rejected", "outcome": "rejected", "allowed": False, "allow_reason": allow_reason}
+        append_jsonl(sdir / "tries.jsonl", result)
+        return out_json(result) if ns.json else human_or_json(result, False, f"Rejected: {allow_reason}")
+    started = time.monotonic()
+    timed_out = False
+    rc, stdout, stderr, timed_out = run_allowed_command(command, ns.timeout)
+    if timed_out:
+        stderr += f"\ntimeout after {ns.timeout}s"
+    duration_ms = int((time.monotonic() - started) * 1000)
+    outcome = "timeout" if timed_out else ("pass" if rc == 0 else "fail")
+    error_matched = False
+    if ns.expect_rc is not None and rc == ns.expect_rc:
+        error_matched = True
+    if ns.expect_error and (ns.expect_error in stdout or ns.expect_error in stderr):
+        error_matched = True
+    if error_matched and outcome != "pass":
+        outcome = "matched_expected_error"
+    result = {
+        **base,
+        "allowed": True,
+        "allow_reason": allow_reason,
+        "exit_code": rc,
+        "duration_ms": duration_ms,
+        "outcome": outcome,
+        "stdout_tail": tail_text(stdout),
+        "stderr_tail": tail_text(stderr),
+        "error": {
+            "kind": ns.error_kind or ("timeout" if timed_out else ""),
+            "matched": error_matched,
+            "expect_rc": ns.expect_rc,
+            "expect_error": ns.expect_error,
+        },
+        "finished_at": now(),
+    }
+    append_jsonl(sdir / "tries.jsonl", result)
+    return out_json(result) if ns.json else human_or_json(result, False, f"AI try {try_id}: {outcome} rc={rc}")
+
+
+def lesson_command(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="queue dev ai lesson")
+    ap.add_argument("--session", required=True)
+    ap.add_argument("--try", dest="try_id", default="")
+    group = ap.add_mutually_exclusive_group(required=True)
+    group.add_argument("--ok", action="store_true")
+    group.add_argument("--fail", action="store_true")
+    group.add_argument("--warn", action="store_true")
+    ap.add_argument("--text", required=True)
+    ap.add_argument("--match", default="")
+    ap.add_argument("--regex", default="")
+    ap.add_argument("--intent-contains", default="")
+    ap.add_argument("--precheck", default="")
+    ap.add_argument("--json", action="store_true")
+    ns = ap.parse_args(argv)
+    load_session(ns.session)
+    ensure_dirs()
+    kind = "ok_lesson" if ns.ok else ("failure_lesson" if ns.fail else "warning_lesson")
+    severity = "info" if ns.ok else "warn"
+    lid = next_id("AIL")
+    lesson = {
+        "schema": f"{SCHEMA_PREFIX}.lesson.v1",
+        "lesson_id": lid,
+        "kind": kind,
+        "status": "active",
+        "severity": severity,
+        "text": ns.text,
+        "precheck": ns.precheck,
+        "match": {"command_glob": ns.match, "command_regex": ns.regex, "intent_contains": ns.intent_contains},
+        "created_from_session": ns.session,
+        "created_from_try": ns.try_id,
+        "created_at": now(),
+    }
+    path = lessons_root() / f"{lid}.json"
+    write_json(path, lesson)
+    append_jsonl(session_path(ns.session) / "lessons.jsonl", {**lesson, "path": rel(path)})
+    result = {"schema": f"{SCHEMA_PREFIX}.lesson_result.v1", "status": "ok", "lesson": {**lesson, "path": rel(path)}}
+    return out_json(result) if ns.json else human_or_json(result, False, f"Recorded AI lesson {lid}")
+
+
+def main(argv: list[str]) -> int:
+    if not argv or argv[0] in {"help", "--help", "-h"}:
+        print("Usage: queue dev ai discover | session start|stop|list|lessons | try -- COMMAND... | lesson --ok|--fail|--warn")
+        return 0
+    if argv[0] == "discover":
+        return discover(argv[1:])
+    if argv[0] == "session":
+        if len(argv) < 2:
+            raise SystemExit("Usage: queue dev ai session start|stop|list|lessons")
+        sub = argv[1]
+        rest = argv[2:]
+        if sub == "start": return session_start(rest)
+        if sub == "stop": return session_stop(rest)
+        if sub == "list": return session_list(rest)
+        if sub == "lessons": return session_lessons(rest)
+        raise SystemExit(f"queue dev ai session: unknown subcommand: {sub}")
+    if argv[0] == "try":
+        return try_command(argv[1:])
+    if argv[0] in {"lesson", "learn"}:
+        return lesson_command(argv[1:])
+    if argv[0] == "lessons":
+        return session_lessons(argv[1:])
+    raise SystemExit(f"queue dev ai: unknown subcommand: {argv[0]}")
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main(sys.argv[1:]))
+    except SystemExit:
+        raise
+    except Exception as exc:
+        print(json.dumps({"schema": f"{SCHEMA_PREFIX}.error.v1", "status": "error", "error": str(exc)}, sort_keys=True), file=sys.stderr)
+        raise SystemExit(1)

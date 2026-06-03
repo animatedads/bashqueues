@@ -1,0 +1,16 @@
+PASS source queuebash.sh first
+PASS queue dev patchset inspect --patchset remote_connection_entry --json
+PASS apply_patchset.sh --check --json against 0.18.68 base
+PASS apply_patchset.sh --json --backup-dir against 0.18.68 base
+PASS bash -n queuebash.sh
+PASS python3 -m py_compile bin/queue-remote-service-client.py
+PASS bash -n tests/remote_queue_command_static.sh
+PASS bash -n tests/remote_queue_command_smoke.sh
+PASS remote_queue_command_static
+PASS remote_queue_command_smoke
+PASS dev_qbtest_static
+PASS dev_qbtest_smoke
+PASS dev_qbtest_json_contract_static
+PASS queue dev test qbtest --file queuebash.sh --function _queue_now --json
+PASS queue dev test qbtest --file queuebash.sh --list
+PASS queue dev validate --quick --timeout 30 --json

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+cd "$(dirname "$0")/.."
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
 [[ -f queuebash.sh ]] || fail "run from repository root"
@@ -25,7 +26,7 @@ if printf '%s
   fail 'file-based splice inputs must not be read through shell command substitution'
 fi
 
-if printf '%s\n' "$splice_body" | grep -Eq 'eval[[:space:]]|source[[:space:]].*insert|bash[[:space:]]+-c.*insert'; then
+if printf '%s\n' "$splice_body" | grep -Eq 'eval[[:space:]]|(^|[^[:alpha:]])source[[:space:]].*insert|bash[[:space:]]+-c.*insert'; then
   fail 'splice implementation appears to execute inserted content'
 fi
 

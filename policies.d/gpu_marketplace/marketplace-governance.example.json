@@ -1,0 +1,8 @@
+{
+  "allow_driver_install": false,
+  "allow_live_training": false,
+  "allow_spend_actions": false,
+  "fail_closed": true,
+  "quota_check_only": true,
+  "schema": "queuebash.gpu_marketplace.governance_policy.v1"
+}

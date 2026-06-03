@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 PROVIDER="providers.d/cloud_provision/cloud_provision.sh"
 REG="${TMPDIR:-/tmp}/queuebash-cloud-provision-handoff-$$"
 trap 'rm -rf "$REG"' EXIT

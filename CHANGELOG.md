@@ -1,3 +1,76 @@
+# 0.18.95 BOB15 hot-seat service coverage wave3, suite cd cleanup, and display-help extraction merge
+
+- Merged Bob14 service coverage wave 3 for fixture-first GPU marketplace and distributed-framework provider contracts.
+- Added GPU marketplace/distributed-framework docs, policies, fixtures, provider helpers, static tests, smoke tests, and JSON contract tests.
+- Merged Bob12 suite root-cd continuation so legacy/static tests consistently inspect the repository root from queue/harness contexts.
+- Merged Bob16 display/help resource extraction so the largest human help strings live in non-executable display resources while JSON contracts remain locale-independent.
+- Preserved no-live, no-provisioning, no-dispatch-refactor, normalized-JSON-only boundaries.
+- Preserved 0.18.94 service coverage wave 2, missing-item cleanup, 0.18.93 queue-dev-ai dogfood reconciliation, and earlier command JSON/display-resource work.
+
+## 0.18.95 - BOB14 service coverage GPU marketplace and distributed framework
+
+- Add fixture-first GPU marketplace provider contract helper, docs, policies, fixtures, and tests.
+- Add fixture-first distributed-framework provider contract helper, docs, policies, fixtures, and tests.
+- Extend service coverage registry and static validation without live calls or queue dispatch changes.
+
+
+## 0.18.94 - BOB14 service coverage wave2 vector database and data lake
+
+- Added fixture-first vector database provider-family contract helpers, fixtures, policies, docs, and tests.
+- Added fixture-first data lake provider-family contract helpers, fixtures, policies, docs, and tests.
+- Updated service-coverage registry to promote model registry/container registry/vector database/data lake as the current fixture-first service coverage order.
+- Preserved no-live, no-provisioning, no-dispatch-refactor boundaries.
+
+# 0.18.94 BOB15 service coverage wave2 and missing-item suite cleanup merge
+
+- Merged Bob14 service coverage wave 2 for fixture-first vector database and data lake provider contracts.
+- Added vector database/data lake docs, policies, fixtures, provider helpers, static tests, smoke tests, and JSON contract tests.
+- Merged Bob12 missing-item suite cleanup for stale static assertions and hang-prone smoke tests.
+- Preserved no-live, no-provisioning, no-dispatch-refactor, normalized-JSON-only boundaries.
+- Preserved 0.18.93 queue-dev-ai dogfood reconciliation and earlier command JSON/display-resource work.
+
+# 0.18.94 BOB16 display help resource extraction patchset
+
+Moves the main `queue help`, `queue resource-fetch-i18nl --help`, and `queue dev resource --help` display text out of `queuebash.sh` and into signed external display-resource files under `resources.d/display/`. Keeps JSON contracts locale-independent, keeps resource text non-executable with token-only rendering, fixes `queue dev resource insert --lang fallback` so it writes to the runtime fallback directory, and adds focused static/smoke coverage for help-resource extraction.
+
+# 0.18.93 BOB15 queue-dev-ai dogfood reconciliation merge
+
+- Reconciles queue-dev-ai dogfooding against the 0.18.92 display-resource base.
+- Passes QUEUEBASH_SCRIPT_PATH from the queue-dev dispatcher into bin/queue-dev-ai so allowlisted `queue dev ...` tries can source queuebash.sh instead of assuming a standalone `queue` executable.
+- Allows read-only queue-dev-ai self-inspection commands inside `queue dev ai try`: `discover`, `session list`, and `session lessons`; recursive/mutating `try`, `lesson`, and `learn` remain blocked.
+- Adds `learn` as a compatibility alias for `lesson`.
+- Extends the dev-ai smoke test to dogfood `queue dev ai discover` through `try`.
+- Adds directory-scanned AI lesson records capturing validation and tool-use lessons from the dogfood session.
+
+# 0.18.92 BOB15 external signed display resources merge
+
+Adds external signed display-resource support for human-facing queue text, including `docs/QUEUE_DISPLAY_RESOURCES.md`, `resources.d/display/*/queue-version.txt`, resource fetch/verify helpers, and display-resource static/smoke tests. JSON command contracts remain structured and locale-independent; display resources are non-executable presentation files only.
+
+# 0.18.91 BOB15 queue-dev-ai session lessons merge
+
+Adds `queue dev ai` as a bounded development-session and lesson-ledger helper with `discover`, `session`, `try`, and `lesson` commands. Lessons are stored as per-lesson JSON files under `.queuebash/dev/ai_lessons.d/` for non-colliding directory scanning. The helper is not an AI provider, not an authority source, and does not bypass queue policy.
+
+# 0.18.90 BOB15 queue command JSON contract wave3 merge
+
+Merges Bob13 queue command JSON contract wave 3 onto the Bob15 0.18.89 service-coverage full delivery. Adds JSON output for `queue show JOB --json`, `queue history JOB --json`, and non-follow `queue tail JOB --json --no-follow`; keeps streaming JSON follow mode refused with a structured `queuebash.error.v1`; and updates queue command contract docs plus static/smoke coverage.
+
+# 0.18.89 BOB15 service coverage model/container registry merge
+
+Adds fixture-first service-coverage provider contracts for model registry and
+container registry discovery. These helpers return normalized JSON facts only,
+require no live credentials for tests, store no secrets, perform no inference,
+do not pull/push/delete images, do not provision resources, and do not alter
+queue dispatch or ask-provider runtime. Adds docs, policies, fixtures, static
+tests, smoke tests, JSON contract tests, and service-coverage registry metadata.
+
+# 0.18.88 BOB14 provider-family continuity review
+
+Adds Bob14 provider-family continuity review docs and static tests, records the
+Bob14/Bob2 lane handover in scratchpad, adds provider-family quick links, and
+fixes stale IBM provider-family metadata in the machine-readable consistency
+policy while keeping IBM at `high_standard_reference`. No live APIs, no
+provisioning, no queue dispatch refactor, and no `queuebash.sh` changes.
+
 # 0.18.87 - BOB13 queue command JSON contract wave 1
 
 - Add `docs/QUEUE_COMMAND_CONTRACT.md` defining the dual human/JSON command contract.

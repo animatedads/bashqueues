@@ -1,0 +1,15 @@
+{
+  "base": "bashqueues_0.18.58_BOB_MERGER_remote_admin_acl_gated_policy_commands_full_delivery.zip",
+  "created_at": "2026-05-30T16:57:30Z",
+  "name": "BOB_MERGER patchset apply backup hardening full delivery",
+  "notes": [
+    "source-first route used",
+    "patch apply backup hardening applied by patch script",
+    "generated patchset backup removed before final packaging"
+  ],
+  "patchsets": [
+    "bashqueues_0.18.59_BOB12_patchset_apply_backup_hardening.patchset.zip"
+  ],
+  "schema": "queuebash.bob_merger.full_delivery.v1",
+  "version": "0.18.59"
+}

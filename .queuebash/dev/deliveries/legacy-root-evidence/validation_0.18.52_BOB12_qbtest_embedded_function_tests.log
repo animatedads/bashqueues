@@ -1,0 +1,21 @@
+Validation 0.18.52 BOB12 QBTEST embedded function tests
+Base: bashqueues_0.18.51_BOB_MERGER_version_guard_repaired_full_delivery.zip
+Merged first: bashqueues_0.18.50_BOB12_dev_context_think_handover.patchset.zip
+PASS bash -n queuebash.sh
+PASS bash -n tests/dev_context_think_handover_static.sh
+PASS bash -n tests/dev_context_think_handover_smoke.sh
+PASS bash -n tests/dev_qbtest_static.sh
+PASS bash -n tests/dev_qbtest_smoke.sh
+PASS python3 -m py_compile tests/dev_qbtest_json_contract_static.py
+PASS tests/dev_context_think_handover_static.sh
+PASS timeout 90 tests/dev_context_think_handover_smoke.sh
+PASS tests/dev_qbtest_static.sh
+PASS tests/dev_qbtest_json_contract_static.py
+PASS timeout 90 tests/dev_qbtest_smoke.sh
+PASS public command shape: queue dev test qbtest --file sample.sh --json
+PASS tests/queue_dev_contract_static.sh
+PASS tests/queue_dev_json_contract_static.py
+PASS tests/dev_file_registry_static.sh
+PASS tests/dev_patchset_hardening_static.sh
+PASS tests/dev_attempt_evidence_static.sh
+NOTE: one combined validation batch hit the known sandbox timeout pattern after individual checks passed; focused checks were rerun individually and passed.

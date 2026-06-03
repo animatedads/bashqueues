@@ -1,0 +1,6 @@
+0.18.49 BOB12 patchset file-registry hardening cleanup
+
+PASS assets.d/net_usage.sh absent
+PASS caps.d/net_usage.sh present
+PASS no __pycache__ / .pyc / .pyo / .pytest_cache included in patchset
+PASS no *.lock / *.dev.lock / *.devpatch.* / queuebash.sh.bak.* included in patchset

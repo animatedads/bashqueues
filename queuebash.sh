@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.87"
+QUEUEBASH_VERSION="0.18.95"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -5586,7 +5586,8 @@ _queue_code_signature_targets() {
         -type f \( \
             -name 'queuebash.sh' -o -name 'install-system.sh' -o -name 'queuemgr_panel.py' -o -name 'queuemgr.sh' -o -name 'publish_to_github.sh' -o \
             -path "$tree/assets.d/*.sh" -o -path "$tree/caps.d/*.sh" -o -path "$tree/reporters.d/*.sh" -o -path "$tree/bin/*.sh" -o -path "$tree/bin/*.py" -o \
-            -path "$tree/classes/*.env" -o -path "$tree/policies.d/*.env" -o -path "$tree/policies.d/*/*.env" -o -path "$tree/systemd/*" \
+            -path "$tree/classes/*.env" -o -path "$tree/policies.d/*.env" -o -path "$tree/policies.d/*/*.env" -o -path "$tree/systemd/*" -o \
+            -path "$tree/resources.d/display/*/*" -o -path "$tree/resources.d/xml/*/*" -o -path "$tree/resources.d/schemas/*" \
         \) -print 2>/dev/null | while IFS= read -r f; do
             rel="$(_queue_code_relpath "$tree" "$f")"
             case "$rel" in *.bak.*|*.dev.lock|*.sig.env|tests/*|docs/*) continue ;; esac
@@ -10031,6 +10032,79 @@ _queue_print_job_table_json() {
 '
 }
 
+
+_queue_job_record_json_object() {
+    local f="$1" id state pri name cmd class submitted started finished rc log_path
+    [[ -f "$f" ]] || return 1
+    id="$(basename "$f" .job)"
+    state="$(_queue_state_for_job_path "$f" "$(_queue_root)")"
+    pri="$(_queue_job_pri "$f" 2>/dev/null || echo 10)"
+    name="$(_queue_job_name "$f" 2>/dev/null || true)"
+    cmd="$(_queue_job_command "$f" 2>/dev/null || true)"
+    class="$(_queue_class_for_job_file "$f" 2>/dev/null || _queue_job_var_value "$f" JOB_CLASS 2>/dev/null || echo DEFAULT)"
+    submitted="$(_queue_job_var_value "$f" SUBMITTED_AT 2>/dev/null || true)"
+    started="$(_queue_job_var_value "$f" RUN_STARTED_AT 2>/dev/null || true)"
+    finished="$(_queue_job_var_value "$f" EXEC_FINISHED_AT 2>/dev/null || _queue_job_var_value "$f" FINISHED_AT 2>/dev/null || true)"
+    rc="$(_queue_job_var_value "$f" EXIT_CODE 2>/dev/null || true)"
+    log_path="$(_queue_log_existing_path "$id" 2>/dev/null || true)"
+    [[ "$pri" =~ ^-?[0-9]+$ ]] || pri=10
+    printf '{"qid":"%s","state":"%s","priority":%s,"name":"%s","class":"%s","command_line":"%s","times":{"submitted_at":"%s","run_started_at":"%s","finished_at":"%s"},"rc":"%s","job_file":"%s","log_path":"%s","log_exists":%s}' \
+        "$(_queue_json_escape "$id")" "$(_queue_json_escape "$state")" "$pri" \
+        "$(_queue_json_escape "$name")" "$(_queue_json_escape "$class")" "$(_queue_json_escape "$cmd")" \
+        "$(_queue_json_escape "$submitted")" "$(_queue_json_escape "$started")" "$(_queue_json_escape "$finished")" \
+        "$(_queue_json_escape "$rc")" "$(_queue_json_escape "$f")" "$(_queue_json_escape "$log_path")" \
+        "$([[ -n "$log_path" && -f "$log_path" ]] && echo true || echo false)"
+}
+
+_queue_job_records_json_array() {
+    local first=0 f
+    printf '['
+    for f in "$@"; do
+        [[ -f "$f" ]] || continue
+        _queue_json_comma first
+        _queue_job_record_json_object "$f"
+    done
+    printf ']'
+}
+
+_queue_log_lines_json_array() {
+    local path="$1" lines="${2:-40}" from_start="${3:-0}" first=0 line
+    printf '['
+    if [[ -f "$path" ]]; then
+        while IFS= read -r line; do
+            _queue_json_comma first
+            printf '"%s"' "$(_queue_json_escape "$line")"
+        done < <(if [[ "$from_start" -eq 1 ]]; then _queue_log_cat "$path"; else _queue_log_tail "$path" "$lines"; fi | tr -d '\000')
+    fi
+    printf ']'
+}
+
+_queue_history_events_json_array_for_id() {
+    local id="$1" events="$(_queue_root)/events.jsonl" first=0 line
+    printf '['
+    [[ -f "$events" ]] || { printf ']'; return 0; }
+    while IFS= read -r line; do
+        _queue_json_comma first
+        printf '"%s"' "$(_queue_json_escape "$line")"
+    done < <(grep -F "\"job_id\":\"$id\"" "$events" 2>/dev/null | tail -20 || true)
+    printf ']'
+}
+
+_queue_job_history_print_one_json() {
+    local id="$1" f state
+    f="$(_queue_job_file_by_id_any_state "$id" 2>/dev/null || true)"
+    if [[ -z "$f" ]]; then
+        printf '{"qid":"%s","state":"missing","found":false,"events":[]}' "$(_queue_json_escape "$id")"
+        return 0
+    fi
+    state="$(_queue_job_state_for_file "$f")"
+    printf '{"qid":"%s","state":"%s","found":true,"record":' "$(_queue_json_escape "$id")" "$(_queue_json_escape "$state")"
+    _queue_job_record_json_object "$f"
+    printf ',"events":'
+    _queue_history_events_json_array_for_id "$id"
+    printf '}'
+}
+
 _queue_modules_list_json() {
     local filter_kind="${1:-}" line kind name status path first=0
     printf '{"queue_root":"%s","modules":[' "$(_queue_json_escape "$(_queue_root)")"
@@ -11408,13 +11482,21 @@ _queue_job_history_print_one() {
 }
 
 _queue_job_history() {
-    local selector="${1:-}"
-    local id="" f
+    local selector=""
+    local id="" f json_output=0
     local -a ids matches
     local child
 
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json_output=1; shift ;;
+            --help|-h) echo "Usage: queue history <job-id|name> [--json]"; return 0 ;;
+            *) if [[ -z "$selector" ]]; then selector="$1"; shift; else echo "queue history: unexpected argument: $1" >&2; return 2; fi ;;
+        esac
+    done
+
     if [[ -z "$selector" ]]; then
-        echo "Usage: queue history <job-id|name>" >&2
+        echo "Usage: queue history <job-id|name> [--json]" >&2
         return 2
     fi
 
@@ -11425,18 +11507,36 @@ _queue_job_history() {
     fi
 
     [[ -n "$id" ]] || {
-        echo "queue history: job not found: $selector" >&2
+        if [[ "$json_output" -eq 1 ]]; then
+            printf '{"schema":"queuebash.error.v1","ok":false,"command":"history","error":{"code":"not_found","message":"job not found","target":"%s","rc":1}}\n' "$(_queue_json_escape "$selector")"
+        else
+            echo "queue history: job not found: $selector" >&2
+        fi
         return 1
     }
-
-    echo "=============================================================================="
-    echo "QUEUEBASH HISTORY: $id"
-    echo "=============================================================================="
 
     mapfile -t ids < <(_queue_job_history_chain_ids "$id")
     for child in $(_queue_job_history_children_ids "$id"); do
         ids+=("$child")
     done
+
+    if [[ "$json_output" -eq 1 ]]; then
+        local seen=" " first=0 hist_id
+        printf '{"schema":"queuebash.history.v1","target":"%s","root_qid":"%s","jobs":[' "$(_queue_json_escape "$selector")" "$(_queue_json_escape "$id")"
+        for hist_id in "${ids[@]}"; do
+            [[ -n "$hist_id" ]] || continue
+            [[ "$seen" == *" $hist_id "* ]] && continue
+            seen+="$hist_id "
+            _queue_json_comma first
+            _queue_job_history_print_one_json "$hist_id"
+        done
+        printf ']}\n'
+        return 0
+    fi
+
+    echo "=============================================================================="
+    echo "QUEUEBASH HISTORY: $id"
+    echo "=============================================================================="
 
     local seen=" "
     for id in "${ids[@]}"; do
@@ -14364,223 +14464,7 @@ PY
 }
 
 _queue_help() {
-    cat <<'EOF'
-Usage:
-  queue [--dryrun] <command...>
-  queue submit <name> [--dryrun] [--priority N|-p N] [--on-success <cmd...>] [--on-retry-failure <cmd...>] [--on-failure <cmd...>] -- <command...>
-
-  queue list [--state all|pending|running|paused|done|failed|pol_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
-  queue ls   [--state all|pending|running|paused|done|failed|pol_blocked|interrupted|cancelled|deleted] [--name TEXT] [--filter TEXT]
-  queue find <text>
-  queue show <qid|exact-job-name> [--tail N|--full]
-  queue cleared [--json] [--state csv] [--limit N] [--since DATE]
-  queue tail <qid|exact-job-name>
-  queue pids <qid|exact-job-name>
-  queue metrics <qid|exact-job-name>
-  queue explain <qid|exact-job-name>
-  queue deps <qid|exact-job-name>
-  queue waiting
-  queue hooks <qid|exact-job-name>
-
-  queue onsuccess <qid|exact-job-name> -- <command...>
-  queue on-success <qid|exact-job-name> -- <command...>
-  queue onok <qid|exact-job-name> -- <command...>
-  queue onfailure <qid|exact-job-name> -- <command...>
-  queue on-failure <qid|exact-job-name> -- <command...>
-  queue onfail <qid|exact-job-name> -- <command...>
-
-  queue priority <qid|exact-job-name> <priority>
-  queue dynamic-prio <qid|exact-job-name> <priority> [--force] [--dryrun]
-  queue prio     <qid|exact-job-name> <priority> [--force]
-
-  queue pause   <qid|exact-job-name> [--force] [--dryrun]
-  queue unpause <qid|exact-job-name> [--dryrun]
-  queue resume  <qid|exact-job-name> [--dryrun]
-  queue release <qid|exact-job-name> [--dryrun]
-
-  queue delete   <qid|exact-job-name> [--force] [--dryrun]
-  queue rm       <qid|exact-job-name> [--force] [--dryrun]
-  queue undelete <qid|exact-job-name> [pending|done|failed] [--force]
-  queue restore  <qid|exact-job-name> [pending|done|failed] [--force] [--dryrun]
-
-  queue health [--fix] [--deep]
-  queue compress-logs
-  queue clean-logs [--dryrun] [--older-than AGE] [--state STATE] [--force]
-  queue stats [--name exact-job-name] [--today]
-  queue watch [--interval SEC]
-  queue events [--tail N]
-
-  queue draft list
-  queue draft show <draft-id>
-  queue draft create <name> [options] [--after-success QID] [--on-success <cmd...>] -- <command...>
-  queue draft create-from-job <qid>
-  queue draft submit <draft-id>
-  queue draft ready|abandon <draft-id>
-
-  queue run [--workers N] [--detach] [--dryrun]
-  queue sentinel [--once] [--interval SEC] [--detach]
-  queue system-daemon [--once] [--interval SEC] [--detach] [--min-workers N]
-  queue start [--workers N]
-
-  queue clear done [--dryrun]
-  queue clear failed [--dryrun]
-  queue clear paused [--dryrun]
-  queue clear deleted [--dryrun]
-  queue clear all [--dryrun]
-
-  queue env list
-  queue env show NAME [--json]
-  queue env validate NAME [--json]
-
-  queue ask [--provider NAME] [--context csv] [--json] "question"
-  queue ask providers [--json]
-  queue ask provider explain PROVIDER [--json]
-  queue remote add SERVICE --url URL (--secret SECRET|--secret-file FILE|--secret-env ENV) [--json]
-  queue remote list
-  queue remote show SERVICE
-  queue remote SERVICE health
-  queue remote SERVICE queue status
-  queue remote SERVICE job explain JOBID
-  queue remote-admin --actor ACTOR validate|config|client|acl|secret|audit ...
-  queue acl help|check|explain|set|remove
-  queue key-provider help|lookup|registry|register|revoke|rotate
-
-  queue limits
-  queue version
-  queue help
-
-Matching rules:
-  Exact QID                 -> one job
-  Unique QID prefix         -> one job
-  Ambiguous QID prefix      -> refused unless the command supports --force
-  Exact job name            -> group operation for priority/show/hooks/pause/delete/undelete
-  Job-name prefix/substr    -> never used for mutating commands
-
-Runtime PID tracking:
-  Running jobs store RUN_PID, RUN_PGID, and RUN_STARTED_AT in the job file.
-  queue pids <job> shows the recorded PID and any live child processes.
-  queue cancel/kill use RUN_PGID where safe to signal the process group.
-
-Health/recovery:
-  queue health reports queue integrity, dead worker PID files, and stale running jobs.
-  queue sentinel runs a cheap control-plane loop: policy gate, stale-worker cleanup, stale-running repair, and deadline escalation only.
-  queue system-daemon is the root multi-user control loop; it delegates per-user queue daemons and never runs user jobs as root.
-  queue health --fix creates missing directories, removes dead worker records, and moves stale running jobs to interrupted.
-
-Structured audit:
-  State transitions and operator actions append JSONL records to ~/.queuebash/events.jsonl.
-  queue stats summarizes queue states; queue events shows recent audit records.
-  queue ask appends AI advisory audit records to ~/.queuebash/logs/ai-advisory.audit.jsonl by default.
-
-States:
-  pending   waiting to run
-  running   currently claimed by a worker
-  paused    held; workers will not run it
-  done      completed successfully
-  failed    completed with non-zero exit
-  interrupted worker/session died while job was running
-  cancelled operator cancelled or killed
-  deleted   marked deleted; can be undeleted
-
-Batch 2:
-  --retries N and --backoff SEC automatically requeue transient failures.
-  --cpu PCT and --mem SIZE request systemd-run resource limits when available.
-
-Priority:
-  Higher number runs first.
-  Suggested: 100 urgent, 50 high, 10 normal/default, 0 low.
-  Exact job name updates all jobs with that exact name.
-
-Log compression:
-  Completed job logs are gzipped by default: QUEUEBASH_GZIP_LOGS=1.
-  Set QUEUEBASH_GZIP_LOGS=0 to keep completed logs as plain .log files.
-  queue show/tail read .log and .log.gz automatically.
-
-Log cap enforcement:
-  Default max log size is QUEUEBASH_MAX_LOG_SIZE_BYTES or 50MB.
-  Default overflow policy is stderr-only: stdout is suppressed at the first cap,
-  stderr continues until the next cap, and both streams are drained so the child
-  process does not receive a broken pipe.
-  Use --log-overflow kill for strict termination behaviour.
-  Use --allow-large-log or --max-log-size SIZE when huge logs are intentional.
-
-Log safety:
-  queue submit accepts --max-log-size SIZE and --log-overflow stderr-only|kill|allow.
-  Default is QUEUEBASH_MAX_LOG_SIZE_BYTES or 52428800 bytes.
-
-Execution summaries:
-  Completed jobs append EXIT_CODE, DURATION_SECONDS, LOG_BYTES, and EXEC_FINISHED_AT.
-
-Dry run:
-  queue --dryrun <command...> previews a mutating action without changing files.
-  Most mutating commands also accept --dryrun after the command or at the end.
-
-Cancellation semantics:
-  queue cancel/kill move jobs to cancelled and do NOT run ON_FAILURE.
-  ON_FAILURE is only for a command that exits non-zero by itself.
-  Future ON_CANCEL support should be separate from ON_FAILURE.
-
-Hooks:
-  Hooks run after the main job has moved to done or failed.
-  Use command + arguments, not a single quoted executable name.
-
-Examples:
-  queue submit unzip001 --priority 50 -- unzip ../file.zip
-
-  queue submit ingest_tblisi -- \
-    python forensic_helper.py --ingest ./dir --yaml tblisi.yaml
-
-  queue onsuccess ingest_tblisi -- echo complete
-  queue onfailure ingest_tblisi -- echo failed
-  queue hooks ingest_tblisi
-
-  queue list --state pending
-  queue list --state paused
-  queue list --name tblisi
-  queue list --filter unzip
-
-  queue show unzip001
-  queue tail unzip001
-  queue pids unzip001
-  queue stats
-  queue events --tail 20
-  queue ask --provider watson --context docs,commands,classes "How do I run a GDPR-safe overnight job?"
-  queue priority unzip001 100
-
-  queue pause unzip001
-  queue unpause unzip001
-
-  queue delete unzip001
-  queue undelete unzip001
-  queue resubmit failed_job_name
-  queue reevaluate [--all|QID] [--dryrun]
-  queue backup [create] [FILE.tar.gz] [--force]
-  queue backup restore FILE.tar.gz --to DIRECTORY [--force]
-  queue clear deleted
-
-  queue run --workers 4
-
-Queue manager:
-  queuemgr
-  queuemgr --state pending
-  queuemgr --name tblisi
-  queuemgr --filter unzip
-
-  Inside queuemgr:
-    r     run one worker in foreground
-    rd    dryrun one worker
-    r4    run four workers in foreground
-    rd4   dryrun four workers
-    start detached workers from the shell with: queue start --workers 4
-    sentinel control-plane loop with: queue sentinel --detach --interval 30
-
-Notes:
-  Jobs are stored in ~/.queuebash by default.
-  Set QUEUEBASH_ROOT=/some/path to use another queue root.
-
-  For shell syntax in hooks, use bash -c:
-    queue onsuccess myjob -- bash -c 'echo complete && date'
-EOF
+    _queue_resource_fetch_i18nl_command --name queue-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
 }
 
 # -------------------------------------------------------------------
@@ -15833,6 +15717,7 @@ Usage:
   queue dev flow --file FILE [--function FUNCTION] [--json]
   queue dev flow --function FUNCTION [--json]
   queue dev scratchpad help|init|import|add|task|attempt|evidence|done|reject|fail|bump-fail|list|delete|next|export|explain
+  queue dev ai discover|session|try|lesson [--json]
   queue dev attempt begin --text TEXT [--tag TAG...] [--based-on ITEM_ID...] [--json]
   queue dev attempt end ATTEMPT_ID --status STATUS [--text TEXT] [--json]
   queue dev evidence record --attempt ATTEMPT_ID --text TEXT [--file FILE...] [--command COMMAND] [--status STATUS] [--json]
@@ -15866,6 +15751,7 @@ patchsets, reporting file/function scope, collisions, release identity overlaps,
 scratchpad item-merge concerns, delivery evidence relocation, and validation steps.
 attempt and evidence create a bounded development-attempt ledger under the queue root,
 linking validation evidence to named attempts without granting acceptance authority.
+ai provides a bounded AI development session and lesson ledger: discover, session start/stop/list/lessons, try, and lesson. It is not an AI provider or authority source; try execution is allowlisted and lessons are loaded from directory-scanned records to avoid merge collisions.
 context, think, and handover provide bounded working-set context loading,
 auditable planning notes, and reviewer-friendly handover summaries without dumping
 or requiring the AI to know the full scratchpad corpus by default. validate and
@@ -19729,6 +19615,249 @@ EOF_PY
 }
 
 
+_queue_resource_script_dir() {
+    cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P
+}
+
+_queue_resource_name_safe() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9_.-]+$ ]]
+}
+
+_queue_resource_lang_safe() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9_.-]+$ ]]
+}
+
+_queue_resource_lang_normalize() {
+    local lang="${1:-}"
+    lang="${lang%%.*}"
+    lang="${lang//@/_}"
+    lang="${lang//-/_}"
+    case "$lang" in
+        "") echo "lang_eng" ;;
+        lang_*) echo "$lang" ;;
+        en|eng|en_*) echo "lang_eng" ;;
+        es|spa|es_*) echo "lang_es" ;;
+        ca|cat|ca_*|catilian|catalan|catala|catilana|catilanian|lang_catilanian|lang_catalan|lang_catala) echo "lang_catilanian" ;;
+        zh|chi|zho|zh_*) echo "lang_zh" ;;
+        ar|ara|ar_*) echo "lang_ar" ;;
+        fr|fre|fra|fr_*) echo "lang_fr" ;;
+        de|ger|deu|de_*) echo "lang_de" ;;
+        ja|jpn|ja_*) echo "lang_ja" ;;
+        ru|rus|ru_*) echo "lang_ru" ;;
+        pt|por|pt_*) echo "lang_pt" ;;
+        it|ita|it_*) echo "lang_it" ;;
+        ko|kor|ko_*) echo "lang_ko" ;;
+        nl|dut|nld|nl_*) echo "lang_nl" ;;
+        tr|tur|tr_*) echo "lang_tr" ;;
+        pl|pol|pl_*) echo "lang_pl" ;;
+        sv|swe|sv_*) echo "lang_sv" ;;
+        id|ind|id_*) echo "lang_id" ;;
+        vi|vie|vi_*) echo "lang_vi" ;;
+        hi|hin|hi_*) echo "lang_hi" ;;
+        th|tha|th_*) echo "lang_th" ;;
+        cs|ces|cze|cs_*) echo "lang_cs" ;;
+        *) echo "lang_$lang" ;;
+    esac
+}
+
+_queue_resource_lang_parent() {
+    local lang="$(_queue_resource_lang_normalize "${1:-}")"
+    case "$lang" in
+        lang_catilanian|lang_catalan|lang_catala) echo "lang_es" ;;
+        lang_*_*) echo "${lang%_*}" ;;
+        *) return 1 ;;
+    esac
+}
+
+_queue_resource_lang_chain() {
+    local requested="$(_queue_resource_lang_normalize "${1:-}")" parent seen=""
+    for lang in "$requested" "$(_queue_resource_lang_parent "$requested" 2>/dev/null || true)" "lang_eng" "fallback"; do
+        [[ -n "$lang" ]] || continue
+        case " $seen " in *" $lang "*) continue ;; esac
+        seen="$seen $lang"
+        printf '%s\n' "$lang"
+    done
+}
+
+_queue_resource_search_dirs() {
+    local root script_dir
+    root="$(_queue_root 2>/dev/null || printf '%s' "${QUEUEBASH_ROOT:-$HOME/.queuebash}")"
+    script_dir="$(_queue_resource_script_dir 2>/dev/null || pwd -P)"
+    [[ -n "${QUEUEBASH_RESOURCE_DIR:-}" ]] && printf '%s\n' "$QUEUEBASH_RESOURCE_DIR"
+    printf '%s\n' "$root/resources.d"
+    printf '%s\n' "/etc/bashqueues/resources.d"
+    printf '%s\n' "$script_dir/resources.d"
+}
+
+_queue_resource_validate_file() {
+    local file="${1:-}"
+    [[ -f "$file" ]] || { echo "queue resource: file not found: $file" >&2; return 1; }
+    if LC_ALL=C grep -nE '\$\{|\$\(|`' "$file" >/dev/null 2>&1; then
+        echo "queue resource: unsafe shell-style expansion token rejected: $file" >&2
+        return 1
+    fi
+    return 0
+}
+
+_queue_resource_candidate_path() {
+    local dir="$1" kind="$2" lang="$3" name="$4"
+    printf '%s/%s/%s/%s\n' "$dir" "$kind" "$lang" "$name"
+}
+
+_queue_resource_find_file() {
+    local kind="${1:-display}" name="${2:-}" lang="${3:-}" dir cand l
+    _queue_resource_name_safe "$name" || { echo "queue resource: unsafe resource name: $name" >&2; return 2; }
+    for l in $(_queue_resource_lang_chain "$lang"); do
+        _queue_resource_lang_safe "$l" || continue
+        while IFS= read -r dir; do
+            [[ -n "$dir" ]] || continue
+            cand="$(_queue_resource_candidate_path "$dir" "$kind" "$l" "$name")"
+            [[ -f "$cand" ]] || continue
+            _queue_resource_validate_file "$cand" || continue
+            _queue_code_signature_check_file_for_execution "$cand" || continue
+            printf '%s\t%s\t%s\n' "$cand" "$l" "$dir"
+            return 0
+        done < <(_queue_resource_search_dirs)
+    done
+    return 1
+}
+
+_queue_resource_builtin_template() {
+    local name="${1:-}" lang="${2:-}"
+    printf 'resource unavailable: {{NAME}}\n'
+}
+
+_queue_resource_render_stream() {
+    python3 -c 'import re,sys
+text=sys.stdin.read()
+values={}
+for arg in sys.argv[1:]:
+    if "=" not in arg:
+        continue
+    k,v=arg.split("=",1)
+    if re.fullmatch(r"[A-Z][A-Z0-9_]*", k):
+        values[k]=v
+def repl(m):
+    key=m.group(1)
+    return values.get(key, m.group(0))
+sys.stdout.write(re.sub(r"\{\{([A-Z][A-Z0-9_]*)\}\}", repl, text))' "$@"
+}
+
+_queue_resource_fetch_i18nl_command() {
+    local name="" lang="${QUEUEBASH_LANG:-${LANG:-lang_eng}}" json=0 raw=0 kind="display" vars=() found path found_lang dir status="ok" source="external"
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --name|-n) name="${2:-}"; shift 2 ;;
+            --lang|-l) lang="${2:-}"; shift 2 ;;
+            --kind) kind="${2:-}"; shift 2 ;;
+            --var) vars+=("${2:-}"); shift 2 ;;
+            --raw) raw=1; shift ;;
+            --json) json=1; shift ;;
+            --help|-h|--h)
+                _queue_resource_fetch_i18nl_command --name resource-fetch-i18nl-help.txt --lang "$lang"
+                return 0 ;;
+            *) echo "queue resource-fetch-i18nl: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    [[ -n "$name" ]] || { echo "queue resource-fetch-i18nl: --name is required" >&2; return 2; }
+    vars=("VERSION=${QUEUEBASH_VERSION:-}" "QUEUEBASH_VERSION=${QUEUEBASH_VERSION:-}" "NAME=$name" "${vars[@]}")
+    found="$(_queue_resource_find_file "$kind" "$name" "$lang" 2>/dev/null || true)"
+    if [[ -n "$found" ]]; then
+        IFS=$'\t' read -r path found_lang dir <<< "$found"
+        if [[ "$raw" -eq 1 ]]; then
+            content="$(cat "$path")"
+        else
+            content="$(cat "$path" | _queue_resource_render_stream "${vars[@]}")"
+        fi
+    else
+        status="fallback"; source="builtin"; found_lang="fallback"; path=""
+        if [[ "$raw" -eq 1 ]]; then
+            content="$(_queue_resource_builtin_template "$name" "$lang")"
+        else
+            content="$(_queue_resource_builtin_template "$name" "$lang" | _queue_resource_render_stream "${vars[@]}")"
+        fi
+    fi
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.resource_fetch_i18nl.v1","status":"%s","name":"%s","requested_lang":"%s","resolved_lang":"%s","source":"%s","path":"%s","content":"%s"}\n' \
+            "$(_queue_json_escape "$status")" "$(_queue_json_escape "$name")" "$(_queue_json_escape "$(_queue_resource_lang_normalize "$lang")")" "$(_queue_json_escape "$found_lang")" "$(_queue_json_escape "$source")" "$(_queue_json_escape "$path")" "$(_queue_json_escape "$content")"
+    else
+        printf '%s' "$content"
+        case "$content" in *$'\n') ;; *) printf '\n' ;; esac
+    fi
+}
+
+_queue_dev_resource_command() {
+    local sub="${1:-}"; shift || true
+    local name="" lang="lang_eng" dir="resources.d" input="" output="" json=0 raw=1 found path found_lang base target content file=""
+    case "$sub" in
+        extract)
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --name|-n) name="${2:-}"; shift 2 ;;
+                    --lang|-l) lang="${2:-}"; shift 2 ;;
+                    --output|-o) output="${2:-}"; shift 2 ;;
+                    --json) json=1; shift ;;
+                    *) echo "queue dev resource extract: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+            [[ -n "$name" ]] || { echo "Usage: queue dev resource extract --name NAME [--lang LANG] [--output FILE] [--json]" >&2; return 2; }
+            found="$(_queue_resource_find_file display "$name" "$lang" 2>/dev/null || true)"
+            if [[ -n "$found" ]]; then IFS=$'\t' read -r path found_lang base <<< "$found"; content="$(cat "$path")"; else found_lang="fallback"; path=""; content="$(_queue_resource_builtin_template "$name" "$lang")"; fi
+            if [[ -n "$output" ]]; then printf '%s' "$content" > "$output"; fi
+            if [[ "$json" -eq 1 ]]; then printf '{"schema":"queuebash.dev_resource_extract.v1","status":"ok","name":"%s","lang":"%s","path":"%s","output":"%s"}\n' "$(_queue_json_escape "$name")" "$(_queue_json_escape "$found_lang")" "$(_queue_json_escape "$path")" "$(_queue_json_escape "$output")"; elif [[ -z "$output" ]]; then printf '%s\n' "$content"; else echo "resource extracted: $output"; fi
+            ;;
+        insert)
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --dir) dir="${2:-}"; shift 2 ;;
+                    --name|-n) name="${2:-}"; shift 2 ;;
+                    --lang|-l) lang="${2:-}"; shift 2 ;;
+                    --input|-i) input="${2:-}"; shift 2 ;;
+                    --json) json=1; shift ;;
+                    *) echo "queue dev resource insert: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+            [[ -n "$name" && -n "$input" ]] || { echo "Usage: queue dev resource insert --dir DIR --name NAME --lang LANG --input FILE [--json]" >&2; return 2; }
+            _queue_resource_name_safe "$name" || { echo "queue dev resource insert: unsafe resource name" >&2; return 2; }
+            if [[ "$lang" == "fallback" ]]; then
+                lang="fallback"
+            else
+                lang="$(_queue_resource_lang_normalize "$lang")"
+            fi
+            _queue_resource_lang_safe "$lang" || return 2
+            _queue_resource_validate_file "$input" || return 1
+            target="$dir/display/$lang/$name"
+            mkdir -p "$(dirname "$target")" || return 1
+            cp "$input" "$target" || return 1
+            if [[ "$json" -eq 1 ]]; then printf '{"schema":"queuebash.dev_resource_insert.v1","status":"ok","target":"%s","note":"run queue code sign --all to sign external resources"}\n' "$(_queue_json_escape "$target")"; else echo "resource inserted: $target"; echo "note: run queue code sign --all to sign external resources"; fi
+            ;;
+        validate)
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --file) file="${2:-}"; shift 2 ;;
+                    --dir) dir="${2:-}"; file="$dir"; shift 2 ;;
+                    --json) json=1; shift ;;
+                    *) echo "queue dev resource validate: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+            [[ -n "$file" ]] || { echo "Usage: queue dev resource validate --file FILE|--dir DIR [--json]" >&2; return 2; }
+            local checked=0 failed=0 f
+            if [[ -d "$file" ]]; then
+                while IFS= read -r f; do checked=$((checked+1)); _queue_resource_validate_file "$f" || failed=$((failed+1)); done < <(find "$file" -type f \( -path '*/display/*/*' -o -path '*/xml/*/*' -o -path '*/schemas/*' \) | sort)
+            else
+                checked=1; _queue_resource_validate_file "$file" || failed=1
+            fi
+            if [[ "$json" -eq 1 ]]; then printf '{"schema":"queuebash.dev_resource_validate.v1","status":"%s","checked":%s,"failed":%s}\n' "$([[ "$failed" -eq 0 ]] && echo ok || echo failed)" "$checked" "$failed"; else echo "resource validate: $([[ "$failed" -eq 0 ]] && echo ok || echo failed) ($checked checked, $failed failed)"; fi
+            [[ "$failed" -eq 0 ]]
+            ;;
+        help|--help|-h|"")
+            _queue_resource_fetch_i18nl_command --name dev-resource-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
+            ;;
+        *) echo "queue dev resource: unknown subcommand: $sub" >&2; return 2 ;;
+    esac
+}
+
+
 _queue_dev_command() {
     local sub="${1:-}"
     shift || true
@@ -19746,6 +19875,8 @@ _queue_dev_command() {
         splice) _queue_dev_splice "$@" ;;
         test) _queue_dev_test_command "$@" ;;
         scratchpad) _queue_dev_scratchpad_command "$@" ;;
+        ai|llm-session|ai-session) local helper; helper="$(_queue_profile_helper_path queue-dev-ai)" || { echo "queue dev ai: helper not found: queue-dev-ai" >&2; return 1; }; QUEUEBASH_ROOT="$(_queue_root)" QUEUEBASH_DEV_SCRATCHPAD="$(_queue_dev_scratchpad_path)" QUEUEBASH_VERSION="${QUEUEBASH_VERSION:-}" QUEUEBASH_SCRIPT_PATH="${BASH_SOURCE[0]}" "$helper" "$@" ;;
+        resource|resources) _queue_dev_resource_command "$@" ;;
         attempt) _queue_dev_attempt_command "$@" ;;
         evidence) _queue_dev_evidence_command "$@" ;;
         context) _queue_dev_context_command "$@" ;;
@@ -20723,6 +20854,10 @@ queue() {
             _queue_profile_multisig_command "$@"
             ;;
 
+        resource-fetch-i18nl|resource_fetch_i8nl|resource-fetch-i8nl|resource|resources)
+            _queue_resource_fetch_i18nl_command "$@"
+            ;;
+
         version|--version|-V)
             if [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]]; then
                 printf '{"schema":"queuebash.version.v1","version":"%s"}\n' "$(_queue_json_escape "$QUEUEBASH_VERSION")"
@@ -21600,20 +21735,20 @@ queue() {
             ;;
 
         show)
-            local target="$1"
-            shift || true
+            local target="" json_output=0
             local show_full=0
             local show_tail=120
 
             while [[ "$#" -gt 0 ]]; do
                 case "$1" in
+                    --json|-j) json_output=1; shift ;;
                     --full) show_full=1; shift ;;
                     --tail|-n) show_tail="${2:-120}"; shift 2 ;;
-                    *) shift ;;
+                    *) if [[ -z "$target" ]]; then target="$1"; shift; else echo "queue show: unexpected argument: $1" >&2; return 2; fi ;;
                 esac
             done
 
-            [[ -z "$target" ]] && { echo "Usage: queue show <qid-or-exact-job-name> [--tail N|--full]" >&2; return 2; }
+            [[ -z "$target" ]] && { echo "Usage: queue show <qid-or-exact-job-name> [--json] [--tail N|--full]" >&2; return 2; }
 
             local matches=()
             local f
@@ -21629,6 +21764,14 @@ queue() {
                 echo "queue show: ambiguous QID prefix: $target" >&2
                 _queue_print_matches "${matches[@]}"
                 return 2
+            fi
+
+            if [[ "$json_output" -eq 1 ]]; then
+                printf '{"schema":"queuebash.show.v1","target":"%s","show_full":%s,"tail_lines":%s,"jobs":'                     "$(_queue_json_escape "$target")" "$([[ "$show_full" -eq 1 ]] && echo true || echo false)" "$show_tail"
+                _queue_job_records_json_array "${matches[@]}"
+                printf '}
+'
+                return 0
             fi
 
             local shown=0
@@ -21665,10 +21808,15 @@ queue() {
             local lines="${QUEUEBASH_TAIL_LINES:-40}"
             local follow=1
             local from_start=0
+            local json_output=0
             local target=""
 
             while [[ "$#" -gt 0 ]]; do
                 case "$1" in
+                    --json|-j)
+                        json_output=1
+                        shift
+                        ;;
                     --tail|-n)
                         [[ -z "${2:-}" ]] && { echo "queue tail: $1 requires a line count" >&2; return 2; }
                         lines="$2"
@@ -21689,7 +21837,7 @@ queue() {
                     --help|-h)
                         cat <<'EOF'
 Usage:
-  queue tail <qid-or-exact-job-name> [--tail N] [--no-follow] [--from-start] [--tail N|-n N] [--no-follow] [--from-start]
+  queue tail <qid-or-exact-job-name> [--json --no-follow] [--tail N] [--no-follow] [--from-start]
 
 Defaults:
   running job: show last 40 lines, then follow
@@ -21718,7 +21866,7 @@ EOF
                 esac
             done
 
-            [[ -z "$target" ]] && { echo "Usage: queue tail <qid-or-exact-job-name> [--tail N] [--no-follow] [--from-start] [--tail N|-n N] [--no-follow] [--from-start]" >&2; return 2; }
+            [[ -z "$target" ]] && { echo "Usage: queue tail <qid-or-exact-job-name> [--json --no-follow] [--tail N] [--no-follow] [--from-start]" >&2; return 2; }
             [[ "$lines" =~ ^[0-9]+$ ]] || { echo "queue tail: --tail requires a numeric line count" >&2; return 2; }
 
             local matches=()
@@ -21768,6 +21916,21 @@ EOF
 
             local id
             id="$(basename "$chosen" .job)"
+            if [[ "$json_output" -eq 1 ]]; then
+                if [[ "$follow" -eq 1 ]]; then
+                    printf '{"schema":"queuebash.error.v1","ok":false,"command":"tail","error":{"code":"json_follow_not_supported","message":"queue tail --json requires --no-follow or --once","rc":2}}
+'
+                    return 2
+                fi
+                local log_path tail_state
+                tail_state="$(_queue_state_for_job_path "$chosen" "$root")"
+                log_path="$(_queue_log_existing_path "$id" 2>/dev/null || true)"
+                printf '{"schema":"queuebash.tail.v1","qid":"%s","state":"%s","log_path":"%s","from_start":%s,"tail_lines":%s,"log_exists":%s,"lines":'                     "$(_queue_json_escape "$id")" "$(_queue_json_escape "$tail_state")" "$(_queue_json_escape "$log_path")"                     "$([[ "$from_start" -eq 1 ]] && echo true || echo false)" "$lines"                     "$([[ -n "$log_path" && -f "$log_path" ]] && echo true || echo false)"
+                _queue_log_lines_json_array "$log_path" "$lines" "$from_start"
+                printf '}
+'
+                return 0
+            fi
             _queue_tail_log_for_job "$chosen" "$id" "$lines" "$follow" "$from_start"
             ;;
 

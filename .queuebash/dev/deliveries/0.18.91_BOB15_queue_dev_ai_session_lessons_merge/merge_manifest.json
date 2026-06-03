@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.delivery.merge_manifest.v1",
+  "version": "0.18.91",
+  "base": "bashqueues_0.18.90_BOB15_queue_command_json_contract_wave3_full_delivery.zip",
+  "inputs": ["bashqueues_0.18.90_BOB14_queue_dev_ai_session_lessons_patchset.zip"],
+  "strategy": "queue dev merge-plan inspection plus manual reconciliation for README, CHANGELOG, queuebash.sh, and scratchpad item-level merge",
+  "output": "bashqueues_0.18.91_BOB15_queue_dev_ai_session_lessons_full_delivery.zip",
+  "boundary": "bounded queue-dev AI session and lesson ledger only; no AI provider or authority source"
+}

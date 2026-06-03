@@ -1,0 +1,12 @@
+== queue ask notes repair validation ==
+PASS scratchpad JSON valid
+PASS live Gemini evidence present
+PASS design goal present
+PASS landmine present
+PASS README top identity present
+PASS CHANGELOG top identity present
+PASS py_compile dev_scratchpad_json_contract_static.py
+PASS dev_scratchpad_json_contract_static
+PASS dev_scratchpad_json_contract_static.py
+PASS dev_scratchpad_static
+PASS dev_scratchpad_static.sh

@@ -1,0 +1,19 @@
+{
+  "base": "bashqueues_0.18.54_BOB_MERGER_mistral_authority_azure_gcp_full_delivery.zip",
+  "created_at": "2026-05-30T12:12:48.222471+00:00",
+  "merge_policy": {
+    "ledger_hits": "expected",
+    "manual_intervention": "only for Bob11 queuebash.sh precondition overlap after independent Bob10/Bob12 changes",
+    "patch_script_first": true,
+    "version_hits": "expected unless semantic bump conflict"
+  },
+  "merged_patchsets": [
+    "bashqueues_0.18.55_BOB10_eu_apac_cloud_infra_helper_parity.patchset.zip",
+    "bashqueues_0.18.55_BOB12_qbtest_usability_polish_patchset.zip",
+    "bashqueues_0.18.55_BOB11_ask_deepseek_live_provider_pack_patchset.zip"
+  ],
+  "name": "bashqueues_0.18.55_BOB_MERGER_eu_apac_qbtest_deepseek_full_delivery",
+  "runtime_version": "0.18.55",
+  "schema": "queuebash.bob_merger.full_delivery.v1",
+  "version": "0.18.55"
+}

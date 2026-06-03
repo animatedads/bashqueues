@@ -1,0 +1,43 @@
+0.18.37 cloud provisioning contract validation summary
+
+PASS bash -n queuebash.sh
+PASS bash -n providers.d/cloud_provision/cloud_provision.sh
+PASS bash -n providers.d/cloud_infra/*.sh
+PASS bash -n providers.d/*/*_provider.sh
+PASS bash -n assets.d/cloud_resource.sh
+PASS bash -n assets.d/aws.sh
+PASS bash -n assets.d/azure.sh
+PASS bash -n assets.d/gcp.sh
+PASS python compile checks for changed/new Python tests
+
+PASS tests/cloud_provision_contract_static.sh
+PASS tests/cloud_provision_json_contract_static.py
+PASS tests/cloud_provision_dry_run_smoke.sh
+PASS tests/cloud_resource_provider_contract_static.sh
+PASS tests/cloud_resource_json_contract_static.py
+PASS tests/cloud_resource_file_provider_smoke.sh
+PASS tests/cloud_platform_parity_static.py
+PASS tests/cloud_infra_helpers_static.sh
+PASS tests/cloud_infra_helpers_smoke.sh
+PASS tests/cloud_infra_json_contract_static.py
+PASS tests/aws_provider_contracts_static.sh
+PASS tests/aws_provider_fixture_smoke.sh
+PASS tests/aws_provider_json_contract_static.py
+PASS tests/oci_provider_contracts_static.sh
+PASS tests/oci_provider_fixture_smoke.sh
+PASS tests/oci_provider_json_contract_static.py
+PASS tests/oci_explain_static.sh
+PASS tests/gcp_provider_contracts_static.sh
+PASS tests/gcp_provider_fixture_smoke.sh
+PASS tests/gcp_provider_json_contract_static.py
+PASS tests/azure_provider_contracts_static.sh
+PASS tests/azure_provider_fixture_smoke.sh
+PASS tests/azure_provider_json_contract_static.py
+PASS tests/gpu_cloud_provider_contracts_static.sh
+PASS tests/gpu_cloud_provider_fixture_smoke.sh
+PASS tests/gpu_cloud_provider_json_contract_static.py
+PASS tests/dev_scratchpad_static.sh
+PASS tests/dev_scratchpad_json_contract_static.py
+PASS tests/dev_scratchpad_smoke.sh
+
+Note: one combined all-in-one validation invocation exceeded the sandbox timeout while running later regression batches, so the remaining tests were rerun individually with bounded timeouts and passed.

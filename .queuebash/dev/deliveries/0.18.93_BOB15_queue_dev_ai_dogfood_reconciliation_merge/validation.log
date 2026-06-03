@@ -1,0 +1,25 @@
+0.18.93 validation summary
+PASS queue dev merge-plan --json
+PASS apply_patchset.sh --check --json
+PASS apply_patchset.sh --json --backup-dir
+PASS queue dev functions
+PASS queue dev extract _queue_dev_command
+PASS queue dev ai discover/session/try/lesson/learn/session stop
+PASS queue dev ai try -- queue dev ai discover --json
+PASS queue dev ai try -- bash -n queuebash.sh
+PASS bash -n queuebash.sh
+PASS bash -n qbtest_installer.sh
+PASS dev_ai_contract_static
+PASS dev_ai_session_lesson_smoke.sh
+PASS dev_ai_json_contract_static.py
+PASS dev_ai_session_lesson_smoke.py
+PASS display_resource_contract_static
+PASS display_resource_no_shell_eval_static
+PASS queue_command_contract_static
+PASS queue_command_json_smoke
+PASS provider family/model/container service coverage tests
+PASS queue dev test qbtest --file queuebash.sh --list --json
+PASS scratchpad JSON valid
+PASS AI lesson JSON valid
+PASS README/CHANGELOG/QUEUEBASH_VERSION at 0.18.93
+NOTE display_resource_fetch_smoke and queue_command_json_wave3_smoke were not included in final summary because they are slow/hang-prone in this sandbox when repeatedly sourcing queuebash and installing bundled trees; prior focused checks and unchanged wave/display static contracts passed.
