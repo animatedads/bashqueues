@@ -14,5 +14,7 @@ for fam, priority in [('model_registry',1),('container_registry',2),('vector_dat
 assert service['default_safety_contract']['fixture_first'] is True
 assert service['default_safety_contract']['live_api_default'] is False
 assert service['default_safety_contract']['normalized_json_only'] is True
-assert service['next_candidates'] == ['gpu_marketplace','distributed_framework']
+# Later waves may advance next_candidates after these families are implemented.
+for fam in ['gpu_marketplace','distributed_framework']:
+    assert fam in service['families'], fam
 print('PASS provider_service_coverage_wave2_bob14_static')

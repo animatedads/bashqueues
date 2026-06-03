@@ -1,0 +1,9 @@
+{
+  "default_decision": "deny_live",
+  "fail_closed": true,
+  "provider_family": "feature_store",
+  "require_explainability": true,
+  "require_legal_review_for_live": true,
+  "require_no_secret_fixture_scan": true,
+  "schema": "queuebash.feature_store.governance_policy.v1"
+}

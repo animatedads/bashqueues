@@ -1,0 +1,18 @@
+{
+  "credentials_required_for_default_tests": false,
+  "fixture_first": true,
+  "live_api_default": false,
+  "mutating_operations_allowed": false,
+  "non_goals": [
+    "secret-read",
+    "secret-write",
+    "secret-delete",
+    "credential-broker",
+    "runtime-injection",
+    "job-runtime-mutation"
+  ],
+  "normalized_json_only": true,
+  "provider_family": "secret_manager",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.secret_manager.policy.v1"
+}

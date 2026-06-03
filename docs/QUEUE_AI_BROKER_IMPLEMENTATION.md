@@ -58,3 +58,23 @@ No default test performs a real network call. The smoke test injects a local fak
 ## Baseten provider note
 
 Baseten Model APIs are represented as an OpenAI-compatible cloud inference provider. Live use is gated, credential lookup is file/env based, and AI broker decisions should surface applicable corporate/vendor, privacy, data-residency, and audit policy references when configured.
+
+## 0.18.98 health-cache fallback evidence
+
+The broker now overlays static registry health hints with a local health cache. This keeps provider selection fixture-first while allowing runtime evidence to mark a provider/model as timed out, rate-limited, missing, disabled, degraded, or cooling down.
+
+The health cache is documented in `docs/QUEUE_AI_BROKER_HEALTH_CACHE.md`. It is consumed before model selection, and explain output records health rejection reasons so reviewers can see why fallback skipped a candidate.
+
+Example:
+
+```sh
+queue ai health \
+  --provider openai_compat \
+  --model local-model \
+  --set-state timeout \
+  --reason "provider timed out" \
+  --cooldown-seconds 60 \
+  --json
+```
+
+This emits `queuebash.ai_broker.health_update.v1`. Subsequent `queue ai explain --json` and brokered calls skip that model while the cooldown is active and report `health_cooldown` or the relevant health state in rejected-candidate evidence.

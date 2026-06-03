@@ -1,0 +1,15 @@
+{
+  "decision": "allow",
+  "fail_closed": true,
+  "mutated": false,
+  "owners": [
+    "ml-platform"
+  ],
+  "provider": "fixture",
+  "provider_family": "feature_store",
+  "retention_days": 90,
+  "schema": "queuebash.feature_store.lineage.v1",
+  "sources": [
+    "warehouse:customer_events"
+  ]
+}

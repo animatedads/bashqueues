@@ -6766,6 +6766,495 @@
       ],
       "text": "0.18.95 Bob14 service coverage wave3 adds fixture-first GPU marketplace and distributed-framework provider contracts, docs, policies, fixtures, provider helpers, static/smoke/JSON contract tests, and service coverage registry updates. Validation was dogfooded through queue dev ai session AIS-20260603-133936-715751-9550-bob14 with focused try records and lessons.",
       "updated_at": "2026-06-03T13:52:39Z"
+    },
+    {
+      "authority": {
+        "confidence": "accepted",
+        "name": "reviewer",
+        "source": "bob13_rebase",
+        "type": "reviewer"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T14:29:01Z",
+      "id": "SP-20260603-JSON94-611622",
+      "kind": "decision",
+      "provenance": {
+        "source_ref": "bob13-json-wave1-0.18.93-rebase",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "accepted",
+        "0.18.94",
+        "bob13",
+        "json-contract",
+        "0.18.93-base",
+        "rebase"
+      ],
+      "text": "0.18.94 BOB13 queue command JSON contract wave1 rebased against 0.18.93. The 0.18.93 base already contains the wave1 runtime/docs/tests; this patch corrects release identity and records validation from the 0.18.93 base instead of the stale 0.18.86 base.",
+      "updated_at": "2026-06-03T14:29:01Z"
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "coding_agent",
+        "source": "queue dev scratchpad",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T15:05:40Z",
+      "id": "SP-20260603-150540-382103-5892",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "bob14",
+        "service-coverage",
+        "wave4",
+        "secret-manager",
+        "feature-store"
+      ],
+      "text": "0.18.96 Bob14 service coverage wave4 adds fixture-first secret_manager and feature_store provider families with normalized JSON-only helpers, policies, fixtures, docs, explainability/legal notes, smoke/static/JSON tests, service coverage registry update, and AI-session lessons. No live calls, no provisioning, no dispatch refactor.",
+      "updated_at": "2026-06-03T15:05:40Z"
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "bob10",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T14:59:25Z",
+      "id": "SP-20260603-BOB10-01896-cloud-broker-job-intent",
+      "kind": "task",
+      "provenance": {
+        "source_ref": "0.18.96_BOB10_cloud_broker_job_intent_explain",
+        "source_type": "patchset"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "0.18.96",
+        "bob10",
+        "cloud-broker",
+        "job-intent",
+        "non-mutating"
+      ],
+      "text": "0.18.96 BOB10 cloud broker job intent explain patch: add non-mutating queue cloud broker job-intent JOB|--job-file FILE to read submitted --uses-cloud metadata and run broker explain evidence without resource claim, provisioning, infra lifecycle call, live API, or dispatch binding.",
+      "updated_at": "2026-06-03T14:59:25Z"
+    },
+    {
+      "authority": {
+        "confidence": "reported",
+        "name": "coding_agent",
+        "source": "manual-scratchpad-import",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T15:12:30Z",
+      "id": "SP-20260603-151230-731437-7494",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "bob12-0.18.96-suite-cleanup",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "bob12",
+        "remote-queue",
+        "suite-cleanup",
+        "0.18.96"
+      ],
+      "text": "0.18.96 Bob12 remote listener smoke boundedness cleanup: default suite smoke now covers dynamic-port listener startup, /healthz, one signed health request, audit evidence, and bounded cleanup. Deeper negative client denial matrix checks should remain focused or opt-in to avoid constrained-suite hangs.",
+      "updated_at": "2026-06-03T15:12:30Z"
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "bob12",
+        "source": "queue dev scratchpad",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T16:09:29Z",
+      "id": "SP-20260603-160929-444427-1681",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "bob12",
+        "suite",
+        "bounded-smoke",
+        "remote-command",
+        "display-resources"
+      ],
+      "text": "0.18.97 Bob12 bounded smoke continuation: display_resource_fetch_smoke now calls resource helper functions directly after sourcing once to avoid repeated queue wrapper _queue_init cost; remote_queue_command_static now checks remote command usage in REMOTE_QUEUE_COMMAND.md rather than stale queuebash.sh help text.",
+      "updated_at": "2026-06-03T16:09:29Z"
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "coding_agent",
+        "source": "queue dev scratchpad",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T16:05:14Z",
+      "id": "SP-20260603-160514-967115-4415",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "bob14",
+        "service-coverage",
+        "policy-engine",
+        "observability-backend",
+        "0.18.97"
+      ],
+      "text": "0.18.97 Bob14 service coverage wave5 adds fixture-first policy_engine and observability_backend provider contracts with normalized JSON-only helpers, docs, policies, fixtures, static/smoke/JSON tests, and service coverage registry updates. Validated through queue dev ai session AIS-20260603-155451-655402-9642-bob14 with focused try records and lesson confirmations.",
+      "updated_at": "2026-06-03T16:05:14Z"
+    },
+    {
+      "authority": {
+        "confidence": "accepted",
+        "name": "team_leader",
+        "source": "queue dev scratchpad",
+        "type": "team_leader"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T17:00:49Z",
+      "id": "SP-20260603-170049-647642-6521",
+      "kind": "decision",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "secrets",
+        "bob17",
+        "provider-contract"
+      ],
+      "text": "Secrets provider architecture accepted as roadmap direction. bashqueues should not become a secret store; it should become a governed secret access broker with provider-neutral contracts and fixture-first tests. Default delivery should be tmpfs/file-based secret-as-file, not environment variables.",
+      "updated_at": "2026-06-03T17:00:49Z"
+    },
+    {
+      "authority": {
+        "confidence": "accepted",
+        "name": "team_leader",
+        "source": "queue dev scratchpad",
+        "type": "team_leader"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T17:01:28Z",
+      "id": "SP-20260603-170128-625384-5972",
+      "kind": "contract",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "secrets",
+        "security",
+        "no-secret-leak"
+      ],
+      "text": "Secrets provider contract: secret values must never appear in JSON output, logs, scratchpad, docs/examples/zips, command lines, or ordinary environment variables by default. Provider responses return redacted metadata and delivery references only. Default delivery is per-job file/tmpfs with restrictive permissions and cleanup evidence.",
+      "updated_at": "2026-06-03T17:01:28Z"
+    },
+    {
+      "authority": {
+        "confidence": "accepted",
+        "name": "team_leader",
+        "source": "queue dev scratchpad",
+        "type": "team_leader"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T17:02:06Z",
+      "id": "SP-20260603-170206-306362-8683",
+      "kind": "task",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "bob17",
+        "secrets",
+        "contract-first"
+      ],
+      "text": "Bob17 task: design contract-first secrets provider package. Add docs/SECRETS_PROVIDER_CONTRACT.md, docs/SECRETS_SECURITY_MODEL.md, providers.d/secrets fixture/file provider, policies.d/secrets examples, assets.d/secrets.sh if cleanly additive, schemas/examples, and static/smoke/JSON tests. No live Vault/cloud secret calls in first package.",
+      "updated_at": "2026-06-03T17:02:06Z"
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "coding_agent",
+        "source": "queue dev scratchpad",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T17:06:14Z",
+      "id": "SP-20260603-170614-063044-7183",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "0.18.98",
+        "bob14",
+        "bob17",
+        "secrets",
+        "roadmap-handoff"
+      ],
+      "text": "0.18.98 Bob14 secrets provider roadmap handoff prepared as docs/static-test/scratchpad only. It records Bob17 ownership of the governed secrets broker, the no-secret-store/no-secret-leak contract, file/tmpfs default delivery, Secret Zero identity direction, runtime controls, break-glass direction, and fixture-first acceptance test expectations. It deliberately adds no providers.d/secrets runtime helper, no assets.d/secrets.sh, no queue secrets command, no live provider calls, no secret reads, and no queuebash.sh runtime changes.",
+      "updated_at": "2026-06-03T17:06:14Z"
+    },
+    {
+      "authority": {
+        "confidence": "accepted",
+        "name": "team_leader",
+        "source": "queue dev scratchpad",
+        "type": "team_leader"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T17:10:11Z",
+      "id": "SP-20260603-171011-983203-1721",
+      "kind": "task",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "bob17",
+        "secrets",
+        "provider-contract"
+      ],
+      "text": "Bob17 secrets provider contract imported: bashqueues is a governed secret access broker, not a secret store. Default delivery is per-job file delivery, environment delivery denied by default, no secret values in JSON/logs/scratchpad, fixture-first provider only in first package.",
+      "updated_at": "2026-06-03T17:10:11Z"
+    },
+    {
+      "authority": {
+        "confidence": "accepted",
+        "name": "team_leader",
+        "source": "queue dev scratchpad",
+        "type": "team_leader"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T17:00:59Z",
+      "id": "SP-20260603-170059-406655-2887",
+      "kind": "decision",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "secrets",
+        "bob17",
+        "provider-contract"
+      ],
+      "text": "Secrets provider architecture accepted as roadmap direction. bashqueues should not become a secret store; it should become a governed secret access broker with provider-neutral contracts and fixture-first tests. Default delivery should be tmpfs/file-based secret-as-file, not environment variables.",
+      "updated_at": "2026-06-03T17:00:59Z"
+    },
+    {
+      "authority": {
+        "confidence": "accepted",
+        "name": "team_leader",
+        "source": "queue dev scratchpad",
+        "type": "team_leader"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T17:01:05Z",
+      "id": "SP-20260603-170105-555052-1535",
+      "kind": "contract",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "secrets",
+        "security",
+        "no-secret-leak"
+      ],
+      "text": "Secrets provider contract: secret values must never appear in JSON output, logs, scratchpad, docs/examples/zips, command lines, or ordinary environment variables by default. Provider responses return redacted metadata and delivery references only. Default delivery is per-job file/tmpfs with restrictive permissions and cleanup evidence.",
+      "updated_at": "2026-06-03T17:01:05Z"
+    },
+    {
+      "authority": {
+        "confidence": "accepted",
+        "name": "team_leader",
+        "source": "queue dev scratchpad",
+        "type": "team_leader"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T17:01:12Z",
+      "id": "SP-20260603-170112-302301-6838",
+      "kind": "task",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "bob17",
+        "secrets",
+        "contract-first"
+      ],
+      "text": "Bob17 task: design contract-first secrets provider package. Add docs/SECRETS_PROVIDER_CONTRACT.md, docs/SECRETS_SECURITY_MODEL.md, providers.d/secrets fixture/file provider, policies.d/secrets examples, assets.d/secrets.sh if cleanly additive, schemas/examples, and static/smoke/JSON tests. No live Vault/cloud secret calls in first package.",
+      "updated_at": "2026-06-03T17:01:12Z"
+    },
+    {
+      "authority": {
+        "confidence": "accepted",
+        "name": "team_leader",
+        "source": "queue dev scratchpad",
+        "type": "team_leader"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T17:01:18Z",
+      "id": "SP-20260603-170118-829910-6236",
+      "kind": "design_goal",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "secrets",
+        "secret-zero",
+        "identity"
+      ],
+      "text": "Secrets provider should solve Secret Zero through workload identity where possible: OCI Instance Principals, AWS IAM role/STS, Azure Managed Identity, GCP Workload Identity/service account token, IBM trusted profile, Kerberos/AD service identity, or short-lived OIDC/JWT. File-backed tokens are fixture/dev only.",
+      "updated_at": "2026-06-03T17:01:18Z"
+    },
+    {
+      "authority": {
+        "confidence": "accepted",
+        "name": "team_leader",
+        "source": "queue dev scratchpad",
+        "type": "team_leader"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T17:01:44Z",
+      "id": "SP-20260603-170144-809603-4508",
+      "kind": "contract",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "secrets",
+        "runtime-security",
+        "ttl"
+      ],
+      "text": "Secrets runtime controls: support no-ptrace/no-debug, no-secret-env by default, redacted logging, per-job secret directory, 0600 permissions, tmpfs/file delivery, cleanup on success/failure/timeout, and security event on cleanup failure. Secret TTL must be compatible with job max runtime unless class policy explicitly allows refresh.",
+      "updated_at": "2026-06-03T17:01:44Z"
+    },
+    {
+      "authority": {
+        "confidence": "accepted",
+        "name": "team_leader",
+        "source": "queue dev scratchpad",
+        "type": "team_leader"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T17:01:56Z",
+      "id": "SP-20260603-170156-068709-8210",
+      "kind": "design_goal",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "secrets",
+        "break-glass",
+        "audit"
+      ],
+      "text": "Break-glass secrets access should be supported only through signed/authorised workflow with reason, ticket, short TTL, audit event, and preferably file delivery. Break-glass must not print secrets to terminal or write them to scratchpad by default.",
+      "updated_at": "2026-06-03T17:01:56Z"
     }
   ],
   "merge_history": [
@@ -6856,6 +7345,38 @@
       "kept": 231,
       "schema": "queuebash.dev_patchset.scratchpad_merge.v1",
       "source": "patchset"
+    },
+    {
+      "added": 2,
+      "conflicts": 0,
+      "created_at": "2026-06-03T16:50:28.041103+00:00",
+      "kept": 234,
+      "schema": "queuebash.dev_patchset.scratchpad_merge.v1",
+      "source": "patchset"
+    },
+    {
+      "added": 1,
+      "conflicts": 0,
+      "created_at": "2026-06-03T18:02:17.025300+00:00",
+      "kept": 236,
+      "schema": "queuebash.dev_patchset.scratchpad_merge.v1",
+      "source": "patchset"
+    },
+    {
+      "added": 6,
+      "conflicts": 0,
+      "created_at": "2026-06-03T18:02:23.164503+00:00",
+      "kept": 237,
+      "schema": "queuebash.dev_patchset.scratchpad_merge.v1",
+      "source": "patchset"
+    },
+    {
+      "added": 0,
+      "conflicts": 0,
+      "created_at": "2026-06-03T18:03:46.918961+00:00",
+      "kept": 237,
+      "schema": "queuebash.dev_patchset.scratchpad_merge.v1",
+      "source": "patchset"
     }
   ],
   "meta": {
@@ -6933,5 +7454,5 @@
   },
   "project": "bashqueues-0.18.24",
   "schema": "queuebash.dev_scratchpad.v1",
-  "updated_at": "2026-06-03T14:45:00Z"
+  "updated_at": "2026-06-03T17:25:00Z"
 }

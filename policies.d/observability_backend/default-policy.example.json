@@ -1,0 +1,11 @@
+{
+  "credentials_required_for_default_tests": false,
+  "fail_closed": true,
+  "live_api_default": false,
+  "mode": "fixture_first",
+  "mutation_allowed": false,
+  "normalized_json_only": true,
+  "provider_family": "observability_backend",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.observability_backend.policy.v1"
+}

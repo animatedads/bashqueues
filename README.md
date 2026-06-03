@@ -1,3 +1,21 @@
+# 0.18.100 BOB15 secrets remote-dependency AI health cache display-help wave2 merge
+
+Merges Bob17 secrets provider contract, Bob17 remote job dependency contract, Bob19 AI broker health-cache/fallback, and Bob16 display-help resource extraction wave2 onto the Bob15 0.18.99 base.
+
+Boundaries preserved: secrets contracts are broker/provider contract-first and do not make bashqueues a secret store; remote dependency is fixture/contract-first and does not bind scheduler lifecycle; AI health cache is advisory broker metadata; display/help resources remain non-executable presentation data; no shell evaluation, no live cloud/provider calls, no provisioning, and no queue dispatch refactor.
+
+# 0.18.98 BOB16 display/help resource extraction wave2 and secrets roadmap import
+
+Continues the display-resource extraction work on the 0.18.97 base. Additional human help displays now live under `resources.d/display/` instead of inside `queuebash.sh`, including key-provider, ACL, module, cloud, profile-signature, AI broker, system-daemon, and sentinel help. The patch also records Team Leader's provider-neutral secrets-access-broker roadmap notes in the scratchpad for Bob17; Bob16 does not implement the secrets provider runtime.
+
+# 0.18.97 BOB15 service coverage wave4 and cloud broker job-intent explain merge
+
+Merges Bob14 fixture-first service-coverage wave 4 for secret manager and feature store discovery with Bob10 cloud broker job-intent explain. The service-coverage helpers return normalized JSON facts from fixtures only. The cloud broker job-intent surface reads recorded `queue submit --uses-cloud` metadata and returns advisory broker evidence only: no live cloud API calls, no provisioning/destruction, no `cloud_resource` claim, no `cloud_provision` call, no `cloud_infra` call, and no queue dispatch binding.
+
+# 0.18.96 BOB15 queue command JSON wave1 rebased evidence absorption
+
+Absorbs Bob13's `0.18.94_BOB13_queue_command_json_contract_wave1_rebased_0.18.93` evidence patchset onto the current 0.18.95 Bob15 base without replaying stale whole-file payloads. The patchset confirms that queue command JSON wave1 surfaces were already present on the 0.18.93 line; this merge preserves the later 0.18.94/0.18.95 service-coverage, suite-cd, and display-help work, imports the Bob13 scratchpad decision by item ID, records the original validation evidence under delivery records, and normalizes the runtime version to 0.18.96.
+
 # 0.18.95 BOB15 hot-seat service coverage wave3, suite cd cleanup, and display-help extraction merge
 
 Merges three patch streams onto the Bob15 0.18.94 patchtastic base: Bob12 suite root-cd continuation, Bob14 fixture-first service-coverage wave 3 for GPU marketplace and distributed framework discovery, and Bob16 display/help resource extraction.

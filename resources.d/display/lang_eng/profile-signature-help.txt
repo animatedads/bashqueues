@@ -1,0 +1,26 @@
+Usage:
+  queue profile-signature help
+  queue profile-signature schema
+  queue profile-signature roles
+  queue profile-signature verify PROFILE_DIR [--policy FILE] [--json]
+  queue profile-signature explain PROFILE_DIR [--policy FILE] [--json]
+  queue profile-signature required-policy-example
+
+Profile multi-signature contract:
+  Sidecar: PROFILE_DIR/signatures.json
+  Schema:  queuebash.profile_signatures.v1
+  Result:  queuebash.profile_signature_verification.v1
+
+Signer namespaces:
+  self:NAME
+  team:NAME
+  org:NAME
+  external:NAME
+  trusted-ca:NAME
+
+Roles:
+  author reviewer approver countersigner issuer auditor
+
+This release is contract-first. It validates the sidecar structure, signer
+namespaces, signature metadata, and optional required-role policy. It does not
+force migration of existing profiles or perform cryptographic verification.

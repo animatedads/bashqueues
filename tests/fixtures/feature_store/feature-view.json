@@ -1,0 +1,12 @@
+{
+  "decision": "allow",
+  "fail_closed": true,
+  "feature_view": "customer_risk_daily",
+  "freshness_sla_hours": 24,
+  "mutated": false,
+  "offline_export_permitted": false,
+  "online_serving_permitted": false,
+  "provider": "fixture",
+  "provider_family": "feature_store",
+  "schema": "queuebash.feature_store.feature_view.v1"
+}

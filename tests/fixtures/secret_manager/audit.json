@@ -1,0 +1,11 @@
+{
+  "audit_logging_required": true,
+  "decision": "allow",
+  "fail_closed": true,
+  "last_access_days": 2,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "secret_manager",
+  "schema": "queuebash.secret_manager.audit.v1",
+  "value_access_events_in_fixture": 0
+}

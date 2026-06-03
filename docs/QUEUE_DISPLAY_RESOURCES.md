@@ -92,3 +92,11 @@ After inserting or changing resources in a signed deployment, run:
 queue code sign --all
 queue code verify
 ```
+
+## Bob18 display/XML contract extension
+
+Bob18 owns the display-resource and internationalisation lane. This lane is additive and presentation-only: it may add resource layouts, token examples, XML display fixtures, and validation tests, but it must not refactor queue dispatch, provider authority, cloud/resource lifecycle, secrets delivery, or command JSON contracts.
+
+Display resources use controlled `{{TOKEN}}` replacement only. They must not contain shell expansion, command substitution, executable snippets, secrets, credentials, scratchpad payloads, or provider-specific authority data. Missing or rejected resources must fail safely through the existing fallback chain.
+
+JSON output remains locale-independent and structured. Human-facing resources may describe JSON fields, but they must never be the source of truth for JSON schemas or provider decisions.

@@ -1,0 +1,17 @@
+{
+  "capabilities": [
+    "metadata",
+    "rotation_policy",
+    "access_policy",
+    "audit_evidence"
+  ],
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api": false,
+  "manager": "fixture-vault",
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "secret_manager",
+  "schema": "queuebash.secret_manager.detect.v1",
+  "secret_values_exposed": false
+}

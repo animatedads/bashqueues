@@ -1,0 +1,25 @@
+queue module - standard extension contract
+
+Usage:
+  queue module list [--json]
+  queue module explain class:NAME|asset:NAME|cap:NAME|provider:NAME
+  queue module help [class|asset|cap|provider|kind:NAME]
+  queue module configure provider NAME [--show|--path|--set KEY=VALUE ...]
+  queue module policy provider NAME
+  queue module acl set|remove KIND NAME OPERATION SUBJECT
+  queue acl check SUBJECT OPERATION RESOURCE [--json]
+  queue acl set module provider:NAME OPERATION SUBJECT
+  queue acl remove module provider:NAME OPERATION SUBJECT
+  queue module enable class|asset|cap|provider NAME
+  queue module disable class|asset|cap|provider NAME [--force]
+  queue module refresh class|asset|cap <directory>
+
+Kinds:
+  class     execution class definitions
+  asset     preflight/resource policy plugins
+  cap       runtime capability plugins
+  provider  enterprise/local provider configuration modules
+
+ACL note:
+  queue module acl is a command-surface handoff. Where the ACL subsystem is
+  available, it should be equivalent to queue acl set/remove module ... .

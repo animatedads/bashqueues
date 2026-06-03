@@ -1,0 +1,14 @@
+Usage: queue sentinel [--once] [--interval SEC] [--detach] [--min-workers N]
+       queue daemon [--interval SEC] [--detach]
+
+Runs the cheap control-plane queue sentinel. It does not run normal asset
+preflight. With --min-workers N, it also keeps at least N detached payload
+worker available whenever a due/dependency-ready pending job exists.
+It only performs inexpensive checks:
+  - remove dead detached-worker PID files
+  - mark definitely stale running jobs as interrupted
+  - apply the shared/admin policy gate to pending jobs
+  - evaluate deadline:monitor/deadline:panic assets for due, dependency-ready jobs
+
+Use queue start/run for manual payload workers. queue daemon is shorthand for
+queue sentinel --min-workers 1.

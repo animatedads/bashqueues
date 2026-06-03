@@ -1,0 +1,30 @@
+{
+  "checks": {
+    "acl": "allow",
+    "ambiguity": "unique",
+    "freshness": "fresh",
+    "service_reachable": "yes",
+    "signature": "valid",
+    "trusted_service": "yes"
+  },
+  "decision": "block",
+  "local_qid": "20260603_170000_local_after_remote",
+  "next_action": "retry_later",
+  "policy": {
+    "failure_policy": "block",
+    "freshness_seconds": 300,
+    "timeout_seconds": 3600
+  },
+  "provider": "fixture",
+  "reason": "observed_state_mismatch",
+  "redacted": true,
+  "remote": {
+    "job": "nightly_export",
+    "last_checked": "2026-06-04T23:05:00Z",
+    "observed_state": "running",
+    "required_state": "done",
+    "service": "oracle-prod"
+  },
+  "schema": "queuebash.remote_dependency.v1",
+  "status": "waiting"
+}

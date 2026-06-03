@@ -1,0 +1,7 @@
+<queue-job-card schema="queuebash.display.xml.job_card.v1">
+  <qid>{{QID}}</qid>
+  <name>{{JOB_NAME}}</name>
+  <state>{{STATE}}</state>
+  <class>{{CLASS}}</class>
+  <updated-at>{{UPDATED_AT}}</updated-at>
+</queue-job-card>

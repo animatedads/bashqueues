@@ -1,0 +1,15 @@
+queue cloud - unified cloud broker front
+
+Usage:
+  queue cloud providers [--json]
+  queue cloud services [--json]
+  queue cloud signals ...
+  queue cloud resource list|check|claim|release|reconcile|explain ...
+  queue cloud provision templates|plan|validate|dry-run|approval-request|live-gate|handoff ...
+  queue cloud infra list|explain|plan|start|stop|status ...
+  queue cloud broker explain --capability CAP --profile PROFILE [--json]
+  queue cloud broker job-intent JOB|--job-file FILE [--json]
+
+This command is a broker front over existing cloud provider layers. It does not
+add live cloud discovery, provisioning/destruction, dispatch refactors, or job
+lifecycle binding. Live behaviour remains owned by the underlying gated helpers.

@@ -1,0 +1,10 @@
+Usage:
+  queue cleared [--json] [--state csv] [--limit N] [--since DATE]
+  queue clearance list [--json] [--state csv] [--limit N] [--since DATE]
+  queue audit cleared [--json] [--state csv] [--limit N] [--since DATE]
+
+Lists jobs cleared for dispatch and jobs archived by queue clear.
+
+clear_source values:
+  execution  job was stamped JOB_CLEARED before payload launch
+  archive    job record was archived by queue clear

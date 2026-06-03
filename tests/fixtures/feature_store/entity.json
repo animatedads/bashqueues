@@ -1,0 +1,12 @@
+{
+  "decision": "allow",
+  "entity": "customer",
+  "fail_closed": true,
+  "join_key_materialized": false,
+  "mutated": false,
+  "pii_possible": true,
+  "provider": "fixture",
+  "provider_family": "feature_store",
+  "schema": "queuebash.feature_store.entity.v1",
+  "value_returned": false
+}

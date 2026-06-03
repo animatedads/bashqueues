@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.95"
+QUEUEBASH_VERSION="0.18.100"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -6406,18 +6406,7 @@ _queue_cleared_jobs_list() {
             --limit|-n) limit="${2:-0}"; shift 2 ;;
             --since) since="${2:-}"; shift 2 ;;
             --help|-h)
-                cat <<'EOF'
-Usage:
-  queue cleared [--json] [--state csv] [--limit N] [--since DATE]
-  queue clearance list [--json] [--state csv] [--limit N] [--since DATE]
-  queue audit cleared [--json] [--state csv] [--limit N] [--since DATE]
-
-Lists jobs cleared for dispatch and jobs archived by `queue clear`.
-
-clear_source values:
-  execution  job was stamped JOB_CLEARED before payload launch
-  archive    job record was archived by queue clear
-EOF
+                _queue_resource_fetch_i18nl_command --name cleared-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                 return 0 ;;
             list) shift ;;
             *) echo "queue cleared: unexpected argument: $1" >&2; return 2 ;;
@@ -14738,28 +14727,7 @@ EOF
 }
 
 _queue_key_provider_help() {
-    cat <<'EOF'
-Usage:
-  queue key-provider help
-  queue key-provider operations
-  queue key-provider status [--json]
-  queue key-provider lookup SIGNER OPERATION RESOURCE [--json]
-  queue key-provider explain SIGNER OPERATION RESOURCE [--json]
-  queue key-provider registry [--json]
-  queue key-provider register SIGNER OPERATION RESOURCE PUBLIC_KEY_REF [--status active|revoked] [--delegation NAME] [--reason TEXT]
-  queue key-provider revoke SIGNER OPERATION RESOURCE [--reason TEXT]
-  queue key-provider rotate SIGNER OPERATION RESOURCE NEW_PUBLIC_KEY_REF [--reason TEXT]
-
-Contract:
-  Providers answer key lookup, signer delegation, revocation, and rotation questions.
-  Core enforces decisions; providers supply normalized data only and never shell.
-  Missing, malformed, or failed provider output fails closed for privileged operations.
-
-File provider:
-  QUEUEBASH_KEY_PROVIDER=file
-  QUEUEBASH_FILE_KEY_REGISTRY=$HOME/.queuebash/policy/keys/key_registry.tsv
-  QUEUEBASH_FILE_KEY_DEFAULT=deny
-EOF
+    _queue_resource_fetch_i18nl_command --name key-provider-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
 }
 
 _queue_key_provider_registry_path() {
@@ -15250,40 +15218,7 @@ _queue_acl_file_mutate() {
 }
 
 _queue_acl_command_help() {
-    cat <<'EOF'
-queue acl - enterprise ACL/provider decision contract
-
-Usage:
-  queue acl check SUBJECT OPERATION RESOURCE [--json]
-  queue acl explain SUBJECT OPERATION RESOURCE [--json]
-  queue acl operations
-  queue acl set module provider:NAME OPERATION SUBJECT [RESOURCE] [--decision allow|deny] [--reason TEXT]
-  queue acl remove module provider:NAME OPERATION SUBJECT [RESOURCE]
-
-File provider configuration:
-  QUEUEBASH_ACL_PROVIDER=file
-  QUEUEBASH_FILE_ACL_POLICY="$HOME/.queuebash/policy/acl/file_acl.tsv"
-  QUEUEBASH_FILE_ACL_DEFAULT=deny
-
-File policy format:
-  subject<TAB>operation<TAB>resource<TAB>decision<TAB>reason
-
-Purpose:
-  Normalise privileged operation checks as:
-    Can subject X perform operation Y on resource Z in context C?
-
-Provider decision contract:
-  allow | deny | error
-  reason
-  evidence
-  ttl/cache policy
-
-Design rules:
-  bashqueues core enforces decisions.
-  Providers supply normalized data, never shell.
-  Missing, malformed, or provider-error responses fail closed for privileged operations.
-  Single-user installs may remain file-backed and require no enterprise provider.
-EOF
+    _queue_resource_fetch_i18nl_command --name acl-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
 }
 
 _queue_acl_check() {
@@ -15428,54 +15363,10 @@ _queue_module_help() {
     local topic="${1:-}"
     case "$topic" in
         ""|module|modules)
-            cat <<'EOF'
-queue module - standard extension contract
-
-Usage:
-  queue module list [--json]
-  queue module explain class:NAME|asset:NAME|cap:NAME|provider:NAME
-  queue module help [class|asset|cap|provider|kind:NAME]
-  queue module configure provider NAME [--show|--path|--set KEY=VALUE ...]
-  queue module policy provider NAME
-  queue module acl set|remove KIND NAME OPERATION SUBJECT
-  queue acl check SUBJECT OPERATION RESOURCE [--json]
-  queue acl set module provider:NAME OPERATION SUBJECT
-  queue acl remove module provider:NAME OPERATION SUBJECT
-  queue module enable class|asset|cap|provider NAME
-  queue module disable class|asset|cap|provider NAME [--force]
-  queue module refresh class|asset|cap <directory>
-
-Kinds:
-  class     execution class definitions
-  asset     preflight/resource policy plugins
-  cap       runtime capability plugins
-  provider  enterprise/local provider configuration modules
-
-ACL note:
-  queue module acl is a command-surface handoff. Where the ACL subsystem is
-  available, it should be equivalent to queue acl set/remove module ... .
-EOF
+            _queue_resource_fetch_i18nl_command --name module-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
             ;;
         provider|providers)
-            cat <<'EOF'
-Provider modules
-
-Provider modules declare how bashqueues reaches external governance systems.
-They are data/configuration modules, not executable policy rows.
-
-Default single-user installations do not need provider configuration.
-Enterprise installations can add provider modules for Microsoft, LDAP, PAM/NSS,
-IBM, PKI, Vault/HSM, or internal policy APIs.
-
-Canonical locations:
-  user queue root:    ~/.queuebash/policy/providers.d/NAME.env
-  system policy root: /etc/queuebash/policy/providers.d/NAME.env
-
-Commands:
-  queue module configure provider NAME --set KEY=VALUE
-  queue module configure provider NAME --show
-  queue module policy provider NAME
-EOF
+            _queue_resource_fetch_i18nl_command --name module-provider-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
             ;;
         class|classes|asset|assets|cap|caps)
             echo "queue module help: '$topic' modules use list/explain/enable/disable/refresh."
@@ -19953,24 +19844,8 @@ _queue_cloud_provider_helper_path() {
 }
 
 _queue_cloud_command_help() {
-    cat <<'EOF'
-queue cloud - unified cloud broker front
-
-Usage:
-  queue cloud providers [--json]
-  queue cloud services [--json]
-  queue cloud signals ...
-  queue cloud resource list|check|claim|release|reconcile|explain ...
-  queue cloud provision templates|plan|validate|dry-run|approval-request|live-gate|handoff ...
-  queue cloud infra list|explain|plan|start|stop|status ...
-  queue cloud broker explain --capability CAP --profile PROFILE [--json]
-
-This command is a broker front over existing cloud provider layers. It does not
-add live cloud discovery, provisioning/destruction, dispatch refactors, or job
-lifecycle binding. Live behaviour remains owned by the underlying gated helpers.
-EOF
+    _queue_resource_fetch_i18nl_command --name cloud-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
 }
-
 _queue_cloud_command() {
     local sub="${1:-help}" helper
     shift || true
@@ -20006,6 +19881,25 @@ _queue_cloud_command() {
             ;;
         *) echo "queue cloud: unknown subcommand: $sub" >&2; _queue_cloud_command_help >&2; return 2 ;;
     esac
+}
+
+
+_queue_secrets_helper_path() {
+    local helper="secrets_provider.sh" here cand
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+    for cand in         "$here/providers.d/secrets/$helper"         "$here/../providers.d/secrets/$helper"         "/usr/local/share/bashqueues/providers.d/secrets/$helper"         "$HOME/.queuebash/providers.d/secrets/$helper"; do
+        [[ -f "$cand" ]] && { printf '%s\n' "$cand"; return 0; }
+    done
+    return 1
+}
+
+_queue_secrets_command() {
+    local helper
+    helper="$(_queue_secrets_helper_path)" || {
+        echo "queue secrets: helper not found: providers.d/secrets/secrets_provider.sh" >&2
+        return 1
+    }
+    bash "$helper" "$@"
 }
 
 _queue_remote_admin_helper_path() {
@@ -20329,34 +20223,7 @@ USAGE
 # contract to key-provider lookup, signer delegation, and profile approval
 # enforcement.
 _queue_profile_multisig_help() {
-    cat <<'HELP'
-Usage:
-  queue profile-signature help
-  queue profile-signature schema
-  queue profile-signature roles
-  queue profile-signature verify PROFILE_DIR [--policy FILE] [--json]
-  queue profile-signature explain PROFILE_DIR [--policy FILE] [--json]
-  queue profile-signature required-policy-example
-
-Profile multi-signature contract:
-  Sidecar: PROFILE_DIR/signatures.json
-  Schema:  queuebash.profile_signatures.v1
-  Result:  queuebash.profile_signature_verification.v1
-
-Signer namespaces:
-  self:NAME
-  team:NAME
-  org:NAME
-  external:NAME
-  trusted-ca:NAME
-
-Roles:
-  author reviewer approver countersigner issuer auditor
-
-This release is contract-first. It validates the sidecar structure, signer
-namespaces, signature metadata, and optional required-role policy. It does not
-force migration of existing profiles or perform cryptographic verification.
-HELP
+    _queue_resource_fetch_i18nl_command --name profile-signature-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
 }
 
 _queue_profile_multisig_roles() {
@@ -20688,28 +20555,7 @@ _queue_ai_broker_command() {
             "$helper" "$@"
             ;;
         help|-h|--help|"")
-            cat <<'EOF'
-Usage:
-  queue ai providers [--json]
-  queue ai models [--provider NAME] [--json]
-  queue ai health [--json]
-  queue ai explain [--profile NAME] [--capability csv] [--json]
-  queue ai chat [--profile NAME] [--capability csv] [--message TEXT|--input-file FILE] [--live] [--json]
-  queue ai json [--profile NAME] [--schema FILE] [--message TEXT|--input-file FILE] [--live] [--json]
-
-Purpose:
-  Resolve provider/model choices from AI profiles, provider registry, health,
-  capability, cost, and locality constraints. By default it performs selection
-  only; --live delegates to an existing ask-provider helper only when
-  QUEUEBASH_AI_LIVE_ENABLED=1 is set by policy.
-
-Policy inputs:
-  /etc/bashqueues/policies.d/ai-profiles/*.env
-  /etc/bashqueues/policies.d/ai-broker/provider-registry.json
-
-Important:
-  queue ai broker output is advisory data. It is never evaluated as shell.
-EOF
+            _queue_resource_fetch_i18nl_command --name ai-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
             ;;
         *)
             echo "Usage: queue ai providers|models|health|explain|chat|json [options]" >&2
@@ -20836,6 +20682,10 @@ queue() {
 
         cloud|cloud-broker|cloud_broker)
             _queue_cloud_command "$@"
+            ;;
+
+        secrets|secret|secret-broker|secrets-broker)
+            _queue_secrets_command "$@"
             ;;
 
         cloud-signals|cloud_signals|cloud-cost|cloud-availability)
@@ -23530,18 +23380,7 @@ _queue_system_daemon_command() {
             --include-root) include_root=1; shift ;;
             --dryrun|-n) dry=1; shift ;;
             --help|-h)
-                cat <<'EOF'
-Usage: queue system-daemon [--once] [--interval SEC] [--detach] [--min-workers N] [--include-root]
-       queue system-supervisor [same options]
-
-Root-only multi-user control loop.  It quickly scans known user queue roots and,
-for each queue, delegates to that queue owner to run:
-  queue daemon --once --min-workers N
-
-This does not run user jobs as root.  Each per-user sentinel performs cheap
-control-plane checks and starts at least N detached user workers only when that
-user has due/dependency-ready pending work.
-EOF
+                _queue_resource_fetch_i18nl_command --name system-daemon-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                 return 0 ;;
             *) echo "queue system-daemon: unexpected argument: $1" >&2; return 2 ;;
         esac
@@ -23774,22 +23613,7 @@ _queue_sentinel_command() {
             --min-workers|--min-worker) min_workers="${2:-1}"; shift 2 ;;
             --dryrun|-n) dry=1; shift ;;
             --help|-h)
-                cat <<'EOF'
-Usage: queue sentinel [--once] [--interval SEC] [--detach] [--min-workers N]
-       queue daemon [--interval SEC] [--detach]
-
-Runs the cheap control-plane queue sentinel. It does not run normal asset
-preflight. With --min-workers N, it also keeps at least N detached payload
-worker available whenever a due/dependency-ready pending job exists.
-It only performs inexpensive checks:
-  - remove dead detached-worker PID files
-  - mark definitely stale running jobs as interrupted
-  - apply the shared/admin policy gate to pending jobs
-  - evaluate deadline:monitor/deadline:panic assets for due, dependency-ready jobs
-
-Use queue start/run for manual payload workers. queue daemon is shorthand for
-queue sentinel --min-workers 1.
-EOF
+                _queue_resource_fetch_i18nl_command --name sentinel-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                 return 0 ;;
             *) echo "queue sentinel: unexpected argument: $1" >&2; return 2 ;;
         esac

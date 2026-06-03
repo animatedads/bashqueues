@@ -1,0 +1,11 @@
+{
+  "decision": "allow",
+  "fail_closed": true,
+  "label_leakage_check_required": true,
+  "mutated": false,
+  "point_in_time_correctness_required": true,
+  "provider": "fixture",
+  "provider_family": "feature_store",
+  "schema": "queuebash.feature_store.training_set.v1",
+  "training_set_export_permitted": false
+}

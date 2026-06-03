@@ -1,0 +1,16 @@
+{
+  "capabilities": [
+    "metadata",
+    "lineage",
+    "freshness",
+    "training_set_policy"
+  ],
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "feature_store",
+  "schema": "queuebash.feature_store.detect.v1",
+  "store": "fixture-feast"
+}

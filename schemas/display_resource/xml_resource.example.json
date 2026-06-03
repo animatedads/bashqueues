@@ -1,0 +1,14 @@
+{
+  "schema": "queuebash.xml_resource.v1",
+  "kind": "xml-display-template",
+  "name": "job-card.example.xml",
+  "language": "lang_eng",
+  "fallback": "fallback/job-card.example.xml",
+  "root_element": "queue-job-card",
+  "tokens": ["QID", "JOB_NAME", "STATE", "CLASS", "UPDATED_AT"],
+  "allow_dtd": false,
+  "allow_external_entities": false,
+  "execution": "never",
+  "json_contract_source": false,
+  "secret_rendering_allowed": false
+}

@@ -1,0 +1,12 @@
+{
+  "days_since_rotation": 12,
+  "decision": "allow",
+  "fail_closed": true,
+  "manual_rotation_permitted": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "secret_manager",
+  "rotation_interval_days": 30,
+  "rotation_required": true,
+  "schema": "queuebash.secret_manager.rotation.v1"
+}

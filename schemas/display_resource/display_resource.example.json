@@ -1,0 +1,11 @@
+{
+  "schema": "queuebash.display_resource.v1",
+  "kind": "display-template",
+  "name": "status-panel.example.txt",
+  "language": "lang_eng",
+  "fallback": "fallback/status-panel.example.txt",
+  "tokens": ["QID", "JOB_NAME", "STATE", "CLASS", "UPDATED_AT"],
+  "execution": "never",
+  "json_contract_source": false,
+  "secret_rendering_allowed": false
+}

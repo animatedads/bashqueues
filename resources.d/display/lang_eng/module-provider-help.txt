@@ -1,0 +1,17 @@
+Provider modules
+
+Provider modules declare how bashqueues reaches external governance systems.
+They are data/configuration modules, not executable policy rows.
+
+Default single-user installations do not need provider configuration.
+Enterprise installations can add provider modules for Microsoft, LDAP, PAM/NSS,
+IBM, PKI, Vault/HSM, or internal policy APIs.
+
+Canonical locations:
+  user queue root:    ~/.queuebash/policy/providers.d/NAME.env
+  system policy root: /etc/queuebash/policy/providers.d/NAME.env
+
+Commands:
+  queue module configure provider NAME --set KEY=VALUE
+  queue module configure provider NAME --show
+  queue module policy provider NAME

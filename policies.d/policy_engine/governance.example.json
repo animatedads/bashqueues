@@ -1,0 +1,14 @@
+{
+  "default_tests_use_fixtures": true,
+  "non_goals": [
+    "live-policy-decision-authority",
+    "policy-mutation",
+    "access-grant",
+    "secret-read",
+    "job-runtime-mutation"
+  ],
+  "provider_family": "policy_engine",
+  "review_required_for_live_reads": true,
+  "schema": "queuebash.policy_engine.governance.v1",
+  "store_secrets": false
+}

@@ -22,6 +22,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 SCHEMA_PROVIDERS = "queuebash.ai_broker.providers.v1"
 SCHEMA_MODELS = "queuebash.ai_broker.models.v1"
 SCHEMA_HEALTH = "queuebash.ai_broker.health.v1"
+SCHEMA_HEALTH_UPDATE = "queuebash.ai_broker.health_update.v1"
 SCHEMA_EXPLAIN = "queuebash.ai_broker.explain.v1"
 SCHEMA_RESPONSE = "queuebash.ai_broker.response.v1"
 SCHEMA_ERROR = "queuebash.ai_broker.error.v1"
@@ -44,6 +45,33 @@ POLICY_REF_LABELS = {
     "AI_AUDIT_POLICY_REFS": "audit",
 }
 
+
+
+
+HEALTH_ALLOWED_STATES = {
+    "available",
+    "healthy",
+    "degraded",
+    "rate_limited",
+    "auth_failed",
+    "model_missing",
+    "timeout",
+    "disabled_by_policy",
+    "disabled_by_cost",
+    "cooldown",
+    "unknown",
+}
+HEALTH_GOOD_STATES = {"available", "healthy"}
+HEALTH_SOFT_STATES = {"degraded"}
+HEALTH_SKIP_STATES = {
+    "rate_limited",
+    "auth_failed",
+    "model_missing",
+    "timeout",
+    "disabled_by_policy",
+    "disabled_by_cost",
+    "cooldown",
+}
 
 HELPER_ENV = {
     "ollama": ("QUEUEBASH_AI_OLLAMA_HELPER", "queue-ai-ask-ollama"),
@@ -96,6 +124,154 @@ def load_registry(root: pathlib.Path) -> Tuple[Dict[str, Any], str]:
             errors.append(f"{path}: {exc.__class__.__name__}")
     raise RuntimeError("provider_registry_not_found_or_invalid: " + "; ".join(errors[:4]))
 
+
+
+def queue_root() -> pathlib.Path:
+    return pathlib.Path(os.environ.get("QUEUEBASH_ROOT") or (pathlib.Path.home() / ".queuebash"))
+
+
+def health_cache_candidates(root: pathlib.Path) -> List[pathlib.Path]:
+    vals: List[pathlib.Path] = []
+    env = os.environ.get("QUEUEBASH_AI_BROKER_HEALTH_CACHE")
+    if env:
+        vals.append(pathlib.Path(env))
+    vals.extend([
+        queue_root() / "ai-broker" / "health-cache.json",
+        pathlib.Path("/etc/bashqueues/policies.d/ai-broker/health-cache.json"),
+        root / "policies.d/ai-broker/health-cache.json",
+        root / "policies.d/ai-broker/health-cache.example.json",
+        root / "tests/fixtures/ai_broker/health_cache.example.json",
+    ])
+    return vals
+
+
+def writable_health_cache_path(root: pathlib.Path) -> pathlib.Path:
+    env = os.environ.get("QUEUEBASH_AI_BROKER_HEALTH_CACHE")
+    if env:
+        return pathlib.Path(env)
+    return queue_root() / "ai-broker" / "health-cache.json"
+
+
+def empty_health_cache() -> Dict[str, Any]:
+    return {"schema": "queuebash.ai_broker.health_cache.v1", "entries": []}
+
+
+def load_health_cache(root: pathlib.Path) -> Tuple[Dict[str, Any], str]:
+    errors: List[str] = []
+    for path in health_cache_candidates(root):
+        try:
+            if path.exists():
+                data = _read_json(path)
+                if data.get("schema") != "queuebash.ai_broker.health_cache.v1":
+                    raise RuntimeError("unexpected_schema")
+                return data, str(path)
+        except Exception as exc:
+            errors.append(f"{path}: {exc.__class__.__name__}")
+    return empty_health_cache(), "none"
+
+
+def save_health_cache(path: pathlib.Path, cache: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cache.setdefault("schema", "queuebash.ai_broker.health_cache.v1")
+    cache.setdefault("entries", [])
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(cache, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(str(tmp), str(path))
+
+
+def health_entry_key(provider: str, model: str) -> Tuple[str, str]:
+    return (provider.strip(), model.strip())
+
+
+def health_entries(cache: Dict[str, Any]) -> List[Dict[str, Any]]:
+    vals = cache.get("entries") or []
+    return [x for x in vals if isinstance(x, dict)]
+
+
+def active_health_state(entry: Dict[str, Any], now: float | None = None) -> str:
+    state = str(entry.get("state") or "unknown")
+    if state not in HEALTH_ALLOWED_STATES:
+        state = "unknown"
+    if now is None:
+        now = time.time()
+    cooldown_until = entry.get("cooldown_until_epoch")
+    try:
+        if cooldown_until is not None and float(cooldown_until) > now:
+            return "cooldown"
+    except (TypeError, ValueError):
+        pass
+    return state
+
+
+def health_cache_map(cache: Dict[str, Any]) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    out: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for entry in health_entries(cache):
+        provider = str(entry.get("provider") or "")
+        model = str(entry.get("model") or "")
+        if provider and model:
+            out[health_entry_key(provider, model)] = entry
+    return out
+
+
+def overlay_health_cache(rows: List[Dict[str, Any]], cache: Dict[str, Any], cache_path: str) -> List[Dict[str, Any]]:
+    cmap = health_cache_map(cache)
+    out: List[Dict[str, Any]] = []
+    now = time.time()
+    for row in rows:
+        item = dict(row)
+        provider = str(item.get("provider") or "")
+        model = str(item.get("name") or "")
+        item["registry_health_state"] = item.get("health_state", "unknown")
+        item["health_source"] = "registry"
+        entry = cmap.get(health_entry_key(provider, model))
+        if entry:
+            item["health_state"] = active_health_state(entry, now)
+            item["health_source"] = "cache"
+            item["health_cache_path"] = cache_path
+            item["health_reason"] = entry.get("reason", "")
+            item["health_updated_at"] = entry.get("updated_at", "")
+            if entry.get("cooldown_until"):
+                item["health_cooldown_until"] = entry.get("cooldown_until")
+            if entry.get("cooldown_until_epoch") is not None:
+                item["health_cooldown_until_epoch"] = entry.get("cooldown_until_epoch")
+        out.append(item)
+    return out
+
+
+def effective_model_rows(registry: Dict[str, Any], root: pathlib.Path) -> Tuple[List[Dict[str, Any]], str]:
+    cache, cache_path = load_health_cache(root)
+    return overlay_health_cache(model_rows(registry), cache, cache_path), cache_path
+
+
+def update_health_cache(root: pathlib.Path, provider: str, model: str, state: str, reason: str = "", cooldown_seconds: int = 0) -> Tuple[Dict[str, Any], pathlib.Path, Dict[str, Any]]:
+    provider = provider.strip()
+    model = model.strip()
+    state = state.strip()
+    if not provider or not model:
+        raise RuntimeError("provider_and_model_required_for_health_update")
+    if state not in HEALTH_ALLOWED_STATES - {"unknown"}:
+        raise RuntimeError("invalid_health_state:" + state)
+    path = writable_health_cache_path(root)
+    cache, _ = load_health_cache(root)
+    entries = [e for e in health_entries(cache) if health_entry_key(str(e.get("provider") or ""), str(e.get("model") or "")) != health_entry_key(provider, model)]
+    now = time.time()
+    updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+    entry: Dict[str, Any] = {
+        "provider": provider,
+        "model": model,
+        "state": state,
+        "reason": reason[:500],
+        "updated_at": updated_at,
+    }
+    if cooldown_seconds > 0:
+        until = now + int(cooldown_seconds)
+        entry["cooldown_seconds"] = int(cooldown_seconds)
+        entry["cooldown_until_epoch"] = int(until)
+        entry["cooldown_until"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(until))
+    entries.append(entry)
+    cache = {"schema": "queuebash.ai_broker.health_cache.v1", "updated_at": updated_at, "entries": entries}
+    save_health_cache(path, cache)
+    return cache, path, entry
 
 def parse_env_file(path: pathlib.Path) -> Dict[str, str]:
     out: Dict[str, str] = {}
@@ -323,19 +499,21 @@ def policy_links_for_selection(registry: Dict[str, Any], profile: Dict[str, str]
         "combined": combined,
     }
 
-def select_model(registry: Dict[str, Any], profile: Dict[str, str], requested_caps: List[str]) -> Dict[str, Any]:
+def select_model(registry: Dict[str, Any], profile: Dict[str, str], requested_caps: List[str], root: pathlib.Path) -> Dict[str, Any]:
     provider_order = split_words(profile.get("AI_PROVIDER_ORDER", ""))
     order_index = {name: idx for idx, name in enumerate(provider_order)}
     allow_cloud = bool_env(profile.get("AI_ALLOW_CLOUD", "1"), True)
     allow_local = bool_env(profile.get("AI_ALLOW_LOCAL", "1"), True)
     health_required = bool_env(profile.get("AI_HEALTH_REQUIRED", "1"), True)
+    allow_degraded = bool_env(profile.get("AI_ALLOW_DEGRADED_FALLBACK", profile.get("AI_ALLOW_DEGRADED_HEALTH", "0")), False)
     require_json = bool_env(profile.get("AI_REQUIRE_JSON_MODE", "0"), False) or "json" in requested_caps or "schema_json" in requested_caps
     max_cost = float(profile.get("AI_MAX_COST_PER_REQUEST_GBP", "999999") or "999999")
     routing = profile.get("AI_ROUTING_STRATEGY", "highest_quality_within_budget")
 
     candidates: List[Dict[str, Any]] = []
     rejected: List[Dict[str, Any]] = []
-    for row in model_rows(registry):
+    rows, health_cache_path = effective_model_rows(registry, root)
+    for row in rows:
         reason: List[str] = []
         provider = str(row.get("provider") or "")
         location = str(row.get("location_type") or "unknown")
@@ -348,7 +526,13 @@ def select_model(registry: Dict[str, Any], profile: Dict[str, str], requested_ca
         if location in {"local", "private"} and not allow_local:
             reason.append("local_private_not_allowed")
         health = str(row.get("health_state") or "unknown")
-        if health_required and health not in {"available", "healthy"}:
+        if health in {"disabled_by_policy", "disabled_by_cost"}:
+            reason.append(f"health_{health}")
+        elif health in HEALTH_SKIP_STATES:
+            reason.append(f"health_{health}")
+        elif health in HEALTH_SOFT_STATES and not allow_degraded:
+            reason.append("health_degraded")
+        elif health_required and health not in HEALTH_GOOD_STATES and not (health in HEALTH_SOFT_STATES and allow_degraded):
             reason.append(f"health_{health}")
         ok_caps, missing = capabilities_satisfied(row, requested_caps, require_json)
         if not ok_caps:
@@ -358,7 +542,7 @@ def select_model(registry: Dict[str, Any], profile: Dict[str, str], requested_ca
         if estimate > max_cost:
             reason.append("cost_ceiling_exceeded")
         if reason:
-            rejected.append({"provider": provider, "model": row.get("name"), "reasons": reason})
+            rejected.append({"provider": provider, "model": row.get("name"), "reasons": reason, "health_state": health, "health_source": row.get("health_source", "registry")})
             continue
         score = int(row.get("priority", 0) or 0) * 10 - order_index.get(provider, 999)
         if routing == "cheapest_healthy":
@@ -366,6 +550,7 @@ def select_model(registry: Dict[str, Any], profile: Dict[str, str], requested_ca
         item = dict(row)
         item["estimated_cost_gbp"] = round(estimate, 6)
         item["score"] = score
+        item["health_cache_path"] = health_cache_path
         candidates.append(item)
 
     candidates.sort(key=lambda x: (int(x.get("score", 0)), int(x.get("priority", 0) or 0)), reverse=True)
@@ -418,17 +603,38 @@ def command_models(args: argparse.Namespace, registry: Dict[str, Any], registry_
     return emit({"schema": SCHEMA_MODELS, "registry_path": registry_path, "models": rows}, args.json)
 
 
-def command_health(args: argparse.Namespace, registry: Dict[str, Any], registry_path: str) -> int:
+def command_health(args: argparse.Namespace, registry: Dict[str, Any], registry_path: str, root: pathlib.Path) -> int:
+    if getattr(args, "set_state", None):
+        cache, path, entry = update_health_cache(
+            root,
+            str(args.provider or ""),
+            str(args.model or ""),
+            str(args.set_state),
+            str(args.reason or ""),
+            int(args.cooldown_seconds or 0),
+        )
+        return emit({
+            "schema": SCHEMA_HEALTH_UPDATE,
+            "ok": True,
+            "health_cache_path": str(path),
+            "updated": entry,
+            "entry_count": len(health_entries(cache)),
+        }, args.json)
     rows = []
-    for r in model_rows(registry):
+    effective_rows, health_cache_path = effective_model_rows(registry, root)
+    for r in effective_rows:
         rows.append({
             "provider": r.get("provider"),
             "model": r.get("name"),
             "state": r.get("health_state", "unknown"),
+            "registry_state": r.get("registry_health_state", r.get("health_state", "unknown")),
+            "health_source": r.get("health_source", "registry"),
+            "reason": r.get("health_reason", ""),
+            "cooldown_until": r.get("health_cooldown_until", ""),
             "enabled": bool(r.get("provider_enabled", True)),
             "location_type": r.get("location_type", "unknown"),
         })
-    return emit({"schema": SCHEMA_HEALTH, "registry_path": registry_path, "health": rows}, args.json)
+    return emit({"schema": SCHEMA_HEALTH, "registry_path": registry_path, "health_cache_path": health_cache_path, "health": rows}, args.json)
 
 
 def requested_capabilities(args: argparse.Namespace, profile: Dict[str, str]) -> List[str]:
@@ -441,7 +647,7 @@ def requested_capabilities(args: argparse.Namespace, profile: Dict[str, str]) ->
 def command_explain(args: argparse.Namespace, registry: Dict[str, Any], registry_path: str, root: pathlib.Path) -> int:
     profile, profile_path = load_profile(root, args.profile)
     caps = requested_capabilities(args, profile)
-    selection = select_model(registry, profile, caps)
+    selection = select_model(registry, profile, caps, root)
     policy_links = policy_links_for_selection(registry, profile, selection["selected"])
     obj = {
         "schema": SCHEMA_EXPLAIN,
@@ -666,7 +872,7 @@ def command_call(args: argparse.Namespace, registry: Dict[str, Any], registry_pa
     caps = requested_capabilities(args, profile)
     if operation == "json" and "json" not in caps:
         caps.append("json")
-    selection = select_model(registry, profile, caps)
+    selection = select_model(registry, profile, caps, root)
     text = read_input(args)
     selected = selection["selected"]
     if not selected:
@@ -717,6 +923,12 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--json", action="store_true")
         if name == "models":
             p.add_argument("--provider")
+        if name == "health":
+            p.add_argument("--provider")
+            p.add_argument("--model")
+            p.add_argument("--set-state", choices=sorted(HEALTH_ALLOWED_STATES - {"unknown"}))
+            p.add_argument("--reason", default="")
+            p.add_argument("--cooldown-seconds", type=int, default=0)
     p = sub.add_parser("explain")
     p.add_argument("--json", action="store_true")
     p.add_argument("--profile", default=DEFAULT_PROFILE)
@@ -743,7 +955,7 @@ def main(argv: List[str] | None = None) -> int:
         if args.command == "models":
             return command_models(args, registry, registry_path)
         if args.command == "health":
-            return command_health(args, registry, registry_path)
+            return command_health(args, registry, registry_path, root)
         if args.command == "explain":
             return command_explain(args, registry, registry_path, root)
         if args.command in {"chat", "json"}:

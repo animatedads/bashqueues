@@ -1,0 +1,14 @@
+{
+  "local_qid": "20260603_170000_local_after_remote",
+  "policy": {
+    "failure_policy": "block",
+    "freshness_seconds": 300,
+    "timeout_seconds": 3600
+  },
+  "remote": {
+    "job": "nightly_export",
+    "required_state": "done",
+    "service": "oracle-prod"
+  },
+  "schema": "queuebash.remote_dependency.request.v1"
+}

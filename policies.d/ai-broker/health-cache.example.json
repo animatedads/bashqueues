@@ -1,0 +1,20 @@
+{
+  "schema": "queuebash.ai_broker.health_cache.v1",
+  "updated_at": "2026-06-03T00:00:00Z",
+  "entries": [
+    {
+      "provider": "openai_compat",
+      "model": "local-model",
+      "state": "available",
+      "reason": "fixture local model is available",
+      "updated_at": "2026-06-03T00:00:00Z"
+    },
+    {
+      "provider": "ollama",
+      "model": "llama3",
+      "state": "degraded",
+      "reason": "fixture demonstrates degraded selection evidence",
+      "updated_at": "2026-06-03T00:00:00Z"
+    }
+  ]
+}

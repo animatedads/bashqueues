@@ -19,5 +19,7 @@ assert service['default_safety_contract']['fixture_first'] is True
 assert service['default_safety_contract']['live_api_default'] is False
 assert service['default_safety_contract']['normalized_json_only'] is True
 assert service['default_safety_contract']['provider_output_is_shell'] is False
-assert service['next_candidates'] == ['secret_manager','feature_store']
+# Later waves may advance next_candidates after these families are implemented.
+for fam in ['secret_manager','feature_store']:
+    assert fam in service['families'], fam
 print('PASS provider_service_coverage_wave3_bob14_static')

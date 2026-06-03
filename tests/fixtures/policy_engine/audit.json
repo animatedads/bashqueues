@@ -1,0 +1,18 @@
+{
+  "audit_event_write_permitted": false,
+  "check": "audit",
+  "credentials_required_for_default_tests": false,
+  "decision": "allow",
+  "decision_is_advisory": true,
+  "fail_closed": true,
+  "live_api_default": false,
+  "mutated": false,
+  "obligation_enforcement_permitted": false,
+  "policy_authority_granted": false,
+  "policy_mutation_permitted": false,
+  "provider": "fixture",
+  "provider_family": "policy_engine",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.policy_engine.audit.v1",
+  "source": "fixture"
+}

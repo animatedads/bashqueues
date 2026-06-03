@@ -1,5 +1,5 @@
 {
-  "created_for": "0.18.95_BOB14_service_coverage_gpu_marketplace_distributed_framework",
+  "created_for": "0.18.97_BOB14_service_coverage_policy_engine_observability_backend",
   "default_safety_contract": {
     "credentials_required_for_default_tests": false,
     "fixture_first": true,
@@ -77,6 +77,28 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "feature_store": {
+      "doc_prefix": "FEATURE_STORE",
+      "fixture_dir": "feature_store",
+      "non_goals": [
+        "online-feature-read",
+        "offline-training-export",
+        "feature-materialization",
+        "feature-delete",
+        "job-runtime-mutation"
+      ],
+      "policy_dir": "feature_store",
+      "priority": 8,
+      "provider_dir": "feature_store",
+      "schemas": [
+        "queuebash.feature_store.detect.v1",
+        "queuebash.feature_store.entity.v1",
+        "queuebash.feature_store.feature_view.v1",
+        "queuebash.feature_store.training_set.v1",
+        "queuebash.feature_store.lineage.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "gpu_marketplace": {
       "doc_prefix": "GPU_MARKETPLACE",
       "fixture_dir": "gpu_marketplace",
@@ -119,6 +141,73 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "observability_backend": {
+      "doc_prefix": "OBSERVABILITY_BACKEND",
+      "fixture_dir": "observability_backend",
+      "non_goals": [
+        "live-scrape",
+        "telemetry-write",
+        "trace-export",
+        "alert-mutation",
+        "job-runtime-mutation"
+      ],
+      "policy_dir": "observability_backend",
+      "priority": 10,
+      "provider_dir": "observability_backend",
+      "schemas": [
+        "queuebash.observability_backend.detect.v1",
+        "queuebash.observability_backend.signal.v1",
+        "queuebash.observability_backend.metric.v1",
+        "queuebash.observability_backend.trace.v1",
+        "queuebash.observability_backend.alert.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "policy_engine": {
+      "doc_prefix": "POLICY_ENGINE",
+      "fixture_dir": "policy_engine",
+      "non_goals": [
+        "live-policy-decision-authority",
+        "policy-mutation",
+        "access-grant",
+        "secret-read",
+        "job-runtime-mutation"
+      ],
+      "policy_dir": "policy_engine",
+      "priority": 9,
+      "provider_dir": "policy_engine",
+      "schemas": [
+        "queuebash.policy_engine.detect.v1",
+        "queuebash.policy_engine.policy.v1",
+        "queuebash.policy_engine.decision.v1",
+        "queuebash.policy_engine.obligation.v1",
+        "queuebash.policy_engine.audit.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "secret_manager": {
+      "doc_prefix": "SECRET_MANAGER",
+      "fixture_dir": "secret_manager",
+      "non_goals": [
+        "secret-read",
+        "secret-write",
+        "secret-delete",
+        "credential-broker",
+        "runtime-injection",
+        "job-runtime-mutation"
+      ],
+      "policy_dir": "secret_manager",
+      "priority": 7,
+      "provider_dir": "secret_manager",
+      "schemas": [
+        "queuebash.secret_manager.detect.v1",
+        "queuebash.secret_manager.secret.v1",
+        "queuebash.secret_manager.rotation.v1",
+        "queuebash.secret_manager.access_policy.v1",
+        "queuebash.secret_manager.audit.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "vector_database": {
       "doc_prefix": "VECTOR_DATABASE",
       "fixture_dir": "vector_database",
@@ -143,8 +232,8 @@
     }
   },
   "next_candidates": [
-    "secret_manager",
-    "feature_store"
+    "metadata_catalog",
+    "artifact_store"
   ],
   "schema": "queuebash.provider_service_coverage.v1"
 }

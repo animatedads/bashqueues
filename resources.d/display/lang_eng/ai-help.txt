@@ -1,0 +1,23 @@
+Usage:
+  queue ai providers [--json]
+  queue ai models [--provider NAME] [--json]
+  queue ai health [--json]
+  queue ai health --provider NAME --model NAME --set-state STATE [--reason TEXT] [--cooldown-seconds N] [--json]
+  queue ai explain [--profile NAME] [--capability csv] [--json]
+  queue ai chat [--profile NAME] [--capability csv] [--message TEXT|--input-file FILE] [--live] [--json]
+  queue ai json [--profile NAME] [--schema FILE] [--message TEXT|--input-file FILE] [--live] [--json]
+
+Purpose:
+  Resolve provider/model choices from AI profiles, provider registry, health,
+  capability, cost, and locality constraints. By default it performs selection
+  only; --live delegates to an existing ask-provider helper only when
+  QUEUEBASH_AI_LIVE_ENABLED=1 is set by policy.
+
+Policy inputs:
+  /etc/bashqueues/policies.d/ai-profiles/*.env
+  /etc/bashqueues/policies.d/ai-broker/provider-registry.json
+  /etc/bashqueues/policies.d/ai-broker/health-cache.json
+  $QUEUEBASH_ROOT/ai-broker/health-cache.json
+
+Important:
+  queue ai broker output is advisory data. It is never evaluated as shell.

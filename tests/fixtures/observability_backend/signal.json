@@ -1,0 +1,17 @@
+{
+  "alert_mutation_permitted": false,
+  "check": "signal",
+  "credentials_required_for_default_tests": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_default": false,
+  "live_scrape_permitted": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "observability_backend",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.observability_backend.signal.v1",
+  "source": "fixture",
+  "telemetry_write_permitted": false,
+  "trace_export_permitted": false
+}

@@ -1,0 +1,22 @@
+{
+  "alert_mutation_permitted": false,
+  "check": "metric",
+  "credentials_required_for_default_tests": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_default": false,
+  "live_scrape_permitted": false,
+  "metric_names": [
+    "queue_jobs_total",
+    "queue_worker_duration_seconds"
+  ],
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "observability_backend",
+  "provider_output_is_shell": false,
+  "sample_values_returned": false,
+  "schema": "queuebash.observability_backend.metric.v1",
+  "source": "fixture",
+  "telemetry_write_permitted": false,
+  "trace_export_permitted": false
+}

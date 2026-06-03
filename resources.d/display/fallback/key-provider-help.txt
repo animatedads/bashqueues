@@ -1,0 +1,20 @@
+Usage:
+  queue key-provider help
+  queue key-provider operations
+  queue key-provider status [--json]
+  queue key-provider lookup SIGNER OPERATION RESOURCE [--json]
+  queue key-provider explain SIGNER OPERATION RESOURCE [--json]
+  queue key-provider registry [--json]
+  queue key-provider register SIGNER OPERATION RESOURCE PUBLIC_KEY_REF [--status active|revoked] [--delegation NAME] [--reason TEXT]
+  queue key-provider revoke SIGNER OPERATION RESOURCE [--reason TEXT]
+  queue key-provider rotate SIGNER OPERATION RESOURCE NEW_PUBLIC_KEY_REF [--reason TEXT]
+
+Contract:
+  Providers answer key lookup, signer delegation, revocation, and rotation questions.
+  Core enforces decisions; providers supply normalized data only and never shell.
+  Missing, malformed, or failed provider output fails closed for privileged operations.
+
+File provider:
+  QUEUEBASH_KEY_PROVIDER=file
+  QUEUEBASH_FILE_KEY_REGISTRY=$HOME/.queuebash/policy/keys/key_registry.tsv
+  QUEUEBASH_FILE_KEY_DEFAULT=deny

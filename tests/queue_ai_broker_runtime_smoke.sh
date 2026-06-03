@@ -5,11 +5,16 @@ cd "$ROOT"
 # Smoke the broker helper directly. Full `queue ai` dispatch is covered by static
 # checks; avoiding `_queue_init` keeps this fixture test bounded on large trees.
 outdir="$(mktemp -d "${TMPDIR:-/tmp}/queue-ai-broker-smoke.XXXXXX")"
+export QUEUEBASH_AI_BROKER_HEALTH_CACHE="$outdir/health-cache.json"
 trap 'rm -rf "$outdir"' EXIT
 
 bin/queue-ai-broker providers --json > "$outdir/providers.json"
 bin/queue-ai-broker models --json > "$outdir/models.json"
 bin/queue-ai-broker health --json > "$outdir/health.json"
+bin/queue-ai-broker health --provider ollama --model llama3 --set-state available --reason "smoke fallback candidate" --json > "$outdir/health_update_ollama.json"
+bin/queue-ai-broker health --provider openai_compat --model local-model --set-state timeout --reason "smoke timeout" --cooldown-seconds 60 --json > "$outdir/health_update_timeout.json"
+bin/queue-ai-broker explain --profile balanced --capability chat --json > "$outdir/explain_health_timeout.json"
+bin/queue-ai-broker health --provider openai_compat --model local-model --set-state available --reason "smoke restore" --json > "$outdir/health_update_restore.json"
 bin/queue-ai-broker explain --profile balanced --capability chat,json --json > "$outdir/explain.json"
 bin/queue-ai-broker chat --profile balanced --message "hello broker" --json > "$outdir/chat.json"
 bin/queue-ai-broker json --profile json_strict --message '{"hello":"world"}' --json > "$outdir/json.json"
@@ -58,6 +63,10 @@ expect={
  'providers.json':'queuebash.ai_broker.providers.v1',
  'models.json':'queuebash.ai_broker.models.v1',
  'health.json':'queuebash.ai_broker.health.v1',
+ 'health_update_ollama.json':'queuebash.ai_broker.health_update.v1',
+ 'health_update_timeout.json':'queuebash.ai_broker.health_update.v1',
+ 'explain_health_timeout.json':'queuebash.ai_broker.explain.v1',
+ 'health_update_restore.json':'queuebash.ai_broker.health_update.v1',
  'explain.json':'queuebash.ai_broker.explain.v1',
  'chat.json':'queuebash.ai_broker.response.v1',
  'json.json':'queuebash.ai_broker.response.v1',
@@ -69,6 +78,13 @@ for name,schema in expect.items():
     assert data.get('schema') == schema, (name, data.get('schema'))
 providers=json.loads((root/'providers.json').read_text())['providers']
 assert providers, 'no providers returned'
+timeout_update=json.loads((root/'health_update_timeout.json').read_text())
+assert timeout_update['ok'] is True
+assert timeout_update['updated']['state'] == 'timeout'
+assert timeout_update['updated']['cooldown_seconds'] == 60
+health_timeout=json.loads((root/'explain_health_timeout.json').read_text())
+assert any('health_cooldown' in r.get('reasons', []) or 'health_timeout' in r.get('reasons', []) for r in health_timeout.get('rejected', [])), health_timeout
+assert health_timeout['selected']['provider'] == 'ollama', health_timeout
 explain=json.loads((root/'explain.json').read_text())
 assert explain['decision'] in ('allow','deny')
 assert explain['decision'] == 'allow', explain

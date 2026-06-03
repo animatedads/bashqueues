@@ -1,0 +1,6 @@
+Queue status panel
+Job: {{JOB_NAME}}
+ID: {{QID}}
+State: {{STATE}}
+Class: {{CLASS}}
+Updated: {{UPDATED_AT}}

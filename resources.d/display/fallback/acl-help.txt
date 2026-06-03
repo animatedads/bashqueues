@@ -1,0 +1,32 @@
+queue acl - enterprise ACL/provider decision contract
+
+Usage:
+  queue acl check SUBJECT OPERATION RESOURCE [--json]
+  queue acl explain SUBJECT OPERATION RESOURCE [--json]
+  queue acl operations
+  queue acl set module provider:NAME OPERATION SUBJECT [RESOURCE] [--decision allow|deny] [--reason TEXT]
+  queue acl remove module provider:NAME OPERATION SUBJECT [RESOURCE]
+
+File provider configuration:
+  QUEUEBASH_ACL_PROVIDER=file
+  QUEUEBASH_FILE_ACL_POLICY="$HOME/.queuebash/policy/acl/file_acl.tsv"
+  QUEUEBASH_FILE_ACL_DEFAULT=deny
+
+File policy format:
+  subject<TAB>operation<TAB>resource<TAB>decision<TAB>reason
+
+Purpose:
+  Normalise privileged operation checks as:
+    Can subject X perform operation Y on resource Z in context C?
+
+Provider decision contract:
+  allow | deny | error
+  reason
+  evidence
+  ttl/cache policy
+
+Design rules:
+  bashqueues core enforces decisions.
+  Providers supply normalized data, never shell.
+  Missing, malformed, or provider-error responses fail closed for privileged operations.
+  Single-user installs may remain file-backed and require no enterprise provider.

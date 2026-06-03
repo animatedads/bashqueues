@@ -1,0 +1,15 @@
+{
+  "decision": "allow",
+  "fail_closed": true,
+  "metadata_read_allowed": true,
+  "mutated": false,
+  "policy_source": "fixture",
+  "provider": "fixture",
+  "provider_family": "secret_manager",
+  "read_allowed": false,
+  "schema": "queuebash.secret_manager.access_policy.v1",
+  "subjects": [
+    "service:queue-worker"
+  ],
+  "write_allowed": false
+}

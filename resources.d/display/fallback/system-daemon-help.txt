@@ -1,0 +1,10 @@
+Usage: queue system-daemon [--once] [--interval SEC] [--detach] [--min-workers N] [--include-root]
+       queue system-supervisor [same options]
+
+Root-only multi-user control loop.  It quickly scans known user queue roots and,
+for each queue, delegates to that queue owner to run:
+  queue daemon --once --min-workers N
+
+This does not run user jobs as root.  Each per-user sentinel performs cheap
+control-plane checks and starts at least N detached user workers only when that
+user has due/dependency-ready pending work.
