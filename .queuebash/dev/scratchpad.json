@@ -7255,6 +7255,95 @@
       ],
       "text": "Break-glass secrets access should be supported only through signed/authorised workflow with reason, ticket, short TTL, audit event, and preferably file delivery. Break-glass must not print secrets to terminal or write them to scratchpad by default.",
       "updated_at": "2026-06-03T17:01:56Z"
+    },
+    {
+      "authority": {
+        "confidence": "validated",
+        "name": "bob12",
+        "source": "manual-safe-append",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T18:31:25Z",
+      "id": "SP-20260603-183120-235535-bob17",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "bob12-secrets-policy-continuation",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "bob17",
+        "secrets",
+        "policy-enforcement",
+        "fixture-first",
+        "0.18.101"
+      ],
+      "text": "0.18.101 Bob17 secrets policy enforcement continuation: fixture file provider now enforces active class-bindings.tsv and secret-acl.tsv when present or supplied through QUEUEBASH_SECRETS_POLICY_DIR. Denied class, denied purpose, env delivery, short runtime TTL, and over-policy TTL return queuebash.error.v1 without copying secret values; .example files remain inactive documentation.",
+      "updated_at": "2026-06-03T18:31:25Z"
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "coding_agent",
+        "source": "queue dev scratchpad",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T18:33:45Z",
+      "id": "SP-20260603-183345-036670-6706",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "0.18.101",
+        "install-system",
+        "display-help",
+        "resource-signing"
+      ],
+      "text": "0.18.101 installer display/help resource patch: install-system.sh now installs resources.d into PREFIX/share/bashqueues/resources.d, verifies installed resources before signing, and the existing queue code sign/verify step covers display/XML resources. Added static and installed-share smoke tests for queue help resource resolution after system-style layout.",
+      "updated_at": "2026-06-03T18:33:45Z"
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "coding_agent",
+        "source": "queue dev scratchpad",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T19:06:45Z",
+      "id": "SP-20260603-190645-043843-2721",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "0.18.102",
+        "bob14",
+        "system-install",
+        "display-help",
+        "resource-manifest"
+      ],
+      "text": "0.18.102 Bob14 installer/display-help continuation: _queue_code_signature_targets now includes top-level resources.d/display/* and resources.d/xml/* so installed display/XML manifest files are signed alongside localized payloads. Updated system-install static/smoke tests prove manifest target coverage.",
+      "updated_at": "2026-06-03T19:06:45Z"
     }
   ],
   "merge_history": [
@@ -7454,5 +7543,5 @@
   },
   "project": "bashqueues-0.18.24",
   "schema": "queuebash.dev_scratchpad.v1",
-  "updated_at": "2026-06-03T17:25:00Z"
+  "updated_at": "2026-06-03T19:45:00Z"
 }

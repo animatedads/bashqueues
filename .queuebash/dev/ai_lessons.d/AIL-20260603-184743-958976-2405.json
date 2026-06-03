@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T18:47:43Z",
+  "created_from_session": "AIS-20260603-184739-978978-7090-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-184743-958976-2405",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "0.18.101 installer lesson: system install must install resources.d display/help payloads into the share tree and include those installed resource targets in signing/verification tests."
+}

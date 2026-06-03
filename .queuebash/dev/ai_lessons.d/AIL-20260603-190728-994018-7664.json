@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T19:07:28Z",
+  "created_from_session": "AIS-20260603-190723-434888-4573-bob17",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-190728-994018-7664",
+  "match": {
+    "command_glob": "*secrets*break-glass*",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Break-glass fixture support should remain disabled by default, require request plus approval before delivery, store only a hash marker for authorisation codes, and keep delivery through the same redacted file-delivery result contract. Use direct provider helper calls in fixture smoke tests for boundedness."
+}

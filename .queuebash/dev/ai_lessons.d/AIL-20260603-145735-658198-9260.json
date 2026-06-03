@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T14:57:35Z",
+  "created_from_session": "AIS-20260603-145227-111409-5174-bob14",
+  "created_from_try": "AIT-20260603-145708-860140-4736",
+  "kind": "failure_lesson",
+  "lesson_id": "AIL-20260603-145735-658198-9260",
+  "match": {
+    "command_glob": "tests/secret_manager_provider_contracts_static.sh",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "python3 tests/secret_manager_provider_json_contract_static.py",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "Generic secret-scan regexes are unsuitable for the secret_manager provider family because safe metadata terms such as secret_ref and credential-broker are expected. Secret-manager static tests must scan for value-bearing keys such as value, token, api_key, password, private_key, or client_secret while allowing metadata-only secret terminology."
+}

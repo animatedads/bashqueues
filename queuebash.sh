@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.100"
+QUEUEBASH_VERSION="0.18.102"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -5587,7 +5587,9 @@ _queue_code_signature_targets() {
             -name 'queuebash.sh' -o -name 'install-system.sh' -o -name 'queuemgr_panel.py' -o -name 'queuemgr.sh' -o -name 'publish_to_github.sh' -o \
             -path "$tree/assets.d/*.sh" -o -path "$tree/caps.d/*.sh" -o -path "$tree/reporters.d/*.sh" -o -path "$tree/bin/*.sh" -o -path "$tree/bin/*.py" -o \
             -path "$tree/classes/*.env" -o -path "$tree/policies.d/*.env" -o -path "$tree/policies.d/*/*.env" -o -path "$tree/systemd/*" -o \
-            -path "$tree/resources.d/display/*/*" -o -path "$tree/resources.d/xml/*/*" -o -path "$tree/resources.d/schemas/*" \
+            -path "$tree/resources.d/display/*" -o -path "$tree/resources.d/display/*/*" -o \
+            -path "$tree/resources.d/xml/*" -o -path "$tree/resources.d/xml/*/*" -o \
+            -path "$tree/resources.d/schemas/*" -o -path "$tree/resources.d/schemas/*/*" \
         \) -print 2>/dev/null | while IFS= read -r f; do
             rel="$(_queue_code_relpath "$tree" "$f")"
             case "$rel" in *.bak.*|*.dev.lock|*.sig.env|tests/*|docs/*) continue ;; esac
@@ -11881,21 +11883,7 @@ _queue_log_job_name_for_id() {
 }
 
 _queue_clean_logs_usage() {
-    cat <<'EOF'
-Usage:
-  queue clean-logs [options]
-
-Options:
-  --dryrun, --dry-run       show what would be removed; do not delete
-  --force, -f              actually remove matching logs
-  --older-than AGE         only logs older than AGE: 30s, 10m, 2h, 7d, 4w
-  --state STATE            only logs whose job is in STATE
-                           states: done failed interrupted cancelled deleted orphan all
-  --orphan                 same as --state orphan
-  --all                    include all states; otherwise defaults to safe completed states
-  --include-running        allow running logs to match; dangerous
-  --verbose                show skipped reasons
-EOF
+    _queue_resource_fetch_i18nl_command --name clean-logs-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
 }
 
 _queue_log_job_file_for_id() {
@@ -12285,26 +12273,7 @@ _queue_health_report() {
             --fix) fix=1; shift ;;
             --deep) deep=1; shift ;;
             --help|-h)
-                cat <<'EOF'
-Usage:
-  queue health [--fix] [--deep] [--deep]
-
-Checks:
-  queue root and state directories
-  logs and events.jsonl writability
-  free disk space and inodes
-  required/supporting commands: gzip, setsid, systemd-run
-  malformed job files
-  stale running jobs
-  dead worker pid files
-  blocked/missing dependencies
-  basic dependency cycles with --deep
-
-Safe fixes:
-  create missing state/log/worker directories
-  remove dead worker pid files
-  move definitely stale running jobs to interrupted
-EOF
+                _queue_resource_fetch_i18nl_command --name health-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                 return 0
                 ;;
             *)
@@ -13949,128 +13918,7 @@ _queue_ai_ask_command() {
                 shift
                 ;;
             --help|-h)
-                cat <<'EOH'
-Usage:
-  queue ask [--provider NAME] [--context csv] [--model NAME] [--live] [--json] "question"
-  queue ask providers [--json]
-  queue ask provider explain PROVIDER [--json]
-  queue ask provider test PROVIDER --fixture [--json]
-
-Purpose:
-  Build a policy-gated advisory request for an AI responder provider.
-  By default this command audits the request and returns a deterministic provider handoff.
-
-Live providers:
-  Live provider calls require explicit policy enablement:
-    QUEUEBASH_AI_LIVE_ENABLED=1
-
-  Local Ollama:
-    queue ask --provider ollama --model llama3 --live "question"
-
-  Google Gemini API:
-    queue ask --provider gemini --model gemini-2.5-flash --live "question"
-
-  OpenAI Responses API:
-    queue ask --provider openai --model gpt-4.1-mini --live "question"
-
-  Anthropic Messages API:
-    queue ask --provider anthropic --model claude-sonnet-4-20250514 --live "question"
-
-  IBM watsonx.ai:
-    queue ask --provider watsonx --model ibm/granite-3-8b-instruct --live "question"
-
-  OpenAI-compatible local/private endpoint:
-    queue ask --provider openai_compat --model local-model --live "question"
-
-  Mistral AI:
-    queue ask --provider mistral --model mistral-small-latest --live "question"
-
-  DeepSeek:
-    queue ask --provider deepseek --model deepseek-v4-flash --live "question"
-
-  Groq:
-    queue ask --provider groq --model llama-3.3-70b-versatile --live "question"
-    queue ask --provider cerebras --model gpt-oss-120b --live "question"
-    queue ask --provider perplexity --model sonar-pro --live "question"
-    queue ask --provider baseten --model deepseek-ai/DeepSeek-V4-Pro --live "question"
-
-  Gemini key lookup order:
-    QUEUEBASH_AI_GEMINI_API_KEY_FILE
-    QUEUEBASH_AI_GEMINI_API_KEY
-    QUEUEBASH_AI_GEMINI_KEY
-    GEMINI_API_KEY
-    GOOGLE_API_KEY
-
-  OpenAI key lookup order:
-    QUEUEBASH_AI_OPENAI_API_KEY_FILE
-    QUEUEBASH_AI_OPENAI_API_KEY
-    OPENAI_API_KEY
-
-  Anthropic key lookup order:
-    QUEUEBASH_AI_ANTHROPIC_API_KEY_FILE
-    QUEUEBASH_AI_ANTHROPIC_API_KEY
-    ANTHROPIC_API_KEY
-
-  IBM watsonx.ai key lookup order:
-    QUEUEBASH_AI_WATSONX_BEARER_TOKEN_FILE or QUEUEBASH_AI_WATSONX_BEARER_TOKEN
-    QUEUEBASH_AI_WATSONX_API_KEY_FILE or QUEUEBASH_AI_WATSONX_API_KEY / IBM_CLOUD_API_KEY
-    QUEUEBASH_AI_WATSONX_PROJECT_ID
-
-  Mistral AI key lookup order:
-    QUEUEBASH_AI_MISTRAL_API_KEY_FILE
-    QUEUEBASH_AI_MISTRAL_API_KEY
-    MISTRAL_API_KEY
-
-  Mistral AI endpoint configuration:
-    QUEUEBASH_AI_MISTRAL_ENDPOINT (default: https://api.mistral.ai/v1/chat/completions)
-
-  DeepSeek key lookup order:
-    QUEUEBASH_AI_DEEPSEEK_API_KEY_FILE, QUEUEBASH_AI_DEEPSEEK_API_KEY, DEEPSEEK_API_KEY
-    QUEUEBASH_AI_DEEPSEEK_MODEL (default: deepseek-v4-flash)
-    QUEUEBASH_AI_DEEPSEEK_ENDPOINT (default: https://api.deepseek.com/chat/completions)
-
-  Groq key lookup order:
-    QUEUEBASH_AI_GROQ_API_KEY_FILE, QUEUEBASH_AI_GROQ_API_KEY, GROQ_API_KEY
-    QUEUEBASH_AI_GROQ_MODEL (default: llama-3.3-70b-versatile)
-    QUEUEBASH_AI_GROQ_ENDPOINT (default: https://api.groq.com/openai/v1/chat/completions)
-    QUEUEBASH_AI_CEREBRAS_MODEL (default: gpt-oss-120b)
-    QUEUEBASH_AI_CEREBRAS_ENDPOINT (default: https://api.cerebras.ai/v1/chat/completions)
-
-  Perplexity key lookup order:
-    QUEUEBASH_AI_PERPLEXITY_API_KEY_FILE, QUEUEBASH_AI_PERPLEXITY_API_KEY, PERPLEXITY_API_KEY
-    QUEUEBASH_AI_PERPLEXITY_MODEL (default: sonar-pro)
-    QUEUEBASH_AI_PERPLEXITY_ENDPOINT (default: https://api.perplexity.ai/chat/completions)
-
-  Baseten key lookup order:
-    QUEUEBASH_AI_BASETEN_API_KEY_FILE, QUEUEBASH_AI_BASETEN_API_KEY, BASETEN_API_KEY
-    QUEUEBASH_AI_BASETEN_MODEL (default: deepseek-ai/DeepSeek-V4-Pro)
-    QUEUEBASH_AI_BASETEN_ENDPOINT (default: https://inference.baseten.co/v1/chat/completions)
-
-  OpenAI-compatible endpoint configuration:
-    QUEUEBASH_AI_OPENAI_COMPAT_ENDPOINT (default: http://127.0.0.1:8000/v1/chat/completions)
-    QUEUEBASH_AI_OPENAI_COMPAT_API_KEY_FILE or QUEUEBASH_AI_OPENAI_COMPAT_API_KEY (optional for local endpoints)
-
-Important:
-  queue ask is advisory only. It cannot approve, submit, cancel, sign, override,
-  patch, or execute jobs. Provider output is data and is never evaluated as shell.
-
-Default contexts:
-  docs,commands,classes,assets,providers
-
-Additional safe implementation context:
-  tests,implementation_tests
-
-Optional contexts requiring explicit policy/env allowance:
-  queue_status                              require QUEUEBASH_AI_ALLOW_QUEUE_STATUS=1
-  job_status                                require QUEUEBASH_AI_ALLOW_JOB_STATUS=1
-  job_metadata                              require QUEUEBASH_AI_ALLOW_JOB_METADATA=1
-  job_tail                                  require QUEUEBASH_AI_ALLOW_JOB_TAIL=1
-  policies,policy_definitions,policy_details require QUEUEBASH_AI_ALLOW_POLICY_DETAILS=1
-  profile_details                            require QUEUEBASH_AI_ALLOW_POLICY_DETAILS=1
-
-Default queue/job context is redacted. Command payloads and stdout/stderr are not
-included unless a separately gated job_tail context is explicitly allowed.
-EOH
+                _queue_resource_fetch_i18nl_command --name ask-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                 return 0
                 ;;
             --)
@@ -15588,67 +15436,7 @@ _queue_backup_create() {
 
 
 _queue_dev_usage() {
-    cat <<'EOF_USAGE'
-Usage:
-  queue dev functions [--file FILE] [--json] [prefix]
-  queue dev locate FUNCTION [--json]
-  queue dev extract FUNCTION [--file FILE] [--json]
-  queue dev scope [--json] [--prefix PREFIX]
-  queue dev patch --file FILE --function FUNCTION --source SOURCE [--json] [--no-syntax-check]
-  queue dev splice --file FILE (--after TEXT|--before TEXT|--replace TEXT --with TEXT) [--insert TEXT] [--dry-run] [--json]
-  queue dev test [--run] [--name NAME] [--timeout SEC] [--json] -- COMMAND...
-  queue dev test result JOBID [--root DIR] [--json]
-  queue dev test qbtest --file FILE [--function NAME] [--language bash|python] [--timeout SEC] [--list] [--json] [--keep]
-  queue dev test qbtest --help | -h | --h
-  queue dev comment --file FILE --function FUNCTION --message TEXT [--changelog] [--json]
-  queue dev diff --file FILE [--function FUNCTION] [--json]
-  queue dev strip --file FILE --function FUNCTION [--json]
-  queue dev symbols --file FILE [--function FUNCTION] [--json]
-  queue dev symbols --function FUNCTION [--json]
-  queue dev flow --file FILE [--function FUNCTION] [--json]
-  queue dev flow --function FUNCTION [--json]
-  queue dev scratchpad help|init|import|add|task|attempt|evidence|done|reject|fail|bump-fail|list|delete|next|export|explain
-  queue dev ai discover|session|try|lesson [--json]
-  queue dev attempt begin --text TEXT [--tag TAG...] [--based-on ITEM_ID...] [--json]
-  queue dev attempt end ATTEMPT_ID --status STATUS [--text TEXT] [--json]
-  queue dev evidence record --attempt ATTEMPT_ID --text TEXT [--file FILE...] [--command COMMAND] [--status STATUS] [--json]
-  queue dev context [--json] [--tag TAG] [--kind KIND] [--status STATUS] [--limit N] [--full-corpus]
-  queue dev think --text TEXT [--subject SUBJECT] [--tag TAG...] [--authority AUTHORITY] [--json]
-  queue dev handover [--json] [--since ITEM_ID] [--tag TAG] [--full-corpus]
-  queue dev files begin|finish|add|remove|list|changed|scan|path
-  queue dev patchset create --output ZIP [--registry FILE] [--json]
-  queue dev patchset inspect --patchset ZIP [--target DIR] [--json]
-  queue dev merge-plan --base DIR --patchset ZIP [--patchset ZIP...] [--target-version VERSION] [--json]
-  queue dev merge-plan explain|summary PLAN.json [--json]
-  queue dev validate [--json] [--quick] [--timeout SEC] [--file FILE...]
-  queue dev scope-check [--json] [--allow GLOB...] [--deny GLOB...] [--file FILE...]
-
-Developer/metaprogramming helpers for deterministic Bash introspection and safe
-function replacement. Intended for dogfood/AI-assisted maintenance; normal queue
-operations do not depend on these commands. comment/diff/strip use the .bak files
-created by queue dev patch for function-level memory, context, and rollback.
-symbols provides a lightweight static symbol table for variables, constants,
-string literals, and function membership. flow provides a static execution-path
-graph of function calls and shell control nodes for AI-assisted impact analysis.
-splice provides constrained anchored text transformations with dry-run, idempotency,
-JSON diagnostics, and atomic writes. It treats content as text only. test submits
-real DEV_TEST_RUNNER jobs in an isolated harness queue root and returns a bounded
-queuebash.dev_test_result.v1 status without wiring results into scratchpad. files records
-edit-session baselines, purposes, file checksums, function checksums, and changed-file
-state. patchset creates a minimal changed-files zip with diffs, manifest, and guarded
-merge/apply scripts using old file/function MD5 preconditions for multistream work.
-merge-plan provides bounded, read-only, zip-aware merge intelligence across multiple
-patchsets, reporting file/function scope, collisions, release identity overlaps,
-scratchpad item-merge concerns, delivery evidence relocation, and validation steps.
-attempt and evidence create a bounded development-attempt ledger under the queue root,
-linking validation evidence to named attempts without granting acceptance authority.
-ai provides a bounded AI development session and lesson ledger: discover, session start/stop/list/lessons, try, and lesson. It is not an AI provider or authority source; try execution is allowlisted and lessons are loaded from directory-scanned records to avoid merge collisions.
-context, think, and handover provide bounded working-set context loading,
-auditable planning notes, and reviewer-friendly handover summaries without dumping
-or requiring the AI to know the full scratchpad corpus by default. validate and
-scope-check provide bounded pre-merge gates that report development-test and
-changed-file scope outcomes without creating acceptance records.
-EOF_USAGE
+    _queue_resource_fetch_i18nl_command --name queue-dev-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
 }
 
 _queue_dev_valid_function_name() {
@@ -16877,20 +16665,7 @@ _queue_dev_splice() {
             --json|-j) json=1; shift ;;
             --all) all=1; shift ;;
             --help|-h)
-                cat <<'USAGE'
-Usage:
-  queue dev splice --file FILE --after TEXT --insert TEXT [--if-missing TEXT] [--dry-run] [--json]
-  queue dev splice --file FILE --before TEXT --insert TEXT [--if-missing TEXT] [--dry-run] [--json]
-  queue dev splice --file FILE --replace TEXT --with TEXT [--if-present TEXT] [--dry-run] [--json]
-  queue dev splice --file FILE --after-file NEEDLE_FILE --insert-file INSERT_FILE [--if-missing TEXT] [--dry-run] [--json]
-  queue dev splice --file FILE --before-file NEEDLE_FILE --insert-file INSERT_FILE [--if-missing TEXT] [--dry-run] [--json]
-  queue dev splice --file FILE --replace-file OLD_FILE --with-file NEW_FILE [--all] [--dry-run] [--json]
-
-Constrained anchored text splicing. Operates on one file, treats inserted text as
-plain text, supports dry-run/idempotency, and writes atomically without creating
-queuebash.sh.bak.* or *.devpatch.* artifacts. File-based splice inputs are read
-inside the helper so trailing newlines are preserved exactly.
-USAGE
+                _queue_resource_fetch_i18nl_command --name dev-splice-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                 return 0 ;;
             *) echo "queue dev splice: unexpected argument: $1" >&2; return 2 ;;
         esac
@@ -17104,31 +16879,7 @@ _queue_dev_scratchpad_path() {
 # QBTEST:END
 
 _queue_dev_scratchpad_usage() {
-    cat <<'EOF_USAGE'
-Usage:
-  queue dev scratchpad help
-  queue dev scratchpad init --project NAME [--json]
-  queue dev scratchpad import --from-tree DIR [--project NAME] [--json]
-  queue dev scratchpad add --kind KIND --authority AUTHORITY --text TEXT [--tag TAG...] [--json]
-  queue dev scratchpad task --text TEXT [--authority team_leader] [--json]
-  queue dev scratchpad attempt ITEM_ID --note TEXT [--json]
-  queue dev scratchpad evidence ITEM_ID --summary TEXT [--raw-log PATH] [--verdict VERDICT] [--json]
-  queue dev scratchpad evidence ITEM_ID --json-file result.json [--summary TEXT] [--verdict VERDICT] [--json]
-  queue dev scratchpad done ITEM_ID --note TEXT [--authority reviewer] [--json]
-  queue dev scratchpad reject ITEM_ID --note TEXT [--authority reviewer] [--json]
-  queue dev scratchpad fail ITEM_ID --note TEXT [--json]
-  queue dev scratchpad bump-fail ITEM_ID [--json]
-  queue dev scratchpad list [--json] [--status STATUS] [--kind KIND] [--tag TAG]
-  queue dev scratchpad delete ITEM_ID [--authority reviewer] [--note TEXT] [--json]
-  queue dev scratchpad status set ITEM_ID --status STATUS [--reason TEXT] [--authority reviewer] [--json]
-  queue dev scratchpad supersede OLD_ITEM_ID --by NEW_ITEM_ID [--reason TEXT] [--authority reviewer] [--json]
-  queue dev scratchpad next [--json]
-  queue dev scratchpad export [--json]
-  queue dev scratchpad explain ITEM_ID
-
-File-backed authority-stamped development scratchpad ledger. This is storage/state
-only: no prompt rendering, no AI provider calls, and no queue dev test integration.
-EOF_USAGE
+    _queue_resource_fetch_i18nl_command --name dev-scratchpad-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
 }
 
 _queue_dev_scratchpad_command() {
@@ -17720,17 +17471,7 @@ PYDEV_SCRATCHPAD
 
 
 _queue_dev_test_usage() {
-    cat <<'USAGE'
-Usage:
-  queue dev test [--run] [--name NAME] [--timeout SEC] [--json] -- COMMAND...
-  queue dev test result JOBID [--root DIR] [--json]
-
-Submit and optionally run a real DEV_TEST_RUNNER job in an isolated harness
-QUEUEBASH_ROOT. The tested command is executed through normal queue submit and a
-bounded worker pass; results are reported as queuebash.dev_test_result.v1.
-qbtest scans base64 QBTEST comment blocks embedded near functions and runs decoded
-Bash or Python snippets with bounded execution.
-USAGE
+    _queue_resource_fetch_i18nl_command --name dev-test-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
 }
 
 _queue_dev_test_counts_json() {
@@ -20194,20 +19935,7 @@ _queue_profile_command() {
             _queue_profile_command interrogate "$@"
             ;;
         *)
-            cat >&2 <<'USAGE'
-Usage:
-  queue profile interrogate run NAME [--pre-arm-delay SEC] -- command [args...]
-  queue profile interrogate repeat NAME --count N [--pre-arm-delay SEC] -- command [args...]
-  queue profile interrogate compile PROFILE_DIR --name NAME
-  queue profile interrogate merge CAMPAIGN_DIR --name NAME
-  queue profile interrogate diff-runs CAMPAIGN_DIR
-  queue profile interrogate explain NAME [--json]
-  queue profile interrogate approve NAME [--kind seccomp|net|file|all] [--signing-key KEY] [--accept-warnings] [--accept-risk]
-  queue profile interrogate verify NAME [--kind seccomp|net|file|all] [--allow-self-signed 0|1] [--required-signer NAME]
-  queue profile interrogate class-template CLASS --profile NAME [--required-signer NAME] [--allow-self-signed 0|1] [--force]
-  queue profile interrogate show NAME
-  queue profile interrogate diff NAME PROFILE_DIR
-USAGE
+            _queue_resource_fetch_i18nl_command --name profile-interrogate-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}" >&2
             return 2
             ;;
     esac

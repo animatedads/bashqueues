@@ -1,0 +1,16 @@
+{
+  "agent": "Bob15",
+  "authority": "coding_agent",
+  "base": "",
+  "lesson_count_at_start": 64,
+  "next": "",
+  "role": "merger",
+  "schema": "queuebash.dev_ai.session.v1",
+  "session_id": "AIS-20260603-180302-667084-6863-Bob15",
+  "started_at": "2026-06-03T18:03:02Z",
+  "status": "done",
+  "stopped_at": "2026-06-03T18:03:08Z",
+  "summary": "0.18.100 merge lessons recorded",
+  "tags": [],
+  "task": "0.18.100 multi-patch hot-seat merge"
+}

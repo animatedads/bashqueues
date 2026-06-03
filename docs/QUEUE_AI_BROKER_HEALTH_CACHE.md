@@ -45,6 +45,35 @@ Updates emit schema:
 queuebash.ai_broker.health_update.v1
 ```
 
+Clear one local overlay entry after an operator has confirmed recovery:
+
+```sh
+queue ai health \
+  --provider openai_compat \
+  --model local-model \
+  --clear \
+  --json
+```
+
+Prune entries whose cooldown deadline has already passed so the static provider registry becomes authoritative again:
+
+```sh
+queue ai health --prune-expired --json
+```
+
+For test harnesses or a deliberate operator reset, clear all local overlay entries explicitly:
+
+```sh
+queue ai health --clear-all --json
+```
+
+Clear and prune operations emit:
+
+```text
+queuebash.ai_broker.health_clear.v1
+queuebash.ai_broker.health_prune.v1
+```
+
 ## States
 
 Accepted states are:
@@ -91,3 +120,25 @@ Explain output includes health rejection reasons such as `health_timeout`, `heal
   ]
 }
 ```
+
+
+## Live-provider feedback
+
+When brokered live mode is explicitly enabled (`QUEUEBASH_AI_LIVE_ENABLED=1`), provider helper failures are fed back into the local health cache before the broker attempts the next viable fallback candidate. This feedback is local evidence only; it is not policy authority and does not execute model output.
+
+Failure strings are mapped conservatively:
+
+- timeout evidence records `timeout`;
+- 429, quota, throttling, or rate-limit evidence records `rate_limited`;
+- credential, permission, API-key, 401, or 403 evidence records `auth_failed`;
+- missing/unknown/not-found model evidence records `model_missing`;
+- otherwise the broker records `degraded`.
+
+Failure feedback uses `AI_HEALTH_FAILURE_COOLDOWN_SECONDS` or `QUEUEBASH_AI_BROKER_HEALTH_FAILURE_COOLDOWN_SECONDS`, defaulting to 300 seconds. Set `AI_BROKER_AUTO_HEALTH_FEEDBACK=0` or `QUEUEBASH_AI_BROKER_AUTO_HEALTH_FEEDBACK=0` to disable automatic feedback for a profile/test harness. Successful brokered live calls record the selected provider/model as `available`. Broker responses include a bounded `health_feedback` array so reviewers can see what was recorded during fallback.
+
+
+## Operator cleanup controls
+
+The local health cache is deliberately an overlay, not the source of policy truth. `--clear` removes a single provider/model override, `--clear-all` removes every local override, and `--prune-expired` removes entries with expired cooldown deadlines. These commands are useful after provider recovery, credential rotation, or when live failure feedback has cooled down and should no longer suppress an otherwise valid registry candidate.
+
+The commands do not change the provider registry, model registry, policy references, or AI profile. They only rewrite the local health-cache JSON file selected by `QUEUEBASH_AI_BROKER_HEALTH_CACHE` or `$QUEUEBASH_ROOT/ai-broker/health-cache.json`.

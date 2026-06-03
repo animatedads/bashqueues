@@ -21,6 +21,20 @@ grep -Fq 'bash "$helper"' queuebash.sh || fail "queue secrets should invoke help
 grep -Fq 'secret_value_included": false' docs/SECRETS_PROVIDER_CONTRACT.md || fail "contract does not state secret values are excluded"
 grep -Fq 'QUEUEBASH_SECRET_ENV_ALLOWED=0' policies.d/secrets/default.env.example || fail "env delivery not denied by default"
 
+
+grep -Fq 'class-bindings.tsv' docs/SECRETS_PROVIDER_CONTRACT.md || fail "contract does not document active class binding policy"
+grep -Fq 'secret-acl.tsv' docs/SECRETS_PROVIDER_CONTRACT.md || fail "contract does not document active secret ACL policy"
+grep -Fq '_secret_policy_class_allowed' providers.d/secrets/file_provider.sh || fail "file provider does not enforce class binding policy"
+grep -Fq '_secret_policy_acl_allowed' providers.d/secrets/file_provider.sh || fail "file provider does not enforce secret ACL policy"
+grep -Fq '_secret_audit_emit' providers.d/secrets/file_provider.sh || fail "file provider does not write redacted audit events"
+grep -Fq 'purpose_hash' providers.d/secrets/file_provider.sh || fail "audit events must hash purpose text"
+grep -Fq 'break-glass|breakglass' providers.d/secrets/secrets_provider.sh || fail "broker does not expose break-glass refusal path"
+grep -Fq 'authorization_required' providers.d/secrets/secrets_provider.sh || fail "break-glass fixture path must require authorization"
+if grep -Fq 'python3 -c' providers.d/secrets/secrets_provider.sh; then
+    fail "secrets broker should not depend on python for JSON escaping"
+fi
+[[ -f tests/secrets_provider_policy_gate_smoke.sh ]] || fail "missing policy gate smoke test"
+
 # Static guard: provider code must not print a variable named secret or value.
 if grep -RInE 'echo[[:space:]]+.*\$(SECRET_VALUE|secret_value|value)|printf[[:space:]].*\$(SECRET_VALUE|secret_value|value)' providers.d/secrets; then
     fail "provider appears to print secret-like variables"

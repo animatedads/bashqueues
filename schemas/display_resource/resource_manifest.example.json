@@ -1,0 +1,26 @@
+{
+  "schema": "queuebash.display_resource_manifest.v1",
+  "resource_type": "display",
+  "name": "status-panel.example.txt",
+  "languages": [
+    "lang_eng",
+    "fallback"
+  ],
+  "fallback_required": true,
+  "tokens": [
+    "QID",
+    "JOB_NAME",
+    "STATE",
+    "CLASS",
+    "UPDATED_AT"
+  ],
+  "surface": "panel status card example",
+  "execution": "never",
+  "renderer": "controlled_token_replacement_only",
+  "json_contract_source": false,
+  "secret_rendering_allowed": false,
+  "shell_expansion_allowed": false,
+  "command_substitution_allowed": false,
+  "signing_expected": true,
+  "notes": "Fixture manifest for Bob18 display-resource catalogue validation."
+}

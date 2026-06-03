@@ -1,0 +1,18 @@
+Usage:
+  queue health [--fix] [--deep]
+
+Checks:
+  queue root and state directories
+  logs and events.jsonl writability
+  free disk space and inodes
+  required/supporting commands: gzip, setsid, systemd-run
+  malformed job files
+  stale running jobs
+  dead worker pid files
+  blocked/missing dependencies
+  basic dependency cycles with --deep
+
+Safe fixes:
+  create missing state/log/worker directories
+  remove dead worker pid files
+  move definitely stale running jobs to interrupted

@@ -73,7 +73,8 @@ def classify_token(tok: str) -> str:
     return tok
 
 
-def fingerprint(argv: List[str], cwd: str | None = None, requested_class: str | None = None) -> Dict[str, Any]:
+def fingerprint(argv: List[str], cwd: str | None = None, requested_class: str | None = None, job: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    job = job or {}
     if not argv:
         raise SystemExit("queue class-infer fingerprint: command required after --")
     argv0 = Path(argv[0]).name
@@ -107,6 +108,14 @@ def fingerprint(argv: List[str], cwd: str | None = None, requested_class: str | 
         "command_raw_hash": sha256_text(exact),
         "command_shape_hash": sha256_text(shape),
         "command_family_hash": sha256_text(" ".join(family_parts)),
+        "job_name": str(job.get("job_name", "")),
+        "user": str(job.get("user", "")),
+        "group": str(job.get("group", "")),
+        "paths": _seq(job.get("paths") or job.get("file_paths") or job.get("paths_touched")),
+        "secrets": _seq(job.get("secrets") or job.get("secret_refs")),
+        "assets": _seq(job.get("assets") or job.get("requested_assets")),
+        "network": bool(job.get("network") or job.get("outbound_network")),
+        "feature_keys": [],
         "normalizer": {
             "numbers": "<num>",
             "dates": "<date>",
@@ -118,6 +127,8 @@ def fingerprint(argv: List[str], cwd: str | None = None, requested_class: str | 
             "secret_bearing_names": "<secret-key>",
         },
     }
+    result["feature_keys"] = job_feature_keys(job, result)
+    result["feature_hash"] = sha256_text("\n".join(result["feature_keys"]))
     return result
 
 
@@ -143,6 +154,121 @@ def read_jsonl(path: str | None) -> List[Dict[str, Any]]:
             continue
         rows.append(json.loads(line))
     return rows
+
+
+def read_job(path: str | None) -> Dict[str, Any]:
+    if not path:
+        return {}
+    data = read_json(path, {})
+    if not isinstance(data, dict):
+        raise SystemExit(f"queue class-infer: job fixture must be a JSON object: {path}")
+    return data
+
+
+def command_from_job(job: Dict[str, Any], fallback: List[str]) -> List[str]:
+    cmd = job.get("command") or job.get("argv") or fallback
+    if isinstance(cmd, list):
+        return [str(x) for x in cmd]
+    if isinstance(cmd, str) and cmd.strip():
+        return shlex.split(cmd)
+    return fallback
+
+
+def requested_class_from_job(job: Dict[str, Any], fallback: str | None) -> str:
+    return str(job.get("submitted_class") or job.get("requested_class") or fallback or "")
+
+
+def bucket_duration(value: Any) -> str:
+    try:
+        sec = float(value)
+    except Exception:
+        return ""
+    if sec < 60:
+        return "duration:<1m"
+    if sec < 600:
+        return "duration:<10m"
+    if sec < 1800:
+        return "duration:<30m"
+    if sec < 3600:
+        return "duration:<1h"
+    return "duration:>=1h"
+
+
+def _seq(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return [str(x) for x in value if str(x)]
+    return [str(value)] if str(value) else []
+
+
+def job_feature_keys(job: Dict[str, Any], fp: Dict[str, Any] | None = None) -> List[str]:
+    keys: List[str] = []
+    if fp:
+        if fp.get("argv0"):
+            keys.append("argv0:" + str(fp.get("argv0")))
+        if fp.get("script"):
+            keys.append("script:" + str(fp.get("script")))
+        if fp.get("cwd_family"):
+            keys.append("cwd_family:" + str(fp.get("cwd_family")))
+        if fp.get("command_shape_hash"):
+            keys.append("shape:" + str(fp.get("command_shape_hash")))
+        if fp.get("command_family_hash"):
+            keys.append("family:" + str(fp.get("command_family_hash")))
+    for field in ("user", "group", "project"):
+        if job.get(field):
+            keys.append(f"{field}:" + str(job[field]))
+    for env_key in _seq(job.get("env_keys") or job.get("environment_keys")):
+        keys.append("env_key:" + env_key)
+    for path in _seq(job.get("paths") or job.get("file_paths") or job.get("paths_touched")):
+        parts = Path(path).parts
+        # Keep stable prefixes rather than full mutable filenames.
+        if len(parts) >= 3:
+            keys.append("path_prefix:" + "/".join(parts[:3]))
+        keys.append("path:" + str(path))
+    for sec in _seq(job.get("secrets") or job.get("secret_refs")):
+        keys.append("secret:" + sec)
+    for asset in _seq(job.get("assets") or job.get("requested_assets")):
+        keys.append("asset:" + asset)
+    for cloud in _seq(job.get("cloud_resources") or job.get("resources")):
+        keys.append("cloud_resource:" + cloud)
+    if bool(job.get("network")) or bool(job.get("outbound_network")):
+        keys.append("network:outbound")
+    dur = bucket_duration(job.get("duration_sec") or job.get("runtime_sec") or "")
+    if dur:
+        keys.append(dur)
+    # Preserve order for explainability but remove duplicates.
+    seen = set()
+    out = []
+    for key in keys:
+        if key not in seen:
+            seen.add(key)
+            out.append(key)
+    return out
+
+
+def history_feature_keys(row: Dict[str, Any]) -> List[str]:
+    if isinstance(row.get("feature_keys"), list):
+        return [str(x) for x in row.get("feature_keys") if str(x)]
+    nested = row.get("features") if isinstance(row.get("features"), dict) else row
+    fp_like = {
+        "argv0": nested.get("argv0") or row.get("argv0"),
+        "script": nested.get("script") or row.get("script"),
+        "cwd_family": nested.get("cwd_family") or row.get("cwd_family"),
+        "command_shape_hash": nested.get("command_shape_hash") or row.get("command_shape_hash") or row.get("fingerprint"),
+        "command_family_hash": nested.get("command_family_hash") or row.get("command_family_hash"),
+    }
+    return job_feature_keys(nested, fp_like)
+
+
+def similarity(candidate: Iterable[str], observed: Iterable[str]) -> Tuple[float, List[str]]:
+    cand = set(candidate)
+    obs = set(observed)
+    if not cand or not obs:
+        return 0.0, []
+    inter = sorted(cand & obs)
+    score = len(inter) / max(1, min(len(cand), len(obs)))
+    return score, inter
 
 
 def default_policy() -> Dict[str, Any]:
@@ -189,31 +315,56 @@ def find_pin(fp: Dict[str, Any], pins: Iterable[Dict[str, Any]]) -> Dict[str, An
     return None
 
 
-def weighted_history(fp: Dict[str, Any], history: Iterable[Dict[str, Any]]) -> Tuple[Dict[str, float], int]:
+def trusted_history_row(row: Dict[str, Any]) -> bool:
+    if row.get("trusted") is False:
+        return bool(row.get("valid_exception"))
+    outcome = str(row.get("outcome", "accepted"))
+    if outcome in {"blocked", "failed", "anomaly", "policy_override"} and not row.get("valid_exception"):
+        return False
+    return True
+
+
+def weighted_history(fp: Dict[str, Any], history: Iterable[Dict[str, Any]]) -> Tuple[Dict[str, float], int, Dict[str, List[str]]]:
     classes: Dict[str, float] = defaultdict(float)
+    match_reasons: Dict[str, List[str]] = defaultdict(list)
     observations = 0
+    fp_features = fp.get("feature_keys") or []
     for row in history:
-        if row.get("command_shape_hash") != fp["command_shape_hash"] and row.get("fingerprint") != fp["command_shape_hash"]:
+        if not trusted_history_row(row):
             continue
-        cls = row.get("class") or row.get("used_class") or row.get("requested_class")
+        cls = row.get("class") or row.get("usual_class") or row.get("used_class") or row.get("requested_class")
         if not cls:
             continue
-        observations += 1
-        outcome = row.get("outcome", "observed")
+        row_shape = row.get("command_shape_hash") or row.get("fingerprint")
         weight = float(row.get("learning_weight", 1.0))
-        if outcome in {"accepted_with_warning", "policy_override", "blocked", "failed", "anomaly"}:
-            weight = min(weight, 0.1)
-        classes[str(cls)] += weight
-    return dict(classes), observations
+        matched = False
+        if row_shape and row_shape == fp.get("command_shape_hash"):
+            classes[str(cls)] += weight * 3.0
+            match_reasons[str(cls)].append("same command shape seen in trusted history")
+            matched = True
+        row_features = history_feature_keys(row)
+        score, overlap = similarity(fp_features, row_features)
+        if score >= 0.70:
+            classes[str(cls)] += weight * score
+            observations += 1
+            shown = ", ".join(overlap[:5])
+            match_reasons[str(cls)].append(f"feature overlap {score:.2f}: {shown}")
+            matched = True
+        elif matched:
+            observations += 1
+    return dict(classes), observations, {k: v[:6] for k, v in match_reasons.items()}
 
 
 def recommend(args: argparse.Namespace) -> Dict[str, Any]:
-    fp = fingerprint(args.command, args.cwd, args.requested_class)
+    job = read_job(getattr(args, "job", ""))
+    cmd = command_from_job(job, args.command)
+    requested_arg = requested_class_from_job(job, args.requested_class)
+    fp = fingerprint(cmd, args.cwd, requested_arg, job)
     policy = load_policy(args.policy)
     pins = read_jsonl(args.pins)
     history = read_jsonl(args.history)
     pin = find_pin(fp, pins)
-    classes, obs = weighted_history(fp, history)
+    classes, obs, history_reasons = weighted_history(fp, history)
     source = "none"
     rec_class = ""
     confidence = 0.0
@@ -228,10 +379,11 @@ def recommend(args: argparse.Namespace) -> Dict[str, Any]:
         rec_class, top = max(classes.items(), key=lambda kv: kv[1])
         confidence = top / total if total else 0.0
         source = "history"
-        reasons.append(f"dominant historical class {rec_class} weight={top:.2f}/{total:.2f}")
+        reasons.append(f"dominant trusted historical class {rec_class} weight={top:.2f}/{total:.2f}")
+        reasons.extend(history_reasons.get(rec_class, []))
     else:
         reasons.append("no matching pin or historical observations")
-    requested = args.requested_class or fp.get("requested_class") or ""
+    requested = requested_arg or fp.get("requested_class") or ""
     mismatch = "none"
     if requested and rec_class and requested != rec_class:
         mismatch = "class_mismatch"
@@ -242,6 +394,25 @@ def recommend(args: argparse.Namespace) -> Dict[str, Any]:
         action = "observe"
     if not rec_class:
         action = "observe"
+    decision = "ok"
+    recommended_action = "allow"
+    if not rec_class:
+        decision = "insufficient_history"
+        recommended_action = "defer_to_class_policy"
+    elif mismatch != "none":
+        decision = "class_downgrade_suspected" if requested else "class_mismatch"
+        if float(confidence) >= threshold and bool(policy.get("block_security_downgrade", False)):
+            recommended_action = "block_pending_authorisation"
+        else:
+            recommended_action = "warn_or_require_review"
+    elif source == "history" and (obs < min_obs or confidence < threshold):
+        decision = "insufficient_history"
+        recommended_action = "defer_to_class_policy"
+    elif source in {"history", "pin"}:
+        decision = "ok"
+        recommended_action = "allow"
+    if decision != "ok" and not reasons:
+        reasons.append("decision requires explanation before enforcement")
     refs = policy_refs(policy)
     result = {
         "schema": RECOMMEND_SCHEMA,
@@ -253,6 +424,8 @@ def recommend(args: argparse.Namespace) -> Dict[str, Any]:
         "observations": obs,
         "recommendation_source": source,
         "mismatch": mismatch,
+        "decision": decision,
+        "recommended_action": recommended_action,
         "policy_action": action,
         "reasons": reasons,
         "policy_linkage": refs,
@@ -264,6 +437,8 @@ def recommend(args: argparse.Namespace) -> Dict[str, Any]:
             "observations": obs,
             "mismatch": mismatch,
             "policy_action": action,
+            "decision": decision,
+            "recommended_action": recommended_action,
             "fingerprint": fp["command_shape_hash"],
             "policy_references": refs["policy_references"],
         },
@@ -315,6 +490,7 @@ def main(argv: List[str]) -> int:
     pf.add_argument("--json", action="store_true")
     pf.add_argument("--cwd", default=os.getcwd())
     pf.add_argument("--requested-class", "--class", dest="requested_class", default="")
+    pf.add_argument("--job", default="")
     pf.add_argument("command", nargs=argparse.REMAINDER)
     pr = sub.add_parser("recommend")
     pr.add_argument("--json", action="store_true")
@@ -323,6 +499,7 @@ def main(argv: List[str]) -> int:
     pr.add_argument("--history", default="")
     pr.add_argument("--pins", default="")
     pr.add_argument("--policy", default="")
+    pr.add_argument("--job", default="")
     pr.add_argument("command", nargs=argparse.REMAINDER)
     pe = sub.add_parser("explain")
     pe.add_argument("--json", action="store_true")
@@ -331,12 +508,16 @@ def main(argv: List[str]) -> int:
     pe.add_argument("--pins", default="")
     pe.add_argument("--policy", default="")
     pe.add_argument("--requested-class", "--class", dest="requested_class", default="")
+    pe.add_argument("--job", default="")
     pe.add_argument("command", nargs=argparse.REMAINDER)
     ns = parser.parse_args(argv)
     if ns.command and ns.command[0] == "--":
         ns.command = ns.command[1:]
     if ns.cmd == "fingerprint":
-        obj = fingerprint(ns.command, ns.cwd, ns.requested_class)
+        job = read_job(getattr(ns, "job", ""))
+        cmd = command_from_job(job, ns.command)
+        requested_arg = requested_class_from_job(job, ns.requested_class)
+        obj = fingerprint(cmd, ns.cwd, requested_arg, job)
     else:
         obj = recommend(ns)
         if ns.cmd == "explain":

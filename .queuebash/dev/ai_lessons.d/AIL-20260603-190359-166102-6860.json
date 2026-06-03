@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T19:03:59Z",
+  "created_from_session": "AIS-20260603-185842-693855-9683-bob14",
+  "created_from_try": "AIT-20260603-190251-007121-2041",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-190359-166102-6860",
+  "match": {
+    "command_glob": "queue dev patch *",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "queue dev patch --file queuebash.sh --function FUNCTION --source /tmp/new_function --json",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Correct queue dev patch syntax is queue dev patch --file FILE --function FUNCTION --source SOURCE --json. Positional function syntax is rejected; this matters when using the dev-tooling-first workflow."
+}

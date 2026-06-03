@@ -1,0 +1,9 @@
+Usage:
+  queue dev test [--run] [--name NAME] [--timeout SEC] [--json] -- COMMAND...
+  queue dev test result JOBID [--root DIR] [--json]
+
+Submit and optionally run a real DEV_TEST_RUNNER job in an isolated harness
+QUEUEBASH_ROOT. The tested command is executed through normal queue submit and a
+bounded worker pass; results are reported as queuebash.dev_test_result.v1.
+qbtest scans base64 QBTEST comment blocks embedded near functions and runs decoded
+Bash or Python snippets with bounded execution.

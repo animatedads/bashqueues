@@ -1,0 +1,14 @@
+{
+  "agent": "Bob15",
+  "authority": "coding_agent",
+  "base": "",
+  "lesson_count_at_start": 76,
+  "role": "merger",
+  "schema": "queuebash.dev_ai.session.v1",
+  "session_id": "AIS-20260603-193105-382146-3015-Bob15",
+  "started_at": "2026-06-03T19:31:05Z",
+  "status": "active",
+  "stopped_at": "",
+  "tags": [],
+  "task": "0.18.102 seven-patch hot-seat merge"
+}

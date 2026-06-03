@@ -1,0 +1,16 @@
+{
+  "agent": "Bob15",
+  "authority": "coding_agent",
+  "base": "",
+  "lesson_count_at_start": 38,
+  "next": "",
+  "role": "merger",
+  "schema": "queuebash.dev_ai.session.v1",
+  "session_id": "AIS-20260603-145843-974630-7066-Bob15",
+  "started_at": "2026-06-03T14:58:43Z",
+  "status": "done",
+  "stopped_at": "2026-06-03T14:59:41Z",
+  "summary": "Recorded evidence-only patchset and merge-plan command-shape lessons during 0.18.96 Bob15 absorption merge.",
+  "tags": [],
+  "task": "0.18.96 absorb Bob13 wave1 rebased evidence"
+}

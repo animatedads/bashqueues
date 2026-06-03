@@ -1,0 +1,4 @@
+# queuebash XML resource manifest example
+# resource_type<TAB>name<TAB>language<TAB>fallback_required<TAB>tokens<TAB>surface<TAB>json_contract_source<TAB>secret_rendering_allowed<TAB>notes
+xml	job-card.example.xml	lang_eng	yes	QID,JOB_NAME,STATE,CLASS,UPDATED_AT	XML job card display example	false	false	parseable XML fixture; no DTD, XXE, secrets, or JSON contract generation
+xml	job-card.example.xml	fallback	no	QID,JOB_NAME,STATE,CLASS,UPDATED_AT	fallback XML job card display example	false	false	parseable fallback XML fixture; no DTD, XXE, secrets, or JSON contract generation

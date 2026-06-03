@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T17:02:25Z",
+  "created_from_session": "AIS-20260603-165557-006279-2601-bob14",
+  "created_from_try": "",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260603-170225-631963-1254",
+  "match": {
+    "command_glob": "*secrets*",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "Check lane allocation before adding providers.d/secrets, assets.d/secrets.sh, queue secrets commands, or job-wrapper secret delivery.",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "Secrets broker design is Bob17 runtime/security lane, not Bob14 provider-family service coverage. Bob14 should record roadmap/contracts or add fixture-first provider-family packs only when explicitly assigned, not implement secret delivery hooks."
+}

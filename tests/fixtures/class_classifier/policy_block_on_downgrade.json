@@ -1,0 +1,11 @@
+{
+  "schema": "queuebash.class_inference.policy.v1",
+  "mode": "suggest",
+  "min_observations": 3,
+  "confidence_threshold": 0.80,
+  "block_security_downgrade": true,
+  "policy_references": ["queue_class_shared_asset class_classifier no_downgrade min_confidence=0.80 action=block"],
+  "corporate_policy_refs": ["CLASSIFIER-DOWNGRADE-GUARD"],
+  "regulatory_refs": [],
+  "validation_status": "fixture_contract"
+}

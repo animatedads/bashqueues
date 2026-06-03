@@ -23,6 +23,9 @@ SCHEMA_PROVIDERS = "queuebash.ai_broker.providers.v1"
 SCHEMA_MODELS = "queuebash.ai_broker.models.v1"
 SCHEMA_HEALTH = "queuebash.ai_broker.health.v1"
 SCHEMA_HEALTH_UPDATE = "queuebash.ai_broker.health_update.v1"
+SCHEMA_HEALTH_FEEDBACK = "queuebash.ai_broker.health_feedback.v1"
+SCHEMA_HEALTH_CLEAR = "queuebash.ai_broker.health_clear.v1"
+SCHEMA_HEALTH_PRUNE = "queuebash.ai_broker.health_prune.v1"
 SCHEMA_EXPLAIN = "queuebash.ai_broker.explain.v1"
 SCHEMA_RESPONSE = "queuebash.ai_broker.response.v1"
 SCHEMA_ERROR = "queuebash.ai_broker.error.v1"
@@ -272,6 +275,106 @@ def update_health_cache(root: pathlib.Path, provider: str, model: str, state: st
     cache = {"schema": "queuebash.ai_broker.health_cache.v1", "updated_at": updated_at, "entries": entries}
     save_health_cache(path, cache)
     return cache, path, entry
+
+
+
+
+def clear_health_cache_entries(root: pathlib.Path, provider: str = "", model: str = "", clear_all: bool = False) -> Tuple[Dict[str, Any], pathlib.Path, List[Dict[str, Any]], int, int]:
+    """Remove local health-cache entries in a bounded, explicit way."""
+    if not clear_all and (not provider or not model):
+        raise RuntimeError("provider_and_model_required_for_health_clear")
+    path = writable_health_cache_path(root)
+    cache, _ = load_health_cache(root)
+    before_entries = health_entries(cache)
+    removed: List[Dict[str, Any]] = []
+    kept: List[Dict[str, Any]] = []
+    target_key = health_entry_key(provider, model)
+    for entry in before_entries:
+        entry_key = health_entry_key(str(entry.get("provider") or ""), str(entry.get("model") or ""))
+        if clear_all or entry_key == target_key:
+            removed.append(entry)
+        else:
+            kept.append(entry)
+    updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    cache = {"schema": "queuebash.ai_broker.health_cache.v1", "updated_at": updated_at, "entries": kept}
+    save_health_cache(path, cache)
+    return cache, path, removed, len(before_entries), len(kept)
+
+
+def prune_expired_health_cache(root: pathlib.Path, now: float | None = None) -> Tuple[Dict[str, Any], pathlib.Path, List[Dict[str, Any]], int, int]:
+    """Remove entries whose bounded cooldown has expired.
+
+    Failure feedback records a cooldown deadline. Once that deadline has passed,
+    pruning the local overlay lets the static registry become authoritative again
+    instead of leaving stale local failure evidence in the selection path forever.
+    """
+    if now is None:
+        now = time.time()
+    path = writable_health_cache_path(root)
+    cache, _ = load_health_cache(root)
+    before_entries = health_entries(cache)
+    pruned: List[Dict[str, Any]] = []
+    kept: List[Dict[str, Any]] = []
+    for entry in before_entries:
+        try:
+            cooldown_epoch = float(entry.get("cooldown_until_epoch") or 0)
+        except (TypeError, ValueError):
+            cooldown_epoch = 0
+        if cooldown_epoch and cooldown_epoch <= now:
+            pruned.append(entry)
+        else:
+            kept.append(entry)
+    updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    cache = {"schema": "queuebash.ai_broker.health_cache.v1", "updated_at": updated_at, "entries": kept}
+    save_health_cache(path, cache)
+    return cache, path, pruned, len(before_entries), len(kept)
+
+def classify_provider_failure(reason: str) -> str:
+    """Map a bounded live-provider failure string to a health-cache state."""
+    text = (reason or "").lower()
+    if "timeout" in text or "timed out" in text:
+        return "timeout"
+    if "rate" in text or "429" in text or "quota" in text or "throttle" in text:
+        return "rate_limited"
+    if "auth" in text or "credential" in text or "api key" in text or "401" in text or "403" in text or "permission" in text:
+        return "auth_failed"
+    if "model" in text and ("missing" in text or "not found" in text or "unknown" in text or "404" in text):
+        return "model_missing"
+    if "disabled_by_policy" in text or "policy" in text and "disabled" in text:
+        return "disabled_by_policy"
+    if "disabled_by_cost" in text or "cost" in text and "disabled" in text:
+        return "disabled_by_cost"
+    return "degraded"
+
+
+def health_feedback_enabled(profile: Dict[str, str]) -> bool:
+    return bool_env(profile.get("AI_BROKER_AUTO_HEALTH_FEEDBACK", os.environ.get("QUEUEBASH_AI_BROKER_AUTO_HEALTH_FEEDBACK", "1")), True)
+
+
+def health_failure_cooldown_seconds(profile: Dict[str, str]) -> int:
+    raw = os.environ.get("QUEUEBASH_AI_BROKER_HEALTH_FAILURE_COOLDOWN_SECONDS") or profile.get("AI_HEALTH_FAILURE_COOLDOWN_SECONDS") or "300"
+    try:
+        return max(0, int(float(raw)))
+    except ValueError:
+        return 300
+
+
+def record_health_feedback(root: pathlib.Path, profile: Dict[str, str], provider: str, model: str, state: str, reason: str, cooldown_seconds: int | None = None) -> Dict[str, Any]:
+    if not health_feedback_enabled(profile):
+        return {"schema": SCHEMA_HEALTH_FEEDBACK, "ok": False, "recorded": False, "reason": "auto_health_feedback_disabled", "provider": provider, "model": model}
+    if not provider or not model:
+        return {"schema": SCHEMA_HEALTH_FEEDBACK, "ok": False, "recorded": False, "reason": "provider_or_model_missing"}
+    if cooldown_seconds is None:
+        cooldown_seconds = health_failure_cooldown_seconds(profile) if state not in HEALTH_GOOD_STATES else 0
+    cache, path, entry = update_health_cache(root, provider, model, state, reason, cooldown_seconds)
+    return {
+        "schema": SCHEMA_HEALTH_FEEDBACK,
+        "ok": True,
+        "recorded": True,
+        "health_cache_path": str(path),
+        "updated": entry,
+        "entry_count": len(health_entries(cache)),
+    }
 
 def parse_env_file(path: pathlib.Path) -> Dict[str, str]:
     out: Dict[str, str] = {}
@@ -604,6 +707,9 @@ def command_models(args: argparse.Namespace, registry: Dict[str, Any], registry_
 
 
 def command_health(args: argparse.Namespace, registry: Dict[str, Any], registry_path: str, root: pathlib.Path) -> int:
+    modes = [bool(getattr(args, "set_state", None)), bool(getattr(args, "clear", False)), bool(getattr(args, "clear_all", False)), bool(getattr(args, "prune_expired", False))]
+    if sum(1 for mode in modes if mode) > 1:
+        raise RuntimeError("health_command_accepts_one_mutation_mode")
     if getattr(args, "set_state", None):
         cache, path, entry = update_health_cache(
             root,
@@ -618,6 +724,35 @@ def command_health(args: argparse.Namespace, registry: Dict[str, Any], registry_
             "ok": True,
             "health_cache_path": str(path),
             "updated": entry,
+            "entry_count": len(health_entries(cache)),
+        }, args.json)
+    if getattr(args, "clear", False) or getattr(args, "clear_all", False):
+        cache, path, removed, before_count, after_count = clear_health_cache_entries(
+            root,
+            str(args.provider or ""),
+            str(args.model or ""),
+            bool(getattr(args, "clear_all", False)),
+        )
+        return emit({
+            "schema": SCHEMA_HEALTH_CLEAR,
+            "ok": True,
+            "health_cache_path": str(path),
+            "removed_count": len(removed),
+            "before_count": before_count,
+            "after_count": after_count,
+            "removed": removed[:20],
+            "entry_count": len(health_entries(cache)),
+        }, args.json)
+    if getattr(args, "prune_expired", False):
+        cache, path, pruned, before_count, after_count = prune_expired_health_cache(root)
+        return emit({
+            "schema": SCHEMA_HEALTH_PRUNE,
+            "ok": True,
+            "health_cache_path": str(path),
+            "pruned_count": len(pruned),
+            "before_count": before_count,
+            "after_count": after_count,
+            "pruned": pruned[:20],
             "entry_count": len(health_entries(cache)),
         }, args.json)
     rows = []
@@ -792,6 +927,7 @@ def normalise_provider_response(
     provider_data: Dict[str, Any],
     attempted: List[Dict[str, str]],
     text: str,
+    health_feedback: List[Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     answer = provider_data.get("answer_markdown") or provider_data.get("answer") or provider_data.get("text") or ""
     usage = provider_data.get("usage") if isinstance(provider_data.get("usage"), dict) else {}
@@ -815,6 +951,7 @@ def normalise_provider_response(
         "provider_execution": "brokered_live_provider_call",
         "answer_markdown": answer,
         "provider_response_schema": provider_data.get("schema"),
+        "health_feedback": health_feedback or [],
     }
     if operation == "json":
         obj["json"] = provider_data.get("json") if isinstance(provider_data.get("json"), (dict, list)) else {"answer_markdown": answer}
@@ -840,6 +977,7 @@ def command_live_call(args: argparse.Namespace, registry: Dict[str, Any], regist
         candidates = selection.get("candidates") or []
     attempted: List[Dict[str, str]] = []
     failures: List[Dict[str, str]] = []
+    health_feedback: List[Dict[str, Any]] = []
     for candidate in candidates:
         if not candidate:
             continue
@@ -848,10 +986,16 @@ def command_live_call(args: argparse.Namespace, registry: Dict[str, Any], regist
         attempted.append({"provider": provider, "model": model})
         try:
             provider_data = call_provider_helper(root, operation, args, profile, profile_path, caps, candidate, text)
-            obj = normalise_provider_response(operation, args, registry, profile, profile_path, registry_path, caps, candidate, provider_data, attempted, text)
+            feedback = record_health_feedback(root, profile, provider, model, "available", "brokered live provider call succeeded", 0)
+            health_feedback.append(feedback)
+            obj = normalise_provider_response(operation, args, registry, profile, profile_path, registry_path, caps, candidate, provider_data, attempted, text, health_feedback)
             return emit(obj, args.json)
         except Exception as exc:
-            failures.append({"provider": provider, "model": model, "reason": str(exc)[:500]})
+            failure_reason = str(exc)[:500]
+            state = classify_provider_failure(failure_reason)
+            feedback = record_health_feedback(root, profile, provider, model, state, "brokered live provider failure: " + failure_reason)
+            health_feedback.append(feedback)
+            failures.append({"provider": provider, "model": model, "reason": failure_reason, "health_state_recorded": state})
             continue
     return emit({
         "schema": SCHEMA_ERROR,
@@ -862,6 +1006,7 @@ def command_live_call(args: argparse.Namespace, registry: Dict[str, Any], regist
         "reason": "all_brokered_provider_attempts_failed",
         "attempted": attempted,
         "failures": failures,
+        "health_feedback": health_feedback,
         "policy_links": policy_links_for_selection(registry, profile, selection.get("selected")),
         "live_call_performed": False,
     }, True if args.json else False) or 1
@@ -929,6 +1074,9 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--set-state", choices=sorted(HEALTH_ALLOWED_STATES - {"unknown"}))
             p.add_argument("--reason", default="")
             p.add_argument("--cooldown-seconds", type=int, default=0)
+            p.add_argument("--clear", action="store_true", help="remove one local provider/model health-cache entry")
+            p.add_argument("--clear-all", action="store_true", help="remove all local health-cache entries")
+            p.add_argument("--prune-expired", action="store_true", help="remove health-cache entries whose cooldown deadline has passed")
     p = sub.add_parser("explain")
     p.add_argument("--json", action="store_true")
     p.add_argument("--profile", default=DEFAULT_PROFILE)

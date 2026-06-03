@@ -1,0 +1,16 @@
+{
+  "agent": "Bob15",
+  "authority": "coding_agent",
+  "base": "",
+  "lesson_count_at_start": 73,
+  "next": "",
+  "role": "merger",
+  "schema": "queuebash.dev_ai.session.v1",
+  "session_id": "AIS-20260603-184739-978978-7090-Bob15",
+  "started_at": "2026-06-03T18:47:39Z",
+  "status": "done",
+  "stopped_at": "2026-06-03T18:47:46Z",
+  "summary": "0.18.101 merge validation lessons recorded",
+  "tags": [],
+  "task": "0.18.101 five patchset hotseat merge"
+}

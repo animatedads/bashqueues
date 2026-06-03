@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(4[1-9]|[5-9][0-9])"' queuebash.sh || fail 'version not current enough for ask provider compatibility'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.([4-9][0-9]|[1-9][0-9][0-9])"' queuebash.sh || fail 'version not current enough for ask provider compatibility'
 grep -q '0.18.40 - BOB10 cloud provisioning lifecycle + ask provider merged' CHANGELOG.md || fail 'changelog missing ask provider merge entry'
 grep -q '_queue_ai_provider_discovery_command' queuebash.sh || fail 'provider discovery command missing'
 grep -q 'queue ask providers \[--json\]' queuebash.sh || fail 'ask providers help missing'

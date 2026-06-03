@@ -1,3 +1,21 @@
+# 0.18.102 BOB15 hot-seat display lint manifest signing AI cleanup secrets break-glass classifier merge
+
+- Add read-only display/XML resource lint helper, schema evidence, docs, and tests.
+- Continue installed display/help/XML resource signing and installed-share verification coverage.
+- Add AI broker health-cache cleanup controls for provider/model entry clear, all-local clear, and expired cooldown pruning.
+- Continue display/help resource extraction wave4 for ask/dev-splice/dev-scratchpad/dev-test help surfaces.
+- Add Bob17 secrets break-glass fixture path with audit hardening and policy-gate smoke coverage.
+- Add Bob20 statistical class-classifier fixture tests for normal, downgrade, near-miss, cold-start, adversarial rename, and drift cases.
+
+# 0.18.101 BOB15 secrets policy, display manifests, AI health feedback, help install signing merge
+
+- Adds secrets policy enforcement updates and tests.
+- Moves more help surfaces to display resources and keeps JSON outputs locale independent.
+- Adds display-resource manifest/catalog examples, schemas, and tests.
+- Adds bounded AI broker live-provider health feedback/cache/fallback updates.
+- Fixes system install coverage for display/help resources, including install and signing checks.
+- Preserves scratchpad by item-level merge and keeps delivery evidence under `.queuebash/dev/deliveries/`.
+
 # 0.18.100 BOB15 secrets remote-dependency AI health cache display-help wave2 merge
 
 Merges four patchsets into one full-delivery line: Bob17 secrets provider contract, Bob17 remote job dependency contract, Bob19 AI broker health-cache/fallback, and Bob16 display-help resource extraction wave2. The merge keeps secret delivery/provider boundaries, remote dependency contract boundaries, advisory-only AI broker health metadata, non-executable display resources, and all prior 0.18.99 display/XML and secrets-roadmap work.

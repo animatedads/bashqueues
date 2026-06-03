@@ -1,0 +1,59 @@
+Usage:
+  queue dev functions [--file FILE] [--json] [prefix]
+  queue dev locate FUNCTION [--json]
+  queue dev extract FUNCTION [--file FILE] [--json]
+  queue dev scope [--json] [--prefix PREFIX]
+  queue dev patch --file FILE --function FUNCTION --source SOURCE [--json] [--no-syntax-check]
+  queue dev splice --file FILE (--after TEXT|--before TEXT|--replace TEXT --with TEXT) [--insert TEXT] [--dry-run] [--json]
+  queue dev test [--run] [--name NAME] [--timeout SEC] [--json] -- COMMAND...
+  queue dev test result JOBID [--root DIR] [--json]
+  queue dev test qbtest --file FILE [--function NAME] [--language bash|python] [--timeout SEC] [--list] [--json] [--keep]
+  queue dev test qbtest --help | -h | --h
+  queue dev comment --file FILE --function FUNCTION --message TEXT [--changelog] [--json]
+  queue dev diff --file FILE [--function FUNCTION] [--json]
+  queue dev strip --file FILE --function FUNCTION [--json]
+  queue dev symbols --file FILE [--function FUNCTION] [--json]
+  queue dev symbols --function FUNCTION [--json]
+  queue dev flow --file FILE [--function FUNCTION] [--json]
+  queue dev flow --function FUNCTION [--json]
+  queue dev scratchpad help|init|import|add|task|attempt|evidence|done|reject|fail|bump-fail|list|delete|next|export|explain
+  queue dev ai discover|session|try|lesson [--json]
+  queue dev attempt begin --text TEXT [--tag TAG...] [--based-on ITEM_ID...] [--json]
+  queue dev attempt end ATTEMPT_ID --status STATUS [--text TEXT] [--json]
+  queue dev evidence record --attempt ATTEMPT_ID --text TEXT [--file FILE...] [--command COMMAND] [--status STATUS] [--json]
+  queue dev context [--json] [--tag TAG] [--kind KIND] [--status STATUS] [--limit N] [--full-corpus]
+  queue dev think --text TEXT [--subject SUBJECT] [--tag TAG...] [--authority AUTHORITY] [--json]
+  queue dev handover [--json] [--since ITEM_ID] [--tag TAG] [--full-corpus]
+  queue dev files begin|finish|add|remove|list|changed|scan|path
+  queue dev patchset create --output ZIP [--registry FILE] [--json]
+  queue dev patchset inspect --patchset ZIP [--target DIR] [--json]
+  queue dev merge-plan --base DIR --patchset ZIP [--patchset ZIP...] [--target-version VERSION] [--json]
+  queue dev merge-plan explain|summary PLAN.json [--json]
+  queue dev validate [--json] [--quick] [--timeout SEC] [--file FILE...]
+  queue dev scope-check [--json] [--allow GLOB...] [--deny GLOB...] [--file FILE...]
+
+Developer/metaprogramming helpers for deterministic Bash introspection and safe
+function replacement. Intended for dogfood/AI-assisted maintenance; normal queue
+operations do not depend on these commands. comment/diff/strip use the .bak files
+created by queue dev patch for function-level memory, context, and rollback.
+symbols provides a lightweight static symbol table for variables, constants,
+string literals, and function membership. flow provides a static execution-path
+graph of function calls and shell control nodes for AI-assisted impact analysis.
+splice provides constrained anchored text transformations with dry-run, idempotency,
+JSON diagnostics, and atomic writes. It treats content as text only. test submits
+real DEV_TEST_RUNNER jobs in an isolated harness queue root and returns a bounded
+queuebash.dev_test_result.v1 status without wiring results into scratchpad. files records
+edit-session baselines, purposes, file checksums, function checksums, and changed-file
+state. patchset creates a minimal changed-files zip with diffs, manifest, and guarded
+merge/apply scripts using old file/function MD5 preconditions for multistream work.
+merge-plan provides bounded, read-only, zip-aware merge intelligence across multiple
+patchsets, reporting file/function scope, collisions, release identity overlaps,
+scratchpad item-merge concerns, delivery evidence relocation, and validation steps.
+attempt and evidence create a bounded development-attempt ledger under the queue root,
+linking validation evidence to named attempts without granting acceptance authority.
+ai provides a bounded AI development session and lesson ledger: discover, session start/stop/list/lessons, try, and lesson. It is not an AI provider or authority source; try execution is allowlisted and lessons are loaded from directory-scanned records to avoid merge collisions.
+context, think, and handover provide bounded working-set context loading,
+auditable planning notes, and reviewer-friendly handover summaries without dumping
+or requiring the AI to know the full scratchpad corpus by default. validate and
+scope-check provide bounded pre-merge gates that report development-test and
+changed-file scope outcomes without creating acceptance records.

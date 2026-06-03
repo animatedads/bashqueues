@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T18:24:16Z",
+  "created_from_session": "AIS-20260603-181714-435792-7317-bob14",
+  "created_from_try": "AIT-20260603-182340-961088-7217",
+  "kind": "failure_lesson",
+  "lesson_id": "AIL-20260603-182416-405803-2006",
+  "match": {
+    "command_glob": "tests/system_install_display_resources_smoke.sh",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "Run bash -n and inspect pipelines before smoke tests that call queue help | head",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "Smoke tests running under set -euo pipefail should avoid command substitutions that pipe a long command into head, because producer SIGPIPE can make the test exit 141. Capture full output first, then trim for display if needed."
+}

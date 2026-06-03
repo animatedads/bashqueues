@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T18:03:06Z",
+  "created_from_session": "AIS-20260603-180302-667084-6863-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-180306-840076-2962",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "When display-help extraction moves queue ai help to resources, later help-text patches should update resources.d/display/*/ai-help.txt rather than reintroducing heredocs into queuebash.sh."
+}

@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T14:59:21Z",
+  "created_from_session": "AIS-20260603-145843-974630-7066-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-145921-379876-1214",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Older rebased evidence patchsets may contain no runtime hunks beyond a version bump; when merge-plan classifies queuebash.sh as manual review, inspect the diff before applying so an older patch does not downgrade a newer merger base. Tags: bob15 merge-plan evidence-only version-guard."
+}

@@ -1,0 +1,12 @@
+Usage:
+  queue dev splice --file FILE --after TEXT --insert TEXT [--if-missing TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --before TEXT --insert TEXT [--if-missing TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --replace TEXT --with TEXT [--if-present TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --after-file NEEDLE_FILE --insert-file INSERT_FILE [--if-missing TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --before-file NEEDLE_FILE --insert-file INSERT_FILE [--if-missing TEXT] [--dry-run] [--json]
+  queue dev splice --file FILE --replace-file OLD_FILE --with-file NEW_FILE [--all] [--dry-run] [--json]
+
+Constrained anchored text splicing. Operates on one file, treats inserted text as
+plain text, supports dry-run/idempotency, and writes atomically without creating
+queuebash.sh.bak.* or *.devpatch.* artifacts. File-based splice inputs are read
+inside the helper so trailing newlines are preserved exactly.

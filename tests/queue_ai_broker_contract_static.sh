@@ -18,6 +18,6 @@ grep -q 'AI_REQUIRE_JSON_MODE=1' policies.d/ai-profiles/json_strict.env.example 
 grep -q 'queuebash.ai.request.v1' docs/QUEUE_AI_BROKER.md || fail "audit event not documented"
 grep -q 'no runtime broker implementation' docs/QUEUE_AI_BROKER.md || fail "non-goal boundary missing"
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(7[8-9]|[8-9][0-9])"' queuebash.sh || fail "version not bumped to merged 0.18.78+ line"
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.([7-9][0-9]|[1-9][0-9][0-9])"' queuebash.sh || fail "version not bumped to merged 0.18.78+ line"
 
 echo "PASS queue_ai_broker_contract_static"

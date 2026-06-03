@@ -78,3 +78,10 @@ queue ai health \
 ```
 
 This emits `queuebash.ai_broker.health_update.v1`. Subsequent `queue ai explain --json` and brokered calls skip that model while the cooldown is active and report `health_cooldown` or the relevant health state in rejected-candidate evidence.
+
+
+## 0.18.101 live health feedback
+
+The broker now records bounded local health feedback during explicitly enabled brokered live calls. If a selected helper times out, rate-limits, rejects credentials, reports a missing model, or otherwise fails, the broker writes a health-cache update with a short cooldown and attempts the next selected fallback candidate. Successful provider calls restore that provider/model to `available`.
+
+This remains fixture-first and local: live execution is still blocked unless `QUEUEBASH_AI_LIVE_ENABLED=1`, credentials alone are not authority, and feedback is advisory evidence rather than policy authority. JSON responses include `health_feedback` entries with schema `queuebash.ai_broker.health_feedback.v1`.

@@ -1,0 +1,12 @@
+Usage:
+  queue profile interrogate run NAME [--pre-arm-delay SEC] -- command [args...]
+  queue profile interrogate repeat NAME --count N [--pre-arm-delay SEC] -- command [args...]
+  queue profile interrogate compile PROFILE_DIR --name NAME
+  queue profile interrogate merge CAMPAIGN_DIR --name NAME
+  queue profile interrogate diff-runs CAMPAIGN_DIR
+  queue profile interrogate explain NAME [--json]
+  queue profile interrogate approve NAME [--kind seccomp|net|file|all] [--signing-key KEY] [--accept-warnings] [--accept-risk]
+  queue profile interrogate verify NAME [--kind seccomp|net|file|all] [--allow-self-signed 0|1] [--required-signer NAME]
+  queue profile interrogate class-template CLASS --profile NAME [--required-signer NAME] [--allow-self-signed 0|1] [--force]
+  queue profile interrogate show NAME
+  queue profile interrogate diff NAME PROFILE_DIR

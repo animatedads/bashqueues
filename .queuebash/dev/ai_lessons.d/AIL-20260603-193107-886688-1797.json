@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T19:31:07Z",
+  "created_from_session": "AIS-20260603-193105-382146-3015-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-193107-886688-1797",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Use queue dev merge-plan with zip paths, not already-unzipped patch directories; directory paths raise patchset read errors in this base."
+}

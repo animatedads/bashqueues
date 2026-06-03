@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T18:30:58Z",
+  "created_from_session": "AIS-20260603-181759-848285-3614-bob12",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-183058-622091-6049",
+  "match": {
+    "command_glob": "*secrets*",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "Check that denied class/purpose/TTL tests exercise active policy files and that provider JSON never includes secret values.",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Secrets fixture provider continuation should keep active policy enforcement local and fixture-first: class-bindings.tsv and secret-acl.tsv are active only when present or explicitly pointed at by QUEUEBASH_SECRETS_POLICY_DIR; .example files remain documentation and must not silently authorize secrets."
+}

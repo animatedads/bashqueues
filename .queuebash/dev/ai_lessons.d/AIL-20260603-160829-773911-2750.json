@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T16:08:29Z",
+  "created_from_session": "AIS-20260603-160143-834308-7820-bob12",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-160829-773911-2750",
+  "match": {
+    "command_glob": "display_resource_fetch_smoke",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Display resource fetch smoke should call the resource helper functions directly after sourcing queuebash.sh rather than invoking queue resource-fetch repeatedly. The queue wrapper performs _queue_init, which can be slow in sandbox and may make a simple resource smoke look hung."
+}

@@ -6,10 +6,13 @@ python3 - <<'PY'
 from pathlib import Path
 qb=Path('queuebash.sh').read_text()
 helper=Path('bin/queue-dev-ai').read_text()
+dev_help = Path('resources.d/display/lang_eng/queue-dev-help.txt').read_text() if Path('resources.d/display/lang_eng/queue-dev-help.txt').exists() else ''
 required_qb=[
-    'queue dev ai discover|session|try|lesson [--json]',
     'ai|llm-session|ai-session)',
     'queue-dev-ai',
+]
+required_help=[
+    'queue dev ai discover|session|try|lesson [--json]',
 ]
 required_helper=[
     'discover.v1',
@@ -21,7 +24,7 @@ required_helper=[
     'blocked_by_lesson',
     'confirm-lesson',
 ]
-missing=[x for x in required_qb if x not in qb] + [x for x in required_helper if x not in helper]
+missing=[x for x in required_qb if x not in qb] + [x for x in required_help if x not in (qb + '\n' + dev_help)] + [x for x in required_helper if x not in helper]
 if missing:
     raise SystemExit('missing dev ai contract fragments: '+', '.join(missing))
 for path in [

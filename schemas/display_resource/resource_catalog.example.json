@@ -1,0 +1,64 @@
+{
+  "schema": "queuebash.display_resource_catalog.v1",
+  "status": "fixture",
+  "owner_lane": "bob18-display-resources",
+  "json_contract_source": false,
+  "secret_rendering_allowed": false,
+  "resources": [
+    {
+      "type": "display",
+      "name": "queue-version.txt",
+      "languages": [
+        "lang_eng",
+        "fallback"
+      ],
+      "tokens": [
+        "VERSION"
+      ],
+      "surface": "queue version human output"
+    },
+    {
+      "type": "display",
+      "name": "status-panel.example.txt",
+      "languages": [
+        "lang_eng",
+        "fallback"
+      ],
+      "tokens": [
+        "QID",
+        "JOB_NAME",
+        "STATE",
+        "CLASS",
+        "UPDATED_AT"
+      ],
+      "surface": "panel status card example"
+    },
+    {
+      "type": "xml",
+      "name": "job-card.example.xml",
+      "languages": [
+        "lang_eng",
+        "fallback"
+      ],
+      "tokens": [
+        "QID",
+        "JOB_NAME",
+        "STATE",
+        "CLASS",
+        "UPDATED_AT"
+      ],
+      "surface": "XML job card display example"
+    }
+  ],
+  "forbidden": [
+    "eval",
+    "source",
+    "shell_expansion",
+    "command_substitution",
+    "DTD",
+    "external_entities",
+    "secret_values",
+    "provider_credentials",
+    "json_generation_from_template"
+  ]
+}

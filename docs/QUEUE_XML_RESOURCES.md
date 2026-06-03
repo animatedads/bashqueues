@@ -89,3 +89,30 @@ This keeps Bob18's display-resource lane separate from Bob17's governed secrets 
 ## Validation expectations
 
 Static validation should confirm that XML resources are present, parseable, non-executable, free of shell expansion, free of DTD/external-entity declarations, and separate from JSON command contracts.
+
+## XML manifest/catalog rules
+
+XML resources use the same manifest/catalog contract as plain display resources, with stricter XML-specific review checks. XML manifest entries must identify XML fragments as display-only, must keep `json_contract_source=false`, and must keep `secret_rendering_allowed=false`.
+
+XML resource manifests also require reviewers to confirm:
+
+- no DTD or external entity dependency;
+- no processing instruction intended to run local tools;
+- no provider authority, policy decision, or secret delivery semantics;
+- no hidden conversion of XML display templates into command JSON;
+- fallback XML exists for examples shipped as user-visible panels or cards.
+
+The example XML manifest lives at:
+
+```text
+resources.d/xml/manifest.example.tsv
+```
+
+It is deliberately not consumed by queue dispatch. It is an installer/reviewer/test artifact for Bob18's presentation lane.
+
+
+## XML lint helper checks
+
+`bin/queue-display-resource-lint.py` also validates XML resources listed in `resources.d/xml/manifest.example.tsv`. XML resources must parse as XML, must not contain DTD or external entity declarations, and must not include processing instructions intended to invoke local tools.
+
+For XML resources, the helper also enforces the Bob18 boundary that XML is presentation-only. XML display templates must not become provider authority, policy input, secret delivery material, or the source of command JSON contracts.

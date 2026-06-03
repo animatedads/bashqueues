@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T15:58:25Z",
+  "created_from_session": "AIS-20260603-155652-278888-4603-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-155825-551017-7192",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "merge-plan lesson: Bob14 0.18.96 service coverage wave4 uses canonical entries[] manifest; merge-plan shows 34 auto-safe content steps and manual review for README, CHANGELOG, and scratchpad item merge. README may still carry stale 0.18.65 release claims, so normalize release identity manually."
+}

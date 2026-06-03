@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T19:04:05Z",
+  "created_from_session": "AIS-20260603-185748-057336-8363-bob16",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-190405-851306-1676",
+  "match": {
+    "command_glob": "queue dev patch may time out",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Against the 0.18.101 base, queue dev resource insert and file registry worked for Bob16 wave4. Targeted queue dev extract/patch may time out on very large functions such as _queue_ai_ask_command; when that happens, keep the direct edit bounded to specific heredoc replacements and prove it with bash -n, resource validation, static/smoke tests, and patchset inspect/apply."
+}

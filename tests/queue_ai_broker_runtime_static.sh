@@ -27,4 +27,10 @@ grep -q 'policy_links' bin/queue-ai-broker || fail "broker policy_links output m
 bash -n queuebash.sh
 python3 -m py_compile bin/queue-ai-broker
 
+grep -q 'queuebash.ai_broker.health_feedback.v1' bin/queue-ai-broker || fail "broker health feedback schema missing"
+grep -q 'queuebash.ai_broker.health_clear.v1' bin/queue-ai-broker || fail "broker health clear schema missing"
+grep -q 'queuebash.ai_broker.health_prune.v1' bin/queue-ai-broker || fail "broker health prune schema missing"
+grep -q 'classify_provider_failure' bin/queue-ai-broker || fail "broker failure classification missing"
+grep -q 'AI_BROKER_AUTO_HEALTH_FEEDBACK' docs/QUEUE_AI_BROKER_HEALTH_CACHE.md || fail "health feedback docs missing toggle"
+grep -q -- '--prune-expired' docs/QUEUE_AI_BROKER_HEALTH_CACHE.md || fail "health cache docs missing prune operation"
 echo "PASS queue_ai_broker_runtime_static"

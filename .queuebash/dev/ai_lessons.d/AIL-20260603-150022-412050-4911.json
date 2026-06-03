@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T15:00:22Z",
+  "created_from_session": "AIS-20260603-145227-111409-5174-bob14",
+  "created_from_try": "AIT-20260603-145954-460245-1904",
+  "kind": "failure_lesson",
+  "lesson_id": "AIL-20260603-150022-412050-4911",
+  "match": {
+    "command_glob": "tests/*_provider_contracts_static.sh",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "python3 tests/FEATURE_provider_json_contract_static.py",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "Generic credential-string scans can false-positive legal/compliance wording such as credentials_required_for_default_tests=false. Provider static scans should inspect JSON keys/values for actual secret-bearing fields and allow explicit no-credential contract language."
+}

@@ -6,8 +6,8 @@ _tmp=tempfile.TemporaryDirectory(prefix="queue-ai-broker-json-contract.")
 env=os.environ.copy()
 env["QUEUEBASH_AI_BROKER_HEALTH_CACHE"] = str(pathlib.Path(_tmp.name)/"health-cache.json")
 
-def load(args):
-    out=subprocess.check_output(cmd+args, cwd=root, text=True, env=env)
+def load(args, env_override=None):
+    out=subprocess.check_output(cmd+args, cwd=root, text=True, env=env_override or env, timeout=30)
     return json.loads(out)
 
 providers=load(['providers','--json'])
@@ -46,9 +46,81 @@ assert any('health_cooldown' in r.get('reasons', []) or 'health_timeout' in r.ge
 assert explain_timeout['selected']['provider'] == 'ollama'
 restore=load(['health','--provider','openai_compat','--model','local-model','--set-state','available','--reason','contract restore','--json'])
 assert restore['schema']=='queuebash.ai_broker.health_update.v1'
-blocked=subprocess.run(cmd+['chat','--profile','balanced','--message','blocked','--live','--json'], cwd=root, text=True, stdout=subprocess.PIPE, check=False, env=env)
+clear_one=load(['health','--provider','openai_compat','--model','local-model','--clear','--json'])
+assert clear_one['schema']=='queuebash.ai_broker.health_clear.v1'
+assert clear_one['ok'] is True
+assert clear_one['removed_count'] == 1, clear_one
+expired=load(['health','--provider','openai_compat','--model','local-model','--set-state','timeout','--reason','expired cooldown contract','--cooldown-seconds','1','--json'])
+assert expired['schema']=='queuebash.ai_broker.health_update.v1'
+cache_path=pathlib.Path(env['QUEUEBASH_AI_BROKER_HEALTH_CACHE'])
+cache_data=json.loads(cache_path.read_text())
+for item in cache_data.get('entries', []):
+    if item.get('provider') == 'openai_compat' and item.get('model') == 'local-model':
+        item['cooldown_until_epoch'] = 1
+        item['cooldown_until'] = '1970-01-01T00:00:01Z'
+cache_path.write_text(json.dumps(cache_data))
+pruned=load(['health','--prune-expired','--json'])
+assert pruned['schema']=='queuebash.ai_broker.health_prune.v1'
+assert pruned['pruned_count'] >= 1, pruned
+clear_all=load(['health','--clear-all','--json'])
+assert clear_all['schema']=='queuebash.ai_broker.health_clear.v1'
+assert clear_all['ok'] is True
+blocked=subprocess.run(cmd+['chat','--profile','balanced','--message','blocked','--live','--json'], cwd=root, text=True, stdout=subprocess.PIPE, check=False, env=env, timeout=30)
 assert blocked.returncode != 0
 blocked_json=json.loads(blocked.stdout)
 assert blocked_json['schema']=='queuebash.ai_broker.error.v1'
 assert blocked_json['reason']=='live_ai_provider_not_enabled'
+
+# Live failure feedback must record a local health-cache update and fall back to the next candidate.
+feedback_root = pathlib.Path(_tmp.name) / "feedback"
+feedback_root.mkdir(parents=True, exist_ok=True)
+failing = feedback_root / "failing-provider"
+failing.write_text("""#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --output-json) out="$2"; shift 2 ;;
+    --request-json) shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf '{"schema":"queuebash.ai_advisory.response.v1","ok":false,"status":"error","reason":"fixture rate limit 429"}\n' > "$out"
+exit 9
+""", encoding="utf-8")
+failing.chmod(0o755)
+ok = feedback_root / "ok-provider"
+ok.write_text("""#!/usr/bin/env bash
+set -euo pipefail
+req=""; out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --request-json) req="$2"; shift 2 ;;
+    --output-json) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+python3 - "$req" "$out" <<'PYS'
+import json, sys
+req=json.load(open(sys.argv[1]))
+json.dump({"schema":"queuebash.ai_advisory.response.v1","ok":True,"status":"ok","answer_markdown":"ok fallback","provider":req.get("provider"),"model":req.get("model")}, open(sys.argv[2], "w"))
+PYS
+""", encoding="utf-8")
+ok.chmod(0o755)
+env_fb = dict(env)
+env_fb.update({
+    "QUEUEBASH_AI_BROKER_HEALTH_CACHE": str(feedback_root / "health-cache.json"),
+    "QUEUEBASH_AI_LIVE_ENABLED": "1",
+    "QUEUEBASH_AI_OPENAI_COMPAT_HELPER": str(failing),
+    "QUEUEBASH_AI_OLLAMA_HELPER": str(ok),
+    "QUEUEBASH_AI_BROKER_HEALTH_FAILURE_COOLDOWN_SECONDS": "30",
+})
+subprocess.check_call([cmd[0], 'health', '--provider', 'openai_compat', '--model', 'local-model', '--set-state', 'available', '--json'], env=env_fb, stdout=subprocess.DEVNULL, timeout=30)
+subprocess.check_call([cmd[0], 'health', '--provider', 'ollama', '--model', 'llama3', '--set-state', 'available', '--json'], env=env_fb, stdout=subprocess.DEVNULL, timeout=30)
+live_fallback_feedback = load(['chat', '--profile', 'balanced', '--message', 'fallback feedback', '--live', '--json'], env_fb)
+assert live_fallback_feedback['schema'] == 'queuebash.ai_broker.response.v1'
+assert live_fallback_feedback['fallback']['used'] is True, live_fallback_feedback
+assert live_fallback_feedback['selected_provider'] == 'ollama', live_fallback_feedback
+assert any(x.get('schema') == 'queuebash.ai_broker.health_feedback.v1' for x in live_fallback_feedback.get('health_feedback', [])), live_fallback_feedback
+assert any(x.get('updated', {}).get('state') == 'rate_limited' for x in live_fallback_feedback.get('health_feedback', [])), live_fallback_feedback
 print('PASS queue_ai_broker_runtime_json_contract_static')

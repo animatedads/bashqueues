@@ -1,0 +1,23 @@
+Usage:
+  queue dev scratchpad help
+  queue dev scratchpad init --project NAME [--json]
+  queue dev scratchpad import --from-tree DIR [--project NAME] [--json]
+  queue dev scratchpad add --kind KIND --authority AUTHORITY --text TEXT [--tag TAG...] [--json]
+  queue dev scratchpad task --text TEXT [--authority team_leader] [--json]
+  queue dev scratchpad attempt ITEM_ID --note TEXT [--json]
+  queue dev scratchpad evidence ITEM_ID --summary TEXT [--raw-log PATH] [--verdict VERDICT] [--json]
+  queue dev scratchpad evidence ITEM_ID --json-file result.json [--summary TEXT] [--verdict VERDICT] [--json]
+  queue dev scratchpad done ITEM_ID --note TEXT [--authority reviewer] [--json]
+  queue dev scratchpad reject ITEM_ID --note TEXT [--authority reviewer] [--json]
+  queue dev scratchpad fail ITEM_ID --note TEXT [--json]
+  queue dev scratchpad bump-fail ITEM_ID [--json]
+  queue dev scratchpad list [--json] [--status STATUS] [--kind KIND] [--tag TAG]
+  queue dev scratchpad delete ITEM_ID [--authority reviewer] [--note TEXT] [--json]
+  queue dev scratchpad status set ITEM_ID --status STATUS [--reason TEXT] [--authority reviewer] [--json]
+  queue dev scratchpad supersede OLD_ITEM_ID --by NEW_ITEM_ID [--reason TEXT] [--authority reviewer] [--json]
+  queue dev scratchpad next [--json]
+  queue dev scratchpad export [--json]
+  queue dev scratchpad explain ITEM_ID
+
+File-backed authority-stamped development scratchpad ledger. This is storage/state
+only: no prompt rendering, no AI provider calls, and no queue dev test integration.

@@ -1,0 +1,15 @@
+{
+  "schema": "queuebash.display_resource_lint.v1",
+  "status": "ok",
+  "redacted": true,
+  "json_contract_source": false,
+  "secret_rendering_allowed": false,
+  "renderer": "none-lint-only",
+  "stats": {
+    "manifest_rows": 4,
+    "resources_checked": 4,
+    "xml_resources_checked": 2,
+    "fallback_peers_checked": 2
+  },
+  "findings": []
+}

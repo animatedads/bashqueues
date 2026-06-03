@@ -1,0 +1,120 @@
+Usage:
+  queue ask [--provider NAME] [--context csv] [--model NAME] [--live] [--json] "question"
+  queue ask providers [--json]
+  queue ask provider explain PROVIDER [--json]
+  queue ask provider test PROVIDER --fixture [--json]
+
+Purpose:
+  Build a policy-gated advisory request for an AI responder provider.
+  By default this command audits the request and returns a deterministic provider handoff.
+
+Live providers:
+  Live provider calls require explicit policy enablement:
+    QUEUEBASH_AI_LIVE_ENABLED=1
+
+  Local Ollama:
+    queue ask --provider ollama --model llama3 --live "question"
+
+  Google Gemini API:
+    queue ask --provider gemini --model gemini-2.5-flash --live "question"
+
+  OpenAI Responses API:
+    queue ask --provider openai --model gpt-4.1-mini --live "question"
+
+  Anthropic Messages API:
+    queue ask --provider anthropic --model claude-sonnet-4-20250514 --live "question"
+
+  IBM watsonx.ai:
+    queue ask --provider watsonx --model ibm/granite-3-8b-instruct --live "question"
+
+  OpenAI-compatible local/private endpoint:
+    queue ask --provider openai_compat --model local-model --live "question"
+
+  Mistral AI:
+    queue ask --provider mistral --model mistral-small-latest --live "question"
+
+  DeepSeek:
+    queue ask --provider deepseek --model deepseek-v4-flash --live "question"
+
+  Groq:
+    queue ask --provider groq --model llama-3.3-70b-versatile --live "question"
+    queue ask --provider cerebras --model gpt-oss-120b --live "question"
+    queue ask --provider perplexity --model sonar-pro --live "question"
+    queue ask --provider baseten --model deepseek-ai/DeepSeek-V4-Pro --live "question"
+
+  Gemini key lookup order:
+    QUEUEBASH_AI_GEMINI_API_KEY_FILE
+    QUEUEBASH_AI_GEMINI_API_KEY
+    QUEUEBASH_AI_GEMINI_KEY
+    GEMINI_API_KEY
+    GOOGLE_API_KEY
+
+  OpenAI key lookup order:
+    QUEUEBASH_AI_OPENAI_API_KEY_FILE
+    QUEUEBASH_AI_OPENAI_API_KEY
+    OPENAI_API_KEY
+
+  Anthropic key lookup order:
+    QUEUEBASH_AI_ANTHROPIC_API_KEY_FILE
+    QUEUEBASH_AI_ANTHROPIC_API_KEY
+    ANTHROPIC_API_KEY
+
+  IBM watsonx.ai key lookup order:
+    QUEUEBASH_AI_WATSONX_BEARER_TOKEN_FILE or QUEUEBASH_AI_WATSONX_BEARER_TOKEN
+    QUEUEBASH_AI_WATSONX_API_KEY_FILE or QUEUEBASH_AI_WATSONX_API_KEY / IBM_CLOUD_API_KEY
+    QUEUEBASH_AI_WATSONX_PROJECT_ID
+
+  Mistral AI key lookup order:
+    QUEUEBASH_AI_MISTRAL_API_KEY_FILE
+    QUEUEBASH_AI_MISTRAL_API_KEY
+    MISTRAL_API_KEY
+
+  Mistral AI endpoint configuration:
+    QUEUEBASH_AI_MISTRAL_ENDPOINT (default: https://api.mistral.ai/v1/chat/completions)
+
+  DeepSeek key lookup order:
+    QUEUEBASH_AI_DEEPSEEK_API_KEY_FILE, QUEUEBASH_AI_DEEPSEEK_API_KEY, DEEPSEEK_API_KEY
+    QUEUEBASH_AI_DEEPSEEK_MODEL (default: deepseek-v4-flash)
+    QUEUEBASH_AI_DEEPSEEK_ENDPOINT (default: https://api.deepseek.com/chat/completions)
+
+  Groq key lookup order:
+    QUEUEBASH_AI_GROQ_API_KEY_FILE, QUEUEBASH_AI_GROQ_API_KEY, GROQ_API_KEY
+    QUEUEBASH_AI_GROQ_MODEL (default: llama-3.3-70b-versatile)
+    QUEUEBASH_AI_GROQ_ENDPOINT (default: https://api.groq.com/openai/v1/chat/completions)
+    QUEUEBASH_AI_CEREBRAS_MODEL (default: gpt-oss-120b)
+    QUEUEBASH_AI_CEREBRAS_ENDPOINT (default: https://api.cerebras.ai/v1/chat/completions)
+
+  Perplexity key lookup order:
+    QUEUEBASH_AI_PERPLEXITY_API_KEY_FILE, QUEUEBASH_AI_PERPLEXITY_API_KEY, PERPLEXITY_API_KEY
+    QUEUEBASH_AI_PERPLEXITY_MODEL (default: sonar-pro)
+    QUEUEBASH_AI_PERPLEXITY_ENDPOINT (default: https://api.perplexity.ai/chat/completions)
+
+  Baseten key lookup order:
+    QUEUEBASH_AI_BASETEN_API_KEY_FILE, QUEUEBASH_AI_BASETEN_API_KEY, BASETEN_API_KEY
+    QUEUEBASH_AI_BASETEN_MODEL (default: deepseek-ai/DeepSeek-V4-Pro)
+    QUEUEBASH_AI_BASETEN_ENDPOINT (default: https://inference.baseten.co/v1/chat/completions)
+
+  OpenAI-compatible endpoint configuration:
+    QUEUEBASH_AI_OPENAI_COMPAT_ENDPOINT (default: http://127.0.0.1:8000/v1/chat/completions)
+    QUEUEBASH_AI_OPENAI_COMPAT_API_KEY_FILE or QUEUEBASH_AI_OPENAI_COMPAT_API_KEY (optional for local endpoints)
+
+Important:
+  queue ask is advisory only. It cannot approve, submit, cancel, sign, override,
+  patch, or execute jobs. Provider output is data and is never evaluated as shell.
+
+Default contexts:
+  docs,commands,classes,assets,providers
+
+Additional safe implementation context:
+  tests,implementation_tests
+
+Optional contexts requiring explicit policy/env allowance:
+  queue_status                              require QUEUEBASH_AI_ALLOW_QUEUE_STATUS=1
+  job_status                                require QUEUEBASH_AI_ALLOW_JOB_STATUS=1
+  job_metadata                              require QUEUEBASH_AI_ALLOW_JOB_METADATA=1
+  job_tail                                  require QUEUEBASH_AI_ALLOW_JOB_TAIL=1
+  policies,policy_definitions,policy_details require QUEUEBASH_AI_ALLOW_POLICY_DETAILS=1
+  profile_details                            require QUEUEBASH_AI_ALLOW_POLICY_DETAILS=1
+
+Default queue/job context is redacted. Command payloads and stdout/stderr are not
+included unless a separately gated job_tail context is explicitly allowed.

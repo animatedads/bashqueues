@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T15:58:31Z",
+  "created_from_session": "AIS-20260603-155652-278888-4603-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-155831-823426-8371",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "root-evidence lesson: Root validation/cleanup/merge manifest files from older patchsets should be moved under .queuebash/dev/deliveries/<delivery-id>/legacy-input-evidence rather than copied to repository root."
+}

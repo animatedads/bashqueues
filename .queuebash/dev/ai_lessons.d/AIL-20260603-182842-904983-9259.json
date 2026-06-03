@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T18:28:42Z",
+  "created_from_session": "AIS-20260603-181714-435792-7317-bob14",
+  "created_from_try": "AIT-20260603-182759-464856-7724",
+  "kind": "failure_lesson",
+  "lesson_id": "AIL-20260603-182842-904983-9259",
+  "match": {
+    "command_glob": "install-system.sh",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "Check ls -l install-system.sh or rerun tests/system_install_static.sh after edits",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "When editing installer scripts, preserve executable mode in the patchset files; system_install_static checks install-system.sh is executable before syntax/content assertions."
+}

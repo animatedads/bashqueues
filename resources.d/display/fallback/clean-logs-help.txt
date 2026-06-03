@@ -1,0 +1,13 @@
+Usage:
+  queue clean-logs [options]
+
+Options:
+  --dryrun, --dry-run       show what would be removed; do not delete
+  --force, -f              actually remove matching logs
+  --older-than AGE         only logs older than AGE: 30s, 10m, 2h, 7d, 4w
+  --state STATE            only logs whose job is in STATE
+                           states: done failed interrupted cancelled deleted orphan all
+  --orphan                 same as --state orphan
+  --all                    include all states; otherwise defaults to safe completed states
+  --include-running        allow running logs to match; dangerous
+  --verbose                show skipped reasons

@@ -1,3 +1,13 @@
+# 0.18.102 BOB15 hot-seat display lint manifest signing AI cleanup secrets break-glass classifier merge
+
+Merges Bob18 display/XML resource lint helper contract, Bob14 installed display manifest signing, Bob19 AI broker health-cache cleanup controls, Bob16 display-help resource extraction wave4, Bob17 secrets break-glass fixture and audit hardening, and Bob20 statistical class-classifier fixture tests. The merge preserves display resources as non-executable presentation data, keeps secrets break-glass policy/audit fixture-first, keeps AI broker cleanup local and bounded, and adds fraud-detection style class downgrade fixture coverage without changing queue dispatch semantics.
+
+# 0.18.101 BOB15 secrets policy, display manifests, AI health feedback, help install signing merge
+
+Merges the 0.18.101 hot-seat set onto the 0.18.100 Bob15 base: Bob17 secrets policy enforcement, Bob16 display/help resource extraction wave3, Bob18 display-resource manifest/catalog contracts, Bob19 AI broker live health feedback, and Bob14 system-install display/help resource installation and signing fixes.
+
+Key boundaries: display/help/XML resources remain non-executable presentation data; secrets enforcement uses provider/policy contracts and fixture coverage; AI broker live health feedback remains bounded health/caching/fallback behaviour; system install now installs and signs display/help resources without restoring deprecated `assets.d/net_usage.sh`.
+
 # 0.18.100 BOB15 secrets remote-dependency AI health cache display-help wave2 merge
 
 Merges Bob17 secrets provider contract, Bob17 remote job dependency contract, Bob19 AI broker health-cache/fallback, and Bob16 display-help resource extraction wave2 onto the Bob15 0.18.99 base.

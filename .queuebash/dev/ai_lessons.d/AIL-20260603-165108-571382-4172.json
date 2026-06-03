@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T16:51:08Z",
+  "created_from_session": "AIS-20260603-164920-008525-7590-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-165108-571382-4172",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "0.18.98 Bob14 wave5 has README/CHANGELOG baseline drift only; copy provider/docs/policies/tests/fixtures and normalize release identity as Bob15 output version."
+}

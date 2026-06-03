@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T18:33:11Z",
+  "created_from_session": "AIS-20260603-181714-435792-7317-bob14",
+  "created_from_try": "",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260603-183311-654454-9443",
+  "match": {
+    "command_glob": "tests/display_help_resources_*smoke.sh",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "Run legacy display smoke tests individually with explicit timeout when queue dev ai try stalls",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "Some display help smoke tests are too slow to run through queue dev ai try repeatedly in this sandbox because each try re-sources queuebash and nested smoke tests also source queuebash. Use focused tries for new tests and direct timeout-bounded validation for legacy slow smoke tests, recording the fallback evidence."
+}

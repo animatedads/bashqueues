@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T17:17:00Z",
+  "created_from_session": "AIS-20260603-171349-796189-3455-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-171700-872059-2450",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Display/XML resources must stay non-executable presentation data: token replacement only, no shell evaluation, no DTD/entity expansion, no secret rendering, and JSON command outputs remain locale independent."
+}

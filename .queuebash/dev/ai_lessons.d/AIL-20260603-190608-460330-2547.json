@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T19:06:08Z",
+  "created_from_session": "AIS-20260603-185842-693855-9683-bob14",
+  "created_from_try": "AIT-20260603-190219-623713-5803",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260603-190608-460330-2547",
+  "match": {
+    "command_glob": "_queue_code_signature_targets",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "Check _queue_code_signature_targets includes resources.d/display/* and resources.d/xml/* as well as localized */* payloads",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "Installed display/xml manifest files sit at resources.d/display/manifest.example.tsv and resources.d/xml/manifest.example.tsv, so signature target patterns that only match resources.d/display/*/* or resources.d/xml/*/* cover localized payloads but miss top-level manifest files. Include both one-level and two-level resource patterns in installed share-tree signing."
+}

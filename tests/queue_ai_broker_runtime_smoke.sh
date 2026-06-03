@@ -6,7 +6,7 @@ cd "$ROOT"
 # checks; avoiding `_queue_init` keeps this fixture test bounded on large trees.
 outdir="$(mktemp -d "${TMPDIR:-/tmp}/queue-ai-broker-smoke.XXXXXX")"
 export QUEUEBASH_AI_BROKER_HEALTH_CACHE="$outdir/health-cache.json"
-trap 'rm -rf "$outdir"' EXIT
+trap ':' EXIT
 
 bin/queue-ai-broker providers --json > "$outdir/providers.json"
 bin/queue-ai-broker models --json > "$outdir/models.json"
@@ -15,6 +15,20 @@ bin/queue-ai-broker health --provider ollama --model llama3 --set-state availabl
 bin/queue-ai-broker health --provider openai_compat --model local-model --set-state timeout --reason "smoke timeout" --cooldown-seconds 60 --json > "$outdir/health_update_timeout.json"
 bin/queue-ai-broker explain --profile balanced --capability chat --json > "$outdir/explain_health_timeout.json"
 bin/queue-ai-broker health --provider openai_compat --model local-model --set-state available --reason "smoke restore" --json > "$outdir/health_update_restore.json"
+bin/queue-ai-broker health --provider openai_compat --model local-model --clear --json > "$outdir/health_clear_one.json"
+bin/queue-ai-broker health --provider openai_compat --model local-model --set-state timeout --reason "smoke expired cooldown" --cooldown-seconds 1 --json > "$outdir/health_update_expired.json"
+python3 - "$QUEUEBASH_AI_BROKER_HEALTH_CACHE" <<'PYEXPIRE'
+import json, pathlib, sys
+p=pathlib.Path(sys.argv[1])
+data=json.loads(p.read_text())
+for item in data.get('entries', []):
+    if item.get('provider') == 'openai_compat' and item.get('model') == 'local-model':
+        item['cooldown_until_epoch'] = 1
+        item['cooldown_until'] = '1970-01-01T00:00:01Z'
+p.write_text(json.dumps(data))
+PYEXPIRE
+bin/queue-ai-broker health --prune-expired --json > "$outdir/health_prune_expired.json"
+bin/queue-ai-broker health --clear-all --json > "$outdir/health_clear_all.json"
 bin/queue-ai-broker explain --profile balanced --capability chat,json --json > "$outdir/explain.json"
 bin/queue-ai-broker chat --profile balanced --message "hello broker" --json > "$outdir/chat.json"
 bin/queue-ai-broker json --profile json_strict --message '{"hello":"world"}' --json > "$outdir/json.json"
@@ -53,8 +67,11 @@ json.dump({
 PY
 SH
 chmod +x "$outdir/fake-provider"
-QUEUEBASH_AI_LIVE_ENABLED=1 QUEUEBASH_AI_OPENAI_COMPAT_HELPER="$outdir/fake-provider" \
+QUEUEBASH_AI_LIVE_ENABLED=1 QUEUEBASH_AI_OPENAI_COMPAT_HELPER="$outdir/fake-provider" QUEUEBASH_AI_BROKER_PROVIDER_TIMEOUT_SECONDS=5 \
   bin/queue-ai-broker chat --profile balanced --message "broker live fixture" --live --json > "$outdir/live_fixture.json"
+
+# Live fallback failure feedback is covered by the JSON contract test, where subprocess timeouts are easier to bound.
+
 
 python3 - "$outdir" <<'PY'
 import json, pathlib, sys
@@ -67,6 +84,10 @@ expect={
  'health_update_timeout.json':'queuebash.ai_broker.health_update.v1',
  'explain_health_timeout.json':'queuebash.ai_broker.explain.v1',
  'health_update_restore.json':'queuebash.ai_broker.health_update.v1',
+ 'health_clear_one.json':'queuebash.ai_broker.health_clear.v1',
+ 'health_update_expired.json':'queuebash.ai_broker.health_update.v1',
+ 'health_prune_expired.json':'queuebash.ai_broker.health_prune.v1',
+ 'health_clear_all.json':'queuebash.ai_broker.health_clear.v1',
  'explain.json':'queuebash.ai_broker.explain.v1',
  'chat.json':'queuebash.ai_broker.response.v1',
  'json.json':'queuebash.ai_broker.response.v1',
@@ -82,6 +103,12 @@ timeout_update=json.loads((root/'health_update_timeout.json').read_text())
 assert timeout_update['ok'] is True
 assert timeout_update['updated']['state'] == 'timeout'
 assert timeout_update['updated']['cooldown_seconds'] == 60
+clear_one=json.loads((root/'health_clear_one.json').read_text())
+assert clear_one['removed_count'] == 1, clear_one
+pruned=json.loads((root/'health_prune_expired.json').read_text())
+assert pruned['pruned_count'] >= 1, pruned
+clear_all=json.loads((root/'health_clear_all.json').read_text())
+assert clear_all['ok'] is True
 health_timeout=json.loads((root/'explain_health_timeout.json').read_text())
 assert any('health_cooldown' in r.get('reasons', []) or 'health_timeout' in r.get('reasons', []) for r in health_timeout.get('rejected', [])), health_timeout
 assert health_timeout['selected']['provider'] == 'ollama', health_timeout
@@ -113,6 +140,9 @@ assert live['live_call_performed'] is True
 assert live['provider_execution'] == 'brokered_live_provider_call'
 assert live['selected_provider'] == 'openai_compat'
 assert 'fake brokered provider response' in live['answer_markdown']
+assert live.get('health_feedback'), live
 PY
 
 echo "PASS queue_ai_broker_runtime_smoke"
+
+exit 0

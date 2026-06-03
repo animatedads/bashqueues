@@ -100,3 +100,68 @@ Bob18 owns the display-resource and internationalisation lane. This lane is addi
 Display resources use controlled `{{TOKEN}}` replacement only. They must not contain shell expansion, command substitution, executable snippets, secrets, credentials, scratchpad payloads, or provider-specific authority data. Missing or rejected resources must fail safely through the existing fallback chain.
 
 JSON output remains locale-independent and structured. Human-facing resources may describe JSON fields, but they must never be the source of truth for JSON schemas or provider decisions.
+
+## Display resource manifest/catalog contract
+
+Bob18 wave 3 adds a manifest/catalog layer for resource governance. The manifest is metadata only: it lists resource names, resource family, language/fallback availability, intended command or panel surface, allowed token names, and the security boundary that applies to the resource.
+
+The catalog is deliberately not a renderer, not a policy engine, and not a command contract. It helps reviewers, installers, signing tools, and tests answer these questions before a resource is shipped:
+
+- Is the resource presentation-only?
+- Is there an English and fallback copy where required?
+- Are the token names explicit and controlled?
+- Does the resource forbid secrets and provider credentials?
+- Does the resource remain separate from JSON output?
+- Is the resource covered by signing/verification expectations?
+
+Example TSV manifests live under:
+
+```text
+resources.d/display/manifest.example.tsv
+resources.d/xml/manifest.example.tsv
+```
+
+Machine-readable schema examples live under:
+
+```text
+schemas/display_resource/resource_manifest.example.json
+schemas/display_resource/resource_catalog.example.json
+```
+
+The manifest format is intentionally simple TSV so shell installers can inspect it without executing it. Fields are:
+
+```text
+resource_type<TAB>name<TAB>language<TAB>fallback_required<TAB>tokens<TAB>surface<TAB>json_contract_source<TAB>secret_rendering_allowed<TAB>notes
+```
+
+Rules:
+
+- `resource_type` is `display` or `xml`.
+- `language` is a concrete `lang_*` directory or `fallback`.
+- `tokens` is a comma-separated allow-list, or `none`.
+- `json_contract_source` must remain `false`.
+- `secret_rendering_allowed` must remain `false`.
+- manifests must not contain secret values, provider credentials, command substitutions, shell expansion, or executable snippets.
+
+This manifest is review evidence. Runtime JSON output continues to come from command code and provider contracts, not display templates.
+
+
+## Display resource lint helper
+
+Bob18 wave 4 adds a reviewer/installer lint helper:
+
+```sh
+python3 bin/queue-display-resource-lint.py --root . --json
+```
+
+The helper is read-only. It checks display and XML manifest rows, confirms referenced resources exist, confirms fallback peers for fallback-required resources, verifies controlled `{{TOKEN}}` usage against the manifest token allow-list, rejects shell-looking expansion, rejects secret-looking placeholders or sample values, and emits a bounded JSON evidence object.
+
+The helper is deliberately not a renderer and not a command implementation. It does not produce command JSON output, does not source or evaluate resource content, does not call providers, does not inspect secret stores, and does not mutate signing state. In signed deployments, signing and verification remain the responsibility of `queue code sign --all` and `queue code verify`; lint evidence is complementary reviewer evidence.
+
+Expected JSON evidence uses:
+
+```text
+queuebash.display_resource_lint.v1
+```
+
+Lint results must remain redacted. They may include paths, token names, counts, and error messages; they must never include secret values or resource-rendered secrets.

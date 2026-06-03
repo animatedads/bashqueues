@@ -41,12 +41,12 @@ Options:
   -h, --help            Show this help
 
 The installer creates/updates:
-  PREFIX/share/bashqueues/queuebash.sh and bundled support files
+  PREFIX/share/bashqueues/queuebash.sh and bundled support files/resources
   PREFIX/bin/queue wrapper for non-interactive commands
   /etc/profile.d/bashqueues.sh for interactive shell use
   /etc/bashqueues/policies.d for shared policy files
   /root/.queuebash/keys for the root authorisation/code signing key, unless disabled
-  code/plugin signature policy under /etc/bashqueues/policies.d/code-signing
+  code/plugin/resource signature policy under /etc/bashqueues/policies.d/code-signing
 
 Cron support is optional and does not replace /usr/bin/crontab.
 The system daemon is optional and starts user-owned workers for ready queues.
@@ -146,7 +146,7 @@ done
 # It can perform SSH/Git operations and must not be copied into /usr/local/share/bashqueues.
 rm -f -- "$share_dir/publish_to_github.sh"
 
-for dir in assets.d caps.d reporters.d classes envs.d policies.d docs bin systemd tests; do
+for dir in assets.d caps.d reporters.d classes envs.d policies.d docs bin systemd tests resources.d; do
   [[ -d "$src_dir/$dir" ]] || continue
   install -d -m 0755 "$share_dir/$dir"
   # Preserve tree contents but do not delete local additions under share.
@@ -309,11 +309,19 @@ if ! grep -q "$sha" "$code_policy" 2>/dev/null; then
   echo "Installed ROOT public key into $code_policy for code/plugin signing"
 fi
 
+if [[ -d "$share_dir/resources.d" ]]; then
+  display_count="$(find "$share_dir/resources.d" -type f 2>/dev/null | wc -l | tr -d '[:space:]')"
+  echo "Installed display/resource files under $share_dir/resources.d ($display_count file(s))"
+else
+  echo "install-system.sh: resources.d was not installed under $share_dir; queue help display resources may be missing" >&2
+  exit 1
+fi
+
 QUEUEBASH_ROOT="$queue_root" QUEUEBASH_CODE_SIGNATURE_MODE=warn queue code sign --tree "$share_dir" --key root --signer-root "$queue_root" >/dev/null || {
-  echo "warning: code signing of installed tree failed" >&2
+  echo "warning: code/plugin/resource signing of installed tree failed" >&2
 }
 QUEUEBASH_ROOT="$queue_root" QUEUEBASH_CODE_SIGNATURE_MODE=warn queue code verify --tree "$share_dir" --mode warn >/dev/null || {
-  echo "warning: code signature verification reported issues" >&2
+  echo "warning: code/plugin/resource signature verification reported issues" >&2
 }
 
 if [[ "$lock_policy" == 1 ]]; then
