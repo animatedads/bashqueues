@@ -44,7 +44,11 @@ SCHEMA_ERROR = "queuebash.ai_policy_gate.error.v1"
 SCHEMA_ITSM_EVENT = "queuebash.reporter.itsm_event.v1"
 SCHEMA_EXAMINATION = "queuebash.ai_policy_gate.examination.v1"
 SCHEMA_EXAMINATION_PLAN = "queuebash.ai_policy_gate.examination_plan.v1"
-SCRIPT_TEXT_SUFFIXES = {".sh", ".bash", ".zsh", ".ksh", ".sql", ".py", ".txt"}
+SCRIPT_TEXT_SUFFIXES = {
+    ".sh", ".bash", ".zsh", ".ksh", ".sql", ".py", ".txt",
+    ".ps1", ".psm1", ".js", ".mjs", ".cjs", ".ts", ".php", ".rb", ".pl", ".pm", ".go",
+    ".java", ".cs", ".scala", ".kt", ".kts", ".rs", ".lua", ".r", ".R", ".psql",
+}
 SHELL_STARTUP_NAMES = (".bashrc", ".bash_profile", ".profile", ".bash_login")
 SCRIPT_READ_MAX_BYTES_DEFAULT = 32768
 SCRIPT_READ_MAX_FILES_DEFAULT = 6
@@ -632,12 +636,34 @@ def read_static_payload_file(resolved: pathlib.Path, lang: str, source: str, max
     if len(text) > max_chars:
         text = text[:max_chars] + "…[truncated]"
     detected = lang
-    if suf == ".sql":
+    if suf in {".sql", ".psql"}:
         detected = "sql"
     elif suf == ".py":
         detected = "python"
     elif suf in {".sh", ".bash", ".zsh", ".ksh"} or resolved.name in SHELL_STARTUP_NAMES:
         detected = "bash"
+    elif suf in {".ps1", ".psm1"}:
+        detected = "powershell"
+    elif suf in {".js", ".mjs", ".cjs", ".ts"}:
+        detected = "javascript"
+    elif suf in {".php"}:
+        detected = "php"
+    elif suf in {".rb"}:
+        detected = "ruby"
+    elif suf in {".pl", ".pm"}:
+        detected = "perl"
+    elif suf == ".go":
+        detected = "go"
+    elif suf in {".java", ".scala", ".kt", ".kts"}:
+        detected = "jvm"
+    elif suf == ".cs":
+        detected = "dotnet"
+    elif suf == ".rs":
+        detected = "rust"
+    elif suf in {".lua"}:
+        detected = "lua"
+    elif suf in {".r", ".R"}:
+        detected = "r"
     return {
         "language": detected,
         "source": source,
@@ -666,7 +692,7 @@ def safe_script_payloads(words: List[str], lang: str, submit_dir: pathlib.Path, 
         detected_source = "referenced_script_file"
         item = read_static_payload_file(resolved, lang, detected_source, max_chars)
         if item:
-            if item.get("language") not in {"bash", "python"}:
+            if item.get("language") not in {"bash", "python", "powershell", "javascript", "php", "ruby", "perl", "go", "jvm", "dotnet", "rust", "lua", "r"}:
                 item["source"] = "referenced_argument_file"
             out.append(item)
     return out
@@ -784,6 +810,22 @@ def expand_static_payload_graph(initial: List[Dict[str, str]], submit_dir: pathl
                     item2["source"] = "nested_python_or_argument_file"
                     q.append((item2, depth + 1))
                 continue
+            if cmd0 in {"node", "nodejs", "deno", "bun", "npm", "npx"}:
+                for item2 in safe_script_payloads(words, "javascript", submit_dir, max_chars):
+                    item2["source"] = "nested_javascript_or_argument_file"
+                    q.append((item2, depth + 1))
+                continue
+            if cmd0 in {"pwsh", "powershell", "powershell.exe"}:
+                for item2 in safe_script_payloads(words, "powershell", submit_dir, max_chars):
+                    item2["source"] = "nested_powershell_or_argument_file"
+                    q.append((item2, depth + 1))
+                continue
+            if cmd0 in {"php", "ruby", "perl", "go", "java", "scala", "kotlinc", "dotnet", "lua", "rscript"}:
+                lang_map = {"php":"php", "ruby":"ruby", "perl":"perl", "go":"go", "java":"jvm", "scala":"jvm", "kotlinc":"jvm", "dotnet":"dotnet", "lua":"lua", "rscript":"r"}
+                for item2 in safe_script_payloads(words, lang_map.get(cmd0, "generic"), submit_dir, max_chars):
+                    item2["source"] = "nested_language_or_argument_file"
+                    q.append((item2, depth + 1))
+                continue
             if cmd0 in {"psql", "mysql", "mariadb", "sqlite3", "sqlcmd"}:
                 for item2 in safe_script_payloads(words, "sql", submit_dir, max_chars):
                     item2["source"] = "nested_sql_argument_file"
@@ -835,6 +877,42 @@ def command_payloads(job: Dict[str, Any], max_chars: int) -> List[Dict[str, str]
                 add("python", lower0, raw)
             else:
                 add("python", lower0, raw)
+    elif lower0 in {"node", "nodejs", "deno", "bun", "npm", "npx"}:
+        for i, w in enumerate(words[:-1]):
+            if w in {"-e", "--eval"}:
+                add("javascript", f"{lower0} {w}", words[i + 1]); break
+        else:
+            script_items = safe_script_payloads(words, "javascript", submit_dir, max_chars)
+            if script_items:
+                items.extend(script_items)
+                add("javascript", lower0, raw)
+            else:
+                add("javascript", lower0, raw)
+    elif lower0 in {"pwsh", "powershell", "powershell.exe"}:
+        for i, w in enumerate(words[:-1]):
+            if w.lower() in {"-command", "-encodedcommand", "-enc"}:
+                add("powershell", f"{lower0} {w}", words[i + 1]); break
+        else:
+            script_items = safe_script_payloads(words, "powershell", submit_dir, max_chars)
+            if script_items:
+                items.extend(script_items)
+                add("powershell", lower0, raw)
+            else:
+                add("powershell", lower0, raw)
+    elif lower0 in {"php", "ruby", "perl", "go", "java", "scala", "kotlinc", "dotnet", "lua", "rscript"}:
+        flag_inline = {"php": {"-r"}, "ruby": {"-e"}, "perl": {"-e"}, "lua": {"-e"}, "rscript": {"-e"}}
+        lang_map = {"php":"php", "ruby":"ruby", "perl":"perl", "go":"go", "java":"jvm", "scala":"jvm", "kotlinc":"jvm", "dotnet":"dotnet", "lua":"lua", "rscript":"r"}
+        lang = lang_map.get(lower0, "generic")
+        for i, w in enumerate(words[:-1]):
+            if w in flag_inline.get(lower0, set()):
+                add(lang, f"{lower0} {w}", words[i + 1]); break
+        else:
+            script_items = safe_script_payloads(words, lang, submit_dir, max_chars)
+            if script_items:
+                items.extend(script_items)
+                add(lang, lower0, raw)
+            else:
+                add(lang, lower0, raw)
     elif lower0 in {"psql", "mysql", "mariadb", "sqlite3", "sqlcmd"}:
         flag_set = {"-c", "-e", "--execute"}
         for i, w in enumerate(words[:-1]):
@@ -981,6 +1059,123 @@ def scan_python(text: str, findings: List[Dict[str, Any]]) -> None:
         finding(findings, "python_sensitive_string_reference", "medium", "sensitive_reference", m.group(0), position=m.start())
 
 
+
+
+def scan_javascript(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("javascript_child_process", "high", "subprocess_execution", r"\b(?:require\(['\"]child_process['\"]\)|child_process\.|execSync\s*\(|spawn\s*\(|execFile\s*\()"),
+        ("javascript_dynamic_code_execution", "high", "dynamic_code_execution", r"\b(?:eval\s*\(|Function\s*\(|vm\.runIn(?:This|New)Context\s*\()"),
+        ("javascript_network_client", "medium", "data_transfer", r"\b(?:fetch\s*\(|axios\.|https?\.request\s*\(|new\s+WebSocket\s*\()"),
+        ("javascript_file_payload_read", "medium", "external_payload_read", r"\b(?:fs\.readFileSync\s*\(|fs\.readFile\s*\(|Deno\.readTextFile\s*\()"),
+        ("javascript_base64_decode", "medium", "payload_decode_transform", r"\b(?:Buffer\.from\s*\(.{0,240}base64|atob\s*\()"),
+        ("javascript_database_execute", "medium", "database_command_execution", r"\b(?:\.query\s*\(|\.execute\s*\(|sequelize\.query\s*\()"),
+        ("javascript_destructive_root", "critical", "destructive_operation", r"rm\s+-rf\s+/"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+    scan_sql(text, findings)
+
+
+def scan_powershell(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("powershell_encoded_command", "high", "encoded_payload", r"\b(?:-EncodedCommand|-Enc)\b"),
+        ("powershell_base64_decode", "medium", "payload_decode_transform", r"\bFromBase64String\s*\("),
+        ("powershell_dynamic_execution", "high", "dynamic_code_execution", r"\b(?:Invoke-Expression|IEX)\b"),
+        ("powershell_process_start", "high", "subprocess_execution", r"\b(?:Start-Process|Invoke-Item|&\s*\$|cmd\.exe|powershell\.exe|pwsh)\b"),
+        ("powershell_network_client", "medium", "data_transfer", r"\b(?:Invoke-WebRequest|Invoke-RestMethod|New-Object\s+Net\.WebClient|System\.Net\.WebClient)\b"),
+        ("powershell_file_payload_read", "medium", "external_payload_read", r"\b(?:Get-Content|\[IO\.File\]::ReadAllText|ReadAllBytes)\b"),
+        ("powershell_sql_execute", "medium", "database_command_execution", r"\b(?:SqlCommand|ExecuteNonQuery|Invoke-Sqlcmd)\b"),
+        ("powershell_destructive_root", "critical", "destructive_operation", r"\bRemove-Item\b.{0,80}\b(?:-Recurse|-Force)\b.{0,80}(?:[A-Z]:\\|/)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_sql(text, findings)
+
+
+def scan_php(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("php_subprocess_execution", "high", "subprocess_execution", r"\b(?:system|exec|shell_exec|passthru|proc_open|popen)\s*\("),
+        ("php_dynamic_code_execution", "high", "dynamic_code_execution", r"\b(?:eval|assert)\s*\("),
+        ("php_network_client", "medium", "data_transfer", r"\b(?:curl_exec|file_get_contents\s*\(\s*['\"]https?://|fsockopen)"),
+        ("php_file_payload_read", "medium", "external_payload_read", r"\b(?:file_get_contents|fopen|readfile)\s*\("),
+        ("php_base64_decode", "medium", "payload_decode_transform", r"\bbase64_decode\s*\("),
+        ("php_database_execute", "medium", "database_command_execution", r"\b(?:mysqli_query|pg_query|PDO::query|->query\s*\(|->exec\s*\()"),
+        ("php_destructive_root", "critical", "destructive_operation", r"rm\s+-rf\s+/"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+    scan_sql(text, findings)
+
+
+def scan_ruby(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("ruby_subprocess_execution", "high", "subprocess_execution", r"\b(?:system|exec|spawn|IO\.popen|Open3\.)\s*\(?|`[^`]+`"),
+        ("ruby_dynamic_code_execution", "high", "dynamic_code_execution", r"\b(?:eval|instance_eval|class_eval)\s*\("),
+        ("ruby_network_client", "medium", "data_transfer", r"\b(?:Net::HTTP|URI\.open|open-uri|TCPSocket)\b"),
+        ("ruby_file_payload_read", "medium", "external_payload_read", r"\b(?:File\.read|File\.open|IO\.read)\s*\("),
+        ("ruby_base64_decode", "medium", "payload_decode_transform", r"\bBase64\.decode64\s*\("),
+        ("ruby_database_execute", "medium", "database_command_execution", r"\b(?:PG\.connect|Mysql2::Client|\.exec\s*\(|\.execute\s*\()"),
+        ("ruby_destructive_root", "critical", "destructive_operation", r"rm\s+-rf\s+/"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+    scan_sql(text, findings)
+
+
+def scan_perl(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("perl_subprocess_execution", "high", "subprocess_execution", r"\b(?:system|exec|qx\s*/|open\s*\([^\)]{0,80}\|)|`[^`]+`"),
+        ("perl_dynamic_code_execution", "high", "dynamic_code_execution", r"\beval\s*(?:\{|\()"),
+        ("perl_network_client", "medium", "data_transfer", r"\b(?:LWP::UserAgent|HTTP::Tiny|IO::Socket|Net::)\b"),
+        ("perl_file_payload_read", "medium", "external_payload_read", r"\b(?:open\b|read\s*\(|slurp)"),
+        ("perl_base64_decode", "medium", "payload_decode_transform", r"\bdecode_base64\s*\("),
+        ("perl_database_execute", "medium", "database_command_execution", r"\b(?:DBI->connect|->do\s*\(|->execute\s*\()"),
+        ("perl_destructive_root", "critical", "destructive_operation", r"rm\s+-rf\s+/"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+    scan_sql(text, findings)
+
+
+def scan_compiled_like(text: str, findings: List[Dict[str, Any]], prefix: str) -> None:
+    checks = [
+        (f"{prefix}_subprocess_execution", "high", "subprocess_execution", r"\b(?:Runtime\.getRuntime\(\)\.exec|ProcessBuilder|Process\.Start|exec\.Command|Command::new|std::process::Command)\b"),
+        (f"{prefix}_network_client", "medium", "data_transfer", r"\b(?:java\.net\.|HttpClient|System\.Net\.|net/http|http\.Get|reqwest::|TcpStream|TcpClient)\b"),
+        (f"{prefix}_file_payload_read", "medium", "external_payload_read", r"\b(?:ReadAllText|ReadAllBytes|Files\.read|os\.ReadFile|ioutil\.ReadFile|std::fs::read_to_string|File\.ReadAllText)\b"),
+        (f"{prefix}_base64_decode", "medium", "payload_decode_transform", r"\b(?:Base64\.getDecoder|Convert\.FromBase64String|base64\.StdEncoding|base64::decode)\b"),
+        (f"{prefix}_database_execute", "medium", "database_command_execution", r"\b(?:DriverManager\.getConnection|SqlCommand|database/sql|\.Execute\s*\(|\.execute\s*\(|\.Query\s*\()"),
+        (f"{prefix}_destructive_root", "critical", "destructive_operation", r"rm\s+-rf\s+/"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+    scan_sql(text, findings)
+
+
+def scan_lua_r(text: str, findings: List[Dict[str, Any]], prefix: str) -> None:
+    checks = [
+        (f"{prefix}_subprocess_execution", "high", "subprocess_execution", r"\b(?:os\.execute|io\.popen|system\s*\(|shell\s*\()"),
+        (f"{prefix}_dynamic_code_execution", "high", "dynamic_code_execution", r"\b(?:loadstring|load\s*\(|eval\s*\()"),
+        (f"{prefix}_network_client", "medium", "data_transfer", r"\b(?:socket\.http|download\.file|httr::|curl::|GET\s*\()"),
+        (f"{prefix}_file_payload_read", "medium", "external_payload_read", r"\b(?:io\.open|readLines|file\s*\(|readBin)"),
+        (f"{prefix}_base64_decode", "medium", "payload_decode_transform", r"\b(?:mime\.unb64|base64decode|base64_dec)"),
+        (f"{prefix}_database_execute", "medium", "database_command_execution", r"\b(?:DBI::dbExecute|dbSendQuery|odbc::dbExecute|execute\s*\()"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_sql(text, findings)
+
 def command_data_usage_summary(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Return compact command/data-use evidence derived only from static findings."""
     categories = [str(f.get("category")) for f in findings]
@@ -1122,6 +1317,41 @@ def examine_job(job: Dict[str, Any], max_chars: int) -> Dict[str, Any]:
                 selected_checks.append("embedded_sql_patterns")
                 scan_sql(text, findings)
                 scan_legal_case_hints(text, "sql", findings)
+        elif lang == "javascript":
+            selected_checks.append("javascript_node_patterns")
+            scan_javascript(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "powershell":
+            selected_checks.append("powershell_patterns")
+            scan_powershell(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "php":
+            selected_checks.append("php_patterns")
+            scan_php(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "ruby":
+            selected_checks.append("ruby_patterns")
+            scan_ruby(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "perl":
+            selected_checks.append("perl_patterns")
+            scan_perl(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang in {"go", "jvm", "dotnet", "rust"}:
+            selected_checks.append(f"{lang}_compiled_like_patterns")
+            scan_compiled_like(text, findings, lang)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang in {"lua", "r"}:
+            selected_checks.append(f"{lang}_script_patterns")
+            scan_lua_r(text, findings, lang)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
         else:
             selected_checks.append("generic_risk_patterns")
             scan_bash(text, findings)

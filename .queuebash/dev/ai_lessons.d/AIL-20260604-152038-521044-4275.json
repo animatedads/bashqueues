@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-04T15:20:38Z",
+  "created_from_session": "AIS-20260604-151928-735491-8804-bob23",
+  "created_from_try": "AIT-20260604-152013-864507-3877",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260604-152038-521044-4275",
+  "match": {
+    "command_glob": "queue dev ai discover*",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "queue dev ai discover is allowed and should be used before assuming whether a validation command is allowlisted."
+}

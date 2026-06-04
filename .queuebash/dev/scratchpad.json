@@ -7761,17 +7761,16 @@
       "updated_at": "2026-06-04T14:38:55Z"
     },
     {
-      "schema": "queuebash.dev_scratchpad_item.v1",
+      "authority": {
+        "confidence": "accepted",
+        "name": "Bob15",
+        "type": "merger"
+      },
+      "created_at": "2026-06-04T15:10:00Z",
       "id": "SP-20260604-BOB15-018110-POLICY-NAMESPACE",
       "kind": "merge_learning",
+      "schema": "queuebash.dev_scratchpad_item.v1",
       "status": "active",
-      "created_at": "2026-06-04T15:10:00Z",
-      "updated_at": "2026-06-04T15:10:00Z",
-      "authority": {
-        "type": "merger",
-        "name": "Bob15",
-        "confidence": "accepted"
-      },
       "tags": [
         "bob15",
         "0.18.110",
@@ -7781,7 +7780,38 @@
         "ai-policy-gate",
         "merge-decision"
       ],
-      "text": "0.18.110 selects Bob23 policy_namespace_consistency_wrapper_docs as the latest policy-root consistency route, aligning active system policy writes on /etc/queuebash/policies.d across installer, policy wizard, runtime shared policy resolver, remote listener, AI broker and docs. Older Bob23 /etc/bashqueues variants were inspected and treated as superseded. Bob21 explain metadata writeback rebased candidate was merged for helper/docs only; queue explain display hook was already present in the 0.18.109 base."
+      "text": "0.18.110 selects Bob23 policy_namespace_consistency_wrapper_docs as the latest policy-root consistency route, aligning active system policy writes on /etc/queuebash/policies.d across installer, policy wizard, runtime shared policy resolver, remote listener, AI broker and docs. Older Bob23 /etc/bashqueues variants were inspected and treated as superseded. Bob21 explain metadata writeback rebased candidate was merged for helper/docs only; queue explain display hook was already present in the 0.18.109 base.",
+      "updated_at": "2026-06-04T15:10:00Z"
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "coding_agent",
+        "source": "queue dev scratchpad",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-04T15:39:09Z",
+      "id": "SP-20260604-153909-388861-2508",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "0.18.111",
+        "bob21",
+        "ai-policy-gate",
+        "test-hygiene",
+        "rupert"
+      ],
+      "text": "0.18.111 Bob21 AI policy gate bounded fixture smoke adds a staged fixture-only smoke test with per-stage timeouts and final JSON summary. This addresses Rupert carry-forward test hygiene by distinguishing fixture feature failures from harness slowness and live/external provider environment dependency checks, which remain in the legacy full smoke.",
+      "updated_at": "2026-06-04T15:39:09Z"
     }
   ],
   "merge_history": [
@@ -7912,6 +7942,14 @@
       "kept": 262,
       "schema": "queuebash.dev_patchset.scratchpad_merge.v1",
       "source": "patchset"
+    },
+    {
+      "added": 1,
+      "conflicts": 0,
+      "created_at": "2026-06-04T00:00:00Z",
+      "kept": 271,
+      "schema": "queuebash.dev.scratchpad.merge.v1",
+      "source": "0.18.111_BOB15 merge"
     }
   ],
   "meta": {
@@ -7989,5 +8027,5 @@
   },
   "project": "bashqueues-0.18.24",
   "schema": "queuebash.dev_scratchpad.v1",
-  "updated_at": "2026-06-04T15:10:00Z"
+  "updated_at": "2026-06-04T00:00:00Z"
 }

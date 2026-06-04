@@ -127,6 +127,15 @@ health_summary
 
 The summary is bounded review evidence. It reports the selected health state and source, total viable candidate count, total rejected count, candidate counts by health state, health rejection counts by state, and health rejection counts by reason. It does not change policy, mutate the provider registry, or execute provider/model output.
 
+Profile-level health gates are available through AI profile variables:
+
+```env
+AI_ALLOWED_HEALTH_STATES="available healthy"
+AI_BLOCKED_HEALTH_STATES=""
+```
+
+`AI_ALLOWED_HEALTH_STATES` is an optional allow-list. When present, only listed health states can be selected. `AI_BLOCKED_HEALTH_STATES` is an optional deny-list applied after the allow-list. `disabled_by_policy` and `disabled_by_cost` remain hard skips even if a profile accidentally allow-lists them. Existing degraded fallback controls still apply, so `degraded` requires `AI_ALLOW_DEGRADED_FALLBACK=1` or `AI_ALLOW_DEGRADED_HEALTH=1` to be selected. The active profile health policy is echoed inside `health_summary.health_policy` for bounded operator evidence.
+
 
 ## Cache schema
 

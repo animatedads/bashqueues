@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-04T15:24:25Z",
+  "created_from_session": "AIS-20260604-151928-735491-8804-bob23",
+  "created_from_try": "AIT-20260604-152100-117973-3947",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260604-152425-213253-2170",
+  "match": {
+    "command_glob": "*policy*namespace*",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "In 0.18.110 the policy namespace consistency fix is present but the canonical root is /etc/queuebash/policies.d; installer dryrun, policy wizard JSON, docs, and runtime shared policy root agree. Do not generate a duplicate /etc/bashqueues patch unless Team Leader explicitly changes the chosen canonical namespace."
+}

@@ -1,0 +1,6 @@
+provider policy contract:
+  - provider output is normalized data, never shell
+  - malformed provider output fails closed
+  - command-operation ACLs should resolve through the ACL provider
+  - single-user installs may remain file-backed and require no enterprise backplate
+  - enterprise installs may delegate to Microsoft, LDAP, PAM/NSS, IBM, PKI or Vault/HSM

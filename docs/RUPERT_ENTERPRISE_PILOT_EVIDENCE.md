@@ -23,3 +23,7 @@ P1: document shell-function versus installed-wrapper behaviour
 ## Bob17 scope from this evidence
 
 Bob17 owns the hospital live safe-mode policy profile and the secrets/break-glass/live-maintenance control posture. Bob23 owns policy namespace consistency and shell-function versus installed-wrapper wording. Bob21 owns AI policy gate fixture-smoke boundedness. Bob15 merges only after clean delivery evidence.
+
+## Bob17 follow-up: fixture verification path
+
+Bob17 added a fixture-only enterprise profile verifier for the hospital live safe-mode examples. This gives operators and reviewers a concrete local check for the profile examples while preserving Rupert's decision boundary: the profiles may support controlled pilot preparation, but the verifier does not grant live clearance and does not modify system policy.

@@ -368,6 +368,7 @@ def selection_health_summary(selection: Dict[str, Any]) -> Dict[str, Any]:
     selected = selection.get("selected") if isinstance(selection.get("selected"), dict) else None
     candidates = selection.get("candidates") if isinstance(selection.get("candidates"), list) else []
     rejected = selection.get("rejected") if isinstance(selection.get("rejected"), list) else []
+    health_policy = selection.get("health_policy") if isinstance(selection.get("health_policy"), dict) else {}
     rejected_by_health: Dict[str, int] = {}
     rejected_by_reason: Dict[str, int] = {}
     for item in rejected:
@@ -399,6 +400,12 @@ def selection_health_summary(selection: Dict[str, Any]) -> Dict[str, Any]:
         "rejected_by_health": dict(sorted(rejected_by_health.items())),
         "rejected_by_reason": dict(sorted(rejected_by_reason.items())),
         "health_rejected_count": sum(rejected_by_reason.values()),
+        "health_policy": {
+            "allowed_states": list(health_policy.get("allowed_states") or []),
+            "blocked_states": list(health_policy.get("blocked_states") or []),
+            "explicit_allowed": bool(health_policy.get("explicit_allowed", False)),
+            "explicit_blocked": bool(health_policy.get("explicit_blocked", False)),
+        },
     }
     if selected:
         summary["selected_state"] = str(selected.get("health_state") or "unknown")
@@ -674,6 +681,8 @@ def load_profile(root: pathlib.Path, profile: str) -> Tuple[Dict[str, str], str]
         "AI_ALLOW_LOCAL": "1",
         "AI_FALLBACK_ENABLED": "1",
         "AI_HEALTH_REQUIRED": "1",
+        "AI_ALLOWED_HEALTH_STATES": "available healthy",
+        "AI_BLOCKED_HEALTH_STATES": "",
         "AI_MAX_COST_PER_REQUEST_GBP": "0.05",
         "AI_REQUIRE_JSON_MODE": "0",
         "AI_REGULATORY_POLICY_REFS": "",
@@ -693,6 +702,56 @@ def bool_env(value: str, default: bool = False) -> bool:
 
 def split_words(value: str) -> List[str]:
     return [x for x in value.replace(",", " ").split() if x]
+
+
+def normalise_health_state_list(value: str) -> List[str]:
+    """Return valid health states from a profile/env list, preserving order."""
+    out: List[str] = []
+    for item in split_words(value or ""):
+        state = item.strip()
+        if state in HEALTH_ALLOWED_STATES - {"unknown"} and state not in out:
+            out.append(state)
+    return out
+
+
+def profile_health_policy(profile: Dict[str, str]) -> Dict[str, Any]:
+    """Bounded profile-level health-state gates for selection evidence.
+
+    AI_ALLOWED_HEALTH_STATES is an optional allow-list. When present, only
+    states in that list can be selected, except disabled_by_policy and
+    disabled_by_cost which remain hard skips. AI_BLOCKED_HEALTH_STATES is an
+    optional deny-list applied after the allow-list. Legacy degraded fallback
+    controls still work when no explicit allow-list is supplied.
+    """
+    allowed = normalise_health_state_list(profile.get("AI_ALLOWED_HEALTH_STATES", ""))
+    blocked = normalise_health_state_list(profile.get("AI_BLOCKED_HEALTH_STATES", ""))
+    return {
+        "allowed_states": allowed,
+        "blocked_states": blocked,
+        "explicit_allowed": bool(allowed),
+        "explicit_blocked": bool(blocked),
+    }
+
+
+def health_rejection_reason(health: str, profile: Dict[str, str], policy: Dict[str, Any] | None = None) -> str:
+    """Return a health rejection reason, or empty string when selectable."""
+    state = health if health in HEALTH_ALLOWED_STATES else "unknown"
+    policy = policy or profile_health_policy(profile)
+    if state in {"disabled_by_policy", "disabled_by_cost"}:
+        return f"health_{state}"
+    if state in set(policy.get("blocked_states") or []):
+        return f"health_profile_blocked_{state}"
+    if policy.get("explicit_allowed") and state not in set(policy.get("allowed_states") or []):
+        return f"health_profile_not_allowed_{state}"
+    allow_degraded = bool_env(profile.get("AI_ALLOW_DEGRADED_FALLBACK", profile.get("AI_ALLOW_DEGRADED_HEALTH", "0")), False)
+    health_required = bool_env(profile.get("AI_HEALTH_REQUIRED", "1"), True)
+    if state in HEALTH_SKIP_STATES:
+        return f"health_{state}"
+    if state in HEALTH_SOFT_STATES and not allow_degraded:
+        return "health_degraded"
+    if health_required and state not in HEALTH_GOOD_STATES and not (state in HEALTH_SOFT_STATES and allow_degraded):
+        return f"health_{state}"
+    return ""
 
 
 def providers(registry: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -860,8 +919,7 @@ def select_model(registry: Dict[str, Any], profile: Dict[str, str], requested_ca
     order_index = {name: idx for idx, name in enumerate(provider_order)}
     allow_cloud = bool_env(profile.get("AI_ALLOW_CLOUD", "1"), True)
     allow_local = bool_env(profile.get("AI_ALLOW_LOCAL", "1"), True)
-    health_required = bool_env(profile.get("AI_HEALTH_REQUIRED", "1"), True)
-    allow_degraded = bool_env(profile.get("AI_ALLOW_DEGRADED_FALLBACK", profile.get("AI_ALLOW_DEGRADED_HEALTH", "0")), False)
+    health_policy = profile_health_policy(profile)
     require_json = bool_env(profile.get("AI_REQUIRE_JSON_MODE", "0"), False) or "json" in requested_caps or "schema_json" in requested_caps
     max_cost = float(profile.get("AI_MAX_COST_PER_REQUEST_GBP", "999999") or "999999")
     routing = profile.get("AI_ROUTING_STRATEGY", "highest_quality_within_budget")
@@ -882,14 +940,9 @@ def select_model(registry: Dict[str, Any], profile: Dict[str, str], requested_ca
         if location in {"local", "private"} and not allow_local:
             reason.append("local_private_not_allowed")
         health = str(row.get("health_state") or "unknown")
-        if health in {"disabled_by_policy", "disabled_by_cost"}:
-            reason.append(f"health_{health}")
-        elif health in HEALTH_SKIP_STATES:
-            reason.append(f"health_{health}")
-        elif health in HEALTH_SOFT_STATES and not allow_degraded:
-            reason.append("health_degraded")
-        elif health_required and health not in HEALTH_GOOD_STATES and not (health in HEALTH_SOFT_STATES and allow_degraded):
-            reason.append(f"health_{health}")
+        health_reason = health_rejection_reason(health, profile, health_policy)
+        if health_reason:
+            reason.append(health_reason)
         ok_caps, missing = capabilities_satisfied(row, requested_caps, require_json)
         if not ok_caps:
             reason.append("missing_capability:" + ",".join(missing))
@@ -910,7 +963,7 @@ def select_model(registry: Dict[str, Any], profile: Dict[str, str], requested_ca
         candidates.append(item)
 
     candidates.sort(key=lambda x: (int(x.get("score", 0)), int(x.get("priority", 0) or 0)), reverse=True)
-    return {"selected": candidates[0] if candidates else None, "candidates": candidates, "rejected": rejected}
+    return {"selected": candidates[0] if candidates else None, "candidates": candidates, "rejected": rejected, "health_policy": health_policy}
 
 
 def json_dump(obj: Dict[str, Any]) -> int:

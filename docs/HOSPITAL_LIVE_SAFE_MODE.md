@@ -105,3 +105,25 @@ queue dev test qbtest --file queuebash.sh --function _queue_now --json
 ## Non-goals
 
 This package does not clear broad live hospital job execution. It does not change the policy-root namespace, install live system files, call cloud providers, deliver secrets, or add runtime enforcement. It adds documented profiles and tests so a future Bob15 merge has a clear enterprise safe-mode baseline.
+
+## Fixture profile verifier
+
+Until a future command-router package wires a first-class `queue enterprise verify-profile` command, the hospital profile examples include a fixture-only verifier:
+
+```bash
+providers.d/enterprise/enterprise_profile_verify.sh --profile hospital-live-readonly-default --json
+providers.d/enterprise/enterprise_profile_verify.sh --profile hospital-live-approved-maintenance-default --json
+```
+
+The verifier parses the example policy files as data rather than sourcing them as shell. It checks that the hospital profiles keep policy-root reporting explicit, disable external AI providers, disable secret environment delivery, deny secret values in JSON, require `no-secret-env` runtime posture, and preserve the read-only versus approved-maintenance distinction.
+
+The verifier is deliberately not a live enablement path. Its JSON reports:
+
+```text
+schema: queuebash.enterprise_profile_verify.v1
+mode: fixture-only
+live_clearance_granted: false
+system_modified: false
+```
+
+Future installer or command-router work may wrap this helper, but must not imply broad hospital live clearance merely because a fixture profile verifies.

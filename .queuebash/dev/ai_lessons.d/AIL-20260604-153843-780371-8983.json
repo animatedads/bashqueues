@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-04T15:38:43Z",
+  "created_from_session": "AIS-20260604-151928-735491-8804-bob23",
+  "created_from_try": "AIT-20260604-153822-502602-2195",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260604-153843-780371-8983",
+  "match": {
+    "command_glob": "*ai_policy_gate_fixture_smoke_bounded*",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Bounded AI policy gate smoke static guard passed through queue dev ai try. The bounded smoke itself should be validated directly with timeout because it invokes nested stage timeout processes and can exceed the queue-dev-ai wrapper budget in this sandbox even when the final JSON summary passes."
+}

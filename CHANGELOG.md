@@ -1,3 +1,17 @@
+# 0.18.111 BOB15 Rupert enterprise AI policy command JSON display profile merge
+
+- Merged Bob21 AI policy gate bounded fixture smoke and Rupert split-stage bounded fixture coverage.
+- Merged Bob21 expanded static language coverage for optional AI policy gate deterministic examination.
+- Merged Bob16 display/help resource extraction wave8.
+- Merged Bob20 Rupert enterprise carry-forward completion and regulated-service runbook material.
+- Merged Bob23 command JSON wave2 events/tail-follow support.
+- Merged Bob19 AI broker profile health gates.
+- Merged Bob18 display-resource permission audit helper contract.
+- Merged Bob17 enterprise profile verification fixture follow-up.
+- Preserved `/etc/queuebash/policies.d` policy-root decision from 0.18.110.
+- Preserved Karen fastpath, command JSON stats/workers, and AI policy metadata write-back.
+- Recorded Bob identity mismatch warning in delivery evidence and normalized release identity as Bob15 output.
+
 # 0.18.110 BOB15 policy namespace consistency and AI explain metadata writeback merge
 
 - Select Bob23 `policy_namespace_consistency_wrapper_docs` as the current policy-root consistency route.

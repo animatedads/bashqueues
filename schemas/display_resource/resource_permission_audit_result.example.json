@@ -1,0 +1,62 @@
+{
+  "schema": "queuebash.display_resource_permission_audit.v1",
+  "status": "ok",
+  "root": "/repo",
+  "redacted": true,
+  "owner_lane": "bob18-display-resources",
+  "renderer": "none-permission-audit-only",
+  "source": "manifest-metadata-and-filesystem-mode-only",
+  "read_only": true,
+  "installer": false,
+  "signing_mutation": false,
+  "json_contract_source": false,
+  "secret_rendering_allowed": false,
+  "token_value_substitution": false,
+  "permission_mutation": false,
+  "required_file_properties": {
+    "regular_file": true,
+    "symlink_allowed": false,
+    "executable_allowed": false,
+    "group_writable_allowed": false,
+    "world_writable_allowed": false,
+    "owner_readable_required": true
+  },
+  "stats": {
+    "manifest_files_checked": 2,
+    "resource_files_checked": 2,
+    "files_checked": 4,
+    "findings": 0,
+    "executable_files": 0,
+    "group_writable_files": 0,
+    "world_writable_files": 0,
+    "symlink_files": 0
+  },
+  "files": [
+    {
+      "path": "resources.d/display/manifest.example.tsv",
+      "role": "manifest",
+      "exists": true,
+      "is_regular_file": true,
+      "is_symlink": false,
+      "mode": "-rw-r--r--",
+      "owner_readable": true,
+      "executable": false,
+      "group_writable": false,
+      "world_writable": false
+    }
+  ],
+  "forbidden": [
+    "chmod_mutation",
+    "install_mutation",
+    "signing_mutation",
+    "resource_rendering",
+    "token_substitution",
+    "secret_values",
+    "provider_credentials",
+    "command_json_generation_from_templates",
+    "eval",
+    "source",
+    "shell_expansion"
+  ],
+  "findings": []
+}

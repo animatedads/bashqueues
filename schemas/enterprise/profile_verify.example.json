@@ -1,0 +1,18 @@
+{
+  "schema": "queuebash.enterprise_profile_verify.v1",
+  "status": "ok",
+  "ok": true,
+  "profile": "hospital-live-readonly-default",
+  "profile_file": "policies.d/enterprise/hospital-live-readonly-default.env.example",
+  "mode": "fixture-only",
+  "live_clearance_granted": false,
+  "system_modified": false,
+  "checks": {
+    "policy_root_explicit": true,
+    "external_ai_disabled": true,
+    "secret_env_disabled": true,
+    "secret_value_json_disabled": true,
+    "runtime_caps_include_no_secret_env": true
+  },
+  "failures": []
+}

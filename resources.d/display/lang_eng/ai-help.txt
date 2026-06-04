@@ -28,3 +28,6 @@ Policy inputs:
 
 Important:
   queue ai broker output is advisory data. It is never evaluated as shell.
+
+AI broker profile health gates:
+  AI_ALLOWED_HEALTH_STATES and AI_BLOCKED_HEALTH_STATES constrain selectable provider/model health states. disabled_by_policy and disabled_by_cost remain hard skips. Active policy is reported in health_summary.health_policy.

@@ -155,3 +155,28 @@ The helper does not render XML, resolve entities, substitute tokens, inspect pro
 `bin/queue-display-resource-install-audit.py --json` includes XML display resources in the same Bob18 install audit evidence used for plain display resources. XML install audit compares manifest files and manifest-declared XML resource files between a reviewed source tree and an installed resource tree using file presence and SHA-256 hashes only.
 
 The helper does not parse XML as policy, resolve entities, render XML, substitute tokens, inspect providers, expose secrets, mutate signing/install state, or generate command JSON. XML parseability, DTD rejection, and token allow-list checks remain covered by the lint and token-audit helpers; install audit is complementary evidence that the installed XML/display resource copies match the reviewed source tree.
+
+## Display resource permission audit helper
+
+Bob18 wave 13 adds a read-only permission audit helper:
+
+```bash
+python3 bin/queue-display-resource-permission-audit.py --root . --json
+```
+
+The helper emits `queuebash.display_resource_permission_audit.v1` evidence from manifest metadata and filesystem mode bits only. It checks reviewed display/XML manifests and manifest-declared resource files are regular, non-symlink files, owner-readable, non-executable, not group-writable, and not world-writable.
+
+This helper is audit evidence only. It does not chmod files, install files, update manifests, sign resources, render templates, substitute token values, call providers, inspect secret stores, or generate command/provider JSON. Permission repair remains an installer/operator responsibility; the helper only reports whether presentation resources meet the reviewed safe-resource mode contract.
+
+Required boundaries:
+
+- `renderer=none-permission-audit-only`;
+- `source=manifest-metadata-and-filesystem-mode-only`;
+- `permission_mutation=false`;
+- `installer=false`;
+- `signing_mutation=false`;
+- `json_contract_source=false`;
+- `secret_rendering_allowed=false`;
+- `token_value_substitution=false`.
+
+Fail-closed findings include symlink resources, non-regular resources, executable resource files, group/world writable files, missing manifests, missing manifest-declared resources, and display/XML metadata that attempts to become a JSON source or secret-rendering surface.

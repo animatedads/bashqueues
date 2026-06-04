@@ -1,3 +1,15 @@
+# 0.18.111 BOB15 Rupert enterprise AI policy command JSON display profile merge
+
+Merges the 0.18.111/0.18.112 hot-seat wave onto the accepted 0.18.110 Bob15 base: Bob21 AI policy gate bounded fixture smoke and expanded static language coverage, Bob16 display/help resource extraction wave8, Bob20 Rupert enterprise carry-forward completion, Bob23 command JSON events/tail-follow support, Bob19 AI broker profile health gates, Bob18 display-resource permission audit helper, and Bob17 enterprise profile verification fixture.
+
+Bob identity note: The Architect flagged that Bob14 delivered under a Bob21 label in this wave. Bob15 inspected the Bob21-labeled inputs by content rather than filename and preserved the attribution warning in delivery records. The expanded language coverage payload modifies the optional AI policy gate static examiner and was therefore treated technically as AI policy gate content.
+
+Policy/root carry-forward: the active installed system policy root remains `/etc/queuebash/policies.d`. Rupert enterprise evidence remains pilot evidence, not production clearance. Hospital live profiles and enterprise verification fixtures are policy guidance/test contracts only.
+
+AI policy gate boundary: optional/local/static-only unless deliberately wired; no shell, SQL, Python, model output, or network execution during deterministic examination.
+
+Development history: for validation of the architectural route and development history, the full ChatGPT development chat is located at: https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
+
 # 0.18.110 BOB15 policy namespace consistency and AI explain metadata writeback merge
 
 Merges the latest Bob23 Rupert policy namespace consistency/wrapper-docs route and Bob21 rebased AI policy gate explain metadata write-back candidate onto the 0.18.109 Bob15 full delivery.

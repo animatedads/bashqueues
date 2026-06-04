@@ -27,6 +27,51 @@ assert 'policy_links' in explain
 assert 'health_summary' in explain
 assert explain['health_summary']['selected_state'] in ('available','healthy','degraded')
 assert isinstance(explain['health_summary']['candidate_by_health'], dict)
+assert 'health_policy' in explain['health_summary']
+assert isinstance(explain['health_summary']['health_policy'].get('allowed_states'), list)
+
+blocked_health_env = env.copy()
+blocked_health_env['QUEUEBASH_AI_PROFILE_FILE'] = str(pathlib.Path(_tmp.name) / 'blocked-health.env')
+pathlib.Path(blocked_health_env['QUEUEBASH_AI_PROFILE_FILE']).write_text("""
+AI_PROFILE_NAME="blocked-health"
+AI_CAPABILITIES="chat json"
+AI_PROVIDER_ORDER="openai_compat ollama gemini anthropic mistral deepseek groq cerebras baseten watsonx"
+AI_ALLOW_CLOUD=1
+AI_ALLOW_LOCAL=1
+AI_FALLBACK_ENABLED=1
+AI_HEALTH_REQUIRED=1
+AI_ALLOWED_HEALTH_STATES="available healthy degraded"
+AI_BLOCKED_HEALTH_STATES="available healthy degraded"
+AI_ALLOW_DEGRADED_FALLBACK=1
+AI_MAX_COST_PER_REQUEST_GBP="999"
+AI_REQUIRE_JSON_MODE=0
+""".strip() + '\n')
+blocked_health = load(['explain','--profile','blocked-health','--capability','chat','--json'], blocked_health_env)
+assert blocked_health['decision'] == 'deny', blocked_health
+assert any(any(str(reason).startswith('health_profile_blocked_') for reason in item.get('reasons', [])) for item in blocked_health.get('rejected', [])), blocked_health
+assert blocked_health['health_summary']['health_policy']['explicit_blocked'] is True
+
+allowed_degraded_env = env.copy()
+allowed_degraded_env['QUEUEBASH_AI_PROFILE_FILE'] = str(pathlib.Path(_tmp.name) / 'allowed-degraded.env')
+pathlib.Path(allowed_degraded_env['QUEUEBASH_AI_PROFILE_FILE']).write_text("""
+AI_PROFILE_NAME="allowed-degraded"
+AI_CAPABILITIES="chat json"
+AI_PROVIDER_ORDER="openai_compat ollama gemini anthropic mistral deepseek groq cerebras baseten watsonx"
+AI_ALLOW_CLOUD=1
+AI_ALLOW_LOCAL=1
+AI_FALLBACK_ENABLED=1
+AI_HEALTH_REQUIRED=1
+AI_ALLOWED_HEALTH_STATES="degraded"
+AI_BLOCKED_HEALTH_STATES=""
+AI_ALLOW_DEGRADED_FALLBACK=1
+AI_MAX_COST_PER_REQUEST_GBP="999"
+AI_REQUIRE_JSON_MODE=0
+""".strip() + '\n')
+load(['health','--provider','openai_compat','--model','local-model','--set-state','degraded','--reason','profile allow degraded','--json'], allowed_degraded_env)
+allowed_degraded = load(['explain','--profile','allowed-degraded','--capability','chat','--json'], allowed_degraded_env)
+assert allowed_degraded['decision'] == 'allow', allowed_degraded
+assert allowed_degraded['selected']['health_state'] == 'degraded', allowed_degraded
+assert allowed_degraded['health_summary']['health_policy']['allowed_states'] == ['degraded']
 assert explain['policy_links']['applicable'] is True
 assert explain['policy_links']['combined']['regulatory']
 assert explain['policy_links']['combined']['corporate']

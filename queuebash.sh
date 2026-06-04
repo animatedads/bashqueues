@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.110"
+QUEUEBASH_VERSION="0.18.111"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -15332,14 +15332,7 @@ _queue_module_policy() {
     echo
     case "$kind" in
         provider)
-            cat <<'EOF'
-provider policy contract:
-  - provider output is normalized data, never shell
-  - malformed provider output fails closed
-  - command-operation ACLs should resolve through the ACL provider
-  - single-user installs may remain file-backed and require no enterprise backplate
-  - enterprise installs may delegate to Microsoft, LDAP, PAM/NSS, IBM, PKI or Vault/HSM
-EOF
+            _queue_resource_fetch_i18nl_command --name module-policy-provider-contract.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
             ;;
         class|asset|cap)
             echo "module policy is derived from the class/asset/cap definition and any mandatory provider or ACL policy."
@@ -19945,56 +19938,15 @@ _queue_profile_multisig_help() {
 }
 
 _queue_profile_multisig_roles() {
-    cat <<'EOF'
-author
-reviewer
-approver
-countersigner
-issuer
-auditor
-EOF
+    _queue_resource_fetch_i18nl_command --name profile-signature-roles.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
 }
 
 _queue_profile_multisig_policy_example() {
-    cat <<'EOF'
-# queuebash profile multi-signature required-signer policy
-# Format: profile_glob<TAB>role<TAB>signer_pattern<TAB>required<TAB>reason
-# signer_pattern may be an exact signer such as org:bashqueues or a namespace
-# wildcard such as team:* or trusted-ca:*.
-*	author	self:*	required	profile must have an author signature
-*	reviewer	team:security-review	required	security team review required
-prod-*	approver	org:bashqueues	required	production profiles require org approval
-vendor-*	countersigner	org:bashqueues	required	external vendor signatures need local countersign
-EOF
+    _queue_resource_fetch_i18nl_command --name profile-signature-required-policy-example.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
 }
 
 _queue_profile_multisig_schema() {
-    cat <<'EOF'
-{
-  "schema": "queuebash.profile_signatures.v1",
-  "profile": "PROFILE_NAME",
-  "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-  "signatures": [
-    {
-      "signer": "self:operator",
-      "role": "author",
-      "alg": "ed25519",
-      "public_key_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
-      "signature_b64": "ZmFrZS1zaWduYXR1cmU=",
-      "signed_at": "2026-05-27T12:00:00Z",
-      "key_provider_ref": "file:self:operator:profile.sign:PROFILE_NAME"
-    },
-    {
-      "signer": "team:security-review",
-      "role": "reviewer",
-      "alg": "ed25519",
-      "public_key_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
-      "signature_b64": "ZmFrZS1yZXZpZXctc2lnbmF0dXJl",
-      "signed_at": "2026-05-27T12:30:00Z"
-    }
-  ]
-}
-EOF
+    _queue_resource_fetch_i18nl_command --name profile-signature-schema-example.json --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
 }
 
 _queue_profile_multisig_verify() {
@@ -22019,14 +21971,63 @@ EOF
 
         events)
             local n=20
-            if [[ "${1:-}" == "--tail" || "${1:-}" == "-n" ]]; then
-                n="$2"
-            fi
+            local json=0
+            local follow=0
+            local legacy_n=""
+            while [[ "$#" -gt 0 ]]; do
+                case "${1:-}" in
+                    --tail|-n) n="${2:-20}"; shift 2 ;;
+                    --follow|-f|follow) follow=1; shift ;;
+                    --json|-j) json=1; shift ;;
+                    --help|-h)
+                        echo "Usage: queue events [--tail N|-n N] [--follow|-f] [--json]"
+                        echo "       queue events --tail N exits after printing N events."
+                        echo "       queue events --follow follows the event log."
+                        return 0
+                        ;;
+                    ''|--) shift ;;
+                    [0-9]*) legacy_n="$1"; shift ;;
+                    *) echo "queue events: unknown option: $1" >&2; return 2 ;;
+                esac
+            done
+            [[ -n "$legacy_n" ]] && n="$legacy_n"
             [[ "$n" =~ ^[0-9]+$ ]] || n=20
-            if [[ -f "$root/events.jsonl" ]]; then
-                tail -n "$n" "$root/events.jsonl"
+            [[ "$n" -gt 0 ]] || n=20
+
+            local events_path="$root/events.jsonl"
+            if [[ "$json" -eq 1 && "$follow" -eq 0 ]]; then
+                local first=0 count=0 line
+                printf '{"schema":"queuebash.events.v1","queue_root":"%s","path":"%s","tail":%d,"follow":false,"events":[' \
+                    "$(_queue_json_escape "$root")" \
+                    "$(_queue_json_escape "$events_path")" \
+                    "$n"
+                if [[ -f "$events_path" ]]; then
+                    while IFS= read -r line; do
+                        _queue_json_comma first
+                        case "$line" in
+                            \{*\}|\[*\]) printf '%s' "$line" ;;
+                            *) printf '{"raw":"%s"}' "$(_queue_json_escape "$line")" ;;
+                        esac
+                        count=$((count + 1))
+                    done < <(tail -n "$n" "$events_path")
+                fi
+                printf '],"count":%d}\n' "$count"
+                return 0
+            fi
+
+            if [[ -f "$events_path" ]]; then
+                if [[ "$follow" -eq 1 ]]; then
+                    tail -n "$n" -f "$events_path"
+                else
+                    tail -n "$n" "$events_path"
+                fi
             else
-                echo "queue events: no events.jsonl yet"
+                if [[ "$follow" -eq 1 ]]; then
+                    touch "$events_path" 2>/dev/null || { echo "queue events: no events.jsonl yet" >&2; return 1; }
+                    tail -n 0 -f "$events_path"
+                else
+                    echo "queue events: no events.jsonl yet"
+                fi
             fi
             ;;
 

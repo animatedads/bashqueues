@@ -46,3 +46,8 @@ Before system install, `queue` is a shell function and only exists in shells tha
 ## Enterprise pilot note
 
 Rupert enterprise acceptance evidence for 0.18.108 identified policy-root inconsistency as a P0 operational clarity issue. The installer, policy wizard, runtime resolver, docs, examples, and verification commands must agree on the active policy root before broad live regulated-service deployment.
+
+
+## 0.18.111 carry-forward completion
+
+The Rupert carry-forward set now includes all four enterprise default profiles: `small-team-dev-default`, `government-project-test-default`, `hospital-live-readonly-default`, and `hospital-live-approved-maintenance-default`. The regulated-service live pilot runbook is `docs/REGULATED_SERVICE_RUNBOOK.md`. The AI policy gate fixture smoke has a bounded stage-summary wrapper at `tests/ai_policy_gate_fixture_stage_smoke.sh`; the older comprehensive smoke remains available for detailed coverage.
