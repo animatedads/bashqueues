@@ -1,0 +1,16 @@
+{
+  "classification_is_advisory": true,
+  "decision": "allow",
+  "fail_closed": true,
+  "labels": [
+    "customer",
+    "restricted",
+    "uk-region"
+  ],
+  "mutated": false,
+  "policy_authority_granted": false,
+  "provider": "fixture",
+  "provider_family": "metadata_catalog",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.metadata_catalog.classification.v1"
+}

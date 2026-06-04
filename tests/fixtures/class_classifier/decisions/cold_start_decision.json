@@ -1,0 +1,90 @@
+{
+  "audit_event_preview": {
+    "confidence": 0.0,
+    "decision": "insufficient_history",
+    "event": "queuebash.class_inference.v1",
+    "fingerprint": "sha256:82c7d0729f2bc8caf18ab452938863f7e28eff2af055026c5fa976785595ceb5",
+    "mismatch": "none",
+    "observations": 0,
+    "policy_action": "observe",
+    "policy_references": [
+      "queue_class_shared_asset class_classifier no_downgrade min_confidence=0.80 action=block",
+      "CLASSIFIER-DOWNGRADE-GUARD"
+    ],
+    "recommended_action": "defer_to_class_policy",
+    "recommended_class": "",
+    "requested_class": "BASIC_TASK"
+  },
+  "confidence": 0.0,
+  "decision": "insufficient_history",
+  "fingerprint": {
+    "arg_shape": "python3 <path.py> --input <path.csv>",
+    "argc": 4,
+    "argv0": "python3",
+    "assets": [],
+    "command_display": "python3 ./new_report.py --input /tmp/example.csv",
+    "command_family_hash": "sha256:c42d55e92c6beffee68da50bba12509a74cf93e16a3892546e9facabe476ba1a",
+    "command_raw_hash": "sha256:bd54e16c26a0c1c4d45b2f7fa49d59ccb1ac1b8c55008b4cda8f302d2ec328e9",
+    "command_shape_hash": "sha256:82c7d0729f2bc8caf18ab452938863f7e28eff2af055026c5fa976785595ceb5",
+    "cwd_family": "//mnt/data",
+    "family": "python3 new_report.py",
+    "feature_hash": "sha256:92ef7cf842e53da708156576036c505f112695f4697598294474410732dda879",
+    "feature_keys": [
+      "argv0:python3",
+      "script:new_report.py",
+      "cwd_family://mnt/data",
+      "shape:sha256:82c7d0729f2bc8caf18ab452938863f7e28eff2af055026c5fa976785595ceb5",
+      "family:sha256:c42d55e92c6beffee68da50bba12509a74cf93e16a3892546e9facabe476ba1a",
+      "user:analyst",
+      "path_prefix://tmp/example.csv",
+      "path:/tmp/example.csv"
+    ],
+    "generated_at": "2026-06-03T21:30:27Z",
+    "group": "",
+    "job_name": "new_report_builder",
+    "network": false,
+    "normalizer": {
+      "dates": "<date>",
+      "hashes": "<hash>",
+      "numbers": "<num>",
+      "paths": "<path.ext>",
+      "ranges": "<range>",
+      "secret_bearing_names": "<secret-key>",
+      "urls": "<url>",
+      "uuids": "<uuid>"
+    },
+    "paths": [
+      "/tmp/example.csv"
+    ],
+    "requested_class": "BASIC_TASK",
+    "schema": "queuebash.class_inference.fingerprint.v1",
+    "script": "new_report.py",
+    "secrets": [],
+    "user": "analyst"
+  },
+  "generated_at": "2026-06-03T21:30:27Z",
+  "mismatch": "none",
+  "non_mutating": true,
+  "observations": 0,
+  "policy_action": "observe",
+  "policy_linkage": {
+    "corporate_policy_refs": [
+      "CLASSIFIER-DOWNGRADE-GUARD"
+    ],
+    "policy_references": [
+      "queue_class_shared_asset class_classifier no_downgrade min_confidence=0.80 action=block",
+      "CLASSIFIER-DOWNGRADE-GUARD"
+    ],
+    "regulatory_refs": [],
+    "validation_status": "fixture_contract"
+  },
+  "reasons": [
+    "no matching pin or historical observations"
+  ],
+  "recommendation_source": "none",
+  "recommended_action": "defer_to_class_policy",
+  "recommended_class": "",
+  "requested_class": "BASIC_TASK",
+  "schema": "queuebash.class_inference.recommendation.v1",
+  "submit_integration": "not_enabled_in_this_package"
+}

@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T20:35:25Z",
+  "created_from_session": "AIS-20260603-203503-209363-9311-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-203525-426525-8634",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "0.18.103 mixed manifest merge: canonical Bob14/Bob16/Bob17/Bob20 patchsets can be copied by entries with scratchpad item merge; Bob18/Bob19 old file-list manifests need manual manifest/file reconciliation."
+}

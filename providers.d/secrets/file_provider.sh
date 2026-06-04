@@ -128,6 +128,63 @@ _secret_hash() {
         printf '%s' "$s" | cksum | awk '{print $1}'
     fi
 }
+
+_secret_manifest_path() {
+    local qid="${1:-}" run_dir
+    run_dir="$(_secret_run_dir)"
+    printf '%s/%s/.queuebash_secret_manifest.jsonl\n' "$run_dir" "$qid"
+}
+_secret_cleanup_evidence_path() {
+    local qid="${1:-}" audit_dir safe_qid
+    audit_dir="$(_secret_audit_dir)"
+    safe_qid="${qid//[^A-Za-z0-9_.:-]/_}"
+    printf '%s/secret_cleanup_%s.json\n' "$audit_dir" "$safe_qid"
+}
+_secret_manifest_seal_path() {
+    local qid="${1:-}" audit_dir safe_qid
+    audit_dir="$(_secret_audit_dir)"
+    safe_qid="${qid//[^A-Za-z0-9_.:-]/_}"
+    printf '%s/secret_manifest_seal_%s.json\n' "$audit_dir" "$safe_qid"
+}
+_secret_file_hash() {
+    local file="${1:-}"
+    [[ -f "$file" ]] || return 1
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" | awk '{print $1}'
+    else
+        cksum "$file" | awk '{print $1}'
+    fi
+}
+_secret_manifest_emit() {
+    local qid="${1:-}" name="${2:-}" secret_ref="${3:-}" class="${4:-}" delivery="${5:-file}" path="${6:-}" ttl="${7:-0}" manifest ts ref_hash path_hash
+    [[ -n "$qid" && -n "$name" && -n "$path" ]] || return 0
+    manifest="$(_secret_manifest_path "$qid")"
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '1970-01-01T00:00:00Z')"
+    ref_hash="$(_secret_hash "$secret_ref" 2>/dev/null || true)"
+    path_hash="$(_secret_hash "$path" 2>/dev/null || true)"
+    mkdir -p -- "$(dirname -- "$manifest")" 2>/dev/null || return 0
+    chmod 700 -- "$(dirname -- "$manifest")" 2>/dev/null || true
+    printf '{"schema":"queuebash.secret_delivery_manifest.v1","qid":%s,"name":%s,"provider":"file","class":%s,"secret_ref_hash":%s,"delivery":%s,"path":%s,"path_hash":%s,"ttl_seconds":%s,"created_at":%s,"redacted":true,"secret_value_included":false}\n' \
+        "$(_json "$qid")" "$(_json "$name")" "$(_json "$class")" "$(_json "$ref_hash")" "$(_json "$delivery")" "$(_json "$path")" "$(_json "$path_hash")" "$ttl" "$(_json "$ts")" >> "$manifest" 2>/dev/null || true
+    chmod 600 -- "$manifest" 2>/dev/null || true
+}
+_secret_count_manifest_entries() {
+    local manifest="${1:-}"
+    [[ -f "$manifest" ]] || { printf '0\n'; return 0; }
+    wc -l < "$manifest" 2>/dev/null | tr -d ' ' || printf '0\n'
+}
+_secret_cleanup_evidence_emit() {
+    local qid="${1:-}" removed="${2:-false}" manifest_entries="${3:-0}" unsafe_paths="${4:-0}" audit_dir evidence ts
+    audit_dir="$(_secret_audit_dir)"
+    mkdir -p -- "$audit_dir" 2>/dev/null || return 0
+    chmod 700 -- "$audit_dir" 2>/dev/null || true
+    evidence="$(_secret_cleanup_evidence_path "$qid")"
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '1970-01-01T00:00:00Z')"
+    printf '{"schema":"queuebash.secret_cleanup_evidence.v1","ok":true,"qid":%s,"removed":%s,"manifest_entries":%s,"unsafe_paths":%s,"redacted":true,"secret_value_included":false,"created_at":%s}\n' \
+        "$(_json "$qid")" "$removed" "${manifest_entries:-0}" "${unsafe_paths:-0}" "$(_json "$ts")" > "$evidence" 2>/dev/null || true
+    chmod 600 -- "$evidence" 2>/dev/null || true
+}
+
 _secret_audit_emit() {
     local event="${1:-secret.request}" status="${2:-unknown}" qid="${3:-}" name="${4:-}" secret_ref="${5:-}" class="${6:-}" purpose="${7:-}" delivery="${8:-file}" reason="${9:-}" audit_dir audit_log ts purpose_hash
     audit_dir="$(_secret_audit_dir)"
@@ -146,6 +203,8 @@ _usage() {
 providers.d/secrets/file_provider.sh explain SECRET_REF --class CLASS [--json]
 providers.d/secrets/file_provider.sh request SECRET_REF --name NAME --class CLASS --purpose TEXT --qid QID [--delivery file] [--ttl-seconds N] [--max-runtime-seconds N] [--json]
 providers.d/secrets/file_provider.sh cleanup QID [--json]
+providers.d/secrets/file_provider.sh seal-manifest QID [--json]
+providers.d/secrets/file_provider.sh verify-manifest QID [--json]
 USAGE
 }
 
@@ -242,6 +301,7 @@ _request() {
     # Copy exactly, without echoing the secret to stdout/stderr.
     cat -- "$src" > "$dest"
     chmod 600 -- "$dest"
+    _secret_manifest_emit "$qid" "$name" "$secret_ref" "$class" "$delivery" "$dest" "$ttl"
     _secret_audit_emit "secret.request" "ok" "$qid" "$name" "$secret_ref" "$class" "$purpose" "$delivery" "delivered"
     if [[ "$json" -eq 1 ]]; then
         printf '{"schema":"queuebash.secret_provider.result.v1","ok":true,"provider":"file","secret_ref":%s,"class":%s,"purpose":%s,"delivery":"file","path":%s,"ttl_seconds":%s,"secret_value_included":false,"redacted":true,"audit_id":%s}\n' "$(_json "$secret_ref")" "$(_json "$class")" "$(_json "$purpose")" "$(_json "$dest")" "$ttl" "$(_json "fixture-$qid-$name")"
@@ -254,7 +314,7 @@ _request() {
 }
 
 _cleanup() {
-    local qid="${1:-}" json=0 run_dir target removed=false
+    local qid="${1:-}" json=0 run_dir target removed=false manifest manifest_entries=0 unsafe_paths=0 evidence
     [[ -n "$qid" ]] || { _usage >&2; return 2; }
     shift || true
     while [[ "$#" -gt 0 ]]; do
@@ -263,13 +323,130 @@ _cleanup() {
     [[ "$qid" =~ ^[A-Za-z0-9_.:-]+$ ]] || { _json_error invalid_qid "invalid qid" 2 "$json"; return $?; }
     run_dir="$(_secret_run_dir)"
     target="$run_dir/$qid"
+    case "$target" in
+        "$run_dir"/*) ;;
+        *) _json_error unsafe_cleanup_target "cleanup target escaped secret run directory" 5 "$json"; return $? ;;
+    esac
+    manifest="$(_secret_manifest_path "$qid")"
+    manifest_entries="$(_secret_count_manifest_entries "$manifest")"
+    if [[ -f "$manifest" ]] && grep -vF '"path":"' "$manifest" >/dev/null 2>&1; then
+        unsafe_paths=1
+    fi
     if [[ -d "$target" ]]; then rm -rf -- "$target"; removed=true; fi
+    _secret_cleanup_evidence_emit "$qid" "$removed" "${manifest_entries:-0}" "$unsafe_paths"
+    evidence="$(_secret_cleanup_evidence_path "$qid")"
     _secret_audit_emit "secret.cleanup" "ok" "$qid" "" "" "" "" "file" "removed=$removed"
     if [[ "$json" -eq 1 ]]; then
-        printf '{"schema":"queuebash.secret_cleanup.v1","ok":true,"qid":%s,"removed":%s,"secret_value_included":false}\n' "$(_json "$qid")" "$removed"
+        printf '{"schema":"queuebash.secret_cleanup.v1","ok":true,"qid":%s,"removed":%s,"manifest_entries":%s,"cleanup_evidence":%s,"secret_value_included":false,"redacted":true}\n' "$(_json "$qid")" "$removed" "${manifest_entries:-0}" "$(_json "$evidence")"
     else
-        echo "secret cleanup: $qid removed=$removed"
+        echo "secret cleanup: $qid removed=$removed manifest_entries=${manifest_entries:-0}"
+        echo "cleanup evidence: $evidence"
     fi
+}
+
+
+_secret_manifest_seal() {
+    local qid="${1:-}" json=0 run_dir target manifest mode entries manifest_hash audit_dir seal ts
+    [[ -n "$qid" ]] || { _usage >&2; return 2; }
+    shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in --json|-j) json=1; shift ;; *) echo "file secrets provider seal-manifest: unexpected argument: $1" >&2; return 2 ;; esac
+    done
+    [[ "$qid" =~ ^[A-Za-z0-9_.:-]+$ ]] || { _json_error invalid_qid "invalid qid" 2 "$json"; return $?; }
+    run_dir="$(_secret_run_dir)"
+    target="$run_dir/$qid"
+    case "$target" in
+        "$run_dir"/*) ;;
+        *) _json_error unsafe_manifest_target "manifest target escaped secret run directory" 5 "$json"; return $? ;;
+    esac
+    manifest="$(_secret_manifest_path "$qid")"
+    if [[ ! -f "$manifest" ]]; then
+        _json_error manifest_missing "secret delivery manifest is missing" 4 "$json"; return $?
+    fi
+    mode="$(stat -c '%a' "$manifest" 2>/dev/null || stat -f '%Lp' "$manifest" 2>/dev/null || printf 'unknown')"
+    [[ "$mode" == "600" ]] || { _json_error insecure_manifest_permissions "secret delivery manifest must be mode 0600 before sealing" 4 "$json"; return $?; }
+    entries="$(_secret_count_manifest_entries "$manifest")"
+    manifest_hash="$(_secret_file_hash "$manifest")" || { _json_error manifest_hash_failed "could not hash secret delivery manifest" 5 "$json"; return $?; }
+    audit_dir="$(_secret_audit_dir)"
+    mkdir -p -- "$audit_dir" 2>/dev/null || { _json_error audit_dir_failed "could not create secret audit directory" 5 "$json"; return $?; }
+    chmod 700 -- "$audit_dir" 2>/dev/null || true
+    seal="$(_secret_manifest_seal_path "$qid")"
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '1970-01-01T00:00:00Z')"
+    printf '{"schema":"queuebash.secret_manifest_seal.v1","ok":true,"qid":%s,"manifest":%s,"manifest_hash":%s,"manifest_mode":%s,"entries":%s,"created_at":%s,"redacted":true,"secret_value_included":false}\n' \
+        "$(_json "$qid")" "$(_json "$manifest")" "$(_json "$manifest_hash")" "$(_json "$mode")" "${entries:-0}" "$(_json "$ts")" > "$seal"
+    chmod 600 -- "$seal" 2>/dev/null || true
+    _secret_audit_emit "secret.manifest.seal" "ok" "$qid" "" "" "" "" "file" "entries=${entries:-0}"
+    if [[ "$json" -eq 1 ]]; then
+        cat -- "$seal"
+    else
+        echo "secret manifest seal: $qid entries=${entries:-0}"
+        echo "seal: $seal"
+    fi
+}
+
+
+_secret_manifest_verify() {
+    local qid="${1:-}" json=0 run_dir target manifest mode entries=0 insecure_permissions=0 unsafe_paths=0 missing_paths=0 malformed_entries=0 secret_value_markers=0 ok=true evidence seal seal_status="absent" seal_hash="" current_hash=""
+    [[ -n "$qid" ]] || { _usage >&2; return 2; }
+    shift || true
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in --json|-j) json=1; shift ;; *) echo "file secrets provider verify-manifest: unexpected argument: $1" >&2; return 2 ;; esac
+    done
+    [[ "$qid" =~ ^[A-Za-z0-9_.:-]+$ ]] || { _json_error invalid_qid "invalid qid" 2 "$json"; return $?; }
+    run_dir="$(_secret_run_dir)"
+    target="$run_dir/$qid"
+    case "$target" in
+        "$run_dir"/*) ;;
+        *) _json_error unsafe_manifest_target "manifest target escaped secret run directory" 5 "$json"; return $? ;;
+    esac
+    manifest="$(_secret_manifest_path "$qid")"
+    if [[ ! -f "$manifest" ]]; then
+        _json_error manifest_missing "secret delivery manifest is missing" 4 "$json"; return $?
+    fi
+    mode="$(stat -c '%a' "$manifest" 2>/dev/null || stat -f '%Lp' "$manifest" 2>/dev/null || printf 'unknown')"
+    [[ "$mode" == "600" ]] || insecure_permissions=1
+    current_hash="$(_secret_file_hash "$manifest" 2>/dev/null || true)"
+    seal="$(_secret_manifest_seal_path "$qid")"
+    if [[ -f "$seal" ]]; then
+        seal_hash="$(sed -n 's/.*"manifest_hash":"\([^"]*\)".*/\1/p' "$seal" | head -n 1)"
+        if [[ -n "$seal_hash" && -n "$current_hash" && "$seal_hash" == "$current_hash" ]]; then
+            seal_status="match"
+        else
+            seal_status="mismatch"
+            malformed_entries=$((malformed_entries + 1))
+        fi
+    fi
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" ]] && continue
+        entries=$((entries + 1))
+        [[ "$line" == *'"schema":"queuebash.secret_delivery_manifest.v1"'* ]] || malformed_entries=$((malformed_entries + 1))
+        [[ "$line" == *'"redacted":true'* ]] || malformed_entries=$((malformed_entries + 1))
+        [[ "$line" == *'"secret_value_included":false'* ]] || secret_value_markers=$((secret_value_markers + 1))
+        [[ "$line" == *'"secret_ref_hash"'* ]] || malformed_entries=$((malformed_entries + 1))
+        [[ "$line" == *'"path_hash"'* ]] || malformed_entries=$((malformed_entries + 1))
+        local path_field=""
+        path_field="$(printf '%s\n' "$line" | sed -n 's/.*"path":"\([^"]*\)".*/\1/p' | head -n 1)"
+        if [[ -z "$path_field" ]]; then
+            malformed_entries=$((malformed_entries + 1))
+            continue
+        fi
+        case "$path_field" in
+            "$target"/*) ;;
+            *) unsafe_paths=$((unsafe_paths + 1)) ;;
+        esac
+        [[ -e "$path_field" ]] || missing_paths=$((missing_paths + 1))
+    done < "$manifest"
+    if [[ "$entries" -eq 0 || "$insecure_permissions" -ne 0 || "$unsafe_paths" -ne 0 || "$malformed_entries" -ne 0 || "$secret_value_markers" -ne 0 || "$missing_paths" -ne 0 ]]; then
+        ok=false
+    fi
+    _secret_audit_emit "secret.manifest.verify" "$([[ "$ok" == true ]] && printf ok || printf failed)" "$qid" "" "" "" "" "file" "entries=$entries unsafe_paths=$unsafe_paths missing_paths=$missing_paths"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.secret_manifest_verify.v1","ok":%s,"qid":%s,"manifest":%s,"manifest_hash":%s,"seal":%s,"seal_status":%s,"entries":%s,"insecure_permissions":%s,"unsafe_paths":%s,"missing_paths":%s,"malformed_entries":%s,"secret_value_markers":%s,"redacted":true,"secret_value_included":false}\n' \
+            "$ok" "$(_json "$qid")" "$(_json "$manifest")" "$(_json "$current_hash")" "$(_json "$seal")" "$(_json "$seal_status")" "$entries" "$insecure_permissions" "$unsafe_paths" "$missing_paths" "$malformed_entries" "$secret_value_markers"
+    else
+        echo "secret manifest verify: $qid ok=$ok entries=$entries unsafe_paths=$unsafe_paths missing_paths=$missing_paths"
+    fi
+    [[ "$ok" == true ]]
 }
 
 _audit() {
@@ -297,6 +474,8 @@ main() {
         explain) _explain "$@" ;;
         request) _request "$@" ;;
         cleanup|revoke) _cleanup "$@" ;;
+        seal-manifest|manifest-seal|seal) _secret_manifest_seal "$@" ;;
+        verify-manifest|manifest-verify|verify) _secret_manifest_verify "$@" ;;
         audit) _audit "$@" ;;
         *) echo "file secrets provider: unknown subcommand: $sub" >&2; _usage >&2; return 2 ;;
     esac

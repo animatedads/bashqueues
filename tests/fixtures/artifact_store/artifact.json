@@ -1,0 +1,13 @@
+{
+  "artifact_ref": "artifact://releases/bashqueues/example",
+  "artifact_type": "release-bundle",
+  "decision": "allow",
+  "delete_performed": false,
+  "download_performed": false,
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "artifact_store",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.artifact_store.artifact.v1"
+}

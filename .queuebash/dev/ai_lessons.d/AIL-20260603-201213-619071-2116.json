@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T20:12:13Z",
+  "created_from_session": "AIS-20260603-200812-710232-3132-bob16",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-201213-619071-2116",
+  "match": {
+    "command_glob": "queue dev files begin before function patching",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Bob16 wave5 rebuilt with clean queue dev file baselines: call queue dev files begin before function patching, include --function entries for queuebash.sh, then use queue dev patch for each function and queue dev files add for new display resources/tests/lesson files."
+}

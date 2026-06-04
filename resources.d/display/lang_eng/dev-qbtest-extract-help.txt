@@ -1,0 +1,6 @@
+Usage:
+  queue dev test qbtest extract --file FILE --function NAME [--json]
+
+Extract the QBTEST block for the named function and print the decoded test code.
+With --json, prints a JSON object with schema, name, function, language, line, and code fields.
+Returns exit code 1 if no QBTEST block exists for the named function.

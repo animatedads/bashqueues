@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.ai_policy_gate.decision.v1",
+  "decision": "allow",
+  "confidence": 0.74,
+  "category": "ordinary_job",
+  "delay_seconds": 0,
+  "rationale": "Ordinary command with no hostile indicators.",
+  "recommended_tightening": []
+}

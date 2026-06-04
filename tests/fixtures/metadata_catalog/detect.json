@@ -1,0 +1,12 @@
+{
+  "catalog_detected": true,
+  "decision": "allow",
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "metadata_catalog",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.metadata_catalog.detect.v1",
+  "supports_classification": true,
+  "supports_lineage": true
+}

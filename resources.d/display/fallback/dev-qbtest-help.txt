@@ -1,0 +1,18 @@
+Usage:
+  queue dev test qbtest --file FILE [--function NAME] [--language bash|python] [--timeout SEC] [--list] [--json] [--keep]
+  queue dev test qbtest --help | -h | --h
+
+Run embedded function tests stored as base64 comment blocks. In help/docs, the
+example markers are deliberately escaped with EXAMPLE_ so the live scanner does
+not execute documentation as a real test:
+  # EXAMPLE_QBTEST:BEGIN name=queue-now-example function=_queue_now language=bash
+  # EXAMPLE_QBTEST:B64
+  # <base64-encoded test snippet>
+  # EXAMPLE_QBTEST:END
+
+Bash snippets are sourced after the target file so they can call the function.
+Python snippets run after importing the target module; globals include module,
+target, QBTEST_SOURCE_FILE, and QBTEST_FUNCTION.
+
+To filter to one function, use --function NAME. A bare positional function name
+after --file is rejected so accidental argument drift remains visible.

@@ -1,0 +1,15 @@
+{
+  "check": "workflow",
+  "decision": "allow",
+  "fail_closed": true,
+  "mutated": false,
+  "owner": "risk-ops",
+  "provider": "fixture",
+  "provider_family": "workflow_orchestrator",
+  "provider_output_is_shell": false,
+  "read_only": true,
+  "reason": "fixture_workflow_available",
+  "schema": "queuebash.workflow_orchestrator.workflow.v1",
+  "source": "fixture",
+  "workflow_id": "daily-risk-score"
+}

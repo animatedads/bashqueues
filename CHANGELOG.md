@@ -1,3 +1,22 @@
+# 0.18.106 BOB15 Karen first-job fix service coverage wave8 display lookup secrets seal AI retention classifier history merge
+
+Merges Bob22 Karen first-job/foreground-worker fix plus Bob14 service-coverage wave8, Bob16 display-help extraction wave6, Bob17 secrets manifest seal evidence hardening, Bob18 display-resource lookup/explain helper contract, Bob19 AI broker health-event retention, Bob20 class-classifier trusted-history guard, and Bob21 legal/case hint redaction hardening candidate.
+
+For the purposes of validation of the architectural route and development history, the full ChatGPT development chat is located at:
+https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
+
+# 0.18.105 BOB15 Bob21 optional AI policy gate evidence merge
+
+Absorbs Bob21 optional local-only AI policy gate queue-dev pack v6 as the coherent superset from the v1-v6 candidate sequence. Adds the optional `queue-ai-policy-gate` helper, local-only provider/policy docs, deterministic no-run job examination fixtures, legal/case hint handling, and static/smoke tests while preserving the disabled-by-default/no-live/no-dispatch-binding boundary. Earlier candidates are recorded as inspected/superseded evidence only.
+
+# 0.18.104 BOB15 service coverage wave7 display coverage secrets verify AI health summary classifier asset policy merge
+
+Adds fixture-first workflow-orchestrator and event-stream service coverage; hardens secrets manifest verification; adds display resource coverage helper contracts; adds AI broker health event filter/summary support; and adds class-classifier asset policy contract tests. No live provider calls, no provisioning, no shell evaluation from display resources, and no queue dispatch refactor.
+
+# 0.18.103 BOB15 service coverage wave6 display catalog ai journal class runner merge
+
+Merges Bob20 class-infer fixture test runner, Bob14 metadata catalog/artifact store service coverage, Bob19 AI broker health-event journal, Bob16 display/help extraction wave5, Bob18 display resource catalog helper contract, and Bob17 secrets cleanup manifest evidence hardening. Preserves no-live/no-provisioning service-coverage boundaries, display resources as non-executable data, and scratchpad item-level merge discipline.
+
 # 0.18.102 BOB15 hot-seat display lint manifest signing AI cleanup secrets break-glass classifier merge
 
 - Add read-only display/XML resource lint helper, schema evidence, docs, and tests.

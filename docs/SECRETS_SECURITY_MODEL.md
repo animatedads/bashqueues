@@ -78,3 +78,37 @@ A real break-glass provider must be signed/authorised, dual-control, ticketed,
 short-lived, audited, and delivery should still prefer file mode.  Until that
 provider exists, `queue secrets break-glass ... --json` returns a structured
 denial with `authorization_required` and `secret_value_included=false`.
+
+## 0.18.103 hardening: delivery manifest and cleanup evidence
+
+File delivery now records a per-job redacted delivery manifest next to delivered
+secret files.  The manifest uses `queuebash.secret_delivery_manifest.v1`, is mode
+`0600`, records provider/name/class/delivery, hashed secret reference metadata,
+path metadata, TTL seconds, and `secret_value_included=false`.  It must not store
+the secret value or the raw purpose text.
+
+Cleanup removes the whole per-job secret directory and writes separate redacted
+cleanup evidence under the secret audit directory using
+`queuebash.secret_cleanup_evidence.v1`.  The cleanup JSON response reports the
+number of manifest entries observed and the cleanup evidence path.  Cleanup
+evidence is retained outside the secret run directory so operators can prove
+best-effort cleanup without retaining secret files or their manifest.
+
+## 0.18.104 hardening: delivery manifest verification
+
+The fixture broker exposes a read-only `verify-manifest` operation for a delivered secret job directory. It validates that the per-job delivery manifest exists, is mode `0600`, contains only redacted `queuebash.secret_delivery_manifest.v1` rows, includes hashed secret reference/path metadata, and points only inside the expected per-job secret run directory.
+
+Verification emits `queuebash.secret_manifest_verify.v1` with counts for entries, insecure permissions, unsafe paths, missing delivered files, malformed rows, and secret-value marker failures. It never reads or prints the delivered secret file contents. Failed verification returns non-zero and writes a redacted `secret.manifest.verify` audit event.
+
+## 0.18.106 hardening: manifest tamper evidence
+
+Secret delivery manifests can be sealed after delivery by hashing the redacted
+manifest and writing a `queuebash.secret_manifest_seal.v1` evidence file under
+the audit directory. This provides fixture-level tamper evidence without turning
+bashqueues into a secret store or requiring a live signing provider.
+
+The seal contains no secret value, no raw purpose text, and no raw secret
+reference. If the manifest changes after sealing, `verify-manifest` reports
+`seal_status="mismatch"` and fails closed. If no seal exists, verification
+reports `seal_status="absent"`; operators may then choose to seal before cleanup
+where evidence retention is required.

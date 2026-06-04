@@ -24,6 +24,7 @@ FINGERPRINT_SCHEMA = "queuebash.class_inference.fingerprint.v1"
 RECOMMEND_SCHEMA = "queuebash.class_inference.recommendation.v1"
 EXPLAIN_SCHEMA = "queuebash.class_inference.explain.v1"
 POLICY_SCHEMA = "queuebash.class_inference.policy.v1"
+TEST_SCHEMA = "queuebash.class_classifier.test_result.v1"
 
 PATH_RE = re.compile(r"(^|/|\./|\.\./)[^\s]+")
 UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
@@ -324,6 +325,34 @@ def trusted_history_row(row: Dict[str, Any]) -> bool:
     return True
 
 
+
+
+def history_trust_summary(history: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    total = trusted = excluded = valid_exceptions = 0
+    excluded_reasons: Dict[str, int] = defaultdict(int)
+    for row in history:
+        total += 1
+        if row.get("valid_exception"):
+            valid_exceptions += 1
+        if trusted_history_row(row):
+            trusted += 1
+            continue
+        excluded += 1
+        outcome = str(row.get("outcome", "")) or "unspecified"
+        if row.get("trusted") is False and not row.get("valid_exception"):
+            excluded_reasons["trusted_false"] += 1
+        elif outcome in {"blocked", "failed", "anomaly", "policy_override"}:
+            excluded_reasons["unaccepted_outcome:" + outcome] += 1
+        else:
+            excluded_reasons["untrusted"] += 1
+    return {
+        "total_rows": total,
+        "trusted_rows": trusted,
+        "excluded_rows": excluded,
+        "valid_exception_rows": valid_exceptions,
+        "excluded_reasons": dict(sorted(excluded_reasons.items())),
+    }
+
 def weighted_history(fp: Dict[str, Any], history: Iterable[Dict[str, Any]]) -> Tuple[Dict[str, float], int, Dict[str, List[str]]]:
     classes: Dict[str, float] = defaultdict(float)
     match_reasons: Dict[str, List[str]] = defaultdict(list)
@@ -355,14 +384,14 @@ def weighted_history(fp: Dict[str, Any], history: Iterable[Dict[str, Any]]) -> T
     return dict(classes), observations, {k: v[:6] for k, v in match_reasons.items()}
 
 
-def recommend(args: argparse.Namespace) -> Dict[str, Any]:
-    job = read_job(getattr(args, "job", ""))
-    cmd = command_from_job(job, args.command)
-    requested_arg = requested_class_from_job(job, args.requested_class)
-    fp = fingerprint(cmd, args.cwd, requested_arg, job)
-    policy = load_policy(args.policy)
-    pins = read_jsonl(args.pins)
-    history = read_jsonl(args.history)
+def recommend_loaded_job(job: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
+    cmd = command_from_job(job, getattr(args, "command", []))
+    requested_arg = requested_class_from_job(job, getattr(args, "requested_class", ""))
+    fp = fingerprint(cmd, getattr(args, "cwd", os.getcwd()), requested_arg, job)
+    policy = load_policy(getattr(args, "policy", ""))
+    pins = read_jsonl(getattr(args, "pins", ""))
+    history = read_jsonl(getattr(args, "history", ""))
+    trust_summary = history_trust_summary(history)
     pin = find_pin(fp, pins)
     classes, obs, history_reasons = weighted_history(fp, history)
     source = "none"
@@ -429,6 +458,7 @@ def recommend(args: argparse.Namespace) -> Dict[str, Any]:
         "policy_action": action,
         "reasons": reasons,
         "policy_linkage": refs,
+        "trusted_history": trust_summary,
         "audit_event_preview": {
             "event": "queuebash.class_inference.v1",
             "requested_class": requested,
@@ -441,6 +471,7 @@ def recommend(args: argparse.Namespace) -> Dict[str, Any]:
             "recommended_action": recommended_action,
             "fingerprint": fp["command_shape_hash"],
             "policy_references": refs["policy_references"],
+            "trusted_history": trust_summary,
         },
         "non_mutating": True,
         "submit_integration": "not_enabled_in_this_package",
@@ -448,6 +479,192 @@ def recommend(args: argparse.Namespace) -> Dict[str, Any]:
     if pin:
         result["pin"] = {k: pin.get(k) for k in ("class", "authority", "reason", "policy_references", "regulatory_refs", "corporate_policy_refs") if k in pin}
     return result
+
+
+def recommend(args: argparse.Namespace) -> Dict[str, Any]:
+    return recommend_loaded_job(read_job(getattr(args, "job", "")), args)
+
+
+def iter_fixture_rows(path: Path) -> Iterable[Dict[str, Any]]:
+    if path.suffix == ".jsonl":
+        for row in read_jsonl(str(path)):
+            yield row
+    elif path.suffix == ".json":
+        data = read_json(str(path), {})
+        if isinstance(data, list):
+            for row in data:
+                if isinstance(row, dict):
+                    yield row
+        elif isinstance(data, dict):
+            yield data
+
+
+def fixture_files(fixtures: Path, selected: List[str] | None = None) -> List[Path]:
+    names = selected or [
+        "jobs_normal.jsonl",
+        "jobs_downgrade.jsonl",
+        "jobs_near_miss.jsonl",
+        "jobs_cold_start.jsonl",
+        "jobs_adversarial_rename.jsonl",
+        "jobs_drift.jsonl",
+        "jobs_trusted_history_guard.jsonl",
+    ]
+    out: List[Path] = []
+    for name in names:
+        p = fixtures / name
+        if p.exists():
+            out.append(p)
+    return out
+
+
+def check_expected(result: Dict[str, Any], expected: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    failures: List[str] = []
+    for key in ("decision", "recommended_action", "recommended_class"):
+        if key in expected and result.get(key) != expected.get(key):
+            failures.append(f"expected {key}={expected.get(key)!r} got {result.get(key)!r}")
+    for key in ("decision", "recommended_action", "recommended_class"):
+        not_key = "not_" + key
+        if not_key in expected and result.get(key) == expected.get(not_key):
+            failures.append(f"expected {key} != {expected.get(not_key)!r}")
+    if "confidence_min" in expected:
+        try:
+            if float(result.get("confidence", 0.0)) < float(expected["confidence_min"]):
+                failures.append(f"expected confidence >= {expected['confidence_min']} got {result.get('confidence')}")
+        except Exception:
+            failures.append("confidence is not numeric")
+    if "confidence_max" in expected:
+        try:
+            if float(result.get("confidence", 0.0)) > float(expected["confidence_max"]):
+                failures.append(f"expected confidence <= {expected['confidence_max']} got {result.get('confidence')}")
+        except Exception:
+            failures.append("confidence is not numeric")
+    return not failures, failures
+
+
+def run_fixture_tests(args: argparse.Namespace) -> Dict[str, Any]:
+    fixtures = Path(args.fixtures)
+    if not fixtures.exists():
+        raise SystemExit(f"queue class-infer test: fixtures directory not found: {fixtures}")
+    history = args.history or str(fixtures / "history_normal.jsonl")
+    policy = args.policy or str(fixtures / "policy_block_on_downgrade.json")
+    pins = args.pins or ""
+    files = fixture_files(fixtures, args.file or None)
+    case_results: List[Dict[str, Any]] = []
+    total = passed = 0
+    expected_blocks = actual_blocks = 0
+    near_miss_cases = unexpected_blocks = 0
+    reasons_required = reasons_present = 0
+    history_total_rows = history_trusted_rows = history_excluded_rows = history_valid_exception_rows = 0
+    for path in files:
+        category = path.stem.replace("jobs_", "")
+        if category == "near_miss":
+            near_miss_cases += sum(1 for _ in iter_fixture_rows(path))
+        for index, job in enumerate(iter_fixture_rows(path), start=1):
+            total += 1
+            expected = job.get("expected") if isinstance(job.get("expected"), dict) else {}
+            case_history = history
+            if job.get("history"):
+                case_history_path = Path(str(job.get("history")))
+                case_history = str(case_history_path if case_history_path.is_absolute() else fixtures / case_history_path)
+            case_policy = policy
+            if job.get("policy"):
+                case_policy_path = Path(str(job.get("policy")))
+                case_policy = str(case_policy_path if case_policy_path.is_absolute() else fixtures / case_policy_path)
+            ns = argparse.Namespace(
+                command=[], cwd=args.cwd, requested_class="", history=case_history, pins=pins, policy=case_policy, job=""
+            )
+            result = recommend_loaded_job(job, ns)
+            ok, failures = check_expected(result, expected)
+            if expected.get("recommended_action") == "block_pending_authorisation":
+                expected_blocks += 1
+            if result.get("recommended_action") == "block_pending_authorisation":
+                actual_blocks += 1
+                if category == "near_miss":
+                    unexpected_blocks += 1
+            requires_reason = result.get("decision") != "ok" or result.get("recommended_action") != "allow"
+            if requires_reason:
+                reasons_required += 1
+                if result.get("reasons"):
+                    reasons_present += 1
+                else:
+                    ok = False
+                    failures.append("non-ok/non-allow result has no explainability reasons")
+            trust = result.get("trusted_history", {}) if isinstance(result.get("trusted_history"), dict) else {}
+            history_total_rows += int(trust.get("total_rows", 0) or 0)
+            history_trusted_rows += int(trust.get("trusted_rows", 0) or 0)
+            history_excluded_rows += int(trust.get("excluded_rows", 0) or 0)
+            history_valid_exception_rows += int(trust.get("valid_exception_rows", 0) or 0)
+            if ok:
+                passed += 1
+            case = {
+                "file": str(path),
+                "category": category,
+                "index": index,
+                "job_name": job.get("job_name", ""),
+                "submitted_class": result.get("requested_class", ""),
+                "recommended_class": result.get("recommended_class", ""),
+                "decision": result.get("decision", ""),
+                "recommended_action": result.get("recommended_action", ""),
+                "confidence": result.get("confidence", 0.0),
+                "reason_count": len(result.get("reasons", [])),
+                "trusted_history": trust,
+                "status": "pass" if ok else "fail",
+            }
+            if failures:
+                case["failures"] = failures
+            if args.include_case_results:
+                case["result"] = result
+            case_results.append(case)
+    failed = total - passed
+    return {
+        "schema": TEST_SCHEMA,
+        "generated_at": now_iso(),
+        "status": "pass" if failed == 0 else "fail",
+        "cases": total,
+        "passed": passed,
+        "failed": failed,
+        "fixtures": str(fixtures),
+        "history": history,
+        "policy": policy,
+        "files": [str(p) for p in files],
+        "downgrade_detection": {
+            "expected_blocks": expected_blocks,
+            "actual_blocks": actual_blocks,
+        },
+        "false_positive_guard": {
+            "near_miss_cases": near_miss_cases,
+            "unexpected_blocks": unexpected_blocks,
+        },
+        "reason_coverage": {
+            "cases_requiring_reasons": reasons_required,
+            "cases_with_reasons": reasons_present,
+        },
+        "trusted_history_guard": {
+            "total_rows_seen": history_total_rows,
+            "trusted_rows_seen": history_trusted_rows,
+            "excluded_rows_seen": history_excluded_rows,
+            "valid_exception_rows_seen": history_valid_exception_rows,
+        },
+        "case_results": case_results,
+        "non_mutating": True,
+    }
+
+
+def human_test_report(obj: Dict[str, Any]) -> str:
+    lines = [
+        f"Class classifier fixture test: {obj.get('status')}",
+        f"  cases:  {obj.get('cases')}",
+        f"  passed: {obj.get('passed')}",
+        f"  failed: {obj.get('failed')}",
+        f"  expected downgrade blocks: {obj.get('downgrade_detection', {}).get('expected_blocks')}",
+        f"  actual downgrade blocks:   {obj.get('downgrade_detection', {}).get('actual_blocks')}",
+        f"  near-miss cases:           {obj.get('false_positive_guard', {}).get('near_miss_cases')}",
+        f"  unexpected near-miss block:{obj.get('false_positive_guard', {}).get('unexpected_blocks')}",
+    ]
+    for case in obj.get("case_results", []):
+        if case.get("status") != "pass":
+            lines.append(f"  FAIL {case.get('file')}#{case.get('index')} {case.get('job_name')}: {'; '.join(case.get('failures', []))}")
+    return "\n".join(lines)
 
 
 def human_report(obj: Dict[str, Any]) -> str:
@@ -510,14 +727,26 @@ def main(argv: List[str]) -> int:
     pe.add_argument("--requested-class", "--class", dest="requested_class", default="")
     pe.add_argument("--job", default="")
     pe.add_argument("command", nargs=argparse.REMAINDER)
+    pt = sub.add_parser("test", help="run fixture-based class downgrade/anomaly classifier tests")
+    pt.add_argument("--json", action="store_true")
+    pt.add_argument("--fixtures", required=True)
+    pt.add_argument("--history", default="")
+    pt.add_argument("--pins", default="")
+    pt.add_argument("--policy", default="")
+    pt.add_argument("--cwd", default=os.getcwd())
+    pt.add_argument("--file", action="append", help="fixture filename relative to --fixtures; may be repeated")
+    pt.add_argument("--include-case-results", action="store_true")
+    pt.set_defaults(command=[])
     ns = parser.parse_args(argv)
-    if ns.command and ns.command[0] == "--":
+    if getattr(ns, "command", None) and ns.command and ns.command[0] == "--":
         ns.command = ns.command[1:]
     if ns.cmd == "fingerprint":
         job = read_job(getattr(ns, "job", ""))
         cmd = command_from_job(job, ns.command)
         requested_arg = requested_class_from_job(job, ns.requested_class)
         obj = fingerprint(cmd, ns.cwd, requested_arg, job)
+    elif ns.cmd == "test":
+        obj = run_fixture_tests(ns)
     else:
         obj = recommend(ns)
         if ns.cmd == "explain":
@@ -527,6 +756,8 @@ def main(argv: List[str]) -> int:
     else:
         if ns.cmd == "explain":
             print(obj["explain_text"])
+        elif ns.cmd == "test":
+            print(human_test_report(obj))
         else:
             print(human_report(obj))
     return 0

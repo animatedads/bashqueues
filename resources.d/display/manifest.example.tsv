@@ -1,5 +1,6 @@
 # queuebash display resource manifest example
 # resource_type<TAB>name<TAB>language<TAB>fallback_required<TAB>tokens<TAB>surface<TAB>json_contract_source<TAB>secret_rendering_allowed<TAB>notes
 display	queue-version.txt	lang_eng	yes	VERSION	queue version human output	false	false	version display resource; signed resource fallback applies
+display	queue-version.txt	fallback	no	VERSION	fallback queue version human output	false	false	fallback version display resource; signed resource fallback applies
 display	status-panel.example.txt	lang_eng	yes	QID,JOB_NAME,STATE,CLASS,UPDATED_AT	panel status card example	false	false	fixture-only panel example; no secrets or provider authority
 display	status-panel.example.txt	fallback	no	QID,JOB_NAME,STATE,CLASS,UPDATED_AT	fallback panel status card example	false	false	fallback fixture-only panel example

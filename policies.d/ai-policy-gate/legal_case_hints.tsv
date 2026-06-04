@@ -1,0 +1,12 @@
+# Optional local legal/case restriction hints for the Bob21 deterministic examiner.
+# Format: kind<TAB>id<TAB>severity<TAB>literal-or-regex:pattern
+# kind: phrase | database_entry | regex
+# These are examples/default hints; organisations should replace or extend them
+# through QUEUEBASH_AI_POLICY_GATE_LEGAL_CASE_HINTS_FILE.
+phrase	litigation_hold	high	litigation hold
+phrase	legal_hold	high	legal hold
+phrase	court_order_restriction	critical	court order
+phrase	do_not_process	high	do not process
+database_entry	case_restrictions_table	high	case_restrictions
+database_entry	restricted_cases_table	high	restricted_cases
+database_entry	legal_hold_flag	high	legal_hold

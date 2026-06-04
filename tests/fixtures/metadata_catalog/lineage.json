@@ -1,0 +1,16 @@
+{
+  "decision": "allow",
+  "downstream_refs": [
+    "catalog://governed/customer/reporting"
+  ],
+  "fail_closed": true,
+  "lineage_is_advisory": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "metadata_catalog",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.metadata_catalog.lineage.v1",
+  "upstream_refs": [
+    "catalog://governed/customer/source"
+  ]
+}

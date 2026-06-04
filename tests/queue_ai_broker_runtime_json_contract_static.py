@@ -5,6 +5,7 @@ cmd=[str(root/'bin/queue-ai-broker')]
 _tmp=tempfile.TemporaryDirectory(prefix="queue-ai-broker-json-contract.")
 env=os.environ.copy()
 env["QUEUEBASH_AI_BROKER_HEALTH_CACHE"] = str(pathlib.Path(_tmp.name)/"health-cache.json")
+env["QUEUEBASH_AI_BROKER_HEALTH_EVENTS"] = str(pathlib.Path(_tmp.name)/"health-events.jsonl")
 
 def load(args, env_override=None):
     out=subprocess.check_output(cmd+args, cwd=root, text=True, env=env_override or env, timeout=30)
@@ -65,6 +66,26 @@ assert pruned['pruned_count'] >= 1, pruned
 clear_all=load(['health','--clear-all','--json'])
 assert clear_all['schema']=='queuebash.ai_broker.health_clear.v1'
 assert clear_all['ok'] is True
+events=load(['health','--events','--limit','25','--json'])
+assert events['schema']=='queuebash.ai_broker.health_events.v1'
+assert events['ok'] is True
+assert events['event_count'] >= 4, events
+assert any(e.get('schema') == 'queuebash.ai_broker.health_event.v1' for e in events.get('events', [])), events
+assert any(e.get('action') == 'update' for e in events.get('events', [])), events
+pruned_events=load(['health','--prune-events','--max-events','5','--json'])
+assert pruned_events['schema']=='queuebash.ai_broker.health_events_prune.v1'
+assert pruned_events['ok'] is True
+assert pruned_events['after_count'] <= 5, pruned_events
+prune_marker=load(['health','--events','--action','prune_events','--summary','--json'])
+assert prune_marker['schema']=='queuebash.ai_broker.health_events.v1'
+assert prune_marker['summary']['by_action'].get('prune_events', 0) >= 1, prune_marker
+filtered_events=load(['health','--events','--provider','openai_compat','--action','update','--summary','--limit','25','--json'])
+assert filtered_events['schema']=='queuebash.ai_broker.health_events.v1'
+assert filtered_events['filters']['provider'] == 'openai_compat', filtered_events
+assert filtered_events['filters']['action'] == 'update', filtered_events
+assert filtered_events['summary']['event_count'] == filtered_events['event_count'], filtered_events
+assert filtered_events['summary']['by_action'].get('update', 0) >= 1, filtered_events
+assert all(e.get('provider') == 'openai_compat' and e.get('action') == 'update' for e in filtered_events.get('events', [])), filtered_events
 blocked=subprocess.run(cmd+['chat','--profile','balanced','--message','blocked','--live','--json'], cwd=root, text=True, stdout=subprocess.PIPE, check=False, env=env, timeout=30)
 assert blocked.returncode != 0
 blocked_json=json.loads(blocked.stdout)
@@ -110,6 +131,7 @@ ok.chmod(0o755)
 env_fb = dict(env)
 env_fb.update({
     "QUEUEBASH_AI_BROKER_HEALTH_CACHE": str(feedback_root / "health-cache.json"),
+    "QUEUEBASH_AI_BROKER_HEALTH_EVENTS": str(feedback_root / "health-events.jsonl"),
     "QUEUEBASH_AI_LIVE_ENABLED": "1",
     "QUEUEBASH_AI_OPENAI_COMPAT_HELPER": str(failing),
     "QUEUEBASH_AI_OLLAMA_HELPER": str(ok),
@@ -123,4 +145,11 @@ assert live_fallback_feedback['fallback']['used'] is True, live_fallback_feedbac
 assert live_fallback_feedback['selected_provider'] == 'ollama', live_fallback_feedback
 assert any(x.get('schema') == 'queuebash.ai_broker.health_feedback.v1' for x in live_fallback_feedback.get('health_feedback', [])), live_fallback_feedback
 assert any(x.get('updated', {}).get('state') == 'rate_limited' for x in live_fallback_feedback.get('health_feedback', [])), live_fallback_feedback
+feedback_events = load(['health','--events','--limit','25','--json'], env_fb)
+assert feedback_events['schema'] == 'queuebash.ai_broker.health_events.v1'
+assert any(e.get('action') == 'feedback' and e.get('state') == 'rate_limited' for e in feedback_events.get('events', [])), feedback_events
+feedback_filtered = load(['health','--events','--provider','openai_compat','--action','feedback','--state','rate_limited','--summary','--json'], env_fb)
+assert feedback_filtered['event_count'] >= 1, feedback_filtered
+assert feedback_filtered['summary']['by_state'].get('rate_limited', 0) >= 1, feedback_filtered
+assert all(e.get('provider') == 'openai_compat' and e.get('action') == 'feedback' and e.get('state') == 'rate_limited' for e in feedback_filtered.get('events', [])), feedback_filtered
 print('PASS queue_ai_broker_runtime_json_contract_static')

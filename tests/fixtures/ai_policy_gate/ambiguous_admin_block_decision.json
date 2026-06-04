@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.ai_policy_gate.decision.v1",
+  "decision": "pol_block",
+  "confidence": 0.96,
+  "category": "ambiguous_security_operation",
+  "delay_seconds": 1200,
+  "rationale": "Security-related but could be legitimate admin work; should not hard block.",
+  "recommended_tightening": ["require sandbox", "require explicit authorisation"]
+}

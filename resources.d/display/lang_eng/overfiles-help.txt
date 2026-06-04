@@ -1,0 +1,16 @@
+Usage:
+  overfiles [--dryrun] <file|filespec|directory...> <command... using {1}>
+
+Runs the command once for each matching file.
+
+Placeholder:
+  {1} = current file path
+
+Examples:
+  overfiles "../*.zip" unzip "{1}"
+  overfiles --dryrun "../*.zip" unzip "{1}"
+  overfiles "../*.zip" bash ./unpack-one-zip.sh "{1}"
+
+Notes:
+  Quote globs/filespecs if you want overfiles to expand them internally.
+  Quote "{1}" to preserve spaces in paths.

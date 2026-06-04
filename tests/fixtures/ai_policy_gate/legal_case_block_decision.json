@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.ai_policy_gate.decision.v1",
+  "decision": "pol_block",
+  "confidence": 0.93,
+  "category": "case_restriction_violation",
+  "delay_seconds": 0,
+  "rationale": "High-confidence binding case restriction violation after deterministic hint evidence.",
+  "recommended_tightening": ["open legal review ticket", "require explicit legal approval"]
+}

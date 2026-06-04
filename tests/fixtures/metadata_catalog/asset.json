@@ -1,0 +1,13 @@
+{
+  "asset_ref": "catalog://governed/customer/orders",
+  "data_classification": "customer",
+  "decision": "allow",
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "metadata_catalog",
+  "provider_output_is_shell": false,
+  "region": "uk-london-1",
+  "schema": "queuebash.metadata_catalog.asset.v1",
+  "secret_value_present": false
+}

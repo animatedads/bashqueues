@@ -1,0 +1,4 @@
+Usage: queue dev validate [--json] [--quick] [--timeout SEC] [--file FILE...]
+
+Run a bounded development validation set. This is a reporting gate only: it does
+not mutate scratchpad state and does not author acceptance decisions.

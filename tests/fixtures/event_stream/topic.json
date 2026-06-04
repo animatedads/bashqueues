@@ -1,0 +1,15 @@
+{
+  "check": "topic",
+  "decision": "allow",
+  "fail_closed": true,
+  "mutated": false,
+  "partitions": 12,
+  "provider": "fixture",
+  "provider_family": "event_stream",
+  "provider_output_is_shell": false,
+  "reason": "fixture_topic_available",
+  "schema": "queuebash.event_stream.topic.v1",
+  "source": "fixture",
+  "topic": "customer.events.v1",
+  "topic_is_advisory": true
+}

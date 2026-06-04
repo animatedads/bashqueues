@@ -6,6 +6,8 @@ Usage:
   queue ai health --provider NAME --model NAME --clear [--json]
   queue ai health --prune-expired [--json]
   queue ai health --clear-all [--json]
+  queue ai health --events [--limit N] [--provider NAME] [--model NAME] [--action ACTION] [--state STATE] [--since-seconds N] [--summary] [--json]
+  queue ai health --prune-events [--max-events N] [--max-age-seconds N] [--json]
   queue ai explain [--profile NAME] [--capability csv] [--json]
   queue ai chat [--profile NAME] [--capability csv] [--message TEXT|--input-file FILE] [--live] [--json]
   queue ai json [--profile NAME] [--schema FILE] [--message TEXT|--input-file FILE] [--live] [--json]
@@ -21,6 +23,7 @@ Policy inputs:
   /etc/bashqueues/policies.d/ai-broker/provider-registry.json
   /etc/bashqueues/policies.d/ai-broker/health-cache.json
   $QUEUEBASH_ROOT/ai-broker/health-cache.json
+  $QUEUEBASH_ROOT/ai-broker/health-events.jsonl
 
 Important:
   queue ai broker output is advisory data. It is never evaluated as shell.

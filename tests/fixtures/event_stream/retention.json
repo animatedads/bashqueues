@@ -1,0 +1,15 @@
+{
+  "check": "retention",
+  "compacted": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "event_stream",
+  "provider_output_is_shell": false,
+  "reason": "fixture_retention_available",
+  "retention_hours": 168,
+  "retention_is_advisory": true,
+  "schema": "queuebash.event_stream.retention.v1",
+  "source": "fixture"
+}

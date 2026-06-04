@@ -1,0 +1,18 @@
+{
+  "credentials_required_for_default_tests": false,
+  "fixture_first": true,
+  "live_api_default": false,
+  "mutations_allowed": false,
+  "non_goals": [
+    "message-produce",
+    "message-consume",
+    "topic-create",
+    "offset-commit",
+    "acl-mutation",
+    "queue-dispatch-refactor"
+  ],
+  "normalized_json_only": true,
+  "provider_family": "event_stream",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.event_stream.policy.v1"
+}

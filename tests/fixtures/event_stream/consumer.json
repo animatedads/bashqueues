@@ -1,0 +1,15 @@
+{
+  "check": "consumer",
+  "consumer_group": "queuebash-risk-workers",
+  "consumer_state_is_advisory": true,
+  "decision": "allow",
+  "fail_closed": true,
+  "lag_state": "bounded",
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "event_stream",
+  "provider_output_is_shell": false,
+  "reason": "fixture_consumer_available",
+  "schema": "queuebash.event_stream.consumer.v1",
+  "source": "fixture"
+}

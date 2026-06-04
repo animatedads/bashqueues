@@ -7344,6 +7344,154 @@
       ],
       "text": "0.18.102 Bob14 installer/display-help continuation: _queue_code_signature_targets now includes top-level resources.d/display/* and resources.d/xml/* so installed display/XML manifest files are signed alongside localized payloads. Updated system-install static/smoke tests prove manifest target coverage.",
       "updated_at": "2026-06-03T19:06:45Z"
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "coding_agent",
+        "source": "queue dev scratchpad",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T19:55:47Z",
+      "id": "SP-20260603-195547-358263-1681",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "bob14",
+        "0.18.103",
+        "service-coverage",
+        "metadata_catalog",
+        "artifact_store"
+      ],
+      "text": "0.18.103 BOB14 service coverage wave6 adds fixture-first metadata_catalog and artifact_store provider families. Helpers return normalized JSON advisory facts only; docs, policies, fixtures, static tests, smoke tests, JSON contract tests, and service coverage registry entries were added. Boundaries preserved: no live calls, no provider mutation, no artifact/metadata payload reads, no provisioning, no queue dispatch/runtime changes, and provider output is never shell.",
+      "updated_at": "2026-06-03T19:55:47Z"
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "coding_agent",
+        "source": "queue dev scratchpad",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T21:37:30Z",
+      "id": "SP-20260603-213730-164406-1827",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "0.18.104",
+        "bob14",
+        "service-coverage",
+        "workflow-orchestrator",
+        "event-stream"
+      ],
+      "text": "0.18.104 Bob14 service coverage wave7 adds fixture-first workflow_orchestrator and event_stream provider families with docs, policies, fixtures, normalized JSON-only helpers, static/smoke/JSON tests, and service coverage registry updates. Validated through queue dev ai session AIS-20260603-212918-873054-9948-bob14. No live calls, no workflow triggers, no message produce/consume, no provider mutation, and no queue dispatch changes.",
+      "updated_at": "2026-06-03T21:37:30Z"
+    },
+    {
+      "authority": {
+        "confidence": "accepted",
+        "name": "team_leader",
+        "source": "queue dev scratchpad",
+        "type": "team_leader"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-03T21:38:52Z",
+      "id": "SP-20260603-213852-166073-1229",
+      "kind": "task",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "bob20",
+        "class-infer",
+        "class-classifier",
+        "asset-contract",
+        "0.18.104"
+      ],
+      "text": "Class-classifier asset policy contract: add a non-mutating class_classifier asset helper so class policy can consume queue class-infer downgrade/anomaly decisions as no_downgrade, warn_on_downgrade, and decision_explainable gates. Preserve explainability-required blocking, cold-start defer-to-policy behaviour, warning-only mode, and no direct submit-path override.",
+      "updated_at": "2026-06-03T21:38:52Z"
+    },
+    {
+      "authority": "Bob21",
+      "id": "bob21-ai-policy-gate-v5-candidate",
+      "kind": "decision",
+      "status": "candidate",
+      "tags": [
+        "candidate",
+        "bob21",
+        "ai-policy-gate",
+        "deterministic-examiner",
+        "not-current-base"
+      ],
+      "text": "Bob21 optional AI policy gate v5 remains candidate-only material. It keeps queuebash.sh and QUEUEBASH_VERSION unchanged, adds optional disabled-by-default local-only AI policy gate module files, retains conservative pol_block gating and ITSM reporter-contract ticket requests, strengthens deterministic no-run job examination, adds command_data_usage evidence summaries, detects privileged ERP/database broad grants, expands fixture coverage for bash/SQL/Python/generic patterns and compound exposure, and proves shell/SQL/Python-looking payloads are not executed. Static compound exposure can raise allow to advisory delay but cannot hard-block alone; hard pol_block still requires high-confidence hostile/security-harm AI second-shot decision."
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "coding_agent",
+        "source": "queue dev scratchpad",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-04T09:40:29Z",
+      "id": "SP-20260604-094029-293870-2516",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "",
+        "source_type": "command"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "0.18.106",
+        "bob14",
+        "service-coverage",
+        "schema-registry",
+        "data-quality"
+      ],
+      "text": "0.18.106 Bob14 service coverage wave8 adds fixture-first schema_registry and data_quality provider contracts. Helpers return normalized JSON facts only; docs, explainability/legal notes, policies, fixtures, static/smoke/JSON tests, and service coverage registry guard were added. Boundaries preserved: no live provider calls, no schema registration/deletion, no data scans/sample reads, no quality-gate acceptance, no provisioning/destruction, and no queue dispatch refactor.",
+      "updated_at": "2026-06-04T09:40:29Z"
+    },
+    {
+      "id": "bob21-v7-legal-hint-redaction-candidate",
+      "kind": "decision",
+      "authority": "bob21",
+      "text": "Bob21 v7 candidate continues from the 0.18.105 Bob15 evidence merge. It hardens deterministic legal/case restriction hint matching so configured restricted phrases/database entries apply as evidence but raw hint values are redacted from the model-facing second-shot request and findings. Hints still raise advisory delay only; hard pol_block continues to require high-confidence second-shot legal/case policy category plus the policy gate.",
+      "tags": [
+        "bob21",
+        "candidate",
+        "ai-policy-gate",
+        "legal-case-hints",
+        "redaction",
+        "not-current-base"
+      ]
     }
   ],
   "merge_history": [
@@ -7543,5 +7691,5 @@
   },
   "project": "bashqueues-0.18.24",
   "schema": "queuebash.dev_scratchpad.v1",
-  "updated_at": "2026-06-03T19:45:00Z"
+  "updated_at": "2026-06-04T10:25:00Z"
 }

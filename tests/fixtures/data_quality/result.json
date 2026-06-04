@@ -1,0 +1,19 @@
+{
+  "acceptance_authority_granted": false,
+  "check": "result",
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "result.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "data_quality",
+  "provider_output_is_shell": false,
+  "quality_result_is_advisory": true,
+  "reason": "fixture_result_evidence_available",
+  "schema": "queuebash.data_quality.result.v1",
+  "source": "fixture"
+}

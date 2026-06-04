@@ -1,5 +1,5 @@
 {
-  "created_for": "0.18.97_BOB14_service_coverage_policy_engine_observability_backend",
+  "created_for": "0.18.106_BOB14_service_coverage_schema_registry_data_quality",
   "default_safety_contract": {
     "credentials_required_for_default_tests": false,
     "fixture_first": true,
@@ -10,6 +10,30 @@
     "queue_dispatch_refactor": false
   },
   "families": {
+    "artifact_store": {
+      "doc_prefix": "ARTIFACT_STORE",
+      "fixture_dir": "artifact_store",
+      "non_goals": [
+        "upload",
+        "download",
+        "delete",
+        "promote",
+        "retention-mutation",
+        "signature-generation",
+        "queue-scheduler-rewrite"
+      ],
+      "policy_dir": "artifact_store",
+      "priority": 11,
+      "provider_dir": "artifact_store",
+      "schemas": [
+        "queuebash.artifact_store.detect.v1",
+        "queuebash.artifact_store.artifact.v1",
+        "queuebash.artifact_store.provenance.v1",
+        "queuebash.artifact_store.retention.v1",
+        "queuebash.artifact_store.integrity.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "container_registry": {
       "doc_prefix": "CONTAINER_REGISTRY",
       "fixture_dir": "container_registry",
@@ -55,6 +79,29 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "data_quality": {
+      "doc_prefix": "DATA_QUALITY",
+      "fixture_dir": "data_quality",
+      "non_goals": [
+        "data-scan",
+        "data-sample-read",
+        "rule-write",
+        "expectation-mutate",
+        "quality-gate-acceptance",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "data_quality",
+      "priority": 15,
+      "provider_dir": "data_quality",
+      "schemas": [
+        "queuebash.data_quality.detect.v1",
+        "queuebash.data_quality.ruleset.v1",
+        "queuebash.data_quality.expectation.v1",
+        "queuebash.data_quality.profile.v1",
+        "queuebash.data_quality.result.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "distributed_framework": {
       "doc_prefix": "DISTRIBUTED_FRAMEWORK",
       "fixture_dir": "distributed_framework",
@@ -74,6 +121,29 @@
         "queuebash.distributed_framework.cluster.v1",
         "queuebash.distributed_framework.data_access.v1",
         "queuebash.distributed_framework.governance.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "event_stream": {
+      "doc_prefix": "EVENT_STREAM",
+      "fixture_dir": "event_stream",
+      "non_goals": [
+        "message-produce",
+        "message-consume",
+        "topic-create",
+        "offset-commit",
+        "acl-mutation",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "event_stream",
+      "priority": 13,
+      "provider_dir": "event_stream",
+      "schemas": [
+        "queuebash.event_stream.detect.v1",
+        "queuebash.event_stream.topic.v1",
+        "queuebash.event_stream.consumer.v1",
+        "queuebash.event_stream.retention.v1",
+        "queuebash.event_stream.governance.v1"
       ],
       "status": "fixture_first_provider_family"
     },
@@ -118,6 +188,29 @@
         "queuebash.gpu_marketplace.capability.v1",
         "queuebash.gpu_marketplace.quota.v1",
         "queuebash.gpu_marketplace.compliance.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "metadata_catalog": {
+      "doc_prefix": "METADATA_CATALOG",
+      "fixture_dir": "metadata_catalog",
+      "non_goals": [
+        "catalog-mutation",
+        "data-read",
+        "access-grant",
+        "tag-write",
+        "policy-acceptance",
+        "queue-scheduler-rewrite"
+      ],
+      "policy_dir": "metadata_catalog",
+      "priority": 10,
+      "provider_dir": "metadata_catalog",
+      "schemas": [
+        "queuebash.metadata_catalog.detect.v1",
+        "queuebash.metadata_catalog.catalog.v1",
+        "queuebash.metadata_catalog.asset.v1",
+        "queuebash.metadata_catalog.lineage.v1",
+        "queuebash.metadata_catalog.classification.v1"
       ],
       "status": "fixture_first_provider_family"
     },
@@ -185,6 +278,29 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "schema_registry": {
+      "doc_prefix": "SCHEMA_REGISTRY",
+      "fixture_dir": "schema_registry",
+      "non_goals": [
+        "schema-register",
+        "schema-delete",
+        "compatibility-mutation",
+        "subject-create",
+        "access-grant",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "schema_registry",
+      "priority": 14,
+      "provider_dir": "schema_registry",
+      "schemas": [
+        "queuebash.schema_registry.detect.v1",
+        "queuebash.schema_registry.registry.v1",
+        "queuebash.schema_registry.schema.v1",
+        "queuebash.schema_registry.compatibility.v1",
+        "queuebash.schema_registry.governance.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "secret_manager": {
       "doc_prefix": "SECRET_MANAGER",
       "fixture_dir": "secret_manager",
@@ -229,11 +345,33 @@
         "queuebash.vector_database.retention.v1"
       ],
       "status": "fixture_first_provider_family"
+    },
+    "workflow_orchestrator": {
+      "doc_prefix": "WORKFLOW_ORCHESTRATOR",
+      "fixture_dir": "workflow_orchestrator",
+      "non_goals": [
+        "dag-trigger",
+        "workflow-mutation",
+        "schedule-write",
+        "worker-launch",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "workflow_orchestrator",
+      "priority": 12,
+      "provider_dir": "workflow_orchestrator",
+      "schemas": [
+        "queuebash.workflow_orchestrator.detect.v1",
+        "queuebash.workflow_orchestrator.workflow.v1",
+        "queuebash.workflow_orchestrator.schedule.v1",
+        "queuebash.workflow_orchestrator.dependency.v1",
+        "queuebash.workflow_orchestrator.governance.v1"
+      ],
+      "status": "fixture_first_provider_family"
     }
   },
   "next_candidates": [
-    "metadata_catalog",
-    "artifact_store"
+    "identity_provider",
+    "notification_service"
   ],
   "schema": "queuebash.provider_service_coverage.v1"
 }

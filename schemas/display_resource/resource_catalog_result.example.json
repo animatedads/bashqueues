@@ -1,0 +1,36 @@
+{
+  "schema": "queuebash.display_resource_catalog.v1",
+  "status": "ok",
+  "redacted": true,
+  "owner_lane": "bob18-display-resources",
+  "renderer": "none-catalog-only",
+  "json_contract_source": false,
+  "secret_rendering_allowed": false,
+  "manifest_rows": 5,
+  "resource_count": 3,
+  "resources": [
+    {
+      "type": "display",
+      "name": "queue-version.txt",
+      "languages": ["fallback", "lang_eng"],
+      "tokens": ["VERSION"],
+      "surfaces": ["queue version human output"],
+      "fallback_required": true,
+      "json_contract_source": false,
+      "secret_rendering_allowed": false,
+      "notes_redacted": true
+    }
+  ],
+  "forbidden": [
+    "eval",
+    "source",
+    "shell_expansion",
+    "command_substitution",
+    "DTD",
+    "external_entities",
+    "secret_values",
+    "provider_credentials",
+    "json_generation_from_template"
+  ],
+  "findings": []
+}

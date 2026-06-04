@@ -1,0 +1,17 @@
+{
+  "check": "ruleset",
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "ruleset.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "data_quality",
+  "provider_output_is_shell": false,
+  "reason": "fixture_ruleset_evidence_available",
+  "schema": "queuebash.data_quality.ruleset.v1",
+  "source": "fixture"
+}

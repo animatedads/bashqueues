@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T21:32:21Z",
+  "created_from_session": "AIS-20260603-212918-873054-9948-bob14",
+  "created_from_try": "AIT-20260603-213149-464520-3616",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260603-213221-163591-3946",
+  "match": {
+    "command_glob": "python3 tests/provider_service_coverage_wave6_bob14_static.py",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Existing wave6 service coverage registry/static guard passes before adding wave7; do not re-add metadata_catalog or artifact_store."
+}

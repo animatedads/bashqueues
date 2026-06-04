@@ -116,3 +116,24 @@ It is deliberately not consumed by queue dispatch. It is an installer/reviewer/t
 `bin/queue-display-resource-lint.py` also validates XML resources listed in `resources.d/xml/manifest.example.tsv`. XML resources must parse as XML, must not contain DTD or external entity declarations, and must not include processing instructions intended to invoke local tools.
 
 For XML resources, the helper also enforces the Bob18 boundary that XML is presentation-only. XML display templates must not become provider authority, policy input, secret delivery material, or the source of command JSON contracts.
+
+## XML catalog evidence
+
+XML display resources are included in the same Bob18 catalog helper used for plain display resources:
+
+```sh
+python3 bin/queue-display-resource-catalog.py --root . --json
+```
+
+For XML rows, the catalog records metadata from `resources.d/xml/manifest.example.tsv` only. It does not parse XML body content, perform rendering, generate JSON contracts, or treat XML as policy/provider input. XML parseability and DTD/entity rejection remain lint-helper responsibilities.
+
+The XML catalog evidence is therefore safe to use in release review and installer reports without exposing rendered values or accidentally promoting XML display templates into command contracts.
+
+## XML/display coverage evidence
+
+`bin/queue-display-resource-coverage.py --json` emits `queuebash.display_resource_coverage.v1` using display and XML manifest metadata only. For XML resources, the coverage helper reports declared language variants, fallback presence, and advisory translation gaps without parsing provider data, rendering XML templates, resolving tokens, or generating command JSON. XML parse safety remains the lint helper's job; coverage is reviewer evidence for resource completeness.
+
+## XML resource lookup explanation
+
+`bin/queue-display-resource-lookup-explain.py` also accepts `--type xml` and emits the same `queuebash.display_resource_lookup_explain.v1` schema for XML display resources. The explanation is limited to manifest metadata and file-presence checks. It must not parse XML as executable policy, resolve external entities, render secret values, mutate signing state, or generate command/provider JSON.
+

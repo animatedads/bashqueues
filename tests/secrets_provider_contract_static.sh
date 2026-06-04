@@ -34,6 +34,7 @@ if grep -Fq 'python3 -c' providers.d/secrets/secrets_provider.sh; then
     fail "secrets broker should not depend on python for JSON escaping"
 fi
 [[ -f tests/secrets_provider_policy_gate_smoke.sh ]] || fail "missing policy gate smoke test"
+[[ -f tests/secrets_provider_manifest_verify_smoke.sh ]] || fail "missing manifest verify smoke test"
 
 # Static guard: provider code must not print a variable named secret or value.
 if grep -RInE 'echo[[:space:]]+.*\$(SECRET_VALUE|secret_value|value)|printf[[:space:]].*\$(SECRET_VALUE|secret_value|value)' providers.d/secrets; then
@@ -44,5 +45,26 @@ fi
 if grep -RInE '\b(vault|aws|oci|az|gcloud|ibmcloud)[[:space:]]+' providers.d/secrets tests/secrets_* docs/SECRETS_*; then
     fail "fixture-first secrets package contains live provider command invocation"
 fi
+
+
+# 0.18.103 cleanup manifest/evidence hardening
+grep -Fq 'queuebash.secret_delivery_manifest.v1' providers.d/secrets/file_provider.sh || { echo "missing secret delivery manifest schema" >&2; exit 1; }
+grep -Fq 'queuebash.secret_cleanup_evidence.v1' providers.d/secrets/file_provider.sh || { echo "missing secret cleanup evidence schema" >&2; exit 1; }
+grep -Fq 'secret_ref_hash' providers.d/secrets/file_provider.sh || { echo "manifest should hash secret reference metadata" >&2; exit 1; }
+grep -Fq 'cleanup_evidence' providers.d/secrets/file_provider.sh || { echo "cleanup should return cleanup evidence path" >&2; exit 1; }
+grep -Fq '0.18.103 hardening: delivery manifest and cleanup evidence' docs/SECRETS_PROVIDER_CONTRACT.md || { echo "contract doc missing 0.18.103 cleanup manifest section" >&2; exit 1; }
+
+# 0.18.104 manifest verification hardening
+grep -Fq 'queuebash.secret_manifest_verify.v1' providers.d/secrets/file_provider.sh || { echo "missing secret manifest verify schema" >&2; exit 1; }
+grep -Fq 'verify-manifest|manifest-verify|verify' providers.d/secrets/secrets_provider.sh || { echo "broker missing verify-manifest forwarding" >&2; exit 1; }
+grep -Fq '0.18.104 hardening: delivery manifest verification' docs/SECRETS_PROVIDER_CONTRACT.md || { echo "contract doc missing 0.18.104 manifest verify section" >&2; exit 1; }
+
+
+# 0.18.106 manifest seal/tamper-evidence hardening
+grep -Fq 'queuebash.secret_manifest_seal.v1' providers.d/secrets/file_provider.sh || { echo "missing secret manifest seal schema" >&2; exit 1; }
+grep -Fq 'seal-manifest|manifest-seal|seal' providers.d/secrets/secrets_provider.sh || { echo "broker missing seal-manifest forwarding" >&2; exit 1; }
+grep -Fq 'seal_status' providers.d/secrets/file_provider.sh || { echo "verify-manifest should report seal status" >&2; exit 1; }
+grep -Fq '0.18.106 hardening: delivery manifest seal evidence' docs/SECRETS_PROVIDER_CONTRACT.md || { echo "contract doc missing 0.18.106 manifest seal section" >&2; exit 1; }
+[[ -f tests/secrets_provider_manifest_seal_smoke.sh ]] || { echo "missing manifest seal smoke test" >&2; exit 1; }
 
 echo "PASS secrets_provider_contract_static"

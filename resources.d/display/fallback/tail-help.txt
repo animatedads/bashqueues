@@ -1,0 +1,11 @@
+Usage:
+  queue tail <qid-or-exact-job-name> [--json --no-follow] [--tail N] [--no-follow] [--from-start]
+
+Defaults:
+  running job: show last 40 lines, then follow
+  completed job: show last 40 lines and return
+
+Options:
+  --tail N       number of physical log lines to show before following; default 40
+  --no-follow   show tail and return, even for running jobs
+  --from-start  show from start; follows if job is running

@@ -1,0 +1,15 @@
+{
+  "change_ticket_required": true,
+  "check": "governance",
+  "decision": "allow",
+  "fail_closed": true,
+  "governance_is_advisory": true,
+  "manual_approval_required": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "workflow_orchestrator",
+  "provider_output_is_shell": false,
+  "reason": "fixture_governance_available",
+  "schema": "queuebash.workflow_orchestrator.governance.v1",
+  "source": "fixture"
+}

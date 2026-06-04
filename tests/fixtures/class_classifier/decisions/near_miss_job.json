@@ -1,0 +1,18 @@
+{
+  "assets": [
+    "fixture:data"
+  ],
+  "command": "bash /opt/jobs/customer_export.sh --dry-run --sample fixtures/customer_sample.csv",
+  "expected": {
+    "not_recommended_action": "block_pending_authorisation",
+    "recommended_class": "DEV_TEST"
+  },
+  "job_name": "customer_export_dry_run_sample",
+  "network": false,
+  "paths": [
+    "/fixtures/customer_sample.csv"
+  ],
+  "secrets": [],
+  "submitted_class": "DEV_TEST",
+  "user": "etl"
+}

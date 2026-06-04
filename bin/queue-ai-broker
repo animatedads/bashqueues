@@ -26,6 +26,9 @@ SCHEMA_HEALTH_UPDATE = "queuebash.ai_broker.health_update.v1"
 SCHEMA_HEALTH_FEEDBACK = "queuebash.ai_broker.health_feedback.v1"
 SCHEMA_HEALTH_CLEAR = "queuebash.ai_broker.health_clear.v1"
 SCHEMA_HEALTH_PRUNE = "queuebash.ai_broker.health_prune.v1"
+SCHEMA_HEALTH_EVENTS = "queuebash.ai_broker.health_events.v1"
+SCHEMA_HEALTH_EVENT = "queuebash.ai_broker.health_event.v1"
+SCHEMA_HEALTH_EVENTS_PRUNE = "queuebash.ai_broker.health_events_prune.v1"
 SCHEMA_EXPLAIN = "queuebash.ai_broker.explain.v1"
 SCHEMA_RESPONSE = "queuebash.ai_broker.response.v1"
 SCHEMA_ERROR = "queuebash.ai_broker.error.v1"
@@ -159,6 +162,205 @@ def empty_health_cache() -> Dict[str, Any]:
     return {"schema": "queuebash.ai_broker.health_cache.v1", "entries": []}
 
 
+def health_events_path() -> pathlib.Path:
+    env = os.environ.get("QUEUEBASH_AI_BROKER_HEALTH_EVENTS")
+    if env:
+        return pathlib.Path(env)
+    return queue_root() / "ai-broker" / "health-events.jsonl"
+
+
+def redact_event_text(text: str, limit: int = 500) -> str:
+    # Keep health evidence useful without copying obvious credential-shaped values.
+    out = str(text or "")
+    for marker in ("sk-", "xoxb-", "ghp_", "gho_", "github_pat_"):
+        idx = out.find(marker)
+        while idx >= 0:
+            end = idx
+            while end < len(out) and not out[end].isspace() and out[end] not in {'\"', "'", ",", ";"}:
+                end += 1
+            out = out[:idx] + marker + "[redacted]" + out[end:]
+            idx = out.find(marker, idx + len(marker) + 10)
+    if len(out) > limit:
+        out = out[:limit] + f"... [truncated {len(out)-limit} chars]"
+    return out
+
+
+def build_health_event(action: str, provider: str = "", model: str = "", state: str = "", reason: str = "", extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    event: Dict[str, Any] = {
+        "schema": SCHEMA_HEALTH_EVENT,
+        "action": action,
+        "provider": provider,
+        "model": model,
+        "state": state,
+        "reason": redact_event_text(reason, 500),
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    if extra:
+        for key, value in extra.items():
+            if key in {"schema", "reason"}:
+                continue
+            event[key] = value
+    return event
+
+
+def write_health_event(action: str, provider: str = "", model: str = "", state: str = "", reason: str = "", extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    event = build_health_event(action, provider, model, state, reason, extra)
+    if bool_env(os.environ.get("QUEUEBASH_AI_BROKER_HEALTH_EVENTS_DISABLED", "0"), False):
+        event["recorded"] = False
+        event["health_events_path"] = "disabled"
+        return event
+    path = health_events_path()
+    event["recorded"] = True
+    event["health_events_path"] = str(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(event, sort_keys=True) + "\n")
+    return event
+
+
+def parse_event_epoch(value: str) -> float:
+    try:
+        return time.mktime(time.strptime(str(value or ""), "%Y-%m-%dT%H:%M:%SZ"))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+
+
+def all_health_events_from_path(path: pathlib.Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    events: List[Dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict) and item.get("schema") == SCHEMA_HEALTH_EVENT:
+            events.append(item)
+    return events
+
+
+def prune_health_events(max_events: int = 0, max_age_seconds: int = 0) -> Tuple[List[Dict[str, Any]], pathlib.Path, int, int, Dict[str, Any]]:
+    path = health_events_path()
+    try:
+        max_events = max(0, min(100000, int(max_events or 0)))
+    except (TypeError, ValueError):
+        max_events = 0
+    try:
+        max_age_seconds = max(0, int(max_age_seconds or 0))
+    except (TypeError, ValueError):
+        max_age_seconds = 0
+    before_events = all_health_events_from_path(path)
+    before_count = len(before_events)
+    cutoff = time.time() - max_age_seconds if max_age_seconds else 0.0
+    kept = [event for event in before_events if not cutoff or parse_event_epoch(str(event.get("created_at") or "")) >= cutoff]
+    prune_event = build_health_event(
+        "prune_events",
+        "",
+        "",
+        "",
+        "pruned local AI broker health-event journal",
+        {
+            "max_events": max_events,
+            "max_age_seconds": max_age_seconds,
+            "before_count": before_count,
+            "kept_before_event_count": len(kept),
+        },
+    )
+    prune_event["recorded"] = True
+    prune_event["health_events_path"] = str(path)
+    kept.append(prune_event)
+    if max_events:
+        kept = kept[-max_events:]
+    after_count = len(kept)
+    removed_count = max(0, before_count - max(0, after_count - 1))
+    if not bool_env(os.environ.get("QUEUEBASH_AI_BROKER_HEALTH_EVENTS_DISABLED", "0"), False):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text("".join(json.dumps(event, sort_keys=True) + "\n" for event in kept), encoding="utf-8")
+        os.replace(str(tmp), str(path))
+    else:
+        prune_event["recorded"] = False
+        prune_event["health_events_path"] = "disabled"
+    filters = {"max_events": max_events, "max_age_seconds": max_age_seconds}
+    return kept, path, before_count, after_count, filters
+
+def read_health_events(
+    limit: int = 50,
+    provider: str = "",
+    model: str = "",
+    action: str = "",
+    state: str = "",
+    since_seconds: int = 0,
+) -> Tuple[List[Dict[str, Any]], pathlib.Path, Dict[str, Any]]:
+    path = health_events_path()
+    try:
+        limit = max(1, min(500, int(limit)))
+    except (TypeError, ValueError):
+        limit = 50
+    try:
+        since_seconds = max(0, int(since_seconds or 0))
+    except (TypeError, ValueError):
+        since_seconds = 0
+    filters = {
+        "provider": str(provider or ""),
+        "model": str(model or ""),
+        "action": str(action or ""),
+        "state": str(state or ""),
+        "since_seconds": since_seconds,
+    }
+    if not path.exists():
+        return [], path, filters
+    cutoff = time.time() - since_seconds if since_seconds else 0.0
+    events: List[Dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict) or item.get("schema") != SCHEMA_HEALTH_EVENT:
+            continue
+        if provider and str(item.get("provider") or "") != provider:
+            continue
+        if model and str(item.get("model") or "") != model:
+            continue
+        if action and str(item.get("action") or "") != action:
+            continue
+        if state and str(item.get("state") or "") != state:
+            continue
+        if cutoff and parse_event_epoch(str(item.get("created_at") or "")) < cutoff:
+            continue
+        events.append(item)
+    return events[-limit:], path, filters
+
+
+def summarise_health_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    by_action: Dict[str, int] = {}
+    by_state: Dict[str, int] = {}
+    by_provider: Dict[str, int] = {}
+    by_model: Dict[str, int] = {}
+    for event in events:
+        action = str(event.get("action") or "unknown")
+        state = str(event.get("state") or "")
+        provider = str(event.get("provider") or "")
+        model = str(event.get("model") or "")
+        by_action[action] = by_action.get(action, 0) + 1
+        if state:
+            by_state[state] = by_state.get(state, 0) + 1
+        if provider:
+            by_provider[provider] = by_provider.get(provider, 0) + 1
+        if model:
+            by_model[model] = by_model.get(model, 0) + 1
+    return {
+        "event_count": len(events),
+        "by_action": dict(sorted(by_action.items())),
+        "by_state": dict(sorted(by_state.items())),
+        "by_provider": dict(sorted(by_provider.items())),
+        "by_model": dict(sorted(by_model.items())),
+    }
+
+
 def load_health_cache(root: pathlib.Path) -> Tuple[Dict[str, Any], str]:
     errors: List[str] = []
     for path in health_cache_candidates(root):
@@ -274,6 +476,7 @@ def update_health_cache(root: pathlib.Path, provider: str, model: str, state: st
     entries.append(entry)
     cache = {"schema": "queuebash.ai_broker.health_cache.v1", "updated_at": updated_at, "entries": entries}
     save_health_cache(path, cache)
+    write_health_event("update", provider, model, state, reason, {"cooldown_seconds": int(cooldown_seconds or 0), "health_cache_path": str(path)})
     return cache, path, entry
 
 
@@ -298,6 +501,7 @@ def clear_health_cache_entries(root: pathlib.Path, provider: str = "", model: st
     updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     cache = {"schema": "queuebash.ai_broker.health_cache.v1", "updated_at": updated_at, "entries": kept}
     save_health_cache(path, cache)
+    write_health_event("clear_all" if clear_all else "clear", provider, model, "", "cleared local AI broker health-cache entry" if not clear_all else "cleared all local AI broker health-cache entries", {"removed_count": len(removed), "before_count": len(before_entries), "after_count": len(kept), "health_cache_path": str(path)})
     return cache, path, removed, len(before_entries), len(kept)
 
 
@@ -327,6 +531,7 @@ def prune_expired_health_cache(root: pathlib.Path, now: float | None = None) -> 
     updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     cache = {"schema": "queuebash.ai_broker.health_cache.v1", "updated_at": updated_at, "entries": kept}
     save_health_cache(path, cache)
+    write_health_event("prune_expired", "", "", "", "pruned expired local AI broker health-cache cooldown entries", {"pruned_count": len(pruned), "before_count": len(before_entries), "after_count": len(kept), "health_cache_path": str(path)})
     return cache, path, pruned, len(before_entries), len(kept)
 
 def classify_provider_failure(reason: str) -> str:
@@ -367,6 +572,7 @@ def record_health_feedback(root: pathlib.Path, profile: Dict[str, str], provider
     if cooldown_seconds is None:
         cooldown_seconds = health_failure_cooldown_seconds(profile) if state not in HEALTH_GOOD_STATES else 0
     cache, path, entry = update_health_cache(root, provider, model, state, reason, cooldown_seconds)
+    write_health_event("feedback", provider, model, state, reason, {"cooldown_seconds": int(cooldown_seconds or 0), "health_cache_path": str(path)})
     return {
         "schema": SCHEMA_HEALTH_FEEDBACK,
         "ok": True,
@@ -707,7 +913,7 @@ def command_models(args: argparse.Namespace, registry: Dict[str, Any], registry_
 
 
 def command_health(args: argparse.Namespace, registry: Dict[str, Any], registry_path: str, root: pathlib.Path) -> int:
-    modes = [bool(getattr(args, "set_state", None)), bool(getattr(args, "clear", False)), bool(getattr(args, "clear_all", False)), bool(getattr(args, "prune_expired", False))]
+    modes = [bool(getattr(args, "set_state", None)), bool(getattr(args, "clear", False)), bool(getattr(args, "clear_all", False)), bool(getattr(args, "prune_expired", False)), bool(getattr(args, "events", False)), bool(getattr(args, "prune_events", False))]
     if sum(1 for mode in modes if mode) > 1:
         raise RuntimeError("health_command_accepts_one_mutation_mode")
     if getattr(args, "set_state", None):
@@ -723,6 +929,7 @@ def command_health(args: argparse.Namespace, registry: Dict[str, Any], registry_
             "schema": SCHEMA_HEALTH_UPDATE,
             "ok": True,
             "health_cache_path": str(path),
+            "health_events_path": str(health_events_path()),
             "updated": entry,
             "entry_count": len(health_entries(cache)),
         }, args.json)
@@ -737,6 +944,7 @@ def command_health(args: argparse.Namespace, registry: Dict[str, Any], registry_
             "schema": SCHEMA_HEALTH_CLEAR,
             "ok": True,
             "health_cache_path": str(path),
+            "health_events_path": str(health_events_path()),
             "removed_count": len(removed),
             "before_count": before_count,
             "after_count": after_count,
@@ -749,12 +957,49 @@ def command_health(args: argparse.Namespace, registry: Dict[str, Any], registry_
             "schema": SCHEMA_HEALTH_PRUNE,
             "ok": True,
             "health_cache_path": str(path),
+            "health_events_path": str(health_events_path()),
             "pruned_count": len(pruned),
             "before_count": before_count,
             "after_count": after_count,
             "pruned": pruned[:20],
             "entry_count": len(health_entries(cache)),
         }, args.json)
+    if getattr(args, "events", False):
+        events, path, filters = read_health_events(
+            int(getattr(args, "limit", 50) or 50),
+            provider=str(args.provider or ""),
+            model=str(args.model or ""),
+            action=str(getattr(args, "action", "") or ""),
+            state=str(getattr(args, "state", "") or ""),
+            since_seconds=int(getattr(args, "since_seconds", 0) or 0),
+        )
+        obj = {
+            "schema": SCHEMA_HEALTH_EVENTS,
+            "ok": True,
+            "health_events_path": str(path),
+            "filters": filters,
+            "event_count": len(events),
+            "events": events,
+        }
+        if bool(getattr(args, "summary", False)):
+            obj["summary"] = summarise_health_events(events)
+        return emit(obj, args.json)
+    if getattr(args, "prune_events", False):
+        events, path, before_count, after_count, filters = prune_health_events(
+            max_events=int(getattr(args, "max_events", 0) or 0),
+            max_age_seconds=int(getattr(args, "max_age_seconds", 0) or 0),
+        )
+        obj = {
+            "schema": SCHEMA_HEALTH_EVENTS_PRUNE,
+            "ok": True,
+            "health_events_path": str(path),
+            "filters": filters,
+            "before_count": before_count,
+            "after_count": after_count,
+            "removed_count": max(0, before_count - max(0, after_count - 1)),
+            "events_tail": events[-min(20, len(events)):],
+        }
+        return emit(obj, args.json)
     rows = []
     effective_rows, health_cache_path = effective_model_rows(registry, root)
     for r in effective_rows:
@@ -1077,6 +1322,15 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--clear", action="store_true", help="remove one local provider/model health-cache entry")
             p.add_argument("--clear-all", action="store_true", help="remove all local health-cache entries")
             p.add_argument("--prune-expired", action="store_true", help="remove health-cache entries whose cooldown deadline has passed")
+            p.add_argument("--events", action="store_true", help="show bounded local health-event audit evidence")
+            p.add_argument("--prune-events", action="store_true", help="rewrite the health-event journal using retention bounds")
+            p.add_argument("--limit", type=int, default=50, help="maximum health events to return with --events")
+            p.add_argument("--action", choices=["update", "feedback", "clear", "clear_all", "prune_expired", "prune_events"], help="filter --events by action")
+            p.add_argument("--state", choices=sorted(HEALTH_ALLOWED_STATES - {"unknown"}), help="filter --events by health state")
+            p.add_argument("--since-seconds", type=int, default=0, help="filter --events to recent event timestamps")
+            p.add_argument("--summary", action="store_true", help="include grouped counts with --events")
+            p.add_argument("--max-events", type=int, default=0, help="retain at most N valid health events with --prune-events")
+            p.add_argument("--max-age-seconds", type=int, default=0, help="retain only recent health events with --prune-events")
     p = sub.add_parser("explain")
     p.add_argument("--json", action="store_true")
     p.add_argument("--profile", default=DEFAULT_PROFILE)

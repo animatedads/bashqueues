@@ -22,6 +22,7 @@ queue secrets providers [--json]
 queue secrets explain SECRET_REF --class CLASS [--json]
 queue secrets request SECRET_REF --name NAME --class CLASS --purpose TEXT --qid QID --delivery file --json
 queue secrets cleanup QID [--json]
+queue secrets verify-manifest QID [--json]
 ```
 
 The broker helper lives under `providers.d/secrets/secrets_provider.sh` and may
@@ -99,3 +100,49 @@ than replaying secret-bearing data.
 The broker path must stay shell-native and bounded.  JSON escaping for broker
 metadata is implemented in Bash so the default fixture path does not depend on a
 Python interpreter for simple command routing or break-glass refusal responses.
+
+## 0.18.103 hardening: delivery manifest and cleanup evidence
+
+File delivery now records a per-job redacted delivery manifest next to delivered
+secret files.  The manifest uses `queuebash.secret_delivery_manifest.v1`, is mode
+`0600`, records provider/name/class/delivery, hashed secret reference metadata,
+path metadata, TTL seconds, and `secret_value_included=false`.  It must not store
+the secret value or the raw purpose text.
+
+Cleanup removes the whole per-job secret directory and writes separate redacted
+cleanup evidence under the secret audit directory using
+`queuebash.secret_cleanup_evidence.v1`.  The cleanup JSON response reports the
+number of manifest entries observed and the cleanup evidence path.  Cleanup
+evidence is retained outside the secret run directory so operators can prove
+best-effort cleanup without retaining secret files or their manifest.
+
+## 0.18.104 hardening: delivery manifest verification
+
+The fixture broker exposes a read-only `verify-manifest` operation for a delivered secret job directory. It validates that the per-job delivery manifest exists, is mode `0600`, contains only redacted `queuebash.secret_delivery_manifest.v1` rows, includes hashed secret reference/path metadata, and points only inside the expected per-job secret run directory.
+
+Verification emits `queuebash.secret_manifest_verify.v1` with counts for entries, insecure permissions, unsafe paths, missing delivered files, malformed rows, and secret-value marker failures. It never reads or prints the delivered secret file contents. Failed verification returns non-zero and writes a redacted `secret.manifest.verify` audit event.
+
+## 0.18.106 hardening: delivery manifest seal evidence
+
+The fixture provider exposes a read-only manifest sealing operation:
+
+```text
+queue secrets seal-manifest QID --json
+providers.d/secrets/file_provider.sh seal-manifest QID --json
+```
+
+The seal uses schema `queuebash.secret_manifest_seal.v1` and records only
+redacted manifest metadata: qid, manifest path, manifest hash, manifest mode,
+entry count, creation time, `redacted=true`, and `secret_value_included=false`.
+It is stored in the secret audit directory as mode `0600` evidence. The seal is
+a tamper-evidence fixture contract for the redacted delivery manifest; it is not
+a signing-key or live KMS implementation.
+
+`verify-manifest` reports the current manifest hash and seal status:
+
+```text
+seal_status=absent|match|mismatch
+```
+
+A mismatched seal fails verification. Verification and sealing must not read,
+print, JSON-return, or log the delivered secret file contents.

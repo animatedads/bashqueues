@@ -1,0 +1,55 @@
+{
+  "schema": "queuebash.display_resource_coverage.v1",
+  "status": "ok",
+  "root": "/repo",
+  "redacted": true,
+  "owner_lane": "bob18-display-resources",
+  "renderer": "none-coverage-only",
+  "source": "manifest-metadata-only",
+  "json_contract_source": false,
+  "secret_rendering_allowed": false,
+  "manifest_rows": 5,
+  "resource_count": 3,
+  "language_dirs": {
+    "display": ["lang_eng", "lang_es"],
+    "xml": ["lang_eng"]
+  },
+  "language_totals": {
+    "display": {
+      "resources": 2,
+      "fallback_present": 1,
+      "translation_gaps": 1
+    },
+    "xml": {
+      "resources": 1,
+      "fallback_present": 1,
+      "translation_gaps": 0
+    }
+  },
+  "resources": [
+    {
+      "type": "display",
+      "name": "status-panel.example.txt",
+      "languages_present": ["lang_eng"],
+      "languages_expected": ["lang_eng", "lang_es"],
+      "languages_missing": ["lang_es"],
+      "fallback_present": true,
+      "fallback_required": true,
+      "coverage_status": "partial",
+      "translation_gap_count": 1,
+      "catalog_only": true,
+      "json_contract_source": false,
+      "secret_rendering_allowed": false,
+      "surfaces": ["panel status card example"]
+    }
+  ],
+  "forbidden": [
+    "rendering_templates",
+    "reading_secret_values",
+    "provider_calls",
+    "signing_mutation",
+    "json_generation_from_template",
+    "shell_expansion"
+  ],
+  "findings": []
+}

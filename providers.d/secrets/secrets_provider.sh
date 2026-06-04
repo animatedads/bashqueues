@@ -40,6 +40,8 @@ Usage:
   queue secrets explain SECRET_REF --class CLASS [--json]
   queue secrets request SECRET_REF --name NAME --class CLASS --purpose TEXT --qid QID [--delivery file] [--ttl-seconds N] [--max-runtime-seconds N] [--json]
   queue secrets cleanup QID [--json]
+  queue secrets seal-manifest QID [--json]
+  queue secrets verify-manifest QID [--json]
   queue secrets audit [--json]
   queue secrets break-glass request SECRET_REF --reason TEXT --ticket ID [--json]
   queue secrets break-glass approve REQUEST_ID --authorisation CODE [--json]
@@ -101,6 +103,8 @@ main() {
         explain) _secrets_forward explain "$@" ;;
         request) _secrets_forward request "$@" ;;
         cleanup|revoke) _secrets_forward cleanup "$@" ;;
+        seal-manifest|manifest-seal|seal) _secrets_forward seal-manifest "$@" ;;
+        verify-manifest|manifest-verify|verify) _secrets_forward verify-manifest "$@" ;;
         audit) _secrets_forward audit "$@" ;;
         break-glass|breakglass) _secrets_break_glass "$@" ;;
         *) echo "queue secrets: unknown subcommand: $sub" >&2; _secrets_usage >&2; return 2 ;;

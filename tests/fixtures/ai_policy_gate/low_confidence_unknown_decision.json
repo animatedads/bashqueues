@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.ai_policy_gate.decision.v1",
+  "decision": "pol_block",
+  "confidence": 0.21,
+  "category": "unknown",
+  "delay_seconds": 999,
+  "rationale": "Weak unsupported block request.",
+  "recommended_tightening": []
+}

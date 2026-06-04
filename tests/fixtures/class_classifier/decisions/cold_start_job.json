@@ -1,0 +1,15 @@
+{
+  "command": "python3 ./new_report.py --input /tmp/example.csv",
+  "expected": {
+    "decision": "insufficient_history",
+    "recommended_action": "defer_to_class_policy"
+  },
+  "job_name": "new_report_builder",
+  "network": false,
+  "paths": [
+    "/tmp/example.csv"
+  ],
+  "secrets": [],
+  "submitted_class": "BASIC_TASK",
+  "user": "analyst"
+}

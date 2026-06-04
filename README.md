@@ -1,3 +1,22 @@
+# 0.18.106 BOB15 Karen first-job fix service coverage wave8 display lookup secrets seal AI retention classifier history merge
+
+Merges Bob22 Karen first-job/foreground-worker fix plus Bob14 service-coverage wave8, Bob16 display-help extraction wave6, Bob17 secrets manifest seal evidence hardening, Bob18 display-resource lookup/explain helper contract, Bob19 AI broker health-event retention, Bob20 class-classifier trusted-history guard, and Bob21 legal/case hint redaction hardening candidate.
+
+For the purposes of validation of the architectural route and development history, the full ChatGPT development chat is located at:
+https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
+
+# 0.18.105 BOB15 Bob21 optional AI policy gate evidence merge
+
+Absorbs Bob21 optional local-only AI policy gate queue-dev pack v6 as the coherent superset of the Bob21 candidate sequence. Adds `bin/queue-ai-policy-gate`, local-only Ollama provider wrapper, policy examples, deterministic no-run fixture tests, legal/case hint fixture coverage, and documentation. Earlier Bob21 v1-v5 candidate packs were inspected and treated as superseded candidate increments, not applied. This remains optional helper/contract material: queuebash dispatch is not wired to enforce it by default, no live model calls are required for tests, non-loopback model endpoints are refused by default, static examination does not execute shell/SQL/Python/network, and hard policy blocking requires high-confidence second-shot categories rather than deterministic hints alone.
+
+# 0.18.104 BOB15 service coverage wave7 display coverage secrets verify AI health summary classifier asset policy merge
+
+Merges Bob14 workflow-orchestrator/event-stream service coverage, Bob17 secrets manifest verification hardening, Bob18 display resource coverage helper contract, Bob19 AI broker health event filter/summary, and Bob20 class-classifier asset policy contract onto the accepted 0.18.103 Bob15 base. Preserves fixture-first/no-live boundaries, non-executable display resources, item-level scratchpad merge, and the absence of assets.d/net_usage.sh.
+
+# 0.18.103 BOB15 service coverage wave6 display catalog ai journal class runner merge
+
+Merges Bob20 class-infer fixture test runner, Bob14 metadata catalog/artifact store service coverage, Bob19 AI broker health-event journal, Bob16 display/help extraction wave5, Bob18 display resource catalog helper contract, and Bob17 secrets cleanup manifest evidence hardening. Keeps display/help text in resources, preserves service-coverage fixture-first boundaries, and keeps AI broker health journal evidence auditable without changing queue dispatch.
+
 # 0.18.102 BOB15 hot-seat display lint manifest signing AI cleanup secrets break-glass classifier merge
 
 Merges Bob18 display/XML resource lint helper contract, Bob14 installed display manifest signing, Bob19 AI broker health-cache cleanup controls, Bob16 display-help resource extraction wave4, Bob17 secrets break-glass fixture and audit hardening, and Bob20 statistical class-classifier fixture tests. The merge preserves display resources as non-executable presentation data, keeps secrets break-glass policy/audit fixture-first, keeps AI broker cleanup local and bounded, and adds fraud-detection style class downgrade fixture coverage without changing queue dispatch semantics.

@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.ai_policy_gate.decision.v1",
+  "decision": "pol_block",
+  "confidence": 0.93,
+  "category": "credential_theft",
+  "delay_seconds": 0,
+  "rationale": "Command appears intended to collect and exfiltrate credential material.",
+  "recommended_tightening": ["require strict sandbox", "review credential access policy"]
+}

@@ -1,0 +1,15 @@
+{
+  "check": "detect",
+  "credentials_used": false,
+  "decision": "allow",
+  "detected": true,
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "workflow_orchestrator",
+  "provider_output_is_shell": false,
+  "reason": "fixture_detect_available",
+  "schema": "queuebash.workflow_orchestrator.detect.v1",
+  "source": "fixture"
+}

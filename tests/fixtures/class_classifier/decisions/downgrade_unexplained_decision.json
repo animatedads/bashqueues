@@ -1,0 +1,100 @@
+{
+  "audit_event_preview": {
+    "confidence": 1.0,
+    "decision": "class_downgrade_suspected",
+    "event": "queuebash.class_inference.v1",
+    "fingerprint": "sha256:4e780f4eba5a54b7fff2e2898a8f460a82b8787b2269cfee7832eea8b4a51fb3",
+    "mismatch": "class_mismatch",
+    "observations": 3,
+    "policy_action": "suggest",
+    "policy_references": [
+      "queue_class_shared_asset class_classifier no_downgrade min_confidence=0.80 action=block",
+      "CLASSIFIER-DOWNGRADE-GUARD"
+    ],
+    "recommended_action": "block_pending_authorisation",
+    "recommended_class": "DB_EXPORT_HIGH_ASSURANCE",
+    "requested_class": "BASIC_TASK"
+  },
+  "confidence": 1.0,
+  "decision": "class_downgrade_suspected",
+  "fingerprint": {
+    "arg_shape": "bash <path.sh> --full",
+    "argc": 3,
+    "argv0": "bash",
+    "assets": [
+      "db:customer-prod",
+      "net:allowance"
+    ],
+    "command_display": "bash /opt/jobs/customer_export.sh --full",
+    "command_family_hash": "sha256:094bea428e35daf97d3ee19e5968f6a9a4aef0362866e9d1a8a5a569acca6a70",
+    "command_raw_hash": "sha256:1c30e58e53400a4bd089e122ca83cd0ee0910cf5d1121ccfc01dbf888731bd1b",
+    "command_shape_hash": "sha256:4e780f4eba5a54b7fff2e2898a8f460a82b8787b2269cfee7832eea8b4a51fb3",
+    "cwd_family": "//mnt/data",
+    "family": "bash customer_export.sh",
+    "feature_hash": "sha256:5b195c16bffebe359765b476fe12ce88ec712ddccc370c02e4382f7a65c0b76d",
+    "feature_keys": [
+      "argv0:bash",
+      "script:customer_export.sh",
+      "cwd_family://mnt/data",
+      "shape:sha256:4e780f4eba5a54b7fff2e2898a8f460a82b8787b2269cfee7832eea8b4a51fb3",
+      "family:sha256:094bea428e35daf97d3ee19e5968f6a9a4aef0362866e9d1a8a5a569acca6a70",
+      "user:etl",
+      "group:etl",
+      "path_prefix://data/customer",
+      "path:/data/customer",
+      "path:/exports",
+      "secret:customer-db/prod/password",
+      "asset:db:customer-prod",
+      "asset:net:allowance",
+      "network:outbound"
+    ],
+    "generated_at": "2026-06-03T21:30:22Z",
+    "group": "etl",
+    "job_name": "nightly_customer_db_export",
+    "network": true,
+    "normalizer": {
+      "dates": "<date>",
+      "hashes": "<hash>",
+      "numbers": "<num>",
+      "paths": "<path.ext>",
+      "ranges": "<range>",
+      "secret_bearing_names": "<secret-key>",
+      "urls": "<url>",
+      "uuids": "<uuid>"
+    },
+    "paths": [
+      "/data/customer",
+      "/exports"
+    ],
+    "requested_class": "BASIC_TASK",
+    "schema": "queuebash.class_inference.fingerprint.v1",
+    "script": "customer_export.sh",
+    "secrets": [
+      "customer-db/prod/password"
+    ],
+    "user": "etl"
+  },
+  "generated_at": "2026-06-03T21:30:22Z",
+  "mismatch": "class_mismatch",
+  "non_mutating": true,
+  "observations": 3,
+  "policy_action": "suggest",
+  "policy_linkage": {
+    "corporate_policy_refs": [
+      "CLASSIFIER-DOWNGRADE-GUARD"
+    ],
+    "policy_references": [
+      "queue_class_shared_asset class_classifier no_downgrade min_confidence=0.80 action=block",
+      "CLASSIFIER-DOWNGRADE-GUARD"
+    ],
+    "regulatory_refs": [],
+    "validation_status": "fixture_contract"
+  },
+  "reasons": [],
+  "recommendation_source": "history",
+  "recommended_action": "block_pending_authorisation",
+  "recommended_class": "DB_EXPORT_HIGH_ASSURANCE",
+  "requested_class": "BASIC_TASK",
+  "schema": "queuebash.class_inference.recommendation.v1",
+  "submit_integration": "not_enabled_in_this_package"
+}

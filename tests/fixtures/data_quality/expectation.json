@@ -1,0 +1,17 @@
+{
+  "check": "expectation",
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "expectation.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "data_quality",
+  "provider_output_is_shell": false,
+  "reason": "fixture_expectation_evidence_available",
+  "schema": "queuebash.data_quality.expectation.v1",
+  "source": "fixture"
+}

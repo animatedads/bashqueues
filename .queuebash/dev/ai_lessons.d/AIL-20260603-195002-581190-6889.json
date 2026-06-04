@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-03T19:50:02Z",
+  "created_from_session": "AIS-20260603-194843-634386-7012-bob14",
+  "created_from_try": "AIT-20260603-194939-485135-1623",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260603-195002-581190-6889",
+  "match": {
+    "command_glob": "queue dev files path *",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "queue dev files --help",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "queue dev files path does not accept a file argument; it reports/dev-resolves the dev files path only. Use queue dev files add/list/changed for registry entries, and use targeted tests or bounded direct inspection for ordinary repository file contents."
+}

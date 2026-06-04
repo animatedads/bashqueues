@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.102"
+QUEUEBASH_VERSION="0.18.106"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -33,23 +33,7 @@ overdir() {
     local dryrun=0
 
     if [[ "$1" == "--help" || "$1" == "-h" || "$#" -eq 0 ]]; then
-        cat <<'EOF'
-Usage:
-  overdir [--dryrun] <directory|dirspec...> <command... using {1}>
-
-Runs the command once for each matching directory.
-
-Placeholder:
-  {1} = current directory path
-
-Examples:
-  overdir ~/Downloads ls -la "{1}"
-  overdir --dryrun "~/Downloads/import/*" python forensic_helper.py --ingest "{1}" --yaml tblisi.yaml
-
-Notes:
-  Quote globs/filespecs if you want overdir to expand them internally.
-  Quote "{1}" to preserve spaces in paths.
-EOF
+        _queue_resource_fetch_i18nl_command --name overdir-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
         return 0
     fi
 
@@ -123,24 +107,7 @@ overfiles() {
     local dryrun=0
 
     if [[ "$1" == "--help" || "$1" == "-h" || "$#" -eq 0 ]]; then
-        cat <<'EOF'
-Usage:
-  overfiles [--dryrun] <file|filespec|directory...> <command... using {1}>
-
-Runs the command once for each matching file.
-
-Placeholder:
-  {1} = current file path
-
-Examples:
-  overfiles "../*.zip" unzip "{1}"
-  overfiles --dryrun "../*.zip" unzip "{1}"
-  overfiles "../*.zip" bash -c 'mkdir -p "${1%.zip}" && unzip -o "$1" -d "${1%.zip}"' _ "{1}"
-
-Notes:
-  Quote globs/filespecs if you want overfiles to expand them internally.
-  Quote "{1}" to preserve spaces in paths.
-EOF
+        _queue_resource_fetch_i18nl_command --name overfiles-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
         return 0
     fi
 
@@ -6516,6 +6483,10 @@ _queue_cleared_jobs_list() {
     printf 'cleared=%s states=%s\n' "$count" "$states"
 }
 _queue_status_job() {
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+        _queue_resource_fetch_i18nl_command --name status-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
+        return 0
+    fi
     local target="${1:-}" json=0 tail_lines=20 arg
     shift || true
 
@@ -6528,13 +6499,7 @@ _queue_status_job() {
             job)
                 shift ;;
             --help|-h)
-                cat <<'EOF'
-Usage:
-  queue status <qid-or-exact-job-name> [--json] [--tail N]
-  queue status job <qid-or-exact-job-name> [--json] [--tail N]
-
-Compact machine/operator summary. Use `queue explain` for the full forensic rundown.
-EOF
+                _queue_resource_fetch_i18nl_command --name status-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                 return 0 ;;
             *)
                 if [[ -z "$target" ]]; then target="$1"; shift; else echo "queue status: unexpected argument: $1" >&2; return 2; fi ;;
@@ -17666,26 +17631,7 @@ _queue_dev_test_qbtest_command() {
             --list) list_only=1; shift ;;
             --keep) keep=1; shift ;;
             --help|-h|--h)
-                cat <<'USAGE_QBTEST'
-Usage:
-  queue dev test qbtest --file FILE [--function NAME] [--language bash|python] [--timeout SEC] [--list] [--json] [--keep]
-  queue dev test qbtest --help | -h | --h
-
-Run embedded function tests stored as base64 comment blocks. In help/docs, the
-example markers are deliberately escaped with EXAMPLE_ so the live scanner does
-not execute documentation as a real test:
-  # EXAMPLE_QBTEST:BEGIN name=queue-now-example function=_queue_now language=bash
-  # EXAMPLE_QBTEST:B64
-  # <base64-encoded test snippet>
-  # EXAMPLE_QBTEST:END
-
-Bash snippets are sourced after the target file so they can call the function.
-Python snippets run after importing the target module; globals include module,
-target, QBTEST_SOURCE_FILE, and QBTEST_FUNCTION.
-
-To filter to one function, use --function NAME. A bare positional function name
-after --file is rejected so accidental argument drift remains visible.
-USAGE_QBTEST
+                _queue_resource_fetch_i18nl_command --name dev-qbtest-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                 return 0 ;;
             --*) echo "queue dev test qbtest: unexpected argument: $1" >&2; return 2 ;;
             *)
@@ -17892,14 +17838,7 @@ _queue_dev_test_qbtest_extract_command() {
             --function) function="${2:-}"; shift 2 ;;
             --json|-j) json=1; shift ;;
             --help|-h|--h)
-                cat <<'USAGE_QBTEST_EXTRACT'
-Usage:
-  queue dev test qbtest extract --file FILE --function NAME [--json]
-
-Extract the QBTEST block for the named function and print the decoded test code.
-With --json, prints a JSON object with schema, name, function, language, line, and code fields.
-Returns exit code 1 if no QBTEST block exists for the named function.
-USAGE_QBTEST_EXTRACT
+                _queue_resource_fetch_i18nl_command --name dev-qbtest-extract-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                 return 0 ;;
             --*) echo "queue dev test qbtest extract: unexpected argument: $1" >&2; return 2 ;;
             *) echo "queue dev test qbtest extract: unexpected argument: $1" >&2; return 2 ;;
@@ -17982,25 +17921,7 @@ _queue_dev_test_qbtest_add_command() {
             --b64) b64="${2:-}"; shift 2 ;;
             --force) force=1; shift ;;
             --help|-h|--h)
-                cat <<'USAGE_QBTEST_ADD'
-Usage:
-  queue dev test qbtest add --file FILE --function NAME [--name TEST-NAME]
-                             [--lang bash|python] [--code SNIPPET | --b64 B64]
-                             [--force]
-
-Insert a QBTEST block for the named function immediately after its closing brace.
-Reads the test code from --code (raw snippet) or --b64 (pre-encoded base64).
-If neither is provided, reads the raw snippet from stdin.
-
-  --name        Test name (defaults to the function name with leading _ stripped)
-  --lang        Language: bash (default) or python
-  --code        Raw test snippet (will be base64-encoded automatically)
-  --b64         Pre-encoded base64 payload (used as-is)
-  --force       Overwrite an existing QBTEST block for this function
-
-Returns exit code 2 if a block already exists and --force is not set.
-Returns exit code 1 if the function cannot be located in the file.
-USAGE_QBTEST_ADD
+                _queue_resource_fetch_i18nl_command --name dev-qbtest-add-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                 return 0 ;;
             --*) echo "queue dev test qbtest add: unexpected argument: $1" >&2; return 2 ;;
             *) echo "queue dev test qbtest add: unexpected argument: $1" >&2; return 2 ;;
@@ -19122,12 +19043,7 @@ _queue_dev_validate_command() {
             --timeout) timeout_sec="${2:-}"; shift 2 ;;
             --file) files+=("${2:-}"); shift 2 ;;
             --help|-h|--h)
-                cat <<'EOF'
-Usage: queue dev validate [--json] [--quick] [--timeout SEC] [--file FILE...]
-
-Run a bounded development validation set. This is a reporting gate only: it does
-not mutate scratchpad state and does not author acceptance decisions.
-EOF
+                _queue_resource_fetch_i18nl_command --name dev-validate-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                 return 0 ;;
             *) echo "queue dev validate: unexpected argument: $1" >&2; return 2 ;;
         esac
@@ -19201,12 +19117,7 @@ _queue_dev_scope_check_command() {
             --deny) deny+=("${2:-}"); shift 2 ;;
             --file) files+=("${2:-}"); shift 2 ;;
             --help|-h|--h)
-                cat <<'EOF'
-Usage: queue dev scope-check [--json] [--allow GLOB...] [--deny GLOB...] [--file FILE...]
-
-Check a changed-file set against simple allow/deny globs. When --file is omitted,
-changed files are read from the dev file registry. This is a reporting gate only.
-EOF
+                _queue_resource_fetch_i18nl_command --name dev-scope-check-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                 return 0 ;;
             *) echo "queue dev scope-check: unexpected argument: $1" >&2; return 2 ;;
         esac
@@ -20862,7 +20773,7 @@ queue() {
             done
 
             [[ "$#" -eq 0 ]] && { echo "queue submit: missing main command" >&2; return 2; }
-            [[ "$priority" =~ ^-?[0-9]+$ ]] || priority=10
+            [[ "$priority" =~ ^-?[0-9]+$ ]] || { echo "queue submit: priority must be numeric: $priority" >&2; return 2; }
             [[ "$retries_max" =~ ^[0-9]+$ ]] || retries_max=0
             [[ "$retry_backoff" =~ ^[0-9]+$ ]] || retry_backoff=0
             if [[ "$cloud_uses" -eq 1 ]]; then
@@ -20886,15 +20797,6 @@ queue() {
 
             if [[ -z "$security_reason" && -n "${QUEUEBASH_SUBMIT_REASON_DEFAULT:-}" ]]; then
                 security_reason="$QUEUEBASH_SUBMIT_REASON_DEFAULT"
-            fi
-
-            local submit_user="${QUEUEBASH_SELECTED_USER:-$(id -un 2>/dev/null || echo unknown)}"
-            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE=""
-            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL=""
-            QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE=""
-            _queue_submit_policy_check "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$submit_user" "$security_reason" "$authorisation_code" "$sandbox_level" "$seccomp_profile" "$exception_sandbox_override" "$exception_seccomp_allow" "$exception_drop_cap" "$exception_add_port" "$sandbox_explicit" "$seccomp_explicit" "$@" || return $?
-            if [[ -z "$authorisation_code" && -n "${QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE:-}" ]]; then
-                authorisation_code="$QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE"
             fi
 
             local id="$(_queue_id)"
@@ -20957,6 +20859,15 @@ queue() {
                     printf "\n"
                 fi
                 return 0
+            fi
+
+            local submit_user="${QUEUEBASH_SELECTED_USER:-$(id -un 2>/dev/null || echo unknown)}"
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_TYPE=""
+            QUEUEBASH_SUBMIT_SECURITY_EXEMPTION_DETAIL=""
+            QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE=""
+            _queue_submit_policy_check "${job_class:-${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}}" "$submit_user" "$security_reason" "$authorisation_code" "$sandbox_level" "$seccomp_profile" "$exception_sandbox_override" "$exception_seccomp_allow" "$exception_drop_cap" "$exception_add_port" "$sandbox_explicit" "$seccomp_explicit" "$@" || return $?
+            if [[ -z "$authorisation_code" && -n "${QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE:-}" ]]; then
+                authorisation_code="$QUEUEBASH_SUBMIT_AUTO_AUTHORISATION_CODE"
             fi
 
             mkdir -p -- "$(dirname "$job")"
@@ -21413,19 +21324,7 @@ queue() {
                         shift
                         ;;
                     --help|-h)
-                        cat <<'EOF'
-Usage:
-  queue tail <qid-or-exact-job-name> [--json --no-follow] [--tail N] [--no-follow] [--from-start]
-
-Defaults:
-  running job: show last 40 lines, then follow
-  completed job: show last 40 lines and return
-
-Options:
-  --tail N       number of physical log lines to show before following; default 40
-  --no-follow   show tail and return, even for running jobs
-  --from-start  show from start; follows if job is running
-EOF
+                        _queue_resource_fetch_i18nl_command --name tail-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
                         return 0
                         ;;
                     --*)
@@ -22805,11 +22704,22 @@ EOF
             fi
 
             echo "Running queue with $workers worker(s) in foreground"
-            local i
+            local i wp rc=0 worker_rc=0
+            local worker_pids=()
+            if [[ "$workers" -eq 1 ]]; then
+                _queue_worker 1
+                return $?
+            fi
             for ((i=1; i<=workers; i++)); do
                 (_queue_worker "$i") &
+                worker_pids+=( "$!" )
             done
-            wait
+            for wp in "${worker_pids[@]}"; do
+                wait "$wp"
+                worker_rc="$?"
+                [[ "$worker_rc" -ne 0 && "$rc" -eq 0 ]] && rc="$worker_rc"
+            done
+            return "$rc"
             ;;
 
 

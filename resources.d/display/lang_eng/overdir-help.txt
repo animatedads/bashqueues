@@ -1,0 +1,15 @@
+Usage:
+  overdir [--dryrun] <directory|dirspec...> <command... using {1}>
+
+Runs the command once for each matching directory.
+
+Placeholder:
+  {1} = current directory path
+
+Examples:
+  overdir ~/Downloads ls -la "{1}"
+  overdir --dryrun "~/Downloads/import/*" python forensic_helper.py --ingest "{1}" --yaml tblisi.yaml
+
+Notes:
+  Quote globs/filespecs if you want overdir to expand them internally.
+  Quote "{1}" to preserve spaces in paths.

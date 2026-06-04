@@ -1,0 +1,19 @@
+{
+  "check": "schema",
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "schema.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "schema_registry",
+  "provider_output_is_shell": false,
+  "reason": "fixture_schema_evidence_available",
+  "schema": "queuebash.schema_registry.schema.v1",
+  "schema_value_redacted": true,
+  "source": "fixture",
+  "subject_mutated": false
+}

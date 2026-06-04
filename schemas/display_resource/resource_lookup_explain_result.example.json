@@ -1,0 +1,44 @@
+{
+  "schema": "queuebash.display_resource_lookup_explain.v1",
+  "status": "ok",
+  "root": "/repo",
+  "redacted": true,
+  "owner_lane": "bob18-display-resources",
+  "renderer": "none-lookup-explain-only",
+  "source": "manifest-metadata-and-file-presence-only",
+  "json_contract_source": false,
+  "secret_rendering_allowed": false,
+  "request": {
+    "type": "display",
+    "name": "queue-version.txt",
+    "language": "lang_eng"
+  },
+  "resolution": {
+    "state": "localized",
+    "selected_language": "lang_eng",
+    "selected_path": "/repo/resources.d/display/lang_eng/queue-version.txt",
+    "fallback_used": false,
+    "expected_paths": [
+      "/repo/resources.d/display/lang_eng/queue-version.txt",
+      "/repo/resources.d/display/fallback/queue-version.txt"
+    ]
+  },
+  "manifest": {
+    "path": "/repo/resources.d/display/manifest.example.tsv",
+    "declared_languages": ["fallback", "lang_eng"],
+    "fallback_declared": true,
+    "tokens": ["VERSION"],
+    "surface": "queue version human output",
+    "notes_redacted": true
+  },
+  "forbidden": [
+    "rendering_templates",
+    "token_replacement",
+    "reading_secret_values",
+    "provider_calls",
+    "signing_mutation",
+    "json_generation_from_template",
+    "shell_expansion"
+  ],
+  "findings": []
+}

@@ -1,0 +1,13 @@
+{
+  "artifact_bytes_returned": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "hash_algorithm": "sha256",
+  "integrity_is_advisory": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "artifact_store",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.artifact_store.integrity.v1",
+  "signature_present": true
+}

@@ -1,0 +1,5 @@
+Usage:
+  queue status <qid-or-exact-job-name> [--json] [--tail N]
+  queue status job <qid-or-exact-job-name> [--json] [--tail N]
+
+Compact machine/operator summary. Use queue explain for the full forensic rundown.

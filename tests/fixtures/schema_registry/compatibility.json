@@ -1,0 +1,19 @@
+{
+  "check": "compatibility",
+  "compatibility_is_advisory": true,
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "compatibility.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "mutated": false,
+  "mutation_required": false,
+  "provider": "fixture",
+  "provider_family": "schema_registry",
+  "provider_output_is_shell": false,
+  "reason": "fixture_compatibility_evidence_available",
+  "schema": "queuebash.schema_registry.compatibility.v1",
+  "source": "fixture"
+}

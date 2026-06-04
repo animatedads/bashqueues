@@ -1,0 +1,19 @@
+{
+  "check": "dependency",
+  "decision": "allow",
+  "dependency_is_advisory": true,
+  "downstream": [
+    "model_registry.risk_model"
+  ],
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "workflow_orchestrator",
+  "provider_output_is_shell": false,
+  "reason": "fixture_dependency_available",
+  "schema": "queuebash.workflow_orchestrator.dependency.v1",
+  "source": "fixture",
+  "upstream": [
+    "data_lake.customer_snapshot"
+  ]
+}

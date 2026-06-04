@@ -1,0 +1,15 @@
+{
+  "check": "schedule",
+  "decision": "allow",
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "workflow_orchestrator",
+  "provider_output_is_shell": false,
+  "reason": "fixture_schedule_available",
+  "schedule": "0 3 * * *",
+  "schedule_is_advisory": true,
+  "schema": "queuebash.workflow_orchestrator.schedule.v1",
+  "source": "fixture",
+  "timezone": "UTC"
+}

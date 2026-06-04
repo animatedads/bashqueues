@@ -1,0 +1,15 @@
+{
+  "check": "governance",
+  "decision": "allow",
+  "fail_closed": true,
+  "governance_is_advisory": true,
+  "mutated": false,
+  "pii_expected": false,
+  "provider": "fixture",
+  "provider_family": "event_stream",
+  "provider_output_is_shell": false,
+  "reason": "fixture_governance_available",
+  "schema": "queuebash.event_stream.governance.v1",
+  "schema_enforced": true,
+  "source": "fixture"
+}

@@ -1,0 +1,17 @@
+Usage:
+  queue dev test qbtest add --file FILE --function NAME [--name TEST-NAME]
+                             [--lang bash|python] [--code SNIPPET | --b64 B64]
+                             [--force]
+
+Insert a QBTEST block for the named function immediately after its closing brace.
+Reads the test code from --code (raw snippet) or --b64 (pre-encoded base64).
+If neither is provided, reads the raw snippet from stdin.
+
+  --name        Test name (defaults to the function name with leading _ stripped)
+  --lang        Language: bash (default) or python
+  --code        Raw test snippet (will be base64-encoded automatically)
+  --b64         Pre-encoded base64 payload (used as-is)
+  --force       Overwrite an existing QBTEST block for this function
+
+Returns exit code 2 if a block already exists and --force is not set.
+Returns exit code 1 if the function cannot be located in the file.

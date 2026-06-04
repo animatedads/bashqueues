@@ -1,0 +1,12 @@
+{
+  "decision": "allow",
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "artifact_store",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.artifact_store.detect.v1",
+  "store_detected": true,
+  "supports_integrity": true,
+  "supports_provenance": true
+}

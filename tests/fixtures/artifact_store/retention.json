@@ -1,0 +1,12 @@
+{
+  "decision": "allow",
+  "delete_allowed": false,
+  "fail_closed": true,
+  "min_days": 90,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "artifact_store",
+  "provider_output_is_shell": false,
+  "retention_is_advisory": true,
+  "schema": "queuebash.artifact_store.retention.v1"
+}

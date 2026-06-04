@@ -1,0 +1,4 @@
+Usage: queue dev scope-check [--json] [--allow GLOB...] [--deny GLOB...] [--file FILE...]
+
+Check a changed-file set against simple allow/deny globs. When --file is omitted,
+changed files are read from the dev file registry. This is a reporting gate only.

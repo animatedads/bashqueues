@@ -1,0 +1,12 @@
+{
+  "builder": "fixture-builder",
+  "decision": "allow",
+  "fail_closed": true,
+  "mutated": false,
+  "provenance_is_advisory": true,
+  "provider": "fixture",
+  "provider_family": "artifact_store",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.artifact_store.provenance.v1",
+  "signature_required": true
+}
