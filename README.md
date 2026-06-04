@@ -1,3 +1,39 @@
+# 0.18.110 BOB15 policy namespace consistency and AI explain metadata writeback merge
+
+Merges the latest Bob23 Rupert policy namespace consistency/wrapper-docs route and Bob21 rebased AI policy gate explain metadata write-back candidate onto the 0.18.109 Bob15 full delivery.
+
+Policy namespace decision: the active installed system policy root is now consistently documented and tested as `/etc/queuebash/policies.d` across the installer, policy wizard, runtime shared-policy default, remote listener defaults, AI broker defaults, and operator docs. Earlier Bob23 variants that aligned on `/etc/bashqueues/policies.d` were inspected and treated as superseded by the later wrapper-docs patchset.
+
+Bob21 explain metadata write-back: `queue-ai-policy-gate classify --apply` can append redacted `AI_POLICY_GATE_*` metadata to job records, while `queue explain JOB` displays that metadata using the existing explain hook. Advisory delay write-back remains monotonic and must not shorten an existing later hold.
+
+Development history reference: for validation of the architectural route and development history, the full ChatGPT development chat is located at https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
+
+# 0.18.109 BOB15 access review compliance path-locking display install audit classifier metrics hospital safe-mode AI explain metadata merge
+
+Merges access-review/compliance-evidence service coverage, Bob17 path-locking TOCTOU and fixture-provider contracts, display-resource installed-share audit helpers, class-classifier fixture decision metrics, hospital live safe-mode profiles, and an evidence-only/partial Bob21 AI policy gate explain-metadata writeback reconciliation.
+
+The older 0.18.108 Bob14 access-review/compliance-evidence patchset was inspected and treated as superseded by the rebased 0.18.109 Bob14 patchset. Bob17 0.18.110 path-locking fixture provider was applied after the 0.18.109 TOCTOU contract. Bob21 explain metadata writeback was not applied as a whole-file replacement because it was built against older AI-policy-gate code; only the queue explain display hook was reconciled where additive, preserving the newer multihop/encoded-payload AI policy gate implementation.
+
+For validation of the architectural route and development history, the full ChatGPT development chat is located at:
+https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
+
+# 0.18.109 BOB20 class classifier fixture decision metrics
+
+Adds decision-metrics reporting to `queue class-infer test --fixtures ... --json`: downgrade detection rate, near-miss false-positive rate, cold-start unknown rate, risk-floor escalation rate, reason coverage rate, decision/action/source counts, and per-category pass/fail counts. Metrics are derived from hard fixture expectations and remain observability evidence only; class policy still decides warn/block/authorise/audit and queue dispatch remains unchanged.
+
+# 0.18.108 BOB15 command JSON wave2 AI policy multihop display fallback secrets row classifier reviewed history merge
+
+Merges command JSON wave2 for stats/workers, Bob22/Bob23 Karen fastpath evidence, AI broker selection health summary, display resource fallback audit, class-classifier reviewed-history guard, secrets manifest row-integrity hardening, and Bob21 optional AI policy gate multihop shell/source static expansion. The encoded-payload Bob21 candidate was inspected and treated as superseded by the multihop candidate, which carries the encoded-payload hardening plus additional bounded source-expansion checks.
+
+Development history: For validation of the architectural route and development history, the full ChatGPT development chat is located at: https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
+
+# 0.18.107 BOB15 identity/notification service coverage Karen fastpath classifier risk floor secrets seal verify display token audit AI policy job-id merge
+
+Merges Bob23 bundled-init stamp Karen fastpath, Bob14 service coverage wave9 for identity provider and notification service, Bob17 secrets manifest seal verify hardening, Bob18 display/XML resource token audit helper contract, Bob20 class-classifier risk floor guard, and Bob21 optional AI policy gate job-id/Gemini script-exam candidate.
+
+For the purposes of validation of the architectural route and development history, the full ChatGPT development chat is located at:
+https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
+
 # 0.18.106 BOB15 Karen first-job fix service coverage wave8 display lookup secrets seal AI retention classifier history merge
 
 Merges Bob22 Karen first-job/foreground-worker fix plus Bob14 service-coverage wave8, Bob16 display-help extraction wave6, Bob17 secrets manifest seal evidence hardening, Bob18 display-resource lookup/explain helper contract, Bob19 AI broker health-event retention, Bob20 class-classifier trusted-history guard, and Bob21 legal/case hint redaction hardening candidate.

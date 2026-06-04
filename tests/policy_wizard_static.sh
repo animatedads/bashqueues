@@ -11,7 +11,8 @@ grep -Eq 'QUEUEBASH_VERSION="0\.[0-9]+\.[0-9]+"' queuebash.sh || fail "queuebash
 
 grep -q 'QUEUEBASH_AI_LIVE_ENABLED' bin/queue-policy-wizard || fail 'current AI live gate missing'
 ! grep -q 'QUEUEBASH_AI_ASK_LIVE' bin/queue-policy-wizard || fail 'stale AI live variable found'
-! grep -q '/etc/bashqueues' bin/queue-policy-wizard docs/POLICY_SETUP_WIZARD.md || fail 'legacy /etc/bashqueues namespace found in wizard files'
+grep -q '/etc/queuebash/policies.d' docs/POLICY_SETUP_WIZARD.md || fail 'canonical system policy root missing from wizard docs'
+! grep -q '/etc/bashqueues' bin/queue-policy-wizard || fail 'legacy /etc/bashqueues namespace found in wizard executable'
 ! grep -q 'queue policies list' bin/queue-policy-wizard docs/POLICY_SETUP_WIZARD.md || fail 'unsupported queue policies command suggested'
 ! grep -q 'queue assets validate' bin/queue-policy-wizard docs/POLICY_SETUP_WIZARD.md || fail 'unsupported queue assets command suggested'
 

@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-04T14:47:02Z",
+  "created_from_session": "AIS-20260604-144648-896741-5076-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260604-144702-303038-1519",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "0.18.109 mixed patch merge lesson: prefer rebased Bob14 access-review/compliance-evidence over older 0.18.108 patch, apply Bob17 path-locking TOCTOU before fixture-provider follow-up, and treat Bob21 explain metadata writeback as selective because whole-file replacement would downgrade newer multihop AI policy gate."
+}

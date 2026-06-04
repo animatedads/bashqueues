@@ -1,0 +1,19 @@
+{
+  "schema": "queuebash.path_lock.fixture.v1",
+  "case": "provider_magiclink_blocked",
+  "grant": {
+    "canonical_path": "/run/queuebash/jobs/q1/work/out.txt",
+    "parent_canonical_path": "/run/queuebash/jobs/q1/work",
+    "parent_dev_inode": "259:2:1000",
+    "final_dev_inode": "259:2:2000",
+    "magiclink_policy": "deny",
+    "write_policy": "append-only"
+  },
+  "observed": {
+    "requested_path": "/proc/self/fd/9",
+    "parent_dev_inode": "proc:0:1",
+    "magiclink_seen": true,
+    "operation": "append-only"
+  },
+  "expected": {"allowed": false, "reason": "magiclink_denied"}
+}

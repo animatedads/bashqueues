@@ -60,12 +60,14 @@ QUEUEBASH_AI_POLICY_GATE_ENABLED=1 \
   bin/queue-ai-policy-gate scan --limit 10
 ```
 
-Classify a single job file and print the normalized decision:
+Classify a single job by job id or name and print the normalized decision. Pending jobs may live below priority directories such as `pending/p0999999990/`; the helper resolves that layout internally:
 
 ```bash
 QUEUEBASH_AI_POLICY_GATE_ENABLED=1 \
-  bin/queue-ai-policy-gate classify --job-file "$QUEUEBASH_ROOT/pending/JOBID.job"
+  bin/queue-ai-policy-gate classify --job-id badjob
 ```
+
+`--job-file` remains available as a low-level/debug input, but `--job-id` is the normal operator interface.
 
 Provider contract discovery:
 
@@ -166,8 +168,10 @@ The process is deliberately two-stage:
 Example:
 
 ```bash
-bin/queue-ai-policy-gate examine --job-file "$QUEUEBASH_ROOT/pending/JOBID.job"
+bin/queue-ai-policy-gate examine --job-id badjob
 ```
+
+If the job command directly references a local script such as `bash badscript.sh`, the examiner may statically read that script from `PWD_AT_SUBMIT`, bounded by `QUEUEBASH_AI_POLICY_GATE_SCRIPT_MAX_BYTES`, without executing it. By default the script must resolve under the submit directory; this preserves the containment boundary while allowing command/data-flow pattern checks across bash, SQL, Python, and generic script text.
 
 The examination JSON has schema:
 
@@ -287,3 +291,137 @@ This preserves the existing rule: hint matches can raise an otherwise-allow job
 to `advise_delay`; hard `pol_block` still requires a high-confidence second-shot
 policy-block category such as `legal_restriction_violation` or
 `case_restriction_violation`.
+
+
+## Candidate v8 job-id lookup and Gemini test provider
+
+Candidate v8 keeps Ollama as the safe default provider and adds two operator/testing improvements:
+
+- `examine` and `classify` accept `--job-id`, resolving job ids, job names, or unique id prefixes under priority buckets such as `pending/p0999999990/*.job`.
+- Direct script references are inspected statically from `PWD_AT_SUBMIT` where safe, so a pending job like `bash badscript.sh` can produce findings from the script body without running the shell.
+- Gemini is available only as an explicit test provider. Set `QUEUEBASH_AI_POLICY_GATE_PROVIDER=gemini` or `--provider gemini` plus `QUEUEBASH_AI_POLICY_GATE_ALLOW_EXTERNAL_PROVIDER=1` and a Gemini API key. Without that opt-in, the helper refuses before any external provider call.
+
+Example Gemini test invocation:
+
+```bash
+QUEUEBASH_AI_POLICY_GATE_ENABLED=1 \
+QUEUEBASH_AI_POLICY_GATE_PROVIDER=gemini \
+QUEUEBASH_AI_POLICY_GATE_ALLOW_EXTERNAL_PROVIDER=1 \
+QUEUEBASH_AI_MODEL=gemini-2.5-flash \
+bin/queue-ai-policy-gate classify --job-id badjob
+```
+
+This is not the default no-leak posture. The default remains local Ollama only.
+
+## Candidate v9 recommendation-only calibration
+
+The second-shot provider may return a delay-shaped response while its own category and rationale say the job is routine work with hygiene recommendations only.  Bob21 treats those as `allow` with `recommended_tightening` preserved when all of the following are true:
+
+- the category is a recommendation-only category such as `media_processing`;
+- deterministic containment did not find compound exposure, legal/case restriction evidence, high/critical static risk, or an advisory recommendation;
+- the category is not a risky delay category.
+
+This keeps routine media/build/automation jobs from being delayed merely because the model can suggest better controls.  Security posture changes such as firewall-open commands still stay `advise_delay`, and high-confidence hostile/destructive categories still remain eligible for `pol_block`.
+
+## Candidate v10 SQL argument-payload examination calibration
+
+The deterministic containment examiner now reads multiple bounded local text
+payloads referenced by a submitted command, not just the first wrapper script.
+This is specifically to catch wrapper-and-payload jobs such as a Python migration
+helper that reads and executes a `.sql` argument file. The examiner still does
+not execute shell, Python, SQL, model output, or network activity.
+
+Example evidence path:
+
+```text
+queue submit update_db -- bash python3 erp_db_sync.py "dbname=postgres user=admin" schema_update_v4.sql
+```
+
+The examiner should inspect both the Python wrapper and the SQL argument file
+from `PWD_AT_SUBMIT` when they are local bounded text files. The wrapper can
+produce evidence such as `database_command_execution` and
+`external_payload_read`; the SQL payload can produce `passwordless_db_login`,
+`grant_all_privileges`, and `privileged_database_grant`. A model response that
+classifies only the wrapper as routine maintenance must not erase those static
+payload findings; the policy normalizer may raise the result to advisory delay.
+
+SQL comment text is ignored for syntax decisions. A comment saying "no
+password" must not prevent the checker from recognizing `CREATE ROLE ... LOGIN`
+without a `PASSWORD` or `IDENTIFIED BY` clause.
+
+## Candidate v11 encoded payload and static taint hardening
+
+The deterministic containment examiner remains static-only. It does not execute
+shell, Python, SQL, model output, database calls, or network activity. Candidate
+v11 adds bounded evidence for encoded argument payloads and simple sink-to-source
+flow in Python wrappers:
+
+- external file read evidence: `external_payload_read`
+- base64 decode transform evidence: `payload_decode_transform`
+- decoded payload scan evidence: `decoded_payload`
+- decoded payload sent to database execute sink: `decoded_payload_to_database_execute`
+- base64-like argument/file anomaly: `encoded_payload`
+
+This is intended for wrapper jobs such as a Python ERP migration helper that
+reads a local argument file, decodes it with `base64.b64decode`, and passes the
+result to `cur.execute`. The examiner may decode bounded base64-looking text in
+memory solely so existing SQL pattern checks can inspect the resulting text. It
+never executes that decoded text.
+
+A routine wrapper remains eligible for recommendations-only allow, but an encoded
+SQL payload that creates passwordless database login and grants broad ERP/database
+privileges raises the deterministic recommendation to `advise_delay`. Hard
+`pol_block` still requires the second-shot classifier to return a high-confidence
+hostile/security-harm or binding legal/case-restriction category accepted by the
+policy boundary.
+
+## Candidate v12 multi-hop shell/source expansion
+
+Candidate v12 extends deterministic containment to common shell indirection
+without turning the policy gate into a shell emulator. It performs bounded static
+graph expansion only:
+
+- local bash wrapper scripts can be inspected for nested `python3`, `bash`, or SQL
+  client invocations;
+- nested local Python/script/data arguments are read as bounded text from
+  `PWD_AT_SUBMIT` where permitted;
+- shell `source`/`.` includes are followed for local files;
+- simple shell function definitions are extracted as static bash payloads;
+- optional shell startup files such as `.bashrc` can be scanned for source/function
+  indirection when `QUEUEBASH_AI_POLICY_GATE_SHELL_STARTUP_SCAN=1`.
+
+Example wrapper path:
+
+```text
+queue submit update_db -- bash update_db.sh
+update_db.sh -> python3 erp_db_sync.py ... schema_update_v4_base64.sql
+erp_db_sync.py -> file read -> base64 decode -> cur.execute
+schema_update_v4_base64.sql -> decoded SQL static scan
+```
+
+Example sourced-function path:
+
+```text
+.bashrc -> source badfile.sh
+badfile.sh -> byebyebirdy() { ... risky commands ... }
+queue submit later -- bash byebyebirdy
+```
+
+The examiner records evidence such as `shell_source_include`,
+`shell_function_definition`, nested payload sources, decoded payload scans, and
+any risky commands found in the statically read bodies. It still does not execute
+shell startup files, shell functions, Python, SQL, decoded payloads, model output,
+database calls, or network activity.
+
+## Explain-visible write-back candidate
+
+`queue-ai-policy-gate classify --apply --job-id JOB` may append redacted
+`AI_POLICY_GATE_*` metadata to the job record. This allows `queue explain JOB`
+to display the last applied policy-gate decision, compact deterministic evidence,
+risk flags, advisory hold metadata, and local policy log path.
+
+Advisory holds are monotonic. If a job already has a later `NOT_BEFORE_EPOCH`
+than the advisory delay requested by the policy gate, the existing later value is
+preserved and `AI_POLICY_GATE_DELAY_PRESERVED_EXISTING=1` is recorded. The policy
+gate may add evidence and review metadata, but it must not shorten a pre-existing
+hold.

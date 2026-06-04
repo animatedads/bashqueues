@@ -1,0 +1,19 @@
+{
+  "schema": "queuebash.path_lock.fixture.v1",
+  "case": "provider_private_create_allowed",
+  "grant": {
+    "approved_root": "/run/queuebash/jobs/q1/work",
+    "parent_canonical_path": "/run/queuebash/jobs/q1/work",
+    "parent_dev_inode": "259:2:1000",
+    "symlink_policy": "deny",
+    "magiclink_policy": "deny",
+    "write_policy": "create-only-under-owned-dir"
+  },
+  "observed": {
+    "requested_path": "/run/queuebash/jobs/q1/work/new-output.txt",
+    "parent_dev_inode": "259:2:1000",
+    "private_workspace": true,
+    "operation": "create-only-under-owned-dir"
+  },
+  "expected": {"allowed": true}
+}

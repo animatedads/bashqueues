@@ -9,10 +9,10 @@ It deliberately does **not** add a generic root file editor. The command knows t
 Default live paths:
 
 ```text
-/etc/bashqueues/policies.d/remote-queue/remote-management.env
-/etc/bashqueues/policies.d/remote-queue/clients.tsv
-/etc/bashqueues/policies.d/remote-queue/acl.tsv
-/etc/bashqueues/policies.d/remote-queue/secrets/*.secret
+/etc/queuebash/policies.d/remote-queue/remote-management.env
+/etc/queuebash/policies.d/remote-queue/clients.tsv
+/etc/queuebash/policies.d/remote-queue/acl.tsv
+/etc/queuebash/policies.d/remote-queue/secrets/*.secret
 /var/log/queuebash/remote-queue-management-audit.jsonl
 ```
 

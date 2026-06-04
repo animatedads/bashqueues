@@ -24,6 +24,9 @@ assert explain['schema']=='queuebash.ai_broker.explain.v1'
 assert explain['decision']=='allow'
 assert explain['selected']['provider']
 assert 'policy_links' in explain
+assert 'health_summary' in explain
+assert explain['health_summary']['selected_state'] in ('available','healthy','degraded')
+assert isinstance(explain['health_summary']['candidate_by_health'], dict)
 assert explain['policy_links']['applicable'] is True
 assert explain['policy_links']['combined']['regulatory']
 assert explain['policy_links']['combined']['corporate']
@@ -36,6 +39,7 @@ assert chat['live_call_performed'] is False
 assert chat['provider_execution']=='broker_selection_only_no_live_call'
 assert chat['policy_links']['applicable'] is True
 assert chat['policy_links']['combined']['audit']
+assert 'health_summary' in chat and chat['health_summary']['selected_state']
 ollama=load(['health','--provider','ollama','--model','llama3','--set-state','available','--reason','contract fallback candidate','--json'])
 assert ollama['schema']=='queuebash.ai_broker.health_update.v1'
 update=load(['health','--provider','openai_compat','--model','local-model','--set-state','timeout','--reason','contract timeout','--cooldown-seconds','60','--json'])
@@ -45,6 +49,8 @@ assert update['updated']['state']=='timeout'
 explain_timeout=load(['explain','--profile','balanced','--capability','chat','--json'])
 assert any('health_cooldown' in r.get('reasons', []) or 'health_timeout' in r.get('reasons', []) for r in explain_timeout.get('rejected', [])), explain_timeout
 assert explain_timeout['selected']['provider'] == 'ollama'
+assert explain_timeout['health_summary']['rejected_by_reason']
+assert explain_timeout['health_summary']['health_rejected_count'] >= 1
 restore=load(['health','--provider','openai_compat','--model','local-model','--set-state','available','--reason','contract restore','--json'])
 assert restore['schema']=='queuebash.ai_broker.health_update.v1'
 clear_one=load(['health','--provider','openai_compat','--model','local-model','--clear','--json'])
@@ -91,6 +97,7 @@ assert blocked.returncode != 0
 blocked_json=json.loads(blocked.stdout)
 assert blocked_json['schema']=='queuebash.ai_broker.error.v1'
 assert blocked_json['reason']=='live_ai_provider_not_enabled'
+assert 'health_summary' in blocked_json
 
 # Live failure feedback must record a local health-cache update and fall back to the next candidate.
 feedback_root = pathlib.Path(_tmp.name) / "feedback"

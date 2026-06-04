@@ -386,7 +386,9 @@ _secret_manifest_seal() {
 
 
 _secret_manifest_verify() {
-    local qid="${1:-}" json=0 run_dir target manifest mode entries=0 insecure_permissions=0 unsafe_paths=0 missing_paths=0 malformed_entries=0 secret_value_markers=0 ok=true evidence seal seal_status="absent" seal_hash="" current_hash=""
+    local qid="${1:-}" json=0 run_dir target manifest mode entries=0 insecure_permissions=0 unsafe_paths=0 missing_paths=0 malformed_entries=0 secret_value_markers=0 ok=true evidence
+    local qid_mismatches=0 missing_hashes=0 path_hash_mismatches=0
+    local seal seal_status="absent" seal_hash="" current_hash="" seal_mode="absent" seal_schema_ok=0 seal_redacted_ok=0 seal_secret_value_marker_ok=0 seal_manifest_path_ok=0 seal_qid_ok=0 seal_hash_present=0 seal_invalid=0 seal_manifest_path="" seal_qid=""
     [[ -n "$qid" ]] || { _usage >&2; return 2; }
     shift || true
     while [[ "$#" -gt 0 ]]; do
@@ -408,8 +410,21 @@ _secret_manifest_verify() {
     current_hash="$(_secret_file_hash "$manifest" 2>/dev/null || true)"
     seal="$(_secret_manifest_seal_path "$qid")"
     if [[ -f "$seal" ]]; then
+        seal_mode="$(stat -c '%a' "$seal" 2>/dev/null || stat -f '%Lp' "$seal" 2>/dev/null || printf 'unknown')"
+        [[ "$seal_mode" == "600" ]] || seal_invalid=1
+        grep -Fq '"schema":"queuebash.secret_manifest_seal.v1"' "$seal" 2>/dev/null && seal_schema_ok=1 || seal_invalid=1
+        grep -Fq '"redacted":true' "$seal" 2>/dev/null && seal_redacted_ok=1 || seal_invalid=1
+        grep -Fq '"secret_value_included":false' "$seal" 2>/dev/null && seal_secret_value_marker_ok=1 || seal_invalid=1
         seal_hash="$(sed -n 's/.*"manifest_hash":"\([^"]*\)".*/\1/p' "$seal" | head -n 1)"
-        if [[ -n "$seal_hash" && -n "$current_hash" && "$seal_hash" == "$current_hash" ]]; then
+        [[ -n "$seal_hash" ]] && seal_hash_present=1 || seal_invalid=1
+        seal_manifest_path="$(sed -n 's/.*"manifest":"\([^"]*\)".*/\1/p' "$seal" | head -n 1)"
+        [[ "$seal_manifest_path" == "$manifest" ]] && seal_manifest_path_ok=1 || seal_invalid=1
+        seal_qid="$(sed -n 's/.*"qid":"\([^"]*\)".*/\1/p' "$seal" | head -n 1)"
+        [[ "$seal_qid" == "$qid" ]] && seal_qid_ok=1 || seal_invalid=1
+        if [[ "$seal_invalid" -ne 0 ]]; then
+            seal_status="invalid"
+            malformed_entries=$((malformed_entries + 1))
+        elif [[ -n "$seal_hash" && -n "$current_hash" && "$seal_hash" == "$current_hash" ]]; then
             seal_status="match"
         else
             seal_status="mismatch"
@@ -424,27 +439,34 @@ _secret_manifest_verify() {
         [[ "$line" == *'"secret_value_included":false'* ]] || secret_value_markers=$((secret_value_markers + 1))
         [[ "$line" == *'"secret_ref_hash"'* ]] || malformed_entries=$((malformed_entries + 1))
         [[ "$line" == *'"path_hash"'* ]] || malformed_entries=$((malformed_entries + 1))
-        local path_field=""
+        local row_qid="" path_field="" row_secret_ref_hash="" row_path_hash="" computed_path_hash=""
+        row_qid="$(printf '%s\n' "$line" | sed -n 's/.*"qid":"\([^"]*\)".*/\1/p' | head -n 1)"
         path_field="$(printf '%s\n' "$line" | sed -n 's/.*"path":"\([^"]*\)".*/\1/p' | head -n 1)"
+        row_secret_ref_hash="$(printf '%s\n' "$line" | sed -n 's/.*"secret_ref_hash":"\([^"]*\)".*/\1/p' | head -n 1)"
+        row_path_hash="$(printf '%s\n' "$line" | sed -n 's/.*"path_hash":"\([^"]*\)".*/\1/p' | head -n 1)"
+        [[ "$row_qid" == "$qid" ]] || qid_mismatches=$((qid_mismatches + 1))
+        [[ -n "$row_secret_ref_hash" && -n "$row_path_hash" ]] || missing_hashes=$((missing_hashes + 1))
         if [[ -z "$path_field" ]]; then
             malformed_entries=$((malformed_entries + 1))
             continue
         fi
+        computed_path_hash="$(_secret_hash "$path_field" 2>/dev/null || true)"
+        [[ -n "$row_path_hash" && "$row_path_hash" == "$computed_path_hash" ]] || path_hash_mismatches=$((path_hash_mismatches + 1))
         case "$path_field" in
             "$target"/*) ;;
             *) unsafe_paths=$((unsafe_paths + 1)) ;;
         esac
         [[ -e "$path_field" ]] || missing_paths=$((missing_paths + 1))
     done < "$manifest"
-    if [[ "$entries" -eq 0 || "$insecure_permissions" -ne 0 || "$unsafe_paths" -ne 0 || "$malformed_entries" -ne 0 || "$secret_value_markers" -ne 0 || "$missing_paths" -ne 0 ]]; then
+    if [[ "$entries" -eq 0 || "$insecure_permissions" -ne 0 || "$unsafe_paths" -ne 0 || "$malformed_entries" -ne 0 || "$secret_value_markers" -ne 0 || "$missing_paths" -ne 0 || "$qid_mismatches" -ne 0 || "$missing_hashes" -ne 0 || "$path_hash_mismatches" -ne 0 ]]; then
         ok=false
     fi
-    _secret_audit_emit "secret.manifest.verify" "$([[ "$ok" == true ]] && printf ok || printf failed)" "$qid" "" "" "" "" "file" "entries=$entries unsafe_paths=$unsafe_paths missing_paths=$missing_paths"
+    _secret_audit_emit "secret.manifest.verify" "$([[ "$ok" == true ]] && printf ok || printf failed)" "$qid" "" "" "" "" "file" "entries=$entries unsafe_paths=$unsafe_paths missing_paths=$missing_paths qid_mismatches=$qid_mismatches missing_hashes=$missing_hashes path_hash_mismatches=$path_hash_mismatches seal_status=$seal_status"
     if [[ "$json" -eq 1 ]]; then
-        printf '{"schema":"queuebash.secret_manifest_verify.v1","ok":%s,"qid":%s,"manifest":%s,"manifest_hash":%s,"seal":%s,"seal_status":%s,"entries":%s,"insecure_permissions":%s,"unsafe_paths":%s,"missing_paths":%s,"malformed_entries":%s,"secret_value_markers":%s,"redacted":true,"secret_value_included":false}\n' \
-            "$ok" "$(_json "$qid")" "$(_json "$manifest")" "$(_json "$current_hash")" "$(_json "$seal")" "$(_json "$seal_status")" "$entries" "$insecure_permissions" "$unsafe_paths" "$missing_paths" "$malformed_entries" "$secret_value_markers"
+        printf '{"schema":"queuebash.secret_manifest_verify.v1","ok":%s,"qid":%s,"manifest":%s,"manifest_hash":%s,"seal":%s,"seal_status":%s,"seal_mode":%s,"seal_schema_ok":%s,"seal_redacted_ok":%s,"seal_secret_value_marker_ok":%s,"seal_manifest_path_ok":%s,"seal_qid_ok":%s,"seal_hash_present":%s,"entries":%s,"insecure_permissions":%s,"unsafe_paths":%s,"missing_paths":%s,"malformed_entries":%s,"secret_value_markers":%s,"qid_mismatches":%s,"missing_hashes":%s,"path_hash_mismatches":%s,"redacted":true,"secret_value_included":false}\n' \
+            "$ok" "$(_json "$qid")" "$(_json "$manifest")" "$(_json "$current_hash")" "$(_json "$seal")" "$(_json "$seal_status")" "$(_json "$seal_mode")" "$seal_schema_ok" "$seal_redacted_ok" "$seal_secret_value_marker_ok" "$seal_manifest_path_ok" "$seal_qid_ok" "$seal_hash_present" "$entries" "$insecure_permissions" "$unsafe_paths" "$missing_paths" "$malformed_entries" "$secret_value_markers" "$qid_mismatches" "$missing_hashes" "$path_hash_mismatches"
     else
-        echo "secret manifest verify: $qid ok=$ok entries=$entries unsafe_paths=$unsafe_paths missing_paths=$missing_paths"
+        echo "secret manifest verify: $qid ok=$ok entries=$entries unsafe_paths=$unsafe_paths missing_paths=$missing_paths qid_mismatches=$qid_mismatches missing_hashes=$missing_hashes path_hash_mismatches=$path_hash_mismatches seal_status=$seal_status"
     fi
     [[ "$ok" == true ]]
 }

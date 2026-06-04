@@ -1,0 +1,1 @@
+{"job_name":"new_backup_with_prod_secret","command":"bash /opt/jobs/new_backup.sh --prod-db-sync","submitted_class":"BASIC_TASK","user":"backup","paths":["/backups","/data/customer"],"secrets":["customer-db/prod/password"],"assets":["db:customer-prod","net:allowance"],"network":true}

@@ -1,0 +1,23 @@
+{
+  "authentication_methods": [
+    "workload_identity",
+    "sso",
+    "kerberos_or_directory_identity"
+  ],
+  "check": "authentication",
+  "credential_values_present": false,
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "authentication.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "identity_provider",
+  "provider_output_is_shell": false,
+  "reason": "fixture_authentication_evidence_available",
+  "schema": "queuebash.identity_provider.authentication.v1",
+  "source": "fixture"
+}

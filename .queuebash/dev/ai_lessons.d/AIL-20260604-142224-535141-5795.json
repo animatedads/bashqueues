@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-04T14:22:24Z",
+  "created_from_session": "AIS-20260604-142013-458703-3718-bob14",
+  "created_from_try": "AIT-20260604-142023-883053-8032",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260604-142224-535141-5795",
+  "match": {
+    "command_glob": "python3 tests/provider_service_coverage_wave10_bob14_static.py",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "The updated 0.18.108 BOB15 base did not include the previous Bob14 access_review/compliance_evidence wave10 test file; verify current registry directly before assuming earlier patchset content is present. Rebase access_review/compliance_evidence onto this base rather than skipping to backup_service/certificate_authority."
+}

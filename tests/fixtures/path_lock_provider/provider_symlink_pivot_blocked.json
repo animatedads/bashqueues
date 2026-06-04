@@ -1,0 +1,22 @@
+{
+  "schema": "queuebash.path_lock.fixture.v1",
+  "case": "provider_symlink_pivot_blocked",
+  "grant": {
+    "canonical_path": "/run/queuebash/jobs/q1/work/config_update.sql",
+    "parent_canonical_path": "/run/queuebash/jobs/q1/work",
+    "parent_dev_inode": "259:2:1000",
+    "final_dev_inode": "259:2:2000",
+    "symlink_policy": "deny",
+    "magiclink_policy": "deny",
+    "write_policy": "existing-file-only"
+  },
+  "observed": {
+    "requested_path": "/run/queuebash/jobs/q1/work/config_update.sql",
+    "parent_dev_inode": "259:2:1000",
+    "final_dev_inode": "259:2:9999",
+    "file_type": "symlink",
+    "symlink_seen": true,
+    "operation": "existing-file-only"
+  },
+  "expected": {"allowed": false, "reason": "symlink_denied"}
+}

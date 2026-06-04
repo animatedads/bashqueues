@@ -67,4 +67,17 @@ grep -Fq 'seal_status' providers.d/secrets/file_provider.sh || { echo "verify-ma
 grep -Fq '0.18.106 hardening: delivery manifest seal evidence' docs/SECRETS_PROVIDER_CONTRACT.md || { echo "contract doc missing 0.18.106 manifest seal section" >&2; exit 1; }
 [[ -f tests/secrets_provider_manifest_seal_smoke.sh ]] || { echo "missing manifest seal smoke test" >&2; exit 1; }
 
+
+grep -Fq 'qid_mismatches' providers.d/secrets/file_provider.sh || { echo "verify-manifest missing manifest row qid mismatch evidence" >&2; exit 1; }
+grep -Fq 'missing_hashes' providers.d/secrets/file_provider.sh || { echo "verify-manifest missing manifest row hash-presence evidence" >&2; exit 1; }
+grep -Fq 'path_hash_mismatches' providers.d/secrets/file_provider.sh || { echo "verify-manifest missing path hash mismatch evidence" >&2; exit 1; }
+grep -Fq '_secret_hash "$path_field"' providers.d/secrets/file_provider.sh || { echo "verify-manifest should recompute path_hash from delivery path" >&2; exit 1; }
+
 echo "PASS secrets_provider_contract_static"
+
+grep -Fq 'seal_schema_ok' providers.d/secrets/file_provider.sh || { echo "verify-manifest missing seal schema evidence" >&2; exit 1; }
+grep -Fq 'seal_redacted_ok' providers.d/secrets/file_provider.sh || { echo "verify-manifest missing seal redaction evidence" >&2; exit 1; }
+grep -Fq 'seal_manifest_path_ok' providers.d/secrets/file_provider.sh || { echo "verify-manifest missing seal manifest path evidence" >&2; exit 1; }
+grep -Fq 'seal_qid_ok' providers.d/secrets/file_provider.sh || { echo "verify-manifest missing seal qid evidence" >&2; exit 1; }
+grep -Fq 'seal_status="invalid"' providers.d/secrets/file_provider.sh || { echo "verify-manifest should fail invalid seals" >&2; exit 1; }
+grep -Fq 'secrets_provider_manifest_seal_verify_smoke' tests/secrets_provider_manifest_seal_verify_smoke.sh || { echo "missing seal verify smoke test" >&2; exit 1; }

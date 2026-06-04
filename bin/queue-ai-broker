@@ -109,7 +109,7 @@ def registry_candidates(root: pathlib.Path) -> List[pathlib.Path]:
     if env:
         vals.append(pathlib.Path(env))
     vals.extend([
-        pathlib.Path("/etc/bashqueues/policies.d/ai-broker/provider-registry.json"),
+        pathlib.Path("/etc/queuebash/policies.d/ai-broker/provider-registry.json"),
         root / "policies.d/ai-broker/provider-registry.json",
         root / "policies.d/ai-broker/provider-registry.example.json",
         root / "tests/fixtures/ai_broker/provider_registry.example.json",
@@ -143,7 +143,7 @@ def health_cache_candidates(root: pathlib.Path) -> List[pathlib.Path]:
         vals.append(pathlib.Path(env))
     vals.extend([
         queue_root() / "ai-broker" / "health-cache.json",
-        pathlib.Path("/etc/bashqueues/policies.d/ai-broker/health-cache.json"),
+        pathlib.Path("/etc/queuebash/policies.d/ai-broker/health-cache.json"),
         root / "policies.d/ai-broker/health-cache.json",
         root / "policies.d/ai-broker/health-cache.example.json",
         root / "tests/fixtures/ai_broker/health_cache.example.json",
@@ -360,6 +360,53 @@ def summarise_health_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         "by_model": dict(sorted(by_model.items())),
     }
 
+
+
+
+def selection_health_summary(selection: Dict[str, Any]) -> Dict[str, Any]:
+    """Return bounded health evidence for a broker selection decision."""
+    selected = selection.get("selected") if isinstance(selection.get("selected"), dict) else None
+    candidates = selection.get("candidates") if isinstance(selection.get("candidates"), list) else []
+    rejected = selection.get("rejected") if isinstance(selection.get("rejected"), list) else []
+    rejected_by_health: Dict[str, int] = {}
+    rejected_by_reason: Dict[str, int] = {}
+    for item in rejected:
+        if not isinstance(item, dict):
+            continue
+        state = str(item.get("health_state") or "unknown")
+        reasons = item.get("reasons") if isinstance(item.get("reasons"), list) else []
+        health_related = False
+        for reason in reasons:
+            reason_s = str(reason)
+            if reason_s.startswith("health_"):
+                health_related = True
+                rejected_by_reason[reason_s] = rejected_by_reason.get(reason_s, 0) + 1
+        if health_related:
+            rejected_by_health[state] = rejected_by_health.get(state, 0) + 1
+    candidate_by_health: Dict[str, int] = {}
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        state = str(item.get("health_state") or "unknown")
+        candidate_by_health[state] = candidate_by_health.get(state, 0) + 1
+    summary: Dict[str, Any] = {
+        "health_cache_path": "",
+        "selected_state": "none",
+        "selected_source": "none",
+        "candidate_count": len(candidates),
+        "rejected_count": len(rejected),
+        "candidate_by_health": dict(sorted(candidate_by_health.items())),
+        "rejected_by_health": dict(sorted(rejected_by_health.items())),
+        "rejected_by_reason": dict(sorted(rejected_by_reason.items())),
+        "health_rejected_count": sum(rejected_by_reason.values()),
+    }
+    if selected:
+        summary["selected_state"] = str(selected.get("health_state") or "unknown")
+        summary["selected_source"] = str(selected.get("health_source") or "registry")
+        summary["health_cache_path"] = str(selected.get("health_cache_path") or "")
+    elif candidates:
+        summary["health_cache_path"] = str(candidates[0].get("health_cache_path") or "")
+    return summary
 
 def load_health_cache(root: pathlib.Path) -> Tuple[Dict[str, Any], str]:
     errors: List[str] = []
@@ -605,7 +652,7 @@ def profile_candidates(root: pathlib.Path, profile: str) -> List[pathlib.Path]:
     if env:
         vals.append(pathlib.Path(env))
     vals.extend([
-        pathlib.Path(f"/etc/bashqueues/policies.d/ai-profiles/{safe}.env"),
+        pathlib.Path(f"/etc/queuebash/policies.d/ai-profiles/{safe}.env"),
         root / f"policies.d/ai-profiles/{safe}.env",
         root / f"policies.d/ai-profiles/{safe}.env.example",
     ])
@@ -1037,6 +1084,7 @@ def command_explain(args: argparse.Namespace, registry: Dict[str, Any], registry
         "capabilities_requested": caps,
         "selected": selection["selected"],
         "policy_links": policy_links,
+        "health_summary": selection_health_summary(selection),
         "fallback_enabled": bool_env(profile.get("AI_FALLBACK_ENABLED", "1"), True),
         "candidates_considered": len(selection["candidates"]),
         "rejected": selection["rejected"][:20],
@@ -1173,6 +1221,7 @@ def normalise_provider_response(
     attempted: List[Dict[str, str]],
     text: str,
     health_feedback: List[Dict[str, Any]] | None = None,
+    selection: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     answer = provider_data.get("answer_markdown") or provider_data.get("answer") or provider_data.get("text") or ""
     usage = provider_data.get("usage") if isinstance(provider_data.get("usage"), dict) else {}
@@ -1189,6 +1238,7 @@ def normalise_provider_response(
         "selected_provider": selected.get("provider"),
         "selected_model": args.model or selected.get("name"),
         "policy_links": policy_links_for_selection(registry, profile, selected),
+        "health_summary": selection_health_summary(selection or {"selected": selected, "candidates": [], "rejected": []}),
         "fallback": {"used": len(attempted) > 1, "attempted": attempted[:-1], "reason": "first_viable_provider_failed" if len(attempted) > 1 else "first_viable_candidate_selected"},
         "usage": usage,
         "advisory_only": True,
@@ -1214,6 +1264,7 @@ def command_live_call(args: argparse.Namespace, registry: Dict[str, Any], regist
             "reason": "live_ai_provider_not_enabled",
             "hint": "set QUEUEBASH_AI_LIVE_ENABLED=1 after policy approval",
             "policy_links": policy_links_for_selection(registry, profile, selection.get("selected")),
+            "health_summary": selection_health_summary(selection),
             "live_call_performed": False,
         }, True if args.json else False) or 1
     if not bool_env(profile.get("AI_FALLBACK_ENABLED", "1"), True):
@@ -1233,7 +1284,7 @@ def command_live_call(args: argparse.Namespace, registry: Dict[str, Any], regist
             provider_data = call_provider_helper(root, operation, args, profile, profile_path, caps, candidate, text)
             feedback = record_health_feedback(root, profile, provider, model, "available", "brokered live provider call succeeded", 0)
             health_feedback.append(feedback)
-            obj = normalise_provider_response(operation, args, registry, profile, profile_path, registry_path, caps, candidate, provider_data, attempted, text, health_feedback)
+            obj = normalise_provider_response(operation, args, registry, profile, profile_path, registry_path, caps, candidate, provider_data, attempted, text, health_feedback, selection)
             return emit(obj, args.json)
         except Exception as exc:
             failure_reason = str(exc)[:500]
@@ -1253,6 +1304,7 @@ def command_live_call(args: argparse.Namespace, registry: Dict[str, Any], regist
         "failures": failures,
         "health_feedback": health_feedback,
         "policy_links": policy_links_for_selection(registry, profile, selection.get("selected")),
+        "health_summary": selection_health_summary(selection),
         "live_call_performed": False,
     }, True if args.json else False) or 1
 
@@ -1273,6 +1325,7 @@ def command_call(args: argparse.Namespace, registry: Dict[str, Any], registry_pa
             "profile": args.profile,
             "capabilities_requested": caps,
             "policy_links": policy_links_for_selection(registry, profile, None),
+            "health_summary": selection_health_summary(selection),
             "reason": "no_provider_satisfies_profile",
             "rejected": selection["rejected"][:20],
             "live_call_performed": False,
@@ -1293,6 +1346,7 @@ def command_call(args: argparse.Namespace, registry: Dict[str, Any], registry_pa
         "selected_provider": selected.get("provider"),
         "selected_model": selected.get("name"),
         "policy_links": policy_links_for_selection(registry, profile, selected),
+        "health_summary": selection_health_summary(selection),
         "fallback": {"used": False, "attempted": [], "reason": "first_viable_candidate_selected"},
         "usage": {"estimated_cost_gbp": selected.get("estimated_cost_gbp", 0), "input_bytes": len(text.encode("utf-8"))},
         "advisory_only": True,

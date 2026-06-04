@@ -1,11 +1,24 @@
 {
-  "schema": "queuebash.class_inference.policy.v1",
-  "mode": "suggest",
-  "min_observations": 3,
-  "confidence_threshold": 0.80,
   "block_security_downgrade": true,
-  "policy_references": ["queue_class_shared_asset class_classifier no_downgrade min_confidence=0.80 action=block"],
-  "corporate_policy_refs": ["CLASSIFIER-DOWNGRADE-GUARD"],
+  "confidence_threshold": 0.8,
+  "corporate_policy_refs": [
+    "CLASSIFIER-DOWNGRADE-GUARD"
+  ],
+  "min_observations": 3,
+  "mode": "suggest",
+  "policy_references": [
+    "queue_class_shared_asset class_classifier no_downgrade min_confidence=0.80 action=block",
+    "queue_class_shared_asset class_classifier risk_floor_review min_risk_score=3 action=require_authorisation"
+  ],
   "regulatory_refs": [],
+  "risk_floor_class": "HIGH_ASSURANCE_REVIEW",
+  "risk_floor_enabled": true,
+  "risk_floor_low_classes": [
+    "BASIC_TASK",
+    "DEV_TEST"
+  ],
+  "risk_floor_score_cap": 6,
+  "risk_floor_threshold": 3,
+  "schema": "queuebash.class_inference.policy.v1",
   "validation_status": "fixture_contract"
 }

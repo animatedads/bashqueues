@@ -44,9 +44,9 @@ The installer creates/updates:
   PREFIX/share/bashqueues/queuebash.sh and bundled support files/resources
   PREFIX/bin/queue wrapper for non-interactive commands
   /etc/profile.d/bashqueues.sh for interactive shell use
-  /etc/bashqueues/policies.d for shared policy files
+  /etc/queuebash/policies.d for shared policy files
   /root/.queuebash/keys for the root authorisation/code signing key, unless disabled
-  code/plugin/resource signature policy under /etc/bashqueues/policies.d/code-signing
+  code/plugin/resource signature policy under /etc/queuebash/policies.d/code-signing
 
 Cron support is optional and does not replace /usr/bin/crontab.
 The system daemon is optional and starts user-owned workers for ready queues.
@@ -87,7 +87,7 @@ queue_root="${queue_root:-/root/.queuebash}"
 share_dir="$prefix/share/bashqueues"
 libexec_dir="$prefix/libexec/bashqueues"
 bin_dir="$prefix/bin"
-policy_dir="/etc/bashqueues/policies.d"
+policy_dir="/etc/queuebash/policies.d"
 profile_file="/etc/profile.d/bashqueues.sh"
 install_queue="/tmp/bashqueues-system-install-queue.$$"
 work_dir="/tmp/bashqueues-system-install.$$"
@@ -133,7 +133,7 @@ src_dir="$1"; prefix="$2"
 share_dir="$prefix/share/bashqueues"
 libexec_dir="$prefix/libexec/bashqueues"
 bin_dir="$prefix/bin"
-policy_dir="/etc/bashqueues/policies.d"
+policy_dir="/etc/queuebash/policies.d"
 
 install -d -m 0755 "$share_dir" "$libexec_dir" "$bin_dir" /etc/bashqueues "$policy_dir"
 install -m 0755 "$src_dir/queuebash.sh" "$share_dir/queuebash.sh"
@@ -205,7 +205,7 @@ cat > "$work_dir/install-root-key.sh" <<'STEP'
 set -euo pipefail
 prefix="$1"; queue_root="$2"; force_root_key="$3"; lock_policy="$4"
 share_dir="$prefix/share/bashqueues"
-policy_file="/etc/bashqueues/policies.d/class-statement/default.env"
+policy_file="/etc/queuebash/policies.d/class-statement/default.env"
 
 source "$share_dir/queuebash.sh"
 export QUEUEBASH_ROOT="$queue_root"
@@ -287,7 +287,7 @@ chmod 0644 "$policy_file" 2>/dev/null || true
 
 # Code/plugin signing: trust the root public key, sign the installed tree, and
 # verify it in warn mode.  Enforcement remains a site policy decision.
-code_policy="/etc/bashqueues/policies.d/code-signing/default.env"
+code_policy="/etc/queuebash/policies.d/code-signing/default.env"
 install -d -m 0755 "$(dirname "$code_policy")"
 if [[ ! -e "$code_policy" && -f "$share_dir/policies.d/code-signing/default.env" ]]; then
   install -m 0644 "$share_dir/policies.d/code-signing/default.env" "$code_policy"
@@ -384,7 +384,7 @@ set -euo pipefail
 src_dir="$1"; prefix="$2"
 bin_dir="$prefix/bin"
 share_dir="$prefix/share/bashqueues"
-policy_dir="/etc/bashqueues/policies.d/remote-queue"
+policy_dir="/etc/queuebash/policies.d/remote-queue"
 state_dir="/var/lib/queuebash/remote-queue-management"
 queue_root="/var/lib/queuebash/remote-queue-root"
 audit_dir="/var/log/queuebash"
@@ -452,7 +452,7 @@ cat > "$work_dir/install-remote-listener-verify.sh" <<'STEP'
 set -euo pipefail
 prefix="$1"
 bin_dir="$prefix/bin"
-policy_dir="/etc/bashqueues/policies.d/remote-queue"
+policy_dir="/etc/queuebash/policies.d/remote-queue"
 for required_remote_policy in \
   "$policy_dir/remote-management.env" \
   "$policy_dir/acl.tsv" \
@@ -543,7 +543,7 @@ fi
 installer_fail_if_any_job_failed
 
 if [[ "$with_remote_listener" == 1 ]]; then
-  remote_policy_dir="/etc/bashqueues/policies.d/remote-queue"
+  remote_policy_dir="/etc/queuebash/policies.d/remote-queue"
   for required_remote_policy in     "$remote_policy_dir/remote-management.env"     "$remote_policy_dir/acl.tsv"     "$remote_policy_dir/clients.tsv"; do
     if [[ ! -f "$required_remote_policy" ]]; then
       echo "install-system.sh: remote listener policy file was not installed: $required_remote_policy" >&2
@@ -555,12 +555,12 @@ fi
 if [[ "$with_remote_listener" == 1 ]]; then
   remote_listener_status="$(cat <<'REMOTE_DONE'
   installed; policy files copied under:
-    /etc/bashqueues/policies.d/remote-queue/
+    /etc/queuebash/policies.d/remote-queue/
 
   Expected files:
-    /etc/bashqueues/policies.d/remote-queue/remote-management.env
-    /etc/bashqueues/policies.d/remote-queue/acl.tsv
-    /etc/bashqueues/policies.d/remote-queue/clients.tsv
+    /etc/queuebash/policies.d/remote-queue/remote-management.env
+    /etc/queuebash/policies.d/remote-queue/acl.tsv
+    /etc/queuebash/policies.d/remote-queue/clients.tsv
 
   Example source files:
     policies.d/remote-queue/remote-management.env.example

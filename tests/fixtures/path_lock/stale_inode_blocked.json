@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.path_lock.evidence.v1",
+  "qid": "20260604_demo",
+  "status": "blocked",
+  "reason": "final_identity_mismatch",
+  "canonical_path": "/run/queuebash/jobs/20260604_demo/work/output.sql",
+  "parent_identity_ok": false,
+  "final_identity_ok": false,
+  "safe_open_policy": "beneath,nofollow,no-magiclinks",
+  "write_policy": "existing-file-write",
+  "redacted": true,
+  "secret_value_included": false
+}

@@ -6,6 +6,18 @@ export QUEUEBASH_ROOT="$(mktemp -d)"
 trap 'rm -rf "$QUEUEBASH_ROOT"' EXIT
 source ./queuebash.sh
 
+_karen_assert_no_job_named() {
+    local wanted="$1"
+    local f name
+    while IFS= read -r -d '' f; do
+        name="$(grep '^JOB_NAME=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | sed "s/^'//;s/'$//")"
+        if [[ "$name" == "$wanted" ]]; then
+            echo "dry-run unexpectedly created job: $wanted ($f)" >&2
+            return 1
+        fi
+    done < <(find "$QUEUEBASH_ROOT/pending" "$QUEUEBASH_ROOT/running" "$QUEUEBASH_ROOT/done" "$QUEUEBASH_ROOT/failed" "$QUEUEBASH_ROOT/pol_blocked" -type f -name '*.job' -print0 2>/dev/null)
+}
+
 queue version >/tmp/karen-version.out
 queue version --json >/tmp/karen-version.json
 python3 -m json.tool /tmp/karen-version.json >/dev/null
@@ -19,10 +31,10 @@ grep -Fq 'hello-from-queue' /tmp/karen-show.out
 
 queue submit dry-one --dryrun -- echo should-not-run >/tmp/karen-dry-one.out
 grep -Fq 'DRYRUN: would submit job:' /tmp/karen-dry-one.out
-! find "$QUEUEBASH_ROOT/pending" "$QUEUEBASH_ROOT/running" "$QUEUEBASH_ROOT/done" "$QUEUEBASH_ROOT/failed" "$QUEUEBASH_ROOT/pol_blocked" -type f -name '*.job' -print 2>/dev/null | xargs -r grep -l "^JOB_NAME='dry-one'\|^JOB_NAME=dry-one" 2>/dev/null | grep -q .
+_karen_assert_no_job_named dry-one
 queue --dryrun submit dry-two -- echo should-not-run >/tmp/karen-dry-two.out
 grep -Fq 'DRYRUN: would submit job:' /tmp/karen-dry-two.out
-! find "$QUEUEBASH_ROOT/pending" "$QUEUEBASH_ROOT/running" "$QUEUEBASH_ROOT/done" "$QUEUEBASH_ROOT/failed" "$QUEUEBASH_ROOT/pol_blocked" -type f -name '*.job' -print 2>/dev/null | xargs -r grep -l "^JOB_NAME='dry-two'\|^JOB_NAME=dry-two" 2>/dev/null | grep -q .
+_karen_assert_no_job_named dry-two
 
 if queue submit badprio -p abc -- echo nope >/tmp/karen-badprio.out 2>/tmp/karen-badprio.err; then
     echo 'bad priority unexpectedly accepted' >&2

@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-04T12:12:33Z",
+  "created_from_session": "AIS-20260604-121227-403756-6201-Bob15",
+  "created_from_try": "",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260604-121233-813753-1755",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "0.18.107 validation lesson: some legacy class/secrets smoke wrappers remain hang-prone under repeated sourced sandbox runs; use bounded focused tests and only claim captured rc=0 evidence."
+}

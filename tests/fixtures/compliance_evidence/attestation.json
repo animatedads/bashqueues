@@ -1,0 +1,20 @@
+{
+  "attestation_status_is_advisory": true,
+  "check": "attestation",
+  "decision": "allow",
+  "dual_control_recommended": true,
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "attestation.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "compliance_evidence",
+  "provider_output_is_shell": false,
+  "reason": "fixture_attestation_evidence_available",
+  "schema": "queuebash.compliance_evidence.attestation.v1",
+  "signature_values_present": false,
+  "source": "fixture"
+}

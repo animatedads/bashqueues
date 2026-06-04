@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-04T13:16:32Z",
+  "created_from_session": "AIS-20260604-130340-624442-6151-bob14",
+  "created_from_try": "",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260604-131632-920020-4890",
+  "match": {
+    "command_glob": "tests/*_provider_fixture_smoke.sh",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "queue dev ai try around provider fixture smoke can time out in this sandbox even when the smoke test itself passes quickly under direct timeout-bounded execution. Record the try timeout, then validate the smoke directly with timeout and include that distinction honestly."
+}

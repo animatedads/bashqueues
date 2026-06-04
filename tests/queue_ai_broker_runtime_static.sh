@@ -42,4 +42,6 @@ grep -q 'queuebash.ai_broker.health_events.v1' docs/QUEUE_AI_BROKER_HEALTH_CACHE
 grep -q -- '--summary' docs/QUEUE_AI_BROKER_HEALTH_CACHE.md || fail "health events docs missing summary filter"
 grep -q -- '--prune-events' docs/QUEUE_AI_BROKER_HEALTH_CACHE.md || fail "health events docs missing prune-events"
 grep -q 'summarise_health_events' bin/queue-ai-broker || fail "health events summary helper missing"
+grep -q 'selection_health_summary' bin/queue-ai-broker || fail "broker selection health summary helper missing"
+grep -q 'health_summary' docs/QUEUE_AI_BROKER_HEALTH_CACHE.md || fail "health summary docs missing"
 echo "PASS queue_ai_broker_runtime_static"

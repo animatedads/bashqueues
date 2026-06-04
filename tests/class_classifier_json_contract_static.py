@@ -45,10 +45,11 @@ for name in case_files:
         assert isinstance(result['reasons'], list) and result['reasons'], name
         assert result['non_mutating'] is True, name
         assert result['submit_integration'] == 'not_enabled_in_this_package', name
-        assert result['decision'] in {'ok','insufficient_history','class_downgrade_suspected','class_mismatch'}, name
-        assert result['recommended_action'] in {'allow','defer_to_class_policy','warn_or_require_review','block_pending_authorisation'}, name
+        assert result['decision'] in {'ok','insufficient_history','class_downgrade_suspected','class_mismatch','risk_floor_escalation'}, name
+        assert result['recommended_action'] in {'allow','defer_to_class_policy','warn_or_require_review','block_pending_authorisation','require_authorisation'}, name
         assert result['audit_event_preview']['decision'] == result['decision'], name
         assert result['audit_event_preview']['recommended_action'] == result['recommended_action'], name
+        assert 'risk_floor' in result and isinstance(result['risk_floor'], dict), name
         for key in ('decision', 'recommended_action', 'recommended_class'):
             if key in expected:
                 assert result.get(key) == expected[key], (name, key, result.get(key), expected[key], result)
@@ -57,6 +58,10 @@ for name in case_files:
         if result['recommended_action'] == 'block_pending_authorisation':
             assert result['reasons'], 'blocking recommendation without reasons'
             assert result['decision'] == 'class_downgrade_suspected', result
+        if result['decision'] == 'risk_floor_escalation':
+            assert result['recommended_action'] == 'require_authorisation', result
+            assert result['risk_floor']['applies'] is True, result
+            assert result['reasons'], result
 
 assert seen >= 7
 print(f'PASS class_classifier_json_contract_static cases={seen}')

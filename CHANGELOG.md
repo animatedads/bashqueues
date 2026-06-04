@@ -1,3 +1,32 @@
+# 0.18.110 BOB15 policy namespace consistency and AI explain metadata writeback merge
+
+- Select Bob23 `policy_namespace_consistency_wrapper_docs` as the current policy-root consistency route.
+- Align installer, policy wizard, runtime shared-policy default, remote listener defaults, AI broker defaults, tests, and docs on `/etc/queuebash/policies.d`.
+- Add `docs/POLICY_NAMESPACE.md` to make the canonical system policy root and shell-function versus installed-wrapper distinction explicit.
+- Merge Bob21 rebased AI policy gate explain metadata write-back behaviour without replacing newer 0.18.109 queuebash work.
+- Preserve all 0.18.109 access-review/compliance/path-locking/hospital/profile work.
+
+# 0.18.109 BOB15 access review compliance path-locking display install audit classifier metrics hospital safe-mode AI explain metadata merge
+
+Merged Bob14 access-review/compliance-evidence service coverage from the rebased patchset, Bob17 path-locking TOCTOU plus fixture-provider follow-up, Bob18 display-resource install audit helper, Bob20 class-classifier fixture decision metrics, Bob17 hospital live safe-mode profiles, and a selective Bob21 AI policy gate explain-metadata reconciliation without downgrading the newer optional AI policy gate.
+
+Development history: https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
+
+# 0.18.109 BOB20 class classifier fixture decision metrics
+
+- Add `decision_metrics` to `queue class-infer test --fixtures ... --json`.
+- Report downgrade detection, near-miss false positives, cold-start unknowns, risk-floor escalations, reason coverage, decision/action/source counts, and per-category pass/fail counts.
+- Keep metrics as fixture-runner observability only; no submit-path enforcement, auto-upclassing, or unchecked policy override is added.
+- Add static/JSON contract coverage for the metrics block.
+
+# 0.18.108 BOB15 command JSON wave2 AI policy multihop display fallback secrets row classifier reviewed history merge
+
+Merges Bob23 command JSON wave2 for `queue stats --json` and `queue workers --json`, carries Bob22/Bob23 Karen fastpath evidence, adds AI broker selection health summary, display resource fallback audit helper, class-classifier reviewed-history guard, secrets manifest row-integrity hardening, and Bob21 optional AI policy gate multihop shell/source static expansion. Bob21 encoded-payload candidate was inspected and superseded by the multihop candidate. Runtime dispatch remains unchanged for the optional AI policy gate.
+
+# 0.18.107 BOB15 identity/notification service coverage Karen fastpath classifier risk floor secrets seal verify display token audit AI policy job-id merge
+
+Merges Bob23 bundled-init stamp Karen fastpath, Bob14 identity-provider/notification-service service coverage, Bob17 secrets seal verify hardening, Bob18 display-resource token audit helper, Bob20 class-classifier risk floor guard, and Bob21 optional AI policy gate job-id/Gemini script-exam candidate. Keeps optional policy-gate boundaries, preserves Karen first-user path priority, and records the ChatGPT development chat URL as validation-history evidence rather than a runtime dependency.
+
 # 0.18.106 BOB15 Karen first-job fix service coverage wave8 display lookup secrets seal AI retention classifier history merge
 
 Merges Bob22 Karen first-job/foreground-worker fix plus Bob14 service-coverage wave8, Bob16 display-help extraction wave6, Bob17 secrets manifest seal evidence hardening, Bob18 display-resource lookup/explain helper contract, Bob19 AI broker health-event retention, Bob20 class-classifier trusted-history guard, and Bob21 legal/case hint redaction hardening candidate.

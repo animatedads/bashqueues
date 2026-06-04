@@ -1,0 +1,23 @@
+{
+  "channels": [
+    "email",
+    "chat",
+    "webhook_metadata_only"
+  ],
+  "check": "channel",
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "channel.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "notification_service",
+  "provider_output_is_shell": false,
+  "reason": "fixture_channel_evidence_available",
+  "recipient_values_redacted": true,
+  "schema": "queuebash.notification_service.channel.v1",
+  "source": "fixture"
+}

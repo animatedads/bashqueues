@@ -137,10 +137,12 @@ assert prune_marker['summary']['by_action'].get('prune_events', 0) >= 1, prune_m
 health_timeout=json.loads((root/'explain_health_timeout.json').read_text())
 assert any('health_cooldown' in r.get('reasons', []) or 'health_timeout' in r.get('reasons', []) for r in health_timeout.get('rejected', [])), health_timeout
 assert health_timeout['selected']['provider'] == 'ollama', health_timeout
+assert health_timeout['health_summary']['health_rejected_count'] >= 1, health_timeout
 explain=json.loads((root/'explain.json').read_text())
 assert explain['decision'] in ('allow','deny')
 assert explain['decision'] == 'allow', explain
 assert 'policy_links' in explain
+assert 'health_summary' in explain
 assert explain['policy_links']['applicable'] is True
 assert explain['policy_links']['combined']['regulatory']
 assert explain['policy_links']['combined']['corporate']
@@ -150,6 +152,7 @@ chat=json.loads((root/'chat.json').read_text())
 assert chat['ok'] is True
 assert chat['live_call_performed'] is False
 assert chat['selected_provider']
+assert 'health_summary' in chat
 assert chat['policy_links']['applicable'] is True
 assert chat['policy_links']['combined']['audit']
 js=json.loads((root/'json.json').read_text())
@@ -159,6 +162,7 @@ assert 'json' in js
 blocked=json.loads((root/'live_blocked.json').read_text())
 assert blocked['ok'] is False
 assert blocked['reason'] == 'live_ai_provider_not_enabled'
+assert 'health_summary' in blocked
 live=json.loads((root/'live_fixture.json').read_text())
 assert live['ok'] is True
 assert live['live_call_performed'] is True
@@ -166,6 +170,7 @@ assert live['provider_execution'] == 'brokered_live_provider_call'
 assert live['selected_provider'] == 'openai_compat'
 assert 'fake brokered provider response' in live['answer_markdown']
 assert live.get('health_feedback'), live
+assert 'health_summary' in live
 PY
 
 echo "PASS queue_ai_broker_runtime_smoke"

@@ -8,6 +8,7 @@ queue_asset_facilities() {
 class_classifier:no_downgrade Blocks when an explainable class-infer decision says the submitted class is a high-confidence downgrade
 class_classifier:warn_on_downgrade Emits an auditable warning for explainable downgrade decisions without blocking
 class_classifier:decision_explainable Requires non-ok/non-allow class-infer decisions to include reasons before policy may enforce them
+class_classifier:risk_floor_review Requires authorisation/review when policy risk-floor evidence appears without trusted history
 FACILITIES
 }
 
@@ -16,6 +17,7 @@ queue_asset_hints() {
 class_classifier:no_downgrade	target=policy label or _	params=decision_file=/path/result.json min_confidence=0.80 action=block|warn|require_authorisation	 example=queue_class_shared_asset class_classifier no_downgrade _ decision_file=/run/queuebash/class-infer.json min_confidence=0.80 action=block	notes=Consumes queue class-infer recommend/explain JSON. Blocks only when downgrade/mismatch is high-confidence and explainable; otherwise defers to class policy.
 class_classifier:warn_on_downgrade	target=policy label or _	params=decision_file=/path/result.json min_confidence=0.65	 example=queue_class_shared_asset class_classifier warn_on_downgrade _ decision_file=/run/queuebash/class-infer.json min_confidence=0.65	notes=Never blocks for a downgrade; prints a warning signal for audit/review flows.
 class_classifier:decision_explainable	target=policy label or _	params=decision_file=/path/result.json	 example=queue_class_shared_asset class_classifier decision_explainable _ decision_file=/run/queuebash/class-infer.json	notes=Fails closed when a non-ok/non-allow decision lacks reasons. This prevents unexplained classifier output from being used for automatic blocking.
+class_classifier:risk_floor_review	target=policy label or _	params=decision_file=/path/result.json min_risk_score=3 action=warn|require_authorisation	 example=queue_class_shared_asset class_classifier risk_floor_review _ decision_file=/run/queuebash/class-infer.json min_risk_score=3 action=require_authorisation	notes=Escalates cold-start/high-risk evidence such as production secrets plus network/customer data without training the classifier on labels.
 EOF_HINTS
 }
 
@@ -114,20 +116,37 @@ print("\t".join(fields))
 }
 
 _queue_asset_class_classifier_float_ge() {
-    python3 - "$1" "$2" <<'PY'
-import sys
-try:
-    have=float(sys.argv[1]); need=float(sys.argv[2])
-except Exception:
-    sys.exit(1)
-sys.exit(0 if have >= need else 1)
-PY
+    awk -v have="$1" -v need="$2" 'BEGIN { exit ((have+0) >= (need+0)) ? 0 : 1 }'
 }
 
 _queue_asset_class_classifier_decision_tuple() {
     local json decision action confidence requested recommended reasons schema
     json="$(_queue_asset_class_classifier_decision_json "$@")" || return 1
-    printf '%s' "$json" | _queue_asset_class_classifier_tuple_from_json
+    _queue_asset_class_classifier_tuple_from_json <<< "$json"
+}
+
+
+_queue_asset_class_classifier_risk_tuple_from_json() {
+    python3 -c '
+import json, sys
+obj = json.load(sys.stdin)
+rec = obj.get("recommendation") if obj.get("schema") == "queuebash.class_inference.explain.v1" else obj
+risk = rec.get("risk_floor") or {}
+fields = [
+    str(rec.get("decision", "")),
+    str(rec.get("recommended_action", "")),
+    str(risk.get("applies", False)).lower(),
+    str(risk.get("score", 0)),
+    str(risk.get("threshold", 0)),
+    str(risk.get("floor_class", "")),
+    str(len(rec.get("reasons") or [])),
+]
+print("\t".join(fields))
+'
+}
+
+_queue_asset_class_classifier_int_ge() {
+    awk -v have="$1" -v need="$2" 'BEGIN { exit (int(have+0) >= int(need+0)) ? 0 : 1 }'
 }
 
 queue_asset_check_class_classifier_decision_explainable() {
@@ -205,3 +224,37 @@ queue_asset_check_class_classifier_no_downgrade() {
             ;;
     esac
 }
+
+
+queue_asset_check_class_classifier_risk_floor_review() {
+    local target="${1:-_}"
+    shift || true
+    local min_score configured_action json tuple decision action applies score threshold floor_class reasons
+    min_score="$(_queue_asset_class_classifier_param min_risk_score "$@" || echo 3)"
+    configured_action="$(_queue_asset_class_classifier_param action "$@" || echo require_authorisation)"
+    json="$(_queue_asset_class_classifier_decision_json "$@")" || return 1
+    tuple="$(_queue_asset_class_classifier_risk_tuple_from_json <<< "$json")" || return 1
+    IFS=$'\t' read -r decision action applies score threshold floor_class reasons <<< "$tuple"
+    if [[ "$applies" == "true" ]] && _queue_asset_class_classifier_int_ge "$score" "$min_score"; then
+        if [[ "${reasons:-0}" -le 0 ]]; then
+            echo "asset_check_blocked: class_classifier:risk_floor_review unexplained_risk_floor target=$target decision=$decision score=$score min_risk_score=$min_score"
+            return 1
+        fi
+        case "$configured_action" in
+            warn|audit|allow)
+                echo "asset_check_ok: class_classifier:risk_floor_review configured_${configured_action} target=$target decision=$decision score=$score floor_class=$floor_class reasons=$reasons"
+                return 0
+                ;;
+            require_authorisation|require_authorization|block)
+                echo "asset_check_blocked: class_classifier:risk_floor_review review_required target=$target decision=$decision action=$configured_action score=$score floor_class=$floor_class reasons=$reasons"
+                return 1
+                ;;
+            *)
+                echo "asset_check_blocked: class_classifier:risk_floor_review invalid_action=$configured_action"
+                return 2
+                ;;
+        esac
+    fi
+    echo "asset_check_ok: class_classifier:risk_floor_review no_risk_floor target=$target decision=$decision score=$score threshold=$threshold"
+}
+

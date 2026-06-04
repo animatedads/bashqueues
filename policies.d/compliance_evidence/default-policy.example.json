@@ -1,0 +1,18 @@
+{
+  "credentials_required_for_default_tests": false,
+  "denied_operations": [
+    "evidence-upload",
+    "evidence-delete",
+    "attestation-sign",
+    "control-acceptance",
+    "audit-close",
+    "queue-dispatch-refactor"
+  ],
+  "fixture_first": true,
+  "live_api_default": false,
+  "normalized_json_only": true,
+  "notes": "Example policy only; no live calls or mutations.",
+  "provider_family": "compliance_evidence",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.compliance_evidence.policy.v1"
+}

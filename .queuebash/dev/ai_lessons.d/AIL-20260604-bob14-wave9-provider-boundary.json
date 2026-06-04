@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-04T11:20:00Z",
+  "created_from_session": "AIS-20260604-110740-865644-6142-bob14",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260604-bob14-wave9-provider-boundary",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "python3 tests/provider_service_coverage_wave9_bob14_static.py",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Identity-provider and notification-service service coverage must remain advisory discovery only. Do not turn identity providers into login/token minting or directory mutation, and do not turn notification services into message send or route/template mutation."
+}

@@ -1,0 +1,29 @@
+{
+  "schema": "queuebash.path_lock.profile.v1",
+  "qid": "20260604_demo",
+  "class": "HIGH_RISK_MIGRATION",
+  "canonical_path": "/run/queuebash/jobs/20260604_demo/work/output.sql",
+  "operation": "existing-file-write",
+  "parent": {
+    "canonical_path": "/run/queuebash/jobs/20260604_demo/work",
+    "device": "259:2",
+    "inode": 1234567,
+    "owner_uid": 1001,
+    "mode": "0700",
+    "world_writable": false
+  },
+  "target": {
+    "type": "regular-file",
+    "device": "259:2",
+    "inode": 2234567,
+    "owner_uid": 1001,
+    "mode": "0600",
+    "hardlink_count": 1
+  },
+  "symlink_policy": "deny",
+  "hardlink_policy": "constrained",
+  "mount_crossing_policy": "deny",
+  "open_policy": ["beneath", "nofollow", "no-magiclinks"],
+  "write_policy": "existing-file-write",
+  "redacted": true
+}

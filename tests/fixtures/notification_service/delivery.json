@@ -1,0 +1,19 @@
+{
+  "check": "delivery",
+  "decision": "allow",
+  "delivery_policy_checked": true,
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "delivery.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "notification_service",
+  "provider_output_is_shell": false,
+  "reason": "fixture_delivery_evidence_available",
+  "schema": "queuebash.notification_service.delivery.v1",
+  "send_performed": false,
+  "source": "fixture"
+}

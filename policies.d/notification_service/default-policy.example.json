@@ -1,0 +1,21 @@
+{
+  "credentials_required_for_default_tests": false,
+  "fixture_first": true,
+  "live_api_default": false,
+  "non_goals": [
+    "send-message",
+    "publish",
+    "subscribe",
+    "webhook-create",
+    "topic-create",
+    "template-update",
+    "recipient-export",
+    "queue-dispatch-refactor"
+  ],
+  "normalized_json_only": true,
+  "provider_family": "notification_service",
+  "provider_output_is_shell": false,
+  "provisioning_default": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.notification_service.policy.example.v1"
+}

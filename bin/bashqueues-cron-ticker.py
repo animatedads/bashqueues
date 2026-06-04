@@ -161,7 +161,7 @@ def _bundled_policy_root(qsrc: str) -> Optional[Path]:
 def _class_statement(user: str, qsrc: str) -> Dict[str, str]:
     name = os.environ.get("QUEUEBASH_CLASS_POLICY_STATEMENT", "default")
     roots = [
-        Path(os.environ.get("QUEUEBASH_SHARED_POLICY_ROOT", "/etc/bashqueues/policies.d")),
+        Path(os.environ.get("QUEUEBASH_SHARED_POLICY_ROOT", "/etc/queuebash/policies.d")),
         _queue_root_for_user(user) / "policies.d",
     ]
     bundled = _bundled_policy_root(qsrc)

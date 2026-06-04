@@ -1,0 +1,50 @@
+{
+  "schema": "queuebash.display_resource_install_audit.v1",
+  "status": "ok",
+  "source_root": "/src/bashqueues",
+  "installed_root": "/etc/bashqueues",
+  "redacted": true,
+  "owner_lane": "bob18-display-resources",
+  "renderer": "none-install-audit-only",
+  "source": "manifest-metadata-and-file-hash-presence-only",
+  "read_only": true,
+  "installer": false,
+  "signing_mutation": false,
+  "json_contract_source": false,
+  "secret_rendering_allowed": false,
+  "token_value_substitution": false,
+  "stats": {
+    "resources_declared": 4,
+    "resources_installed_ok": 4,
+    "findings": 0
+  },
+  "resources": [
+    {
+      "type": "display",
+      "name": "queue-version.txt",
+      "language": "lang_eng",
+      "source_path": "resources.d/display/lang_eng/queue-version.txt",
+      "installed_path": "resources.d/display/lang_eng/queue-version.txt",
+      "source_present": true,
+      "installed_present": true,
+      "sha256_match": true,
+      "source_sha256": "example-redacted-hash",
+      "installed_sha256": "example-redacted-hash",
+      "json_contract_source": false,
+      "secret_rendering_allowed": false
+    }
+  ],
+  "forbidden": [
+    "install_mutation",
+    "signing_mutation",
+    "resource_rendering",
+    "token_substitution",
+    "secret_values",
+    "provider_credentials",
+    "command_json_generation_from_templates",
+    "eval",
+    "source",
+    "shell_expansion"
+  ],
+  "findings": []
+}

@@ -1,0 +1,14 @@
+{
+  "authority": "bob14",
+  "created_at": "2026-06-04T13:06:52Z",
+  "id": "AIL-20260604-bob14-wave10-2",
+  "kind": "warning",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "status": "active",
+  "tags": [
+    "bob14",
+    "service-coverage",
+    "wave10"
+  ],
+  "text": "Compliance-evidence service coverage is advisory only. Do not upload/delete evidence, sign attestations, accept controls, close audits, or mutate retention from provider facts."
+}

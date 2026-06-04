@@ -14,7 +14,8 @@ Usage:
 
 Purpose:
   Resolve provider/model choices from AI profiles, provider registry, health,
-  capability, cost, and locality constraints. By default it performs selection
+  capability, cost, and locality constraints. Explain and response JSON include
+  bounded health_summary evidence for candidate/rejection review. By default it performs selection
   only; --live delegates to an existing ask-provider helper only when
   QUEUEBASH_AI_LIVE_ENABLED=1 is set by policy.
 

@@ -1,5 +1,5 @@
 {
-  "created_for": "0.18.106_BOB14_service_coverage_schema_registry_data_quality",
+  "created_for": "0.18.109_BOB14_service_coverage_access_review_compliance_evidence_rebased",
   "default_safety_contract": {
     "credentials_required_for_default_tests": false,
     "fixture_first": true,
@@ -10,6 +10,29 @@
     "queue_dispatch_refactor": false
   },
   "families": {
+    "access_review": {
+      "doc_prefix": "ACCESS_REVIEW",
+      "fixture_dir": "access_review",
+      "non_goals": [
+        "access-grant",
+        "access-revoke",
+        "review-approval",
+        "review-closure",
+        "identity-mutation",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "access_review",
+      "priority": 18,
+      "provider_dir": "access_review",
+      "schemas": [
+        "queuebash.access_review.detect.v1",
+        "queuebash.access_review.scope.v1",
+        "queuebash.access_review.entitlement.v1",
+        "queuebash.access_review.reviewer.v1",
+        "queuebash.access_review.exception.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "artifact_store": {
       "doc_prefix": "ARTIFACT_STORE",
       "fixture_dir": "artifact_store",
@@ -31,6 +54,29 @@
         "queuebash.artifact_store.provenance.v1",
         "queuebash.artifact_store.retention.v1",
         "queuebash.artifact_store.integrity.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "compliance_evidence": {
+      "doc_prefix": "COMPLIANCE_EVIDENCE",
+      "fixture_dir": "compliance_evidence",
+      "non_goals": [
+        "evidence-upload",
+        "evidence-delete",
+        "attestation-sign",
+        "control-acceptance",
+        "audit-close",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "compliance_evidence",
+      "priority": 19,
+      "provider_dir": "compliance_evidence",
+      "schemas": [
+        "queuebash.compliance_evidence.detect.v1",
+        "queuebash.compliance_evidence.control.v1",
+        "queuebash.compliance_evidence.evidence_pack.v1",
+        "queuebash.compliance_evidence.attestation.v1",
+        "queuebash.compliance_evidence.retention.v1"
       ],
       "status": "fixture_first_provider_family"
     },
@@ -191,6 +237,31 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "identity_provider": {
+      "doc_prefix": "IDENTITY_PROVIDER",
+      "fixture_dir": "identity_provider",
+      "non_goals": [
+        "login",
+        "password-check",
+        "token-mint",
+        "user-create",
+        "group-update",
+        "access-grant",
+        "directory-sync",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "identity_provider",
+      "priority": 16,
+      "provider_dir": "identity_provider",
+      "schemas": [
+        "queuebash.identity_provider.detect.v1",
+        "queuebash.identity_provider.directory.v1",
+        "queuebash.identity_provider.authentication.v1",
+        "queuebash.identity_provider.federation.v1",
+        "queuebash.identity_provider.group.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "metadata_catalog": {
       "doc_prefix": "METADATA_CATALOG",
       "fixture_dir": "metadata_catalog",
@@ -231,6 +302,31 @@
         "queuebash.model_registry.catalog.v1",
         "queuebash.model_registry.model.v1",
         "queuebash.model_registry.governance.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "notification_service": {
+      "doc_prefix": "NOTIFICATION_SERVICE",
+      "fixture_dir": "notification_service",
+      "non_goals": [
+        "send-message",
+        "publish",
+        "subscribe",
+        "webhook-create",
+        "topic-create",
+        "template-update",
+        "recipient-export",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "notification_service",
+      "priority": 17,
+      "provider_dir": "notification_service",
+      "schemas": [
+        "queuebash.notification_service.detect.v1",
+        "queuebash.notification_service.channel.v1",
+        "queuebash.notification_service.route.v1",
+        "queuebash.notification_service.template.v1",
+        "queuebash.notification_service.delivery.v1"
       ],
       "status": "fixture_first_provider_family"
     },
@@ -370,8 +466,8 @@
     }
   },
   "next_candidates": [
-    "identity_provider",
-    "notification_service"
+    "backup_service",
+    "certificate_authority"
   ],
   "schema": "queuebash.provider_service_coverage.v1"
 }

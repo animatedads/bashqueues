@@ -1,0 +1,20 @@
+{
+  "check": "evidence_pack",
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "evidence_pack.json",
+    "live_api_used": false
+  },
+  "evidence_pack_is_advisory": true,
+  "evidence_values_redacted": true,
+  "fail_closed": true,
+  "immutable_storage_recommended": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "compliance_evidence",
+  "provider_output_is_shell": false,
+  "reason": "fixture_evidence_pack_evidence_available",
+  "schema": "queuebash.compliance_evidence.evidence_pack.v1",
+  "source": "fixture"
+}

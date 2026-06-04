@@ -1,0 +1,16 @@
+{
+  "schema": "queuebash.enterprise_profile.v1",
+  "profile": "hospital-live-approved-maintenance-default",
+  "live_clearance": "approved-maintenance-only",
+  "allowed_actions": ["status", "list", "show", "explain", "audit-read", "report-read", "backup-verify", "preflight-readonly"],
+  "approval_required_actions": ["submit", "run", "worker-start", "maintenance-execute", "secret-deliver", "break-glass-request", "break-glass-approve"],
+  "blocked_actions": ["remote-mutation", "cloud-destroy", "policy-edit", "class-edit", "install-system", "unapproved-secret-env", "model-output-execution"],
+  "secrets": {
+    "delivery": "file",
+    "env_allowed": false,
+    "delivery_allowed": "approved-only",
+    "break_glass_allowed": "authorised-only",
+    "redacted_audit": true,
+    "secret_value_in_json_allowed": false
+  }
+}

@@ -138,7 +138,7 @@ def _policy_roots(user: str) -> List[Path]:
     roots: List[Path] = []
     home = os.path.expanduser(f"~{user}") if user else os.path.expanduser("~")
     queue_root = Path(os.environ.get("QUEUEBASH_ROOT", os.path.join(home, ".queuebash")))
-    roots.append(Path("/etc/bashqueues/policies.d"))
+    roots.append(Path("/etc/queuebash/policies.d"))
     roots.append(queue_root / "policies.d")
     here = Path(__file__).resolve()
     roots.append(here.parent.parent / "policies.d")

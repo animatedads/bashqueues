@@ -1,0 +1,18 @@
+{
+  "schema": "queuebash.class_inference.policy.v1",
+  "mode": "suggest",
+  "min_observations": 3,
+  "confidence_threshold": 0.80,
+  "block_security_downgrade": true,
+  "history_trust_mode": "reviewed_only",
+  "risk_floor_enabled": true,
+  "risk_floor_threshold": 3,
+  "risk_floor_low_classes": ["BASIC_TASK", "DEV_TEST"],
+  "risk_floor_class": "HIGH_ASSURANCE_REVIEW",
+  "policy_references": [
+    "queue_class_shared_asset class_classifier no_downgrade min_confidence=0.80 action=block"
+  ],
+  "corporate_policy_refs": ["CLASSIFIER-REVIEWED-HISTORY-ONLY"],
+  "regulatory_refs": [],
+  "validation_status": "fixture_contract"
+}

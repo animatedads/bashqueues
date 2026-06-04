@@ -112,3 +112,28 @@ reference. If the manifest changes after sealing, `verify-manifest` reports
 `seal_status="mismatch"` and fails closed. If no seal exists, verification
 reports `seal_status="absent"`; operators may then choose to seal before cleanup
 where evidence retention is required.
+
+### Seal verification hardening
+
+`verify-manifest` also validates the retained manifest seal when one exists. A seal is trusted only when it is mode `0600`, uses `queuebash.secret_manifest_seal.v1`, remains redacted, declares `secret_value_included=false`, contains a manifest hash, points at the same per-job manifest path, and names the same QID being verified.
+
+The verifier reports these seal evidence fields in `queuebash.secret_manifest_verify.v1`:
+
+```json
+{
+  "seal_status": "absent|match|mismatch|invalid",
+  "seal_mode": "600",
+  "seal_schema_ok": 1,
+  "seal_redacted_ok": 1,
+  "seal_secret_value_marker_ok": 1,
+  "seal_manifest_path_ok": 1,
+  "seal_qid_ok": 1,
+  "seal_hash_present": 1
+}
+```
+
+A seal whose hash no longer matches the manifest is `mismatch`. A seal with unsafe permissions, wrong schema, missing redaction markers, missing hash, wrong manifest path, or wrong QID is `invalid`. Both conditions make verification fail closed without reading or printing secret values.
+
+### Manifest row integrity verification
+
+`verify-manifest` also validates the integrity of each redacted delivery row. Every row must name the requested QID, include non-empty `secret_ref_hash` and `path_hash` fields, and the `path_hash` must match the hash of the recorded delivery path. A row with a mismatched QID, missing hash metadata, or altered path hash is treated as malformed evidence and causes verification to fail closed. The JSON evidence reports `qid_mismatches`, `missing_hashes`, and `path_hash_mismatches`; it still never reads or returns secret values.

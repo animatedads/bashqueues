@@ -1,0 +1,42 @@
+{
+  "schema": "queuebash.display_resource_token_audit.v1",
+  "status": "ok",
+  "redacted": true,
+  "owner_lane": "bob18-display-resources",
+  "renderer": "none-token-audit-only",
+  "source": "manifest-and-resource-token-names-only",
+  "json_contract_source": false,
+  "secret_rendering_allowed": false,
+  "token_value_substitution": false,
+  "stats": {
+    "manifest_rows": 4,
+    "resources_checked": 4,
+    "tokens_declared": 22,
+    "tokens_used": 22,
+    "unused_declared_tokens": 0,
+    "undeclared_used_tokens": 0
+  },
+  "resources": [
+    {
+      "type": "display",
+      "name": "status-panel.example.txt",
+      "language": "lang_eng",
+      "declared_tokens": ["CLASS", "JOB_NAME", "QID", "STATE", "UPDATED_AT"],
+      "used_tokens": ["CLASS", "JOB_NAME", "QID", "STATE", "UPDATED_AT"],
+      "undeclared_tokens": [],
+      "unused_tokens": [],
+      "secret_token_names_present": false
+    }
+  ],
+  "forbidden": [
+    "secret_token_names",
+    "secret_values",
+    "provider_credentials",
+    "shell_expansion",
+    "command_substitution",
+    "eval",
+    "source",
+    "json_generation_from_template"
+  ],
+  "findings": []
+}

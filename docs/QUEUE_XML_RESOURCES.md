@@ -137,3 +137,21 @@ The XML catalog evidence is therefore safe to use in release review and installe
 
 `bin/queue-display-resource-lookup-explain.py` also accepts `--type xml` and emits the same `queuebash.display_resource_lookup_explain.v1` schema for XML display resources. The explanation is limited to manifest metadata and file-presence checks. It must not parse XML as executable policy, resolve external entities, render secret values, mutate signing state, or generate command/provider JSON.
 
+
+## XML/display token audit evidence
+
+`bin/queue-display-resource-token-audit.py --json` includes XML display resources in the same Bob18 token audit evidence used for plain display resources. XML token auditing compares only manifest-declared token names and `{{TOKEN}}` names found in XML body text. It does not parse provider data, render XML, perform token replacement, expose secret values, or generate command JSON.
+
+XML parseability and DTD/entity rejection remain lint-helper responsibilities; token audit evidence is a complementary check that XML display templates use only explicit controlled token names.
+
+## XML/display fallback audit evidence
+
+`bin/queue-display-resource-fallback-audit.py --json` includes XML display resources in the same Bob18 fallback audit evidence used for plain display resources. XML fallback audit checks manifest rows and file presence only: it confirms that fallback-required XML resources have a fallback manifest row and a fallback XML file.
+
+The helper does not render XML, resolve entities, substitute tokens, inspect provider data, expose secrets, mutate signing state, or generate command JSON. XML parseability, DTD rejection, and token allow-list checks remain covered by the lint and token-audit helpers; fallback audit is a complementary release-review check for the emergency presentation fallback chain.
+
+## XML/display install audit evidence
+
+`bin/queue-display-resource-install-audit.py --json` includes XML display resources in the same Bob18 install audit evidence used for plain display resources. XML install audit compares manifest files and manifest-declared XML resource files between a reviewed source tree and an installed resource tree using file presence and SHA-256 hashes only.
+
+The helper does not parse XML as policy, resolve entities, render XML, substitute tokens, inspect providers, expose secrets, mutate signing/install state, or generate command JSON. XML parseability, DTD rejection, and token allow-list checks remain covered by the lint and token-audit helpers; install audit is complementary evidence that the installed XML/display resource copies match the reviewed source tree.

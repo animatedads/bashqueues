@@ -1,0 +1,45 @@
+{
+  "schema": "queuebash.display_resource_fallback_audit.v1",
+  "status": "ok",
+  "root": ".",
+  "redacted": true,
+  "owner_lane": "bob18-display-resources",
+  "renderer": "none-fallback-audit-only",
+  "source": "manifest-metadata-and-file-presence-only",
+  "json_contract_source": false,
+  "secret_rendering_allowed": false,
+  "token_value_substitution": false,
+  "stats": {
+    "manifest_rows": 6,
+    "resources_declared": 3,
+    "fallback_required_resources": 3,
+    "fallback_present_resources": 3,
+    "findings": 0
+  },
+  "resources": [
+    {
+      "type": "display",
+      "name": "queue-version.txt",
+      "manifest_languages": ["fallback", "lang_eng"],
+      "fallback_required_by": ["lang_eng"],
+      "fallback_manifest_entry": true,
+      "fallback_file_present": true,
+      "fallback_path": "resources.d/display/fallback/queue-version.txt",
+      "lookup_boundary": "localized-file-then-fallback-presence-only",
+      "json_contract_source": false,
+      "secret_rendering_allowed": false
+    }
+  ],
+  "forbidden": [
+    "secret_values",
+    "provider_credentials",
+    "resource_rendering",
+    "token_substitution",
+    "shell_expansion",
+    "command_substitution",
+    "eval",
+    "source",
+    "json_generation_from_template"
+  ],
+  "findings": []
+}

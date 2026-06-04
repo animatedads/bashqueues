@@ -17,7 +17,7 @@ This installs:
 - `/usr/local/bin/queue`, a non-interactive wrapper that sets `QUEUEBASH_ALLOW_NONINTERACTIVE=1`, sources the system copy, and executes `queue "$@"`
 - `/usr/local/bin/queuemgr`, a compatibility symlink to the queue manager shim
 - `/etc/profile.d/bashqueues.sh`, so new interactive shells get the `queue` function
-- shared policy templates under `/etc/bashqueues/policies.d` without overwriting existing site policy files
+- shared policy templates under `/etc/queuebash/policies.d` without overwriting existing site policy files
 
 After installation, open a new shell or run:
 
@@ -25,6 +25,29 @@ After installation, open a new shell or run:
 source /etc/profile.d/bashqueues.sh
 queue version
 ```
+
+
+## Canonical system policy root
+
+The active system policy root is:
+
+```text
+/etc/queuebash/policies.d
+```
+
+`install-system.sh --dryrun`, `queue-policy-wizard --scope system --dryrun --json`, root signer policy setup, code-signing policy setup, and remote-listener policy verification must all report this same tree. The older plural `/etc/bashqueues/policies.d` path is legacy documentation/history only and must not be used for new system policy writes.
+
+## Shell function vs installed wrapper
+
+Before system install, `queue` is a shell function and is available only in the shell where `queuebash.sh` has been sourced. That is suitable for interactive development, but it is not enough for scripts, cron, `timeout`, CI, or systemd units.
+
+After system install, the installer creates a non-interactive wrapper, normally:
+
+```text
+/usr/local/bin/queue
+```
+
+The wrapper sets `QUEUEBASH_ALLOW_NONINTERACTIVE=1`, sources the installed system copy, and then runs `queue "$@"`. New interactive shells may also source `/etc/profile.d/bashqueues.sh` to get the shell function.
 
 ## Cron bridge
 
@@ -73,7 +96,7 @@ By default, the installer makes sure root has an Ed25519 authorisation signing k
 It then installs root's public key into the shared class-statement policy if the policy does not already declare a root signer:
 
 ```text
-/etc/bashqueues/policies.d/class-statement/default.env
+/etc/queuebash/policies.d/class-statement/default.env
 ```
 
 Existing keys and existing non-empty policy signer lines are preserved.  Use `--force-root-key` only when deliberately rotating the local root signing key.

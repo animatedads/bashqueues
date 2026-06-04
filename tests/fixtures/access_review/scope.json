@@ -1,0 +1,24 @@
+{
+  "check": "scope",
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "scope.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "identity_values_redacted": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "access_review",
+  "provider_output_is_shell": false,
+  "reason": "fixture_scope_evidence_available",
+  "review_scope": "quarterly_access_review",
+  "schema": "queuebash.access_review.scope.v1",
+  "scoped_systems": [
+    "iam",
+    "data_platform",
+    "privileged_access"
+  ],
+  "source": "fixture"
+}

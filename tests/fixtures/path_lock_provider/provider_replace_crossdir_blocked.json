@@ -1,0 +1,19 @@
+{
+  "schema": "queuebash.path_lock.fixture.v1",
+  "case": "provider_replace_crossdir_blocked",
+  "grant": {
+    "canonical_path": "/run/queuebash/jobs/q1/work/result.json",
+    "parent_canonical_path": "/run/queuebash/jobs/q1/work",
+    "parent_dev_inode": "259:2:1000",
+    "final_dev_inode": "259:2:2000",
+    "write_policy": "replace-atomic"
+  },
+  "observed": {
+    "requested_path": "/run/queuebash/jobs/q1/work/result.json",
+    "parent_dev_inode": "259:2:1000",
+    "temp_parent_dev_inode": "259:2:7777",
+    "rename_cross_directory": true,
+    "operation": "replace-atomic"
+  },
+  "expected": {"allowed": false, "reason": "replace_cross_directory_denied"}
+}

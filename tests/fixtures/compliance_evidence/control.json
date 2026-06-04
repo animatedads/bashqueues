@@ -1,0 +1,24 @@
+{
+  "check": "control",
+  "control_mapping_is_advisory": true,
+  "control_values_redacted": true,
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "control.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "frameworks": [
+    "iso27001",
+    "soc2",
+    "gdpr"
+  ],
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "compliance_evidence",
+  "provider_output_is_shell": false,
+  "reason": "fixture_control_evidence_available",
+  "schema": "queuebash.compliance_evidence.control.v1",
+  "source": "fixture"
+}

@@ -1,0 +1,19 @@
+{
+  "check": "template",
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "template.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "notification_service",
+  "provider_output_is_shell": false,
+  "reason": "fixture_template_evidence_available",
+  "schema": "queuebash.notification_service.template.v1",
+  "source": "fixture",
+  "template_body_redacted": true,
+  "template_mutation_allowed": false
+}

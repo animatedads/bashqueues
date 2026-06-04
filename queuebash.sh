@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.106"
+QUEUEBASH_VERSION="0.18.110"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -475,6 +475,17 @@ _queue_init() {
     local root="$(_queue_root)"
     local default_class="${QUEUEBASH_DEFAULT_CLASS:-DEFAULT}"
     local default_file="$root/classes/$default_class.env"
+    local init_key="$root|$default_class|${BASH_SOURCE[0]:-queuebash.sh}"
+
+    # Same-shell commands such as Karen's smoke test call queue repeatedly after
+    # sourcing queuebash.sh once. Installing the bundled class/resource/policy
+    # catalog on every command makes the first-user path look hung even when the
+    # worker path is healthy. Cache successful initialisation per root/default
+    # class/source, while still reinitialising automatically if QUEUEBASH_ROOT
+    # changes in the same shell.
+    if [[ "${__QUEUEBASH_INIT_DONE_KEY:-}" == "$init_key" && -f "$default_file" ]]; then
+        return 0
+    fi
 
     mkdir -p "$root"/{pending,running,paused,done,failed,pol_blocked,interrupted,cancelled,deleted,logs,workers,outputs,streams,helpers,classes,class.d,envs.d,assets.d,caps.d,reporters.d,policies.d/sandbox,policies.d/seccomp,policies.d/class-statement,claims/classes,claims/assets,clearance,clearance/done,clearance/failed,clearance/pol_blocked,clearance/interrupted,clearance/cancelled,clearance/deleted,clearance/paused,clearance/running,clearance/logs}
 
@@ -498,13 +509,23 @@ EOF
     fi
 
 
-    _queue_install_bundled_classes
-    _queue_install_bundled_env_profiles
-    _queue_install_bundled_asset_plugins
-    _queue_install_bundled_cap_plugins
-    _queue_install_bundled_reporter_plugins
-    _queue_install_bundled_policies
+    local bundle_stamp="$root/.queuebash_bundled_install_version"
+    local bundle_stamp_version=""
+    if [[ -f "$bundle_stamp" ]]; then
+        bundle_stamp_version="$(cat "$bundle_stamp" 2>/dev/null || true)"
+    fi
 
+    if [[ "${QUEUEBASH_BUNDLED_INSTALL_MODE:-once-per-version}" == "always" || "$bundle_stamp_version" != "$QUEUEBASH_VERSION" ]]; then
+        _queue_install_bundled_classes
+        _queue_install_bundled_env_profiles
+        _queue_install_bundled_asset_plugins
+        _queue_install_bundled_cap_plugins
+        _queue_install_bundled_reporter_plugins
+        _queue_install_bundled_policies
+        printf '%s\n' "$QUEUEBASH_VERSION" > "$bundle_stamp" 2>/dev/null || true
+    fi
+
+    __QUEUEBASH_INIT_DONE_KEY="$init_key"
 }
 
 _queue_now() {
@@ -5489,7 +5510,7 @@ _queue_code_signing_policy_candidates() {
     fi
     printf '%s\n' \
         "/etc/bashqueues/code-signing.env" \
-        "/etc/bashqueues/policies.d/code-signing/default.env" \
+        "/etc/queuebash/policies.d/code-signing/default.env" \
         "$root/policies.d/code-signing/default.env" \
         "$root/code-signing.env"
 }
@@ -5530,10 +5551,8 @@ _queue_code_relpath() {
     tree="$(cd "$tree" 2>/dev/null && pwd -P)" || return 1
     file="$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)/$(basename "$file")" || return 1
     case "$file" in
-        "$tree"/*) printf '%s
-' "${file#"$tree"/}" ;;
-        *) printf '%s
-' "$file" ;;
+        "$tree"/*) printf '%s\n' "${file#"$tree"/}" ;;
+        *) printf '%s\n' "$file" ;;
     esac
 }
 
@@ -5698,18 +5717,15 @@ _queue_code_verify_one() {
 _queue_code_signature_tree_for_file() {
     local file="$1" root script_dir
     if [[ -n "${QUEUEBASH_CODE_SIGNATURE_TREE:-}" ]]; then
-        printf '%s
-' "$QUEUEBASH_CODE_SIGNATURE_TREE"; return 0
+        printf '%s\n' "$QUEUEBASH_CODE_SIGNATURE_TREE"; return 0
     fi
     root="$(_queue_root 2>/dev/null || printf '%s' "${QUEUEBASH_ROOT:-$HOME/.queuebash}")"
     if [[ "$file" == "$root"/* ]]; then
-        printf '%s
-' "$root"; return 0
+        printf '%s\n' "$root"; return 0
     fi
     script_dir="$(_queue_code_tree_default)"
     if [[ "$file" == "$script_dir"/* || "$file" == "$script_dir" ]]; then
-        printf '%s
-' "$script_dir"; return 0
+        printf '%s\n' "$script_dir"; return 0
     fi
     dirname "$file"
 }
@@ -5882,7 +5898,7 @@ _queue_code_trust_command() {
     [[ -s "$pub" ]] || { echo "queue code trust: public key not found: $pub" >&2; return 1; }
     sha="$(_queue_code_public_key_sha "$pub")" || return 1
     if [[ "$shared" -eq 1 ]]; then
-        policy="/etc/bashqueues/policies.d/code-signing/default.env"
+        policy="/etc/queuebash/policies.d/code-signing/default.env"
     else
         root="$(_queue_root)"; policy="$root/policies.d/code-signing/default.env"
     fi
@@ -5916,7 +5932,7 @@ _queue_reporting_policy_candidates() {
     fi
     printf '%s\n' \
         "/etc/bashqueues/reporting.env" \
-        "/etc/bashqueues/policies.d/reporting/default.env" \
+        "/etc/queuebash/policies.d/reporting/default.env" \
         "$root/policies.d/reporting/default.env" \
         "$root/reporting.env"
     if [[ -n "${script_dir:-}" ]]; then
@@ -7662,8 +7678,7 @@ _queue_command_shell_words_from_args() {
         printf -v raw '%q ' "$@"
         raw="${raw% }"
     fi
-    printf '%s
-' "$raw"
+    printf '%s\n' "$raw"
 }
 # QBTEST:BEGIN name=command-shell-words-quotes function=_queue_command_shell_words_from_args language=bash
 # QBTEST:B64
@@ -7706,8 +7721,7 @@ _queue_policy_command_pattern_matches() {
     while IFS= read -r pat; do
         [[ -n "$pat" ]] || continue
         [[ "$rendered" == $pat ]] && return 0
-    done < <(printf '%s
-' "$patterns" | tr ';' '
+    done < <(printf '%s\n' "$patterns" | tr ';' '
 ')
     return 1
 }
@@ -8923,7 +8937,7 @@ _queue_policy_valid_name() {
 # QBTEST:END
 
 _queue_policy_shared_root() {
-    printf '%s\n' "${QUEUEBASH_SHARED_POLICY_ROOT:-/etc/bashqueues/policies.d}"
+    printf '%s\n' "${QUEUEBASH_SHARED_POLICY_ROOT:-/etc/queuebash/policies.d}"
 }
 # QBTEST:BEGIN name=policy-shared-root-override function=_queue_policy_shared_root language=bash
 # QBTEST:B64
@@ -8956,7 +8970,7 @@ _queue_policy_file() {
     _queue_policy_valid_name "$name" || return 1
 
     # Precedence is intentional:
-    #   1. shared/admin policy folder, normally /etc/bashqueues/policies.d
+    #   1. shared/admin policy folder, normally /etc/queuebash/policies.d
     #   2. queue-root personal policy folder
     #   3. bundled repository policy folder
     # If two policies have the same kind/name, the shared/admin policy wins.
@@ -9053,7 +9067,7 @@ _queue_policy_origin() {
 _queue_policy_edit_target_file() {
     # Prints the file path to edit/create for a policy.
     # Default behaviour is intentionally admin-friendly: root edits the shared
-    # site policy under /etc/bashqueues/policies.d, normal users edit their
+    # site policy under /etc/queuebash/policies.d, normal users edit their
     # queue-local policy under $QUEUEBASH_ROOT/policies.d.  --shared and
     # --personal are explicit overrides used by tests and automation.
     local scope="${1:-auto}" kind="${2:-}" name="${3:-}" root base
@@ -11534,6 +11548,70 @@ _queue_job_history_brief_for_explain() {
     echo "  full history: queue history $id"
 }
 
+_queue_ai_policy_gate_explain_for_job() {
+    local f="$1"
+    (
+        AI_POLICY_GATE_LAST_DECISION=""
+        AI_POLICY_GATE_LAST_ACTION=""
+        AI_POLICY_GATE_LAST_AT=""
+        AI_POLICY_GATE_LAST_CATEGORY=""
+        AI_POLICY_GATE_LAST_CONFIDENCE=""
+        AI_POLICY_GATE_LAST_DELAY_SECONDS=""
+        AI_POLICY_GATE_LAST_RATIONALE=""
+        AI_POLICY_GATE_FINDING_COUNT=""
+        AI_POLICY_GATE_FINDING_CATEGORIES=""
+        AI_POLICY_GATE_FINDING_IDS=""
+        AI_POLICY_GATE_MAX_SEVERITY=""
+        AI_POLICY_GATE_DETERMINISTIC_RECOMMENDATION=""
+        AI_POLICY_GATE_PAYLOAD_SOURCES=""
+        AI_POLICY_GATE_COMMAND_OPS=""
+        AI_POLICY_GATE_DATA_OPS=""
+        AI_POLICY_GATE_DB_AUTH_OPEN=""
+        AI_POLICY_GATE_DB_PRIVILEGES_BROAD=""
+        AI_POLICY_GATE_ENCODED_DB_PAYLOAD=""
+        AI_POLICY_GATE_COMPOUND_EXPOSURE=""
+        AI_POLICY_GATE_LEGAL_CASE_RESTRICTION=""
+        AI_POLICY_GATE_DELAY_REQUESTED_NOT_BEFORE_EPOCH=""
+        AI_POLICY_GATE_DELAY_EFFECTIVE_NOT_BEFORE_EPOCH=""
+        AI_POLICY_GATE_DELAY_PRESERVED_EXISTING=""
+        AI_POLICY_GATE_LOG=""
+        AI_POLICY_GATE_ADVISORY=""
+        POLICY_BLOCKED=""
+        source "$f" >/dev/null 2>&1 || exit 0
+        [[ -n "${AI_POLICY_GATE_LAST_DECISION:-}" || -n "${AI_POLICY_GATE_ADVISORY:-}" || -n "${POLICY_BLOCKED:-}" ]] || exit 0
+        echo
+        echo "AI policy gate"
+        [[ -n "${AI_POLICY_GATE_LAST_AT:-}" ]] && printf "  %-24s %s\n" "checked at:" "$AI_POLICY_GATE_LAST_AT"
+        [[ -n "${AI_POLICY_GATE_LAST_ACTION:-}" ]] && printf "  %-24s %s\n" "action:" "$AI_POLICY_GATE_LAST_ACTION"
+        [[ -n "${AI_POLICY_GATE_LAST_DECISION:-}" ]] && printf "  %-24s %s\n" "decision:" "$AI_POLICY_GATE_LAST_DECISION"
+        [[ -n "${AI_POLICY_GATE_LAST_CATEGORY:-}" ]] && printf "  %-24s %s\n" "category:" "$AI_POLICY_GATE_LAST_CATEGORY"
+        [[ -n "${AI_POLICY_GATE_LAST_CONFIDENCE:-}" ]] && printf "  %-24s %s\n" "confidence:" "$AI_POLICY_GATE_LAST_CONFIDENCE"
+        [[ -n "${AI_POLICY_GATE_LAST_DELAY_SECONDS:-}" && "${AI_POLICY_GATE_LAST_DELAY_SECONDS:-0}" != "0" ]] && printf "  %-24s %s\n" "requested delay:" "${AI_POLICY_GATE_LAST_DELAY_SECONDS}s"
+        [[ -n "${AI_POLICY_GATE_DELAY_EFFECTIVE_NOT_BEFORE_EPOCH:-}" ]] && printf "  %-24s %s\n" "effective not-before:" "$AI_POLICY_GATE_DELAY_EFFECTIVE_NOT_BEFORE_EPOCH"
+        if [[ "${AI_POLICY_GATE_DELAY_PRESERVED_EXISTING:-0}" == "1" ]]; then
+            printf "  %-24s %s\n" "delay handling:" "existing later delay preserved"
+        fi
+        [[ -n "${AI_POLICY_GATE_MAX_SEVERITY:-}" ]] && printf "  %-24s %s\n" "max severity:" "$AI_POLICY_GATE_MAX_SEVERITY"
+        [[ -n "${AI_POLICY_GATE_DETERMINISTIC_RECOMMENDATION:-}" ]] && printf "  %-24s %s\n" "static recommendation:" "$AI_POLICY_GATE_DETERMINISTIC_RECOMMENDATION"
+        [[ -n "${AI_POLICY_GATE_FINDING_COUNT:-}" ]] && printf "  %-24s %s\n" "finding count:" "$AI_POLICY_GATE_FINDING_COUNT"
+        [[ -n "${AI_POLICY_GATE_FINDING_CATEGORIES:-}" ]] && printf "  %-24s %s\n" "finding categories:" "$AI_POLICY_GATE_FINDING_CATEGORIES"
+        [[ -n "${AI_POLICY_GATE_PAYLOAD_SOURCES:-}" ]] && printf "  %-24s %s\n" "payload sources:" "$AI_POLICY_GATE_PAYLOAD_SOURCES"
+        [[ -n "${AI_POLICY_GATE_COMMAND_OPS:-}" ]] && printf "  %-24s %s\n" "command ops:" "$AI_POLICY_GATE_COMMAND_OPS"
+        [[ -n "${AI_POLICY_GATE_DATA_OPS:-}" ]] && printf "  %-24s %s\n" "data ops:" "$AI_POLICY_GATE_DATA_OPS"
+        if [[ "${AI_POLICY_GATE_DB_AUTH_OPEN:-0}" == "1" || "${AI_POLICY_GATE_DB_PRIVILEGES_BROAD:-0}" == "1" || "${AI_POLICY_GATE_ENCODED_DB_PAYLOAD:-0}" == "1" || "${AI_POLICY_GATE_COMPOUND_EXPOSURE:-0}" == "1" ]]; then
+            echo "  risk flags:"
+            [[ "${AI_POLICY_GATE_DB_AUTH_OPEN:-0}" == "1" ]] && echo "    db_auth_open"
+            [[ "${AI_POLICY_GATE_DB_PRIVILEGES_BROAD:-0}" == "1" ]] && echo "    db_privileges_broad"
+            [[ "${AI_POLICY_GATE_ENCODED_DB_PAYLOAD:-0}" == "1" ]] && echo "    encoded_payload_to_database_execute"
+            [[ "${AI_POLICY_GATE_COMPOUND_EXPOSURE:-0}" == "1" ]] && echo "    compound_exposure"
+        fi
+        [[ "${AI_POLICY_GATE_LEGAL_CASE_RESTRICTION:-0}" == "1" ]] && printf "  %-24s %s\n" "legal/case hint:" "present (raw hint redacted)"
+        [[ -n "${AI_POLICY_GATE_LAST_RATIONALE:-}" ]] && printf "  %-24s %s\n" "rationale:" "$AI_POLICY_GATE_LAST_RATIONALE"
+        [[ -n "${AI_POLICY_GATE_LOG:-}" ]] && printf "  %-24s %s\n" "policy log:" "$AI_POLICY_GATE_LOG"
+    )
+}
+
+
 _queue_explain_job() {
     local f="$1"
     local root="$(_queue_root)"
@@ -11721,6 +11799,8 @@ _queue_explain_job() {
 
     _queue_exception_explain_for_job "$id"
     _queue_security_exception_guidance_for_job "$id" "$f" "$log"
+
+    _queue_ai_policy_gate_explain_for_job "$f"
 
     echo "Dependencies"
     _queue_job_dependencies_status "$f" | sed 's/^/  /'
@@ -19444,8 +19524,7 @@ _queue_remote_helper_path() {
     fi
     here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
     for cand in         "$here/bin/$helper"         "$here/../bin/$helper"         "/usr/local/share/bashqueues/bin/$helper"         "$HOME/.queuebash/bin/$helper"; do
-        [[ -x "$cand" ]] && { printf '%s
-' "$cand"; return 0; }
+        [[ -x "$cand" ]] && { printf '%s\n' "$cand"; return 0; }
     done
     return 1
 }
@@ -21867,10 +21946,12 @@ EOF
         stats)
             local filter_name=""
             local today=0
+            local json=0
             while [[ "$#" -gt 0 ]]; do
                 case "$1" in
-                    --name|-n) filter_name="$2"; shift 2 ;;
+                    --name|-n) filter_name="${2:-}"; shift 2 ;;
                     --today) today=1; shift ;;
+                    --json|-j) json=1; shift ;;
                     *) shift ;;
                 esac
             done
@@ -21878,16 +21959,29 @@ EOF
             local today_prefix
             today_prefix="$(date +%Y-%m-%d)"
 
-            echo "=== Queue statistics ==="
-            [[ -n "$filter_name" ]] && echo "name: $filter_name"
-            [[ "$today" -eq 1 ]] && echo "submitted: today ($today_prefix)"
-            echo "------------------------"
+            local state f name submitted count total=0 first=0
+            local states=(pending running paused done failed pol_blocked interrupted cancelled deleted)
 
-            local state f name submitted count total=0
+            if [[ "$json" -eq 1 ]]; then
+                printf '{"schema":"queuebash.stats.v1","queue_root":"%s"' "$(_queue_json_escape "$root")"
+                [[ -n "$filter_name" ]] && printf ',"name":"%s"' "$(_queue_json_escape "$filter_name")"
+                if [[ "$today" -eq 1 ]]; then
+                    printf ',"today":true,"submitted_date":"%s"' "$(_queue_json_escape "$today_prefix")"
+                else
+                    printf ',"today":false'
+                fi
+                printf ',"states":{'
+            else
+                echo "=== Queue statistics ==="
+                [[ -n "$filter_name" ]] && echo "name: $filter_name"
+                [[ "$today" -eq 1 ]] && echo "submitted: today ($today_prefix)"
+                echo "------------------------"
+            fi
+
             # policy_blocked is a legacy compatibility state.  The canonical
             # policy-blocked state is pol_blocked, so do not expose a separate
             # policy_blocked statistic here.
-            for state in pending running paused done failed pol_blocked interrupted cancelled deleted; do
+            for state in "${states[@]}"; do
                 count=0
                 if [[ "$state" == "pending" ]]; then
                     while IFS= read -r f; do
@@ -21909,9 +22003,18 @@ EOF
                     done
                 fi
                 total=$((total + count))
-                printf "%-10s %6d\n" "$state:" "$count"
+                if [[ "$json" -eq 1 ]]; then
+                    _queue_json_comma first
+                    printf '"%s":%d' "$(_queue_json_escape "$state")" "$count"
+                else
+                    printf "%-10s %6d\n" "$state:" "$count"
+                fi
             done
-            printf "%-10s %6d\n" "total:" "$total"
+            if [[ "$json" -eq 1 ]]; then
+                printf '},"total":%d}\n' "$total"
+            else
+                printf "%-10s %6d\n" "total:" "$total"
+            fi
             ;;
 
         events)
@@ -22610,20 +22713,38 @@ EOF
 
 
         workers|worker|jobs)
-            echo "=== queuebash worker processes ==="
-            local any=0
-            local pf pid
+            local json=0 arg
+            for arg in "$@"; do
+                case "$arg" in --json|-j) json=1 ;; esac
+            done
+            local any=0 first=0
+            local pf pid info
+            if [[ "$json" -eq 1 ]]; then
+                printf '{"schema":"queuebash.workers.v1","queue_root":"%s","workers":[' "$(_queue_json_escape "$root")"
+            else
+                echo "=== queuebash worker processes ==="
+            fi
             for pf in "$root/workers"/*.pid; do
                 [[ -e "$pf" ]] || continue
                 pid="$(cat "$pf" 2>/dev/null)"
                 if [[ -n "$pid" && -d "/proc/$pid" ]]; then
                     any=1
-                    ps -o pid,ppid,pgid,stat,etime,pcpu,pmem,comm,args -p "$pid" 2>/dev/null || true
+                    if [[ "$json" -eq 1 ]]; then
+                        info="$(ps -o pid=,ppid=,pgid=,stat=,etime=,pcpu=,pmem=,comm=,args= -p "$pid" 2>/dev/null | sed -n '1p')"
+                        _queue_json_comma first
+                        printf '{"pid":%s,"pid_file":"%s","ps":"%s"}' "$pid" "$(_queue_json_escape "$pf")" "$(_queue_json_escape "$info")"
+                    else
+                        ps -o pid,ppid,pgid,stat,etime,pcpu,pmem,comm,args -p "$pid" 2>/dev/null || true
+                    fi
                 else
                     rm -f "$pf"
                 fi
             done
-            [[ "$any" -eq 0 ]] && echo "No live detached workers recorded."
+            if [[ "$json" -eq 1 ]]; then
+                printf '],"count":%d}\n' "$any"
+            else
+                [[ "$any" -eq 0 ]] && echo "No live detached workers recorded."
+            fi
             ;;
 
 
@@ -23191,8 +23312,7 @@ _queue_sentinel_live_worker_count() {
         fi
     done
     shopt -u nullglob
-    printf '%s
-' "$count"
+    printf '%s\n' "$count"
 }
 
 _queue_sentinel_ready_pending_count() {
@@ -23207,8 +23327,7 @@ _queue_sentinel_ready_pending_count() {
         count=$((count + 1))
     done
     shopt -u nullglob
-    printf '%s
-' "$count"
+    printf '%s\n' "$count"
 }
 
 _queue_sentinel_ensure_min_workers() {

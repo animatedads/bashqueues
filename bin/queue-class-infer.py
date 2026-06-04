@@ -279,6 +279,12 @@ def default_policy() -> Dict[str, Any]:
         "min_observations": 3,
         "confidence_threshold": 0.80,
         "block_security_downgrade": False,
+        "history_trust_mode": "accepted",
+        "risk_floor_enabled": True,
+        "risk_floor_threshold": 3,
+        "risk_floor_score_cap": 6,
+        "risk_floor_low_classes": ["BASIC_TASK", "DEV_TEST", "LOW", "LOW_RISK"],
+        "risk_floor_class": "HIGH_ASSURANCE_REVIEW",
         "policy_references": [],
         "corporate_policy_refs": [],
         "regulatory_refs": [],
@@ -316,50 +322,124 @@ def find_pin(fp: Dict[str, Any], pins: Iterable[Dict[str, Any]]) -> Dict[str, An
     return None
 
 
-def trusted_history_row(row: Dict[str, Any]) -> bool:
+def history_review_marker(row: Dict[str, Any]) -> bool:
+    """Return true when a history row carries explicit review/acceptance evidence."""
+    if row.get("valid_exception"):
+        return True
+    if row.get("trusted") is True or row.get("reviewed") is True or row.get("signed_class") is True:
+        return True
+    status = str(row.get("class_review_status") or row.get("review_status") or "").lower()
+    return status in {"accepted", "approved", "signed", "post_review"}
+
+
+def trusted_history_row(row: Dict[str, Any], policy: Dict[str, Any] | None = None) -> Tuple[bool, str]:
+    """Return whether a history row may train the classifier, plus a reason.
+
+    Default mode preserves the earlier accepted-history contract. Opt-in
+    reviewed_only mode prevents learning from historical labels that have no
+    explicit post-review/signed acceptance marker.
+    """
     if row.get("trusted") is False:
-        return bool(row.get("valid_exception"))
+        if row.get("valid_exception"):
+            return True, "valid_exception"
+        return False, "trusted_false"
     outcome = str(row.get("outcome", "accepted"))
     if outcome in {"blocked", "failed", "anomaly", "policy_override"} and not row.get("valid_exception"):
-        return False
-    return True
+        return False, "unaccepted_outcome:" + outcome
+    trust_mode = str((policy or {}).get("history_trust_mode", "accepted"))
+    if trust_mode in {"reviewed", "reviewed_only", "signed_only"} and not history_review_marker(row):
+        return False, "missing_review_marker"
+    return True, "trusted"
 
 
-
-
-def history_trust_summary(history: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
-    total = trusted = excluded = valid_exceptions = 0
+def history_trust_summary(history: Iterable[Dict[str, Any]], policy: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    total = trusted = excluded = valid_exceptions = reviewed_rows = 0
     excluded_reasons: Dict[str, int] = defaultdict(int)
+    trust_mode = str((policy or {}).get("history_trust_mode", "accepted"))
     for row in history:
         total += 1
         if row.get("valid_exception"):
             valid_exceptions += 1
-        if trusted_history_row(row):
+        if history_review_marker(row):
+            reviewed_rows += 1
+        ok, reason = trusted_history_row(row, policy)
+        if ok:
             trusted += 1
             continue
         excluded += 1
-        outcome = str(row.get("outcome", "")) or "unspecified"
-        if row.get("trusted") is False and not row.get("valid_exception"):
-            excluded_reasons["trusted_false"] += 1
-        elif outcome in {"blocked", "failed", "anomaly", "policy_override"}:
-            excluded_reasons["unaccepted_outcome:" + outcome] += 1
-        else:
-            excluded_reasons["untrusted"] += 1
+        excluded_reasons[reason or "untrusted"] += 1
     return {
         "total_rows": total,
         "trusted_rows": trusted,
         "excluded_rows": excluded,
         "valid_exception_rows": valid_exceptions,
+        "reviewed_rows": reviewed_rows,
+        "trust_mode": trust_mode,
         "excluded_reasons": dict(sorted(excluded_reasons.items())),
     }
 
-def weighted_history(fp: Dict[str, Any], history: Iterable[Dict[str, Any]]) -> Tuple[Dict[str, float], int, Dict[str, List[str]]]:
+
+def risk_floor_evidence(job: Dict[str, Any], policy: Dict[str, Any]) -> Tuple[int, List[str]]:
+    """Return policy-driven high-risk evidence for cold-start/low-class jobs.
+
+    This is intentionally not a learned label.  It is a deterministic policy
+    floor: production secrets, outbound network, customer/prod paths, and
+    high-assurance assets may require review even when trusted history is not
+    yet available.  Harmless cold-start fixtures should still defer to class
+    policy rather than block everything new.
+    """
+    if not bool(policy.get("risk_floor_enabled", True)):
+        return 0, []
+    score = 0
+    reasons: List[str] = []
+    secrets = _seq(job.get("secrets") or job.get("secret_refs"))
+    if secrets:
+        score += 2
+        reasons.append("requests secret material")
+        if any(re.search(r"(^|[/_.-])(prod|production)([/_.-]|$)", s, re.I) for s in secrets):
+            score += 2
+            reasons.append("requests production-scoped secret")
+    if bool(job.get("network")) or bool(job.get("outbound_network")):
+        score += 1
+        reasons.append("uses outbound network")
+    path_words = "\n".join(_seq(job.get("paths") or job.get("file_paths") or job.get("paths_touched")))
+    if re.search(r"/(data|db|customer|payments?|exports?)(/|$)|(^|[/_.-])(prod|production|customer|payments?)([/_.-]|$)", path_words, re.I):
+        score += 1
+        reasons.append("touches production/customer-like data paths")
+    assets = "\n".join(_seq(job.get("assets") or job.get("requested_assets") or job.get("cloud_resources") or job.get("resources")))
+    if re.search(r"(^|[:/_.-])(db|database|customer|prod|production|secret|vault|cloud|admin)([:/_.-]|$)", assets, re.I):
+        score += 1
+        reasons.append("requests high-risk class/resource asset")
+    env_keys = "\n".join(_seq(job.get("env_keys") or job.get("environment_keys")))
+    if re.search(r"(TOKEN|SECRET|PASSWORD|CREDENTIAL|API_KEY|PROD|DATABASE|DB)", env_keys):
+        score += 1
+        reasons.append("declares sensitive environment keys")
+    # Preserve deterministic unique reasons.
+    seen = set()
+    unique: List[str] = []
+    for reason in reasons:
+        if reason not in seen:
+            seen.add(reason)
+            unique.append(reason)
+    return score, unique
+
+
+def risk_floor_applies(job: Dict[str, Any], requested_class: str, policy: Dict[str, Any]) -> Tuple[bool, int, List[str], str]:
+    score, reasons = risk_floor_evidence(job, policy)
+    threshold = int(policy.get("risk_floor_threshold", 3))
+    low_classes = {str(x) for x in (policy.get("risk_floor_low_classes") or ["BASIC_TASK", "DEV_TEST", "LOW", "LOW_RISK"])}
+    applies = bool(requested_class in low_classes and score >= threshold)
+    floor_class = str(policy.get("risk_floor_class", "HIGH_ASSURANCE_REVIEW"))
+    return applies, score, reasons, floor_class
+
+def weighted_history(fp: Dict[str, Any], history: Iterable[Dict[str, Any]], policy: Dict[str, Any] | None = None) -> Tuple[Dict[str, float], int, Dict[str, List[str]]]:
     classes: Dict[str, float] = defaultdict(float)
     match_reasons: Dict[str, List[str]] = defaultdict(list)
     observations = 0
     fp_features = fp.get("feature_keys") or []
     for row in history:
-        if not trusted_history_row(row):
+        ok, _reason = trusted_history_row(row, policy)
+        if not ok:
             continue
         cls = row.get("class") or row.get("usual_class") or row.get("used_class") or row.get("requested_class")
         if not cls:
@@ -391,9 +471,10 @@ def recommend_loaded_job(job: Dict[str, Any], args: argparse.Namespace) -> Dict[
     policy = load_policy(getattr(args, "policy", ""))
     pins = read_jsonl(getattr(args, "pins", ""))
     history = read_jsonl(getattr(args, "history", ""))
-    trust_summary = history_trust_summary(history)
+    trust_summary = history_trust_summary(history, policy)
     pin = find_pin(fp, pins)
-    classes, obs, history_reasons = weighted_history(fp, history)
+    classes, obs, history_reasons = weighted_history(fp, history, policy)
+    risk_applies, risk_score, risk_reasons, risk_floor_class = risk_floor_applies(job, requested_arg, policy)
     source = "none"
     rec_class = ""
     confidence = 0.0
@@ -413,6 +494,12 @@ def recommend_loaded_job(job: Dict[str, Any], args: argparse.Namespace) -> Dict[
     else:
         reasons.append("no matching pin or historical observations")
     requested = requested_arg or fp.get("requested_class") or ""
+    if not rec_class and risk_applies:
+        rec_class = risk_floor_class
+        confidence = min(0.99, max(0.0, risk_score / max(1.0, float(policy.get("risk_floor_score_cap", 6)))))
+        source = "policy_risk_floor"
+        reasons.append(f"policy risk floor score {risk_score} meets threshold {int(policy.get('risk_floor_threshold', 3))}")
+        reasons.extend(risk_reasons)
     mismatch = "none"
     if requested and rec_class and requested != rec_class:
         mismatch = "class_mismatch"
@@ -421,11 +508,16 @@ def recommend_loaded_job(job: Dict[str, Any], args: argparse.Namespace) -> Dict[
     action = policy.get("mode", "suggest")
     if source == "history" and (obs < min_obs or confidence < threshold):
         action = "observe"
+    if source == "policy_risk_floor":
+        action = "require_authorisation"
     if not rec_class:
         action = "observe"
     decision = "ok"
     recommended_action = "allow"
-    if not rec_class:
+    if source == "policy_risk_floor":
+        decision = "risk_floor_escalation"
+        recommended_action = "require_authorisation"
+    elif not rec_class:
         decision = "insufficient_history"
         recommended_action = "defer_to_class_policy"
     elif mismatch != "none":
@@ -459,6 +551,14 @@ def recommend_loaded_job(job: Dict[str, Any], args: argparse.Namespace) -> Dict[
         "reasons": reasons,
         "policy_linkage": refs,
         "trusted_history": trust_summary,
+        "risk_floor": {
+            "enabled": bool(policy.get("risk_floor_enabled", True)),
+            "applies": bool(risk_applies),
+            "score": risk_score,
+            "threshold": int(policy.get("risk_floor_threshold", 3)),
+            "floor_class": risk_floor_class,
+            "reasons": risk_reasons,
+        },
         "audit_event_preview": {
             "event": "queuebash.class_inference.v1",
             "requested_class": requested,
@@ -472,6 +572,12 @@ def recommend_loaded_job(job: Dict[str, Any], args: argparse.Namespace) -> Dict[
             "fingerprint": fp["command_shape_hash"],
             "policy_references": refs["policy_references"],
             "trusted_history": trust_summary,
+            "risk_floor": {
+                "applies": bool(risk_applies),
+                "score": risk_score,
+                "threshold": int(policy.get("risk_floor_threshold", 3)),
+                "floor_class": risk_floor_class,
+            },
         },
         "non_mutating": True,
         "submit_integration": "not_enabled_in_this_package",
@@ -508,6 +614,7 @@ def fixture_files(fixtures: Path, selected: List[str] | None = None) -> List[Pat
         "jobs_adversarial_rename.jsonl",
         "jobs_drift.jsonl",
         "jobs_trusted_history_guard.jsonl",
+        "jobs_reviewed_history_guard.jsonl",
     ]
     out: List[Path] = []
     for name in names:
@@ -555,6 +662,14 @@ def run_fixture_tests(args: argparse.Namespace) -> Dict[str, Any]:
     near_miss_cases = unexpected_blocks = 0
     reasons_required = reasons_present = 0
     history_total_rows = history_trusted_rows = history_excluded_rows = history_valid_exception_rows = 0
+    history_reviewed_rows = 0
+    risk_floor_cases = risk_floor_escalations = 0
+    decision_counts: Dict[str, int] = defaultdict(int)
+    action_counts: Dict[str, int] = defaultdict(int)
+    source_counts: Dict[str, int] = defaultdict(int)
+    category_counts: Dict[str, int] = defaultdict(int)
+    category_passed: Dict[str, int] = defaultdict(int)
+    cold_start_cases = cold_start_unknowns = 0
     for path in files:
         category = path.stem.replace("jobs_", "")
         if category == "near_miss":
@@ -575,12 +690,25 @@ def run_fixture_tests(args: argparse.Namespace) -> Dict[str, Any]:
             )
             result = recommend_loaded_job(job, ns)
             ok, failures = check_expected(result, expected)
+            decision_counts[str(result.get("decision", ""))] += 1
+            action_counts[str(result.get("recommended_action", ""))] += 1
+            source_counts[str(result.get("recommendation_source", ""))] += 1
+            category_counts[category] += 1
+            if category == "cold_start":
+                cold_start_cases += 1
+                if result.get("decision") == "insufficient_history":
+                    cold_start_unknowns += 1
             if expected.get("recommended_action") == "block_pending_authorisation":
                 expected_blocks += 1
             if result.get("recommended_action") == "block_pending_authorisation":
                 actual_blocks += 1
                 if category == "near_miss":
                     unexpected_blocks += 1
+            risk = result.get("risk_floor", {}) if isinstance(result.get("risk_floor"), dict) else {}
+            if risk.get("applies"):
+                risk_floor_cases += 1
+                if result.get("decision") == "risk_floor_escalation":
+                    risk_floor_escalations += 1
             requires_reason = result.get("decision") != "ok" or result.get("recommended_action") != "allow"
             if requires_reason:
                 reasons_required += 1
@@ -594,8 +722,10 @@ def run_fixture_tests(args: argparse.Namespace) -> Dict[str, Any]:
             history_trusted_rows += int(trust.get("trusted_rows", 0) or 0)
             history_excluded_rows += int(trust.get("excluded_rows", 0) or 0)
             history_valid_exception_rows += int(trust.get("valid_exception_rows", 0) or 0)
+            history_reviewed_rows += int(trust.get("reviewed_rows", 0) or 0)
             if ok:
                 passed += 1
+                category_passed[category] += 1
             case = {
                 "file": str(path),
                 "category": category,
@@ -608,6 +738,7 @@ def run_fixture_tests(args: argparse.Namespace) -> Dict[str, Any]:
                 "confidence": result.get("confidence", 0.0),
                 "reason_count": len(result.get("reasons", [])),
                 "trusted_history": trust,
+                "risk_floor": result.get("risk_floor", {}),
                 "status": "pass" if ok else "fail",
             }
             if failures:
@@ -616,6 +747,34 @@ def run_fixture_tests(args: argparse.Namespace) -> Dict[str, Any]:
                 case["result"] = result
             case_results.append(case)
     failed = total - passed
+
+    def rate(numerator: int, denominator: int) -> float:
+        return round(float(numerator) / float(denominator), 4) if denominator else 0.0
+
+    per_category = {
+        name: {
+            "cases": count,
+            "passed": int(category_passed.get(name, 0)),
+            "failed": count - int(category_passed.get(name, 0)),
+            "pass_rate": rate(int(category_passed.get(name, 0)), count),
+        }
+        for name, count in sorted(category_counts.items())
+    }
+    decision_metrics = {
+        "decision_counts": dict(sorted(decision_counts.items())),
+        "recommended_action_counts": dict(sorted(action_counts.items())),
+        "recommendation_source_counts": dict(sorted(source_counts.items())),
+        "per_category": per_category,
+        "downgrade_detection_rate": rate(actual_blocks, expected_blocks),
+        "near_miss_false_positive_rate": rate(unexpected_blocks, near_miss_cases),
+        "cold_start_unknown_rate": rate(cold_start_unknowns, cold_start_cases),
+        "risk_floor_escalation_rate": rate(risk_floor_escalations, risk_floor_cases),
+        "reason_coverage_rate": rate(reasons_present, reasons_required),
+        "notes": [
+            "metrics are derived from hard fixture expectations, not a replacement for pass/fail contract checks",
+            "classifier output remains non-mutating evidence for class policy",
+        ],
+    }
     return {
         "schema": TEST_SCHEMA,
         "generated_at": now_iso(),
@@ -644,7 +803,13 @@ def run_fixture_tests(args: argparse.Namespace) -> Dict[str, Any]:
             "trusted_rows_seen": history_trusted_rows,
             "excluded_rows_seen": history_excluded_rows,
             "valid_exception_rows_seen": history_valid_exception_rows,
+            "reviewed_rows_seen": history_reviewed_rows,
         },
+        "risk_floor_guard": {
+            "cases": risk_floor_cases,
+            "escalations": risk_floor_escalations,
+        },
+        "decision_metrics": decision_metrics,
         "case_results": case_results,
         "non_mutating": True,
     }
@@ -661,6 +826,14 @@ def human_test_report(obj: Dict[str, Any]) -> str:
         f"  near-miss cases:           {obj.get('false_positive_guard', {}).get('near_miss_cases')}",
         f"  unexpected near-miss block:{obj.get('false_positive_guard', {}).get('unexpected_blocks')}",
     ]
+    metrics = obj.get("decision_metrics", {})
+    if metrics:
+        lines.extend([
+            f"  downgrade detection rate: {metrics.get('downgrade_detection_rate')}",
+            f"  near-miss false positive: {metrics.get('near_miss_false_positive_rate')}",
+            f"  cold-start unknown rate:  {metrics.get('cold_start_unknown_rate')}",
+            f"  reason coverage rate:     {metrics.get('reason_coverage_rate')}",
+        ])
     for case in obj.get("case_results", []):
         if case.get("status") != "pass":
             lines.append(f"  FAIL {case.get('file')}#{case.get('index')} {case.get('job_name')}: {'; '.join(case.get('failures', []))}")

@@ -1,0 +1,143 @@
+{
+  "audit_event_preview": {
+    "confidence": 0.99,
+    "decision": "risk_floor_escalation",
+    "event": "queuebash.class_inference.v1",
+    "fingerprint": "sha256:af3a08e4be2372ebb53b683c6a70a0a1728d56d2be27e0def4dbec1745531f65",
+    "mismatch": "class_mismatch",
+    "observations": 0,
+    "policy_action": "require_authorisation",
+    "policy_references": [
+      "queue_class_shared_asset class_classifier no_downgrade min_confidence=0.80 action=block",
+      "queue_class_shared_asset class_classifier risk_floor_review min_risk_score=3 action=require_authorisation",
+      "CLASSIFIER-DOWNGRADE-GUARD"
+    ],
+    "recommended_action": "require_authorisation",
+    "recommended_class": "HIGH_ASSURANCE_REVIEW",
+    "requested_class": "BASIC_TASK",
+    "risk_floor": {
+      "applies": true,
+      "floor_class": "HIGH_ASSURANCE_REVIEW",
+      "score": 7,
+      "threshold": 3
+    },
+    "trusted_history": {
+      "excluded_reasons": {},
+      "excluded_rows": 0,
+      "total_rows": 6,
+      "trusted_rows": 6,
+      "valid_exception_rows": 0
+    }
+  },
+  "confidence": 0.99,
+  "decision": "risk_floor_escalation",
+  "fingerprint": {
+    "arg_shape": "bash <path.sh> --prod-db-sync",
+    "argc": 3,
+    "argv0": "bash",
+    "assets": [
+      "db:customer-prod",
+      "net:allowance"
+    ],
+    "command_display": "bash /opt/jobs/new_backup.sh --prod-db-sync",
+    "command_family_hash": "sha256:24e9347225a77a1b8f38d02a7bb54c77dc8a52da85f19eebb1e91f45935c84cd",
+    "command_raw_hash": "sha256:518b6717a79dcc313fc84d955079a9db6454d122e0d69097e0d5c056105c08a6",
+    "command_shape_hash": "sha256:af3a08e4be2372ebb53b683c6a70a0a1728d56d2be27e0def4dbec1745531f65",
+    "cwd_family": "//mnt/data",
+    "family": "bash new_backup.sh",
+    "feature_hash": "sha256:08cefb134a4333cf6c65020e951ac0ec8a272514b452a2b19d5d38f5016a4124",
+    "feature_keys": [
+      "argv0:bash",
+      "script:new_backup.sh",
+      "cwd_family://mnt/data",
+      "shape:sha256:af3a08e4be2372ebb53b683c6a70a0a1728d56d2be27e0def4dbec1745531f65",
+      "family:sha256:24e9347225a77a1b8f38d02a7bb54c77dc8a52da85f19eebb1e91f45935c84cd",
+      "user:backup",
+      "path:/backups",
+      "path_prefix://data/customer",
+      "path:/data/customer",
+      "secret:customer-db/prod/password",
+      "asset:db:customer-prod",
+      "asset:net:allowance",
+      "network:outbound"
+    ],
+    "generated_at": "2026-06-04T11:09:47Z",
+    "group": "",
+    "job_name": "new_backup_with_prod_secret",
+    "network": true,
+    "normalizer": {
+      "dates": "<date>",
+      "hashes": "<hash>",
+      "numbers": "<num>",
+      "paths": "<path.ext>",
+      "ranges": "<range>",
+      "secret_bearing_names": "<secret-key>",
+      "urls": "<url>",
+      "uuids": "<uuid>"
+    },
+    "paths": [
+      "/backups",
+      "/data/customer"
+    ],
+    "requested_class": "BASIC_TASK",
+    "schema": "queuebash.class_inference.fingerprint.v1",
+    "script": "new_backup.sh",
+    "secrets": [
+      "customer-db/prod/password"
+    ],
+    "user": "backup"
+  },
+  "generated_at": "2026-06-04T11:09:47Z",
+  "mismatch": "class_mismatch",
+  "non_mutating": true,
+  "observations": 0,
+  "policy_action": "require_authorisation",
+  "policy_linkage": {
+    "corporate_policy_refs": [
+      "CLASSIFIER-DOWNGRADE-GUARD"
+    ],
+    "policy_references": [
+      "queue_class_shared_asset class_classifier no_downgrade min_confidence=0.80 action=block",
+      "queue_class_shared_asset class_classifier risk_floor_review min_risk_score=3 action=require_authorisation",
+      "CLASSIFIER-DOWNGRADE-GUARD"
+    ],
+    "regulatory_refs": [],
+    "validation_status": "fixture_contract"
+  },
+  "reasons": [
+    "no matching pin or historical observations",
+    "policy risk floor score 7 meets threshold 3",
+    "requests secret material",
+    "requests production-scoped secret",
+    "uses outbound network",
+    "touches production/customer-like data paths",
+    "requests high-risk class/resource asset"
+  ],
+  "recommendation_source": "policy_risk_floor",
+  "recommended_action": "require_authorisation",
+  "recommended_class": "HIGH_ASSURANCE_REVIEW",
+  "requested_class": "BASIC_TASK",
+  "risk_floor": {
+    "applies": true,
+    "enabled": true,
+    "floor_class": "HIGH_ASSURANCE_REVIEW",
+    "reasons": [
+      "requests secret material",
+      "requests production-scoped secret",
+      "uses outbound network",
+      "touches production/customer-like data paths",
+      "requests high-risk class/resource asset"
+    ],
+    "score": 7,
+    "threshold": 3
+  },
+  "schema": "queuebash.class_inference.recommendation.v1",
+  "submit_integration": "not_enabled_in_this_package",
+  "trusted_history": {
+    "excluded_reasons": {},
+    "excluded_rows": 0,
+    "total_rows": 6,
+    "trusted_rows": 6,
+    "valid_exception_rows": 0
+  }
+}

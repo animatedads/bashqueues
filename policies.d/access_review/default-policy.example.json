@@ -1,0 +1,18 @@
+{
+  "credentials_required_for_default_tests": false,
+  "denied_operations": [
+    "access-grant",
+    "access-revoke",
+    "review-approval",
+    "review-closure",
+    "identity-mutation",
+    "queue-dispatch-refactor"
+  ],
+  "fixture_first": true,
+  "live_api_default": false,
+  "normalized_json_only": true,
+  "notes": "Example policy only; no live calls or mutations.",
+  "provider_family": "access_review",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.access_review.policy.v1"
+}

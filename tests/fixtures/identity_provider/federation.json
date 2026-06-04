@@ -1,0 +1,19 @@
+{
+  "check": "federation",
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "federation.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "federation_is_advisory": true,
+  "issuer_metadata_redacted": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "identity_provider",
+  "provider_output_is_shell": false,
+  "reason": "fixture_federation_evidence_available",
+  "schema": "queuebash.identity_provider.federation.v1",
+  "source": "fixture"
+}

@@ -1,0 +1,13 @@
+{
+  "schema": "queuebash.path_lock.evidence.v1",
+  "qid": "20260604_demo",
+  "status": "allow",
+  "reason": "private_workspace_create_allowed",
+  "canonical_path": "/run/queuebash/jobs/20260604_demo/work/new-output.sql",
+  "parent_identity_ok": true,
+  "final_identity_ok": true,
+  "safe_open_policy": "beneath,nofollow,no-magiclinks",
+  "write_policy": "create-only",
+  "redacted": true,
+  "secret_value_included": false
+}

@@ -19,7 +19,7 @@ require 'SECCOMP_POLICY_SHA256' 'seccomp policy hash is stored in the job record
 require 'SANDBOX_POLICY_SYSTEMD_PROPERTIES' 'sandbox systemd properties are snapshotted'
 require 'SECCOMP_POLICY_SYSTEMD_PROPERTIES' 'seccomp systemd properties are snapshotted'
 require 'shared/admin policy folder' 'shared policy precedence is documented in the resolver'
-require 'QUEUEBASH_SHARED_POLICY_ROOT:-/etc/bashqueues/policies.d' 'shared policy root defaults to /etc/bashqueues/policies.d'
+require 'QUEUEBASH_SHARED_POLICY_ROOT:-/etc/queuebash/policies.d' 'shared policy root defaults to /etc/queuebash/policies.d'
 require 'queue policies edit sandbox|seccomp NAME' 'policy editor command exists'
 require 'queue policies create sandbox|seccomp NAME' 'policy create command exists'
 

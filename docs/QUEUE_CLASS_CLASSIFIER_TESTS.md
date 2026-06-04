@@ -48,9 +48,27 @@ queue_class_shared_asset class_classifier decision_explainable _ \
 
 The important safety rule is preserved in the helper contract: `no_downgrade` only blocks an explainable high-confidence downgrade/mismatch. If a classifier result has no reasons, `decision_explainable` fails, while `no_downgrade` reports `unexplained_not_auto_blocked` rather than automatically blocking on an opaque score.
 
+
+## Policy risk-floor escalation
+
+Trusted history remains the preferred signal, but some cold-start jobs are already high-risk before there is enough history to infer a usual class. The policy risk floor is a deterministic, non-learning guard for that boundary. When a low-risk submitted class is paired with evidence such as production secrets, outbound network, customer/prod data paths, high-risk assets, or sensitive environment keys, `queue class-infer recommend --json` returns `decision=risk_floor_escalation`, `recommended_action=require_authorisation`, and a `risk_floor` explanation block.
+
+This does not mean the classifier directly blocks the job. It means class policy has a concrete authorisation/review signal, while harmless cold-start work still returns `insufficient_history` and defers to class policy.
+
+Example asset gate:
+
+```bash
+queue_class_shared_asset class_classifier risk_floor_review _ \
+  decision_file=/run/queuebash/class-infer.json \
+  min_risk_score=3 \
+  action=require_authorisation
+```
+
 ## Trusted history boundary
 
 Fixture history is treated as trusted only when rows are accepted/post-review observations. Rows marked as failed, blocked, anomaly, untrusted, or policy override are excluded unless explicitly marked as valid exceptions. This prevents the classifier learning from already misclassified or bypassed jobs.
+
+For stricter deployments, policy may set `history_trust_mode=reviewed_only`. In that mode accepted-looking history rows are still excluded unless they carry an explicit review marker such as `trusted=true`, `reviewed=true`, `signed_class=true`, `class_review_status=accepted`, or `valid_exception=true`. This is the guard against blindly learning from long-running wrong class labels that were never reviewed.
 
 ## Fixture test runner command
 
@@ -68,6 +86,7 @@ Default fixture inputs under `DIR`:
 - `jobs_drift.jsonl` acceptable drift and suspicious drift examples.
 - `history_poisoned_labels.jsonl` poisoned/downclassed labels that must be excluded from learning.
 - `jobs_trusted_history_guard.jsonl` regression case proving untrusted low-class history cannot defeat downgrade detection.
+- `jobs_reviewed_history_guard.jsonl` reviewed-only regression proving unreviewed accepted-looking labels cannot poison the baseline.
 
 Example:
 
@@ -83,12 +102,12 @@ Expected JSON schema:
 {
   "schema": "queuebash.class_classifier.test_result.v1",
   "status": "pass",
-  "cases": 8,
-  "passed": 8,
+  "cases": 9,
+  "passed": 9,
   "failed": 0,
   "downgrade_detection": {
-    "expected_blocks": 3,
-    "actual_blocks": 3
+    "expected_blocks": 4,
+    "actual_blocks": 4
   },
   "false_positive_guard": {
     "near_miss_cases": 1,
@@ -102,10 +121,39 @@ Expected JSON schema:
     "total_rows_seen": 47,
     "trusted_rows_seen": 45,
     "excluded_rows_seen": 2,
-    "valid_exception_rows_seen": 0
+    "valid_exception_rows_seen": 0,
+    "reviewed_rows_seen": 3
+  },
+  "risk_floor_guard": {
+    "cases": 1,
+    "escalations": 1
+  },
+  "decision_metrics": {
+    "downgrade_detection_rate": 1.0,
+    "near_miss_false_positive_rate": 0.0,
+    "cold_start_unknown_rate": 1.0,
+    "risk_floor_escalation_rate": 0.2,
+    "reason_coverage_rate": 1.0,
+    "decision_counts": {
+      "class_downgrade_suspected": 4,
+      "insufficient_history": 1,
+      "ok": 3,
+      "risk_floor_escalation": 1
+    },
+    "recommended_action_counts": {
+      "allow": 3,
+      "block_pending_authorisation": 4,
+      "defer_to_class_policy": 1,
+      "require_authorisation": 1
+    },
+    "per_category": {
+      "near_miss": {"cases": 1, "passed": 1, "failed": 0, "pass_rate": 1.0}
+    }
   },
   "non_mutating": true
 }
 ```
 
-Acceptance remains policy-led. The test runner proves that recommendations are parseable, explainable, and stable across known downgrade, near-miss, cold-start, rename, drift, and poisoned-history fixtures; it does not make the classifier an unchecked enforcement authority.
+The `decision_metrics` block gives the later statistical-dashboard shape without loosening the fixture gate. These metrics are observability signals derived from hard expected outcomes: downgrade detection rate, near-miss false-positive rate, cold-start unknown rate, risk-floor escalation rate, reason coverage, decision/action/source counts, and per-category pass/fail counts. They are not a replacement for the explicit fixture assertions above and they do not authorise automatic enforcement.
+
+Acceptance remains policy-led. The test runner proves that recommendations are parseable, explainable, and stable across known downgrade, near-miss, cold-start, rename, drift, poisoned-history, and reviewed-history fixtures; it does not make the classifier an unchecked enforcement authority.

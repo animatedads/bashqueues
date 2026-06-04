@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-04T13:08:17Z",
+  "created_from_session": "AIS-20260604-130340-624442-6151-bob14",
+  "created_from_try": "",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260604-130817-550704-4949",
+  "match": {
+    "command_glob": "*queue dev ai try*loop*",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "Outer shell loops that chain several queue dev ai try validations can time out after some passes in this sandbox. Continue with one focused try per container call."
+}

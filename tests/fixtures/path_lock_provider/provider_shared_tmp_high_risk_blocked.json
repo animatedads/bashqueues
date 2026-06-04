@@ -1,0 +1,19 @@
+{
+  "schema": "queuebash.path_lock.fixture.v1",
+  "case": "provider_shared_tmp_high_risk_blocked",
+  "class": {"name": "HIGH_RISK_DB_MIGRATION", "high_risk": true},
+  "grant": {
+    "canonical_path": "/tmp/workdir/config_update.sql",
+    "parent_canonical_path": "/tmp/workdir",
+    "parent_dev_inode": "259:2:1000",
+    "write_policy": "create-only-under-owned-dir"
+  },
+  "observed": {
+    "requested_path": "/tmp/workdir/config_update.sql",
+    "parent_dev_inode": "259:2:1000",
+    "private_workspace": false,
+    "shared_tmp_target": true,
+    "operation": "create-only-under-owned-dir"
+  },
+  "expected": {"allowed": false, "reason": "shared_tmp_high_risk_denied"}
+}

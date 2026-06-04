@@ -1,0 +1,8 @@
+{
+  "schema": "queuebash.dev_ai_lesson.v1",
+  "created_at": "2026-06-04T13:45:00Z",
+  "agent": "Bob15",
+  "role": "merger",
+  "status": "ok",
+  "text": "0.18.108 Bob21 candidate comparison: encoded-payload taint is superseded by multihop shell/source expansion candidate because multihop retains encoded-payload decoding and adds bounded source/argument/startup/function expansion. Do not apply both as whole-file replacements. Preserve Bob23 command JSON queuebash hunks and normalize version once at merger output."
+}

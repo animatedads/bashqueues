@@ -115,7 +115,18 @@ Selection behaviour:
 - `rate_limited`, `auth_failed`, `model_missing`, `timeout`, and active `cooldown` entries are skipped for normal fallback.
 - `disabled_by_policy` and `disabled_by_cost` are always skipped.
 
-Explain output includes health rejection reasons such as `health_timeout`, `health_model_missing`, `health_rate_limited`, `health_cooldown`, `health_disabled_by_policy`, and `health_disabled_by_cost`.
+Explain output includes health rejection reasons such as `health_timeout`, `health_model_missing`, `health_rate_limited`, `health_cooldown`, `health_disabled_by_policy`, and `health_disabled_by_cost`. Explain output and broker response/error JSON also include a bounded `health_summary` object so operators can see selected health state/source, candidate/rejection counts, candidate health distribution, and health rejection reasons without inspecting every rejected row.
+
+## Selection health summary
+
+Broker explain, advisory `chat`/`json`, live-gated error, live fallback success, and all-provider-failed JSON responses include:
+
+```text
+health_summary
+```
+
+The summary is bounded review evidence. It reports the selected health state and source, total viable candidate count, total rejected count, candidate counts by health state, health rejection counts by state, and health rejection counts by reason. It does not change policy, mutate the provider registry, or execute provider/model output.
+
 
 ## Cache schema
 

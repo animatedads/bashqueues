@@ -1,0 +1,20 @@
+{
+  "check": "retention",
+  "decision": "allow",
+  "deletion_not_performed": true,
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "retention.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "compliance_evidence",
+  "provider_output_is_shell": false,
+  "reason": "fixture_retention_evidence_available",
+  "retention_days_minimum": 365,
+  "retention_policy_is_advisory": true,
+  "schema": "queuebash.compliance_evidence.retention.v1",
+  "source": "fixture"
+}

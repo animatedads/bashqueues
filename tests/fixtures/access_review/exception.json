@@ -1,0 +1,20 @@
+{
+  "check": "exception",
+  "decision": "allow",
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "exception.json",
+    "live_api_used": false
+  },
+  "exception_register_is_advisory": true,
+  "exception_values_redacted": true,
+  "expiry_required": true,
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "access_review",
+  "provider_output_is_shell": false,
+  "reason": "fixture_exception_evidence_available",
+  "schema": "queuebash.access_review.exception.v1",
+  "source": "fixture"
+}

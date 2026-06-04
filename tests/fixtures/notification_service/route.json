@@ -1,0 +1,19 @@
+{
+  "check": "route",
+  "decision": "allow",
+  "delivery_requires_external_authority": true,
+  "evidence": {
+    "credentials_used": false,
+    "fixture": "route.json",
+    "live_api_used": false
+  },
+  "fail_closed": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "notification_service",
+  "provider_output_is_shell": false,
+  "reason": "fixture_route_evidence_available",
+  "route_is_advisory": true,
+  "schema": "queuebash.notification_service.route.v1",
+  "source": "fixture"
+}

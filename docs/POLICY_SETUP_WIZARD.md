@@ -61,7 +61,7 @@ System scope:
 /var/lib/queuebash/logs/policy-wizard.audit.jsonl
 ```
 
-The wizard must not use the legacy `the legacy plural /etc namespace` namespace.
+The wizard must not use the legacy plural `/etc/bashqueues/policies.d` namespace for new system policy writes.
 
 ## AI advisory policy
 

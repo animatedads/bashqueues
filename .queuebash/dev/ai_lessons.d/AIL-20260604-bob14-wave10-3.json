@@ -1,0 +1,14 @@
+{
+  "authority": "bob14",
+  "created_at": "2026-06-04T13:06:52Z",
+  "id": "AIL-20260604-bob14-wave10-3",
+  "kind": "warning",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "status": "active",
+  "tags": [
+    "bob14",
+    "service-coverage",
+    "wave10"
+  ],
+  "text": "Bob14 service coverage wave10 validation should use focused queue dev ai try records; do not chain many sourced validations in one outer shell."
+}

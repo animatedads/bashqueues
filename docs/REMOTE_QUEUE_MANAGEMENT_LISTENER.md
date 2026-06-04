@@ -24,7 +24,7 @@ System installation remains opt-in:
 sudo ./install-system.sh --with-remote-listener
 ```
 
-The installer copies the listener, creates `/etc/bashqueues/policies.d/remote-queue/`, copies default policy files there when absent (`remote-management.env`, `clients.tsv`, and `acl.tsv`), and installs/enables `bashqueues-remote-management.service` when `systemctl` is available. The copied `clients.tsv` and `acl.tsv` remain deny-by-default templates until an administrator adds real clients, secrets, and grants.
+The installer copies the listener, creates `/etc/queuebash/policies.d/remote-queue/`, copies default policy files there when absent (`remote-management.env`, `clients.tsv`, and `acl.tsv`), and installs/enables `bashqueues-remote-management.service` when `systemctl` is available. The copied `clients.tsv` and `acl.tsv` remain deny-by-default templates until an administrator adds real clients, secrets, and grants.
 
 The listener binds to `127.0.0.1:8765` by default.  Production exposure should normally be through SSH forwarding, mTLS, a VPN, or another organisation-approved transport boundary.
 
@@ -33,10 +33,10 @@ The listener binds to `127.0.0.1:8765` by default.  Production exposure should n
 Canonical files:
 
 ```text
-/etc/bashqueues/policies.d/remote-queue/remote-management.env
-/etc/bashqueues/policies.d/remote-queue/clients.tsv
-/etc/bashqueues/policies.d/remote-queue/acl.tsv
-/etc/bashqueues/policies.d/remote-queue/secrets/*.secret
+/etc/queuebash/policies.d/remote-queue/remote-management.env
+/etc/queuebash/policies.d/remote-queue/clients.tsv
+/etc/queuebash/policies.d/remote-queue/acl.tsv
+/etc/queuebash/policies.d/remote-queue/secrets/*.secret
 /var/log/queuebash/remote-queue-management-audit.jsonl
 ```
 
