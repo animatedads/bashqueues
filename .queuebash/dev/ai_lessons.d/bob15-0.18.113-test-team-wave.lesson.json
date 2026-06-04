@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "agent": "bob15",
+  "role": "merger",
+  "task": "0.18.113 test-team wave merge",
+  "lesson": "When several test-team patchsets target the same base from different versions, classify by content and lane ownership, select supersets, preserve real queuebash hunks over version-only hunks, and record attribution corrections without rewriting history.",
+  "tags": ["bob15", "merge", "0.18.113", "test-team", "attribution"],
+  "created_at": "2026-06-04T19:10:00Z"
+}

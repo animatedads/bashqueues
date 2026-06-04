@@ -1,2 +1,2 @@
 # client_id	key_id	subject	secret_file	status	comment
-london-admin	default	queue-admin-london@example.invalid	/etc/bashqueues/policies.d/remote-queue/secrets/london-admin.secret	active	fixture client
+london-admin	default	queue-admin-london@example.invalid	/etc/queuebash/policies.d/remote-queue/secrets/london-admin.secret	active	fixture client

@@ -1,0 +1,73 @@
+{
+  "schema": "queuebash.display_resource_hash_inventory.v1",
+  "status": "ok",
+  "root": "/repo",
+  "redacted": true,
+  "owner_lane": "bob18-display-resources",
+  "renderer": "none-hash-inventory-only",
+  "source": "manifest-listed-files-and-sha256-only",
+  "read_only": true,
+  "installer": false,
+  "signing_mutation": false,
+  "json_contract_source": false,
+  "secret_rendering_allowed": false,
+  "token_value_substitution": false,
+  "permission_mutation": false,
+  "hash_algorithm": "sha256",
+  "stats": {
+    "manifest_files": 2,
+    "manifest_entries": 2,
+    "resource_files": 2,
+    "resource_hashes_ok": 2,
+    "resource_hashes_missing": 0,
+    "resource_hashes_error": 0,
+    "findings": 0
+  },
+  "manifests": [
+    {
+      "resource_type": "display",
+      "path": "resources.d/display/manifest.example.tsv",
+      "exists": true,
+      "is_regular_file": true,
+      "is_symlink": false,
+      "mode": "-rw-r--r--",
+      "size_bytes": 120,
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "hash_status": "ok"
+    }
+  ],
+  "resources": [
+    {
+      "resource_type": "display",
+      "name": "queue-version.txt",
+      "language": "lang_eng",
+      "path": "resources.d/display/lang_eng/queue-version.txt",
+      "manifest_path": "resources.d/display/manifest.example.tsv",
+      "manifest_line": 3,
+      "exists": true,
+      "is_regular_file": true,
+      "is_symlink": false,
+      "mode": "-rw-r--r--",
+      "size_bytes": 42,
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "hash_status": "ok",
+      "fallback_required": "yes",
+      "tokens_declared": ["VERSION"],
+      "surface": "queue version human output"
+    }
+  ],
+  "forbidden": [
+    "resource_rendering",
+    "token_substitution",
+    "secret_values",
+    "provider_credentials",
+    "command_json_generation_from_templates",
+    "signing_mutation",
+    "install_mutation",
+    "permission_mutation",
+    "eval",
+    "source",
+    "shell_expansion"
+  ],
+  "findings": []
+}

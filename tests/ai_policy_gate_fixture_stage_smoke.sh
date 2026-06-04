@@ -6,15 +6,20 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 summary="$TMP/summary.jsonl"
 : > "$summary"
-qgate() { timeout 10 "$ROOT/bin/queue-ai-policy-gate" "$@"; }
+qgate() { timeout "${QUEUEBASH_AI_POLICY_GATE_STAGE_TIMEOUT:-8}" "$ROOT/bin/queue-ai-policy-gate" "$@"; }
+json_escape(){
+  local s="${1:-}"
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\r'/\\r}
+  s=${s//$'\t'/\\t}
+  printf '%s' "$s"
+}
 record(){
   local stage="$1" status="$2" detail="${3:-}"
-  python3 - "$summary" "$stage" "$status" "$detail" <<'PY'
-import json, sys, time
-path, stage, status, detail = sys.argv[1:]
-with open(path, 'a', encoding='utf-8') as fh:
-    fh.write(json.dumps({"schema":"queuebash.ai_policy_gate.stage_result.v1","stage":stage,"status":status,"detail":detail,"time":int(time.time())}, separators=(',', ':')) + "\n")
-PY
+  printf '{"schema":"queuebash.ai_policy_gate.stage_result.v1","stage":"%s","status":"%s","detail":"%s"}\n' \
+    "$(json_escape "$stage")" "$(json_escape "$status")" "$(json_escape "$detail")" >> "$summary"
 }
 fail_stage(){ record "$1" fail "$2"; cat "$summary" >&2; exit 1; }
 
@@ -84,16 +89,20 @@ record redaction pass
 python3 - "$summary" <<'PY'
 import json, sys
 rows=[json.loads(line) for line in open(sys.argv[1], encoding='utf-8') if line.strip()]
-failed=[r for r in rows if r['status'] != 'pass']
+expected={"disabled_default","advisory_downgrade","low_confidence_unknown","redaction"}
+seen={r.get('stage') for r in rows}
+failed=[r for r in rows if r.get('status') != 'pass']
+missing=sorted(expected-seen)
 out={
   "schema":"queuebash.ai_policy_gate.fixture_stage_summary.v1",
-  "status":"pass" if not failed else "fail",
+  "status":"pass" if not failed and not missing else "fail",
   "stages":len(rows),
-  "passed":sum(1 for r in rows if r['status']=='pass'),
-  "failed":len(failed),
+  "passed":sum(1 for r in rows if r.get('status')=='pass'),
+  "failed":len(failed)+len(missing),
+  "missing_stages":missing,
   "stage_results":rows,
 }
 print(json.dumps(out, separators=(',', ':')))
-if failed:
+if out["status"] != "pass":
     raise SystemExit(1)
 PY

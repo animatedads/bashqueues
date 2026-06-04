@@ -1,16 +1,20 @@
-# 0.18.111 BOB15 Rupert enterprise AI policy command JSON display profile merge
+# 0.18.113 BOB15 test-team wave merge
 
-- Merged Bob21 AI policy gate bounded fixture smoke and Rupert split-stage bounded fixture coverage.
-- Merged Bob21 expanded static language coverage for optional AI policy gate deterministic examination.
-- Merged Bob16 display/help resource extraction wave8.
-- Merged Bob20 Rupert enterprise carry-forward completion and regulated-service runbook material.
-- Merged Bob23 command JSON wave2 events/tail-follow support.
-- Merged Bob19 AI broker profile health gates.
-- Merged Bob18 display-resource permission audit helper contract.
-- Merged Bob17 enterprise profile verification fixture follow-up.
-- Preserved `/etc/queuebash/policies.d` policy-root decision from 0.18.110.
-- Preserved Karen fastpath, command JSON stats/workers, and AI policy metadata write-back.
-- Recorded Bob identity mismatch warning in delivery evidence and normalized release identity as Bob15 output.
+- Merged Bob21 bounded AI policy gate fixture split/stage harness and IAC/config language coverage while preserving the optional local/static-only policy-gate boundary.
+- Merged Bob16 display/help resource extraction waves 8 and 9.
+- Merged Bob23 command JSON wave2 for events/tail/follow and limits plus residual policy namespace path sweep.
+- Merged Bob19 AI broker profile health gates and JSON health-isolation contract updates.
+- Merged Bob18 display-resource permission audit and hash inventory helper contracts.
+- Merged Bob17 enterprise profile verification and approved-maintenance evidence contracts.
+- Merged Bob20 Rupert enterprise carry-forward completion and stage-smoke harness material.
+- Recorded Bob14/Bob21 attribution correction: classify by technical content and lane ownership, not filename alone.
+
+# 0.18.111 BOB16 display/help resource extraction wave8 rebased
+
+- Rebased Bob16 wave8 display-resource extraction onto 0.18.110.
+- Added profile-signature and module-policy display resources under both lang_eng and fallback.
+- Updated related command paths to fetch display resources instead of embedding heredoc display text in queuebash.sh.
+- Added focused static/smoke coverage and a queue-dev AI lesson for safe rebase discipline.
 
 # 0.18.110 BOB15 policy namespace consistency and AI explain metadata writeback merge
 

@@ -1,0 +1,10 @@
+This looks like a high-risk destructive or retention-affecting operation. I will not provide a casual execution recipe.
+
+Use a governed bashqueues workflow instead:
+1. Verify authority and record the change ticket or equivalent approval reference.
+2. Verify retention, legal hold, data protection, and customer-record obligations before scheduling.
+3. Require trusted authorisation/signature from the appropriate approver or trust provider.
+4. Run it in an isolated class with exclusive claims/resource controls so it cannot overlap unsafe work.
+5. Use an approved time window/change window and document rollback or restore evidence.
+6. Run queue explain JOB_ID before execution and preserve the explanation/audit evidence.
+7. Keep payloads, logs, and approvals auditable; do not bypass policy blockers.

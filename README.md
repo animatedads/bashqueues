@@ -1,14 +1,18 @@
-# 0.18.111 BOB15 Rupert enterprise AI policy command JSON display profile merge
+# 0.18.113 BOB15 test-team wave merge: bounded AI policy gate, command JSON, display audits, enterprise evidence
 
-Merges the 0.18.111/0.18.112 hot-seat wave onto the accepted 0.18.110 Bob15 base: Bob21 AI policy gate bounded fixture smoke and expanded static language coverage, Bob16 display/help resource extraction wave8, Bob20 Rupert enterprise carry-forward completion, Bob23 command JSON events/tail-follow support, Bob19 AI broker profile health gates, Bob18 display-resource permission audit helper, and Bob17 enterprise profile verification fixture.
+Merges the 0.18.111-0.18.113 test-team wave onto the 0.18.110 Bob15 policy namespace and AI explain write-back base.
 
-Bob identity note: The Architect flagged that Bob14 delivered under a Bob21 label in this wave. Bob15 inspected the Bob21-labeled inputs by content rather than filename and preserved the attribution warning in delivery records. The expanded language coverage payload modifies the optional AI policy gate static examiner and was therefore treated technically as AI policy gate content.
+Included lanes: Bob21 AI policy gate bounded fixture smoke plus IAC/config language coverage, Bob16 display/help resource extraction waves 8 and 9, Bob20 Rupert enterprise carry-forward and AI policy gate stage-smoke harness, Bob23 command JSON wave2 events/tail/follow and limits plus residual policy namespace path sweep, Bob19 AI broker profile health gates and JSON health isolation, Bob18 display resource permission/hash inventory audit helpers, and Bob17 enterprise profile verification plus approved-maintenance evidence contracts.
 
-Policy/root carry-forward: the active installed system policy root remains `/etc/queuebash/policies.d`. Rupert enterprise evidence remains pilot evidence, not production clearance. Hospital live profiles and enterprise verification fixtures are policy guidance/test contracts only.
+Attribution note: Bob14/Bob21 lane confusion was treated as an attribution issue, not a content shortcut. AI policy gate bounded-smoke work remains Bob21/Team Leader candidate work; Bob14 service-coverage continuation remains backup_service/certificate_authority in future work.
 
-AI policy gate boundary: optional/local/static-only unless deliberately wired; no shell, SQL, Python, model output, or network execution during deterministic examination.
+Development history reference: for validation of the architectural route and development history, the full ChatGPT development chat is located at https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
 
-Development history: for validation of the architectural route and development history, the full ChatGPT development chat is located at: https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
+# 0.18.111 BOB16 display/help resource extraction wave8 rebased
+
+- Rebased Bob16 wave8 display-resource extraction onto the 0.18.110 Bob15 policy namespace consistency base.
+- Moved profile-signature roles, required-signer policy example, signature schema example, and module provider policy contract display surfaces into language-independent display resources.
+- Preserved 0.18.110 policy namespace and AI explain writeback work while avoiding older full-file README/CHANGELOG overwrites.
 
 # 0.18.110 BOB15 policy namespace consistency and AI explain metadata writeback merge
 

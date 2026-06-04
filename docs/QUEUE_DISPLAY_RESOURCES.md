@@ -301,3 +301,31 @@ Required boundaries:
 - `token_value_substitution=false`.
 
 Fail-closed findings include symlink resources, non-regular resources, executable resource files, group/world writable files, missing manifests, missing manifest-declared resources, and display/XML metadata that attempts to become a JSON source or secret-rendering surface.
+
+## Display resource hash inventory helper
+
+Bob18 wave 14 adds a read-only hash inventory helper:
+
+```bash
+python3 bin/queue-display-resource-hash-inventory.py --root . --json
+```
+
+The helper emits `queuebash.display_resource_hash_inventory.v1` evidence from display/XML manifests and manifest-listed resource files. It records SHA-256 hashes, byte sizes, mode strings, manifest paths, manifest line numbers, resource language/name/type, fallback requirement, declared token names, and missing/error status for manifest-listed resources.
+
+This helper is release-review evidence only. It does not sign resources, install files, update manifests, chmod files, render templates, substitute token values, call providers, inspect secret stores, or generate command/provider JSON. Signing, installation, permission repair, and policy decisions remain separate responsibilities. Hash inventory simply gives reviewers a stable digest list to compare with lint, permission, fallback, install, and signing evidence.
+
+Required boundaries:
+
+- `renderer=none-hash-inventory-only`;
+- `source=manifest-listed-files-and-sha256-only`;
+- `hash_algorithm=sha256`;
+- `read_only=true`;
+- `installer=false`;
+- `signing_mutation=false`;
+- `permission_mutation=false`;
+- `json_contract_source=false`;
+- `secret_rendering_allowed=false`;
+- `token_value_substitution=false`.
+
+Fail-closed findings include missing manifests, non-regular or symlink manifests, malformed manifest rows, duplicate resource entries, missing manifest-listed resources, symlink resources, non-regular resources, shell-looking manifest expansion, concrete secret-looking manifest content, display/XML metadata that attempts to become a JSON source, and any display/XML metadata that allows secret rendering.
+

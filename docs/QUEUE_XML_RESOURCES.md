@@ -180,3 +180,8 @@ Required boundaries:
 - `token_value_substitution=false`.
 
 Fail-closed findings include symlink resources, non-regular resources, executable resource files, group/world writable files, missing manifests, missing manifest-declared resources, and display/XML metadata that attempts to become a JSON source or secret-rendering surface.
+
+## XML resource hash inventory evidence
+
+XML resources participate in the same Bob18 hash inventory contract as display resources. `bin/queue-display-resource-hash-inventory.py --json` emits `queuebash.display_resource_hash_inventory.v1` with SHA-256 hashes for XML manifest rows and XML resource bodies without parsing, rendering, substituting tokens, signing, installing, or mutating files. XML parsing and XXE/DTD checks remain the lint helper's job; hash inventory is digest evidence only.
+

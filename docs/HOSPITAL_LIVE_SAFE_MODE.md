@@ -106,24 +106,17 @@ queue dev test qbtest --file queuebash.sh --function _queue_now --json
 
 This package does not clear broad live hospital job execution. It does not change the policy-root namespace, install live system files, call cloud providers, deliver secrets, or add runtime enforcement. It adds documented profiles and tests so a future Bob15 merge has a clear enterprise safe-mode baseline.
 
-## Fixture profile verifier
 
-Until a future command-router package wires a first-class `queue enterprise verify-profile` command, the hospital profile examples include a fixture-only verifier:
+## 0.18.111 carry-forward completion
+
+The Rupert carry-forward set now includes all four enterprise default profiles: `small-team-dev-default`, `government-project-test-default`, `hospital-live-readonly-default`, and `hospital-live-approved-maintenance-default`. The regulated-service live pilot runbook is `docs/REGULATED_SERVICE_RUNBOOK.md`. The AI policy gate fixture smoke has a bounded stage-summary wrapper at `tests/ai_policy_gate_fixture_stage_smoke.sh`; the older comprehensive smoke remains available for detailed coverage.
+
+## Enterprise profile verify fixture
+
+The fixture-only provider can be run without sourcing hospital profile code:
 
 ```bash
 providers.d/enterprise/enterprise_profile_verify.sh --profile hospital-live-readonly-default --json
-providers.d/enterprise/enterprise_profile_verify.sh --profile hospital-live-approved-maintenance-default --json
 ```
 
-The verifier parses the example policy files as data rather than sourcing them as shell. It checks that the hospital profiles keep policy-root reporting explicit, disable external AI providers, disable secret environment delivery, deny secret values in JSON, require `no-secret-env` runtime posture, and preserve the read-only versus approved-maintenance distinction.
-
-The verifier is deliberately not a live enablement path. Its JSON reports:
-
-```text
-schema: queuebash.enterprise_profile_verify.v1
-mode: fixture-only
-live_clearance_granted: false
-system_modified: false
-```
-
-Future installer or command-router work may wrap this helper, but must not imply broad hospital live clearance merely because a fixture profile verifies.
+It emits `queuebash.enterprise_profile_verify.v1` evidence for pilot-review checks only.

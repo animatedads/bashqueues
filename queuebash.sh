@@ -15,7 +15,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.111"
+QUEUEBASH_VERSION="0.18.113"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -6779,6 +6779,15 @@ _queue_append_summary_to_job() {
     } >> "$job"
 }
 
+_queue_systemd_user_service_probe() {
+    local probe_timeout="${QUEUEBASH_SYSTEMD_PROBE_TIMEOUT:-2s}"
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$probe_timeout" systemctl --user show-environment >/dev/null 2>&1
+    else
+        systemctl --user show-environment >/dev/null 2>&1
+    fi
+}
+
 _queue_systemd_user_service_supported() {
     command -v systemd-run >/dev/null 2>&1 || return 1
     command -v systemctl >/dev/null 2>&1 || return 1
@@ -6789,7 +6798,7 @@ _queue_systemd_user_service_supported() {
     [[ -n "${XDG_RUNTIME_DIR:-}" ]] || return 1
     [[ -S "${XDG_RUNTIME_DIR}/bus" ]] || return 1
 
-    systemctl --user show-environment >/dev/null 2>&1 || return 1
+    _queue_systemd_user_service_probe || return 1
 
     return 0
 }
@@ -6800,7 +6809,7 @@ _queue_systemd_user_service_status_text() {
     command -v systemctl >/dev/null 2>&1 || { echo "systemctl-not-found"; return 0; }
     [[ -n "${XDG_RUNTIME_DIR:-}" ]] || { echo "xdg-runtime-dir-not-set"; return 0; }
     [[ -S "${XDG_RUNTIME_DIR}/bus" ]] || { echo "user-bus-missing"; return 0; }
-    systemctl --user show-environment >/dev/null 2>&1 || { echo "user-bus-unusable"; return 0; }
+    _queue_systemd_user_service_probe || { echo "user-bus-unusable"; return 0; }
     echo "user-bus-ok"
 }
 
@@ -13659,22 +13668,12 @@ _queue_ai_safety_response_text() {
 
 _queue_ai_high_risk_operation_response_text() {
     local question="$1" job_ids_s
-    job_ids_s="$(_queue_ai_detect_job_ids "$question" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-    cat <<'EOT'
-This looks like a high-risk destructive or retention-affecting operation. I won't provide a casual execution recipe.
-
-Use a governed bashqueues workflow instead:
-1. Verify authority and record the change ticket or equivalent approval reference.
-2. Verify retention, legal hold, data protection, and customer-record obligations before scheduling.
-3. Require trusted authorisation/signature from the appropriate approver or trust provider.
-4. Run it in an isolated class with exclusive claims/resource controls so it cannot overlap unsafe work.
-5. Use an approved time window/change window and document rollback or restore evidence.
-6. Run `queue explain <job_id>` before execution and preserve the explanation/audit evidence.
-7. Keep payloads, logs, and approvals auditable; do not bypass policy blockers.
-EOT
+    job_ids_s="$(_queue_ai_detect_job_ids "$question" | tr '
+' ' ' | sed 's/[[:space:]]*$//')"
+    _queue_resource_fetch_i18nl_command --name ai-high-risk-operation-response.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
     if [[ -n "$job_ids_s" ]]; then
         echo
-        echo "Detected job reference: use \`queue explain ${job_ids_s%% *}\` before any execution decision."
+        echo "Detected job reference: use queue explain ${job_ids_s%% *} before any execution decision."
     fi
     echo
     echo "This request has been logged as a high-risk advisory operation event."
@@ -20302,19 +20301,38 @@ queue() {
             local do_probe=0
             local probe_cpu=50
             local probe_mem=256M
+            local json=0
+            local systemd_run=""
+            local supported=0
 
             while [[ "$#" -gt 0 ]]; do
                 case "$1" in
                     --probe) do_probe=1; shift ;;
                     --cpu) probe_cpu="${2:-50}"; shift 2 ;;
                     --mem|--memory) probe_mem="${2:-256M}"; shift 2 ;;
+                    --json|-j) json=1; shift ;;
+                    --help|-h)
+                        echo "Usage: queue limits [--json] [--probe] [--cpu PERCENT] [--mem SIZE]"
+                        echo "       queue limits --json emits queuebash.limits.v1."
+                        return 0
+                        ;;
                     *) shift ;;
                 esac
             done
 
-            echo "systemd-run: $(command -v systemd-run 2>/dev/null || echo missing)"
-            echo "XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-}"
+            systemd_run="$(command -v systemd-run 2>/dev/null || echo missing)"
             if _queue_systemd_user_service_supported; then
+                supported=1
+            fi
+            if [[ "$json" -eq 1 ]]; then
+                printf '{"schema":"queuebash.limits.v1","queue_root":"%s","systemd_run":"%s","xdg_runtime_dir":"%s","supported":%s,"enforcement":"%s","probe_requested":%s,"probe_cpu":"%s","probe_mem":"%s"}
+'                     "$(_queue_json_escape "$root")"                     "$(_queue_json_escape "$systemd_run")"                     "$(_queue_json_escape "${XDG_RUNTIME_DIR:-}")"                     "$([[ "$supported" -eq 1 ]] && printf true || printf false)"                     "$(_queue_json_escape "$([[ "$supported" -eq 1 ]] && printf 'systemd-run --user --pipe --wait --collect' || printf 'record-only')")"                     "$([[ "$do_probe" -eq 1 ]] && printf true || printf false)"                     "$(_queue_json_escape "$probe_cpu")"                     "$(_queue_json_escape "$probe_mem")"
+                [[ "$supported" -eq 1 ]]
+                return "$?"
+            fi
+            echo "systemd-run: $systemd_run"
+            echo "XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-}"
+            if [[ "$supported" -eq 1 ]]; then
                 echo "resource limits: available via systemd-run --user --pipe --wait --collect"
                 if [[ "$do_probe" -eq 1 ]]; then
                     echo
@@ -21983,6 +22001,7 @@ EOF
                         echo "Usage: queue events [--tail N|-n N] [--follow|-f] [--json]"
                         echo "       queue events --tail N exits after printing N events."
                         echo "       queue events --follow follows the event log."
+                        echo "       queue events --json emits queuebash.events.v1."
                         return 0
                         ;;
                     ''|--) shift ;;
@@ -21993,14 +22012,10 @@ EOF
             [[ -n "$legacy_n" ]] && n="$legacy_n"
             [[ "$n" =~ ^[0-9]+$ ]] || n=20
             [[ "$n" -gt 0 ]] || n=20
-
             local events_path="$root/events.jsonl"
             if [[ "$json" -eq 1 && "$follow" -eq 0 ]]; then
                 local first=0 count=0 line
-                printf '{"schema":"queuebash.events.v1","queue_root":"%s","path":"%s","tail":%d,"follow":false,"events":[' \
-                    "$(_queue_json_escape "$root")" \
-                    "$(_queue_json_escape "$events_path")" \
-                    "$n"
+                printf '{"schema":"queuebash.events.v1","queue_root":"%s","path":"%s","tail":%d,"follow":false,"events":['                     "$(_queue_json_escape "$root")"                     "$(_queue_json_escape "$events_path")"                     "$n"
                 if [[ -f "$events_path" ]]; then
                     while IFS= read -r line; do
                         _queue_json_comma first
@@ -22011,10 +22026,10 @@ EOF
                         count=$((count + 1))
                     done < <(tail -n "$n" "$events_path")
                 fi
-                printf '],"count":%d}\n' "$count"
+                printf '],"count":%d}
+' "$count"
                 return 0
             fi
-
             if [[ -f "$events_path" ]]; then
                 if [[ "$follow" -eq 1 ]]; then
                     tail -n "$n" -f "$events_path"

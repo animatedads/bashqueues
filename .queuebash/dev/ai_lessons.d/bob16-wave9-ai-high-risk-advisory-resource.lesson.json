@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-04T17:21:06Z",
+  "created_from_session": "AIS-20260604-172104-927428-5382-bob16",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260604-172106-670281-7634",
+  "match": {
+    "command_glob": "ai-high-risk-operation-response.txt",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Bob16 wave9: high-risk advisory body is display text and can move to resources, but dynamic detected-job guidance should remain in code. Avoid backtick command examples in display resources because display-resource lint treats shell-style expansion/execution tokens conservatively."
+}

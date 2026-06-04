@@ -20,9 +20,9 @@ Purpose:
   QUEUEBASH_AI_LIVE_ENABLED=1 is set by policy.
 
 Policy inputs:
-  /etc/bashqueues/policies.d/ai-profiles/*.env
-  /etc/bashqueues/policies.d/ai-broker/provider-registry.json
-  /etc/bashqueues/policies.d/ai-broker/health-cache.json
+  /etc/queuebash/policies.d/ai-profiles/*.env
+  /etc/queuebash/policies.d/ai-broker/provider-registry.json
+  /etc/queuebash/policies.d/ai-broker/health-cache.json
   $QUEUEBASH_ROOT/ai-broker/health-cache.json
   $QUEUEBASH_ROOT/ai-broker/health-events.jsonl
 

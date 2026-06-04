@@ -72,6 +72,14 @@ allowed_degraded = load(['explain','--profile','allowed-degraded','--capability'
 assert allowed_degraded['decision'] == 'allow', allowed_degraded
 assert allowed_degraded['selected']['health_state'] == 'degraded', allowed_degraded
 assert allowed_degraded['health_summary']['health_policy']['allowed_states'] == ['degraded']
+
+# Profile health-gate probes deliberately mutate broker health state.  Reset the
+# fixture cache before the broader runtime contract checks so a focused gate
+# scenario cannot make later balanced-profile assertions order-dependent.
+env = os.environ.copy()
+env["QUEUEBASH_AI_BROKER_HEALTH_CACHE"] = str(pathlib.Path(_tmp.name) / "main-health-cache.json")
+env["QUEUEBASH_AI_BROKER_HEALTH_EVENTS"] = str(pathlib.Path(_tmp.name) / "main-health-events.jsonl")
+
 assert explain['policy_links']['applicable'] is True
 assert explain['policy_links']['combined']['regulatory']
 assert explain['policy_links']['combined']['corporate']
@@ -92,7 +100,13 @@ assert update['schema']=='queuebash.ai_broker.health_update.v1'
 assert update['ok'] is True
 assert update['updated']['state']=='timeout'
 explain_timeout=load(['explain','--profile','balanced','--capability','chat','--json'])
-assert any('health_cooldown' in r.get('reasons', []) or 'health_timeout' in r.get('reasons', []) for r in explain_timeout.get('rejected', [])), explain_timeout
+assert any(
+    'health_cooldown' in r.get('reasons', [])
+    or 'health_timeout' in r.get('reasons', [])
+    or 'health_profile_not_allowed_cooldown' in r.get('reasons', [])
+    or 'health_profile_not_allowed_timeout' in r.get('reasons', [])
+    for r in explain_timeout.get('rejected', [])
+), explain_timeout
 assert explain_timeout['selected']['provider'] == 'ollama'
 assert explain_timeout['health_summary']['rejected_by_reason']
 assert explain_timeout['health_summary']['health_rejected_count'] >= 1

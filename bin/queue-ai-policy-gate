@@ -48,6 +48,10 @@ SCRIPT_TEXT_SUFFIXES = {
     ".sh", ".bash", ".zsh", ".ksh", ".sql", ".py", ".txt",
     ".ps1", ".psm1", ".js", ".mjs", ".cjs", ".ts", ".php", ".rb", ".pl", ".pm", ".go",
     ".java", ".cs", ".scala", ".kt", ".kts", ".rs", ".lua", ".r", ".R", ".psql",
+    ".yml", ".yaml", ".json", ".tf", ".tfvars", ".hcl", ".service", ".timer", ".socket", ".cron",
+}
+SCRIPT_TEXT_NAMES = {
+    "Dockerfile", "Containerfile", "dockerfile", "containerfile", "crontab",
 }
 SHELL_STARTUP_NAMES = (".bashrc", ".bash_profile", ".profile", ".bash_login")
 SCRIPT_READ_MAX_BYTES_DEFAULT = 32768
@@ -626,7 +630,7 @@ def read_static_payload_file(resolved: pathlib.Path, lang: str, source: str, max
         return None
     max_bytes = int(os.environ.get("QUEUEBASH_AI_POLICY_GATE_SCRIPT_MAX_BYTES", str(SCRIPT_READ_MAX_BYTES_DEFAULT)))
     suf = resolved.suffix.lower()
-    if resolved.name not in SHELL_STARTUP_NAMES and suf not in SCRIPT_TEXT_SUFFIXES and lang != "bash":
+    if resolved.name not in SHELL_STARTUP_NAMES and resolved.name not in SCRIPT_TEXT_NAMES and suf not in SCRIPT_TEXT_SUFFIXES and lang != "bash":
         return None
     try:
         data = resolved.read_bytes()[:max_bytes]
@@ -664,6 +668,18 @@ def read_static_payload_file(resolved: pathlib.Path, lang: str, source: str, max
         detected = "lua"
     elif suf in {".r", ".R"}:
         detected = "r"
+    elif resolved.name in {"Dockerfile", "Containerfile", "dockerfile", "containerfile"}:
+        detected = "dockerfile"
+    elif suf in {".yml", ".yaml"}:
+        detected = "yaml"
+    elif suf in {".json"}:
+        detected = "json_config"
+    elif suf in {".tf", ".tfvars", ".hcl"}:
+        detected = "terraform"
+    elif suf in {".service", ".timer", ".socket"}:
+        detected = "systemd"
+    elif suf in {".cron"} or resolved.name == "crontab":
+        detected = "cron"
     return {
         "language": detected,
         "source": source,
@@ -913,6 +929,57 @@ def command_payloads(job: Dict[str, Any], max_chars: int) -> List[Dict[str, str]
                 add(lang, lower0, raw)
             else:
                 add(lang, lower0, raw)
+    elif lower0 in {"cat", "jq", "yq"}:
+        # Read-only text inspection commands often expose manifest/policy files.
+        script_items = safe_script_payloads(words, "generic", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+            add("generic", lower0, raw)
+        else:
+            add("generic", lower0, raw)
+    elif lower0 in {"docker", "podman", "buildah"}:
+        # Static-only container build file inspection; never run a build.
+        lang = "dockerfile"
+        buildfile_args: List[str] = []
+        if "build" in [w.lower() for w in words[1:]]:
+            for i, w in enumerate(words[:-1]):
+                if w in {"-f", "--file"}:
+                    buildfile_args.append(words[i + 1])
+            if not buildfile_args:
+                buildfile_args.extend(["Dockerfile", "Containerfile"])
+        script_items = []
+        for bf in buildfile_args:
+            resolved = resolve_local_payload_path(bf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, lang, "docker_build_file", max_chars)
+                if item:
+                    script_items.append(item)
+        if script_items:
+            items.extend(script_items)
+        add(lang, lower0, raw)
+    elif lower0 in {"kubectl", "oc", "helm"}:
+        # Inspect bounded local manifest values passed to common apply/template paths.
+        script_items = safe_script_payloads(words, "yaml", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+        add("yaml", lower0, raw)
+    elif lower0 in {"ansible-playbook"}:
+        script_items = safe_script_payloads(words, "yaml", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+        add("yaml", lower0, raw)
+    elif lower0 in {"terraform", "tofu"}:
+        # Terraform normally works from a directory; read bounded *.tf/*.tfvars in submit dir.
+        for path in sorted(submit_dir.glob("*.tf"))[:4] + sorted(submit_dir.glob("*.tfvars"))[:2]:
+            item = read_static_payload_file(path.resolve(), "terraform", "terraform_workspace_file", max_chars)
+            if item:
+                items.append(item)
+        add("terraform", lower0, raw)
+    elif lower0 in {"systemctl"}:
+        script_items = safe_script_payloads(words, "systemd", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+        add("systemd", lower0, raw)
     elif lower0 in {"psql", "mysql", "mariadb", "sqlite3", "sqlcmd"}:
         flag_set = {"-c", "-e", "--execute"}
         for i, w in enumerate(words[:-1]):
@@ -1176,6 +1243,102 @@ def scan_lua_r(text: str, findings: List[Dict[str, Any]], prefix: str) -> None:
             finding(findings, fid, sev, cat, m.group(0), position=m.start())
     scan_sql(text, findings)
 
+
+
+def scan_dockerfile(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("dockerfile_remote_add", "medium", "external_payload_read", r"(?im)^\s*ADD\s+https?://\S+"),
+        ("dockerfile_curl_pipe_shell", "high", "dynamic_code_execution", r"(?is)\b(?:curl|wget)\b.{0,160}\|\s*(?:sh|bash)\b"),
+        ("dockerfile_base64_decode", "medium", "payload_decode_transform", r"(?is)\bbase64\s+-d\b|\bbase64\s+--decode\b"),
+        ("dockerfile_root_user", "low", "privileged_runtime", r"(?im)^\s*USER\s+root\b"),
+        ("dockerfile_secret_env", "high", "secrets_handling", r"(?im)^\s*ENV\s+[^\n]*(?:PASSWORD|TOKEN|SECRET|API[_-]?KEY)\b"),
+        ("dockerfile_destructive_root", "critical", "destructive_operation", r"(?is)\brm\s+-rf\s+/(?:\s|$)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S | re.M):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+
+
+def scan_yaml_iac(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("yaml_k8s_privileged_container", "high", "privileged_runtime", r"(?im)^\s*privileged:\s*true\b"),
+        ("yaml_k8s_host_network", "high", "network_exposure", r"(?im)^\s*hostNetwork:\s*true\b"),
+        ("yaml_k8s_host_pid_ipc", "medium", "privileged_runtime", r"(?im)^\s*host(?:PID|IPC):\s*true\b"),
+        ("yaml_k8s_hostpath_mount", "high", "host_filesystem_access", r"(?im)^\s*hostPath:\s*(?:\n\s+path:\s*[^\n]+)?"),
+        ("yaml_k8s_root_user", "medium", "privileged_runtime", r"(?im)^\s*runAsUser:\s*0\b"),
+        ("yaml_k8s_sys_admin_capability", "high", "privileged_runtime", r"(?is)capabilities:\s*\n(?:\s+.*\n){0,8}\s*-\s*SYS_ADMIN\b"),
+        ("yaml_ansible_shell_task", "medium", "subprocess_execution", r"(?im)^\s*(?:shell|command|raw):\s+.+"),
+        ("yaml_ansible_become_root", "medium", "privileged_runtime", r"(?im)^\s*become:\s*true\b|^\s*become_user:\s*root\b"),
+        ("yaml_ansible_firewall_disable", "high", "firewall_disable", r"(?is)(?:ufw\s+disable|systemctl\s+(?:stop|disable)\s+firewalld|iptables\s+-(?:F|X))"),
+        ("yaml_embedded_secret", "high", "secrets_handling", r"(?im)^\s*(?:password|token|secret|api[_-]?key):\s*[^\s#][^\n]{3,}"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S | re.M):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+    scan_sql(text, findings)
+
+
+def scan_terraform(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("terraform_public_cidr", "high", "network_exposure", r"(?is)cidr_blocks\s*=\s*\[[^\]]*0\.0\.0\.0/0[^\]]*\]"),
+        ("terraform_public_ipv6_cidr", "high", "network_exposure", r"(?is)ipv6_cidr_blocks\s*=\s*\[[^\]]*::/0[^\]]*\]"),
+        ("terraform_open_admin_port", "high", "network_exposure", r"(?is)(?:from_port|to_port)\s*=\s*(?:22|3389|5432|3306|0)"),
+        ("terraform_local_exec", "medium", "subprocess_execution", r"(?is)provisioner\s+\"(?:local-exec|remote-exec)\""),
+        ("terraform_iam_wildcard_action", "high", "privilege_overbroad", r"(?is)\"Action\"\s*:\s*(?:\"\*\"|\[[^\]]*\"\*\")"),
+        ("terraform_iam_wildcard_resource", "high", "privilege_overbroad", r"(?is)\"Resource\"\s*:\s*(?:\"\*\"|\[[^\]]*\"\*\")"),
+        ("terraform_user_data_base64", "medium", "payload_decode_transform", r"(?is)(?:base64decode|base64encode|user_data_base64|user_data\s*=)"),
+        ("terraform_secret_variable", "medium", "secrets_handling", r"(?is)variable\s+\"[^\"]*(?:password|token|secret|api[_-]?key)[^\"]*\""),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+
+
+def scan_json_config(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("json_policy_allow_wildcard_action", "high", "privilege_overbroad", r"(?is)\"Effect\"\s*:\s*\"Allow\".{0,120}\"Action\"\s*:\s*(?:\"\*\"|\[[^\]]*\"\*\")"),
+        ("json_policy_wildcard_resource", "high", "privilege_overbroad", r"(?is)\"Resource\"\s*:\s*(?:\"\*\"|\[[^\]]*\"\*\")"),
+        ("json_security_group_public_ingress", "high", "network_exposure", r"(?is)\"(?:CidrIp|cidr_blocks)\"\s*:\s*(?:\"0\.0\.0\.0/0\"|\[[^\]]*0\.0\.0\.0/0)"),
+        ("json_k8s_privileged_container", "high", "privileged_runtime", r"(?is)\"privileged\"\s*:\s*true"),
+        ("json_k8s_host_network", "high", "network_exposure", r"(?is)\"hostNetwork\"\s*:\s*true"),
+        ("json_secret_literal", "high", "secrets_handling", r"(?is)\"(?:password|token|secret|api[_-]?key)\"\s*:\s*\"[^\"]{4,}\""),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+
+
+def scan_systemd_unit(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("systemd_root_user", "medium", "privileged_runtime", r"(?im)^\s*User\s*=\s*root\b"),
+        ("systemd_exec_shell", "medium", "subprocess_execution", r"(?im)^\s*Exec(?:Start|StartPre|StartPost)\s*=\s*.*\b(?:sh|bash)\s+-c\b"),
+        ("systemd_network_downloader", "medium", "data_transfer", r"(?im)^\s*Exec(?:Start|StartPre|StartPost)\s*=\s*.*\b(?:curl|wget|nc|scp|rsync)\b"),
+        ("systemd_dangerous_capability", "high", "privileged_runtime", r"(?im)^\s*(?:AmbientCapabilities|CapabilityBoundingSet)\s*=\s*.*\b(?:CAP_SYS_ADMIN|CAP_NET_ADMIN|CAP_DAC_READ_SEARCH)\b"),
+        ("systemd_protection_disabled", "medium", "sandbox_weakened", r"(?im)^\s*(?:NoNewPrivileges\s*=\s*false|ProtectSystem\s*=\s*false|PrivateTmp\s*=\s*false)\b"),
+        ("systemd_destructive_root", "critical", "destructive_operation", r"(?im)^\s*Exec(?:Start|StartPre|StartPost)\s*=\s*.*\brm\s+-rf\s+/"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+
+
+def scan_cron(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("cron_remote_shell", "high", "dynamic_code_execution", r"(?im)(?:curl|wget)\b[^\n|]{0,160}\|\s*(?:sh|bash)\b"),
+        ("cron_transfer_tool", "medium", "data_transfer", r"(?im)\b(?:scp|rsync|sftp|ftp|nc|ncat|curl|wget|rclone)\b[^\n]{0,160}"),
+        ("cron_privileged_schedule", "medium", "privileged_runtime", r"(?im)^\s*(?:@reboot|\*|\d)[^\n]*\b(?:sudo|su\s+-|systemctl)\b"),
+        ("cron_destructive_root", "critical", "destructive_operation", r"(?im)\brm\s+-rf\s+/(?:\s|$)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+
+
 def command_data_usage_summary(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Return compact command/data-use evidence derived only from static findings."""
     categories = [str(f.get("category")) for f in findings]
@@ -1350,6 +1513,36 @@ def examine_job(job: Dict[str, Any], max_chars: int) -> Dict[str, Any]:
         elif lang in {"lua", "r"}:
             selected_checks.append(f"{lang}_script_patterns")
             scan_lua_r(text, findings, lang)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "dockerfile":
+            selected_checks.append("dockerfile_container_build_patterns")
+            scan_dockerfile(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "yaml":
+            selected_checks.append("yaml_iac_manifest_patterns")
+            scan_yaml_iac(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "terraform":
+            selected_checks.append("terraform_hcl_iac_patterns")
+            scan_terraform(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "json_config":
+            selected_checks.append("json_policy_config_patterns")
+            scan_json_config(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "systemd":
+            selected_checks.append("systemd_unit_patterns")
+            scan_systemd_unit(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "cron":
+            selected_checks.append("cron_schedule_patterns")
+            scan_cron(text, findings)
             selected_checks.append("legal_case_restriction_hints")
             scan_legal_case_hints(text, lang, findings)
         else:

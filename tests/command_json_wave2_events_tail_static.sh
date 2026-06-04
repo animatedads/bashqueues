@@ -6,7 +6,7 @@ python3 - <<'PY'
 from pathlib import Path
 s = Path('queuebash.sh').read_text()
 checks = {
-    'version bump': 'QUEUEBASH_VERSION="0.18.111"',
+    'version bump': 'QUEUEBASH_VERSION="0.18.113"',
     'events schema': 'queuebash.events.v1',
     'events json flag': '--json|-j) json=1',
     'events follow flag': '--follow|-f|follow) follow=1',

@@ -39,10 +39,10 @@ _queue_endpoint_policy_candidates() {
     repo_root="$(cd "$plugin_dir/.." >/dev/null 2>&1 && pwd -P)"
     qroot="${QUEUEBASH_ROOT:-${HOME:-}/.queuebash}"
     printf '%s\n' \
-        "/etc/bashqueues/policies.d/endpoint-jurisdiction/default.env" \
-        "/etc/bashqueues/policies.d/endpoint_jurisdiction.env" \
-        "/etc/bashqueues/policies.d/legal-framework/default.env" \
-        "/etc/bashqueues/policies.d/legal_framework.env" \
+        "/etc/queuebash/policies.d/endpoint-jurisdiction/default.env" \
+        "/etc/queuebash/policies.d/endpoint_jurisdiction.env" \
+        "/etc/queuebash/policies.d/legal-framework/default.env" \
+        "/etc/queuebash/policies.d/legal_framework.env" \
         "$qroot/policies.d/endpoint-jurisdiction/default.env" \
         "$qroot/policies.d/endpoint_jurisdiction.env" \
         "$qroot/policies.d/legal-framework/default.env" \

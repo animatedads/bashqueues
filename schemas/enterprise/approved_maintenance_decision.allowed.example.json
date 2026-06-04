@@ -1,0 +1,21 @@
+{
+  "schema": "queuebash.enterprise_maintenance_evidence_decision.v1",
+  "status": "ok",
+  "ok": true,
+  "profile": "hospital-live-approved-maintenance-default",
+  "mode": "fixture-only",
+  "live_clearance_granted": false,
+  "system_modified": false,
+  "checks": {
+    "change_ticket": true,
+    "dual_control": true,
+    "signed_approval": true,
+    "rollback_evidence": true,
+    "audit_path": true,
+    "canonical_policy_root": true,
+    "secret_env_denied": true,
+    "secret_json_denied": true,
+    "external_ai_denied": true
+  },
+  "failures": []
+}

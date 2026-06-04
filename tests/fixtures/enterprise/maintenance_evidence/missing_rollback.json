@@ -1,0 +1,39 @@
+{
+  "ai": {
+    "external_provider_allowed": false
+  },
+  "approval": {
+    "approvers": [
+      "ops-lead@example.invalid",
+      "clinical-owner@example.invalid"
+    ],
+    "dual_control": true,
+    "signed_approval": true
+  },
+  "audit": {
+    "audit_path": "/var/lib/queuebash/audit/CHG-12345"
+  },
+  "change_ticket": "CHG-12345",
+  "live_clearance_requested": false,
+  "maintenance_class": "approved-backup-repair",
+  "maintenance_window": {
+    "end": "2026-06-04T22:30:00Z",
+    "start": "2026-06-04T22:00:00Z"
+  },
+  "policy": {
+    "policy_root": "/etc/queuebash/policies.d"
+  },
+  "profile": "hospital-live-approved-maintenance-default",
+  "purpose": "repair verified backup metadata during approved maintenance window",
+  "requested_actions": [
+    "backup-verify",
+    "approved-maintenance-readwrite"
+  ],
+  "rollback": {},
+  "schema": "queuebash.enterprise_maintenance_evidence_request.v1",
+  "secrets": {
+    "break_glass_used": false,
+    "secret_env_allowed": false,
+    "secret_value_json_allowed": false
+  }
+}

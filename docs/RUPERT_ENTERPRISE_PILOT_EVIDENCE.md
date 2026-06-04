@@ -24,6 +24,7 @@ P1: document shell-function versus installed-wrapper behaviour
 
 Bob17 owns the hospital live safe-mode policy profile and the secrets/break-glass/live-maintenance control posture. Bob23 owns policy namespace consistency and shell-function versus installed-wrapper wording. Bob21 owns AI policy gate fixture-smoke boundedness. Bob15 merges only after clean delivery evidence.
 
-## Bob17 follow-up: fixture verification path
 
-Bob17 added a fixture-only enterprise profile verifier for the hospital live safe-mode examples. This gives operators and reviewers a concrete local check for the profile examples while preserving Rupert's decision boundary: the profiles may support controlled pilot preparation, but the verifier does not grant live clearance and does not modify system policy.
+## 0.18.111 carry-forward completion
+
+The Rupert carry-forward set now includes all four enterprise default profiles: `small-team-dev-default`, `government-project-test-default`, `hospital-live-readonly-default`, and `hospital-live-approved-maintenance-default`. The regulated-service live pilot runbook is `docs/REGULATED_SERVICE_RUNBOOK.md`. The AI policy gate fixture smoke has a bounded stage-summary wrapper at `tests/ai_policy_gate_fixture_stage_smoke.sh`; the older comprehensive smoke remains available for detailed coverage.
