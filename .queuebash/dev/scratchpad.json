@@ -7812,6 +7812,252 @@
       ],
       "text": "Bob15 merged the 0.18.111-0.18.113 test-team wave onto 0.18.110. Bob21 AI policy gate bounded/IAC work was kept as Bob21/Team Leader candidate content; Bob14 attribution confusion was recorded without relabelling AI policy work as service coverage. Version-only queuebash hunks were not allowed to overwrite real runtime changes.",
       "updated_at": "2026-06-04T19:10:00Z"
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "bob23",
+        "source": "queue dev scratchpad",
+        "type": "coding_agent"
+      },
+      "id": "SP-20260604-BOB23-018114-QUEUE-RUN-SMOKE-BOUNDING",
+      "kind": "task-result",
+      "tags": [
+        "bob23",
+        "test-hygiene",
+        "queue-run",
+        "bounded-smoke",
+        "0.18.114"
+      ],
+      "text": "0.18.114 continues from the 0.18.113 BOB15 test-team wave. It hardens Karen-sensitive tail/log and dispatch-trace smoke tests by replacing raw queue run calls with bounded timeout 30s queue run --workers 1 helpers that preserve explicit single-worker foreground coverage and emit stdout/stderr diagnostics on timeout/failure. Runtime behaviour is unchanged."
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "bob14",
+        "source": "manual",
+        "type": "coding_agent"
+      },
+      "created_at": "2026-06-04T19:30:00Z",
+      "id": "SP-BOB14-0.18.114-service-coverage-backup-ca",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "0.18.114",
+        "source_type": "patchset"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "bob14",
+        "service-coverage",
+        "backup_service",
+        "certificate_authority",
+        "0.18.114"
+      ],
+      "text": "Bob14 service coverage wave11 adds fixture-first backup_service and certificate_authority provider families with normalized JSON helpers, docs, policies, fixtures, static/smoke/JSON tests, and no live or mutating provider operations.",
+      "updated_at": "2026-06-04T19:30:00Z"
+    },
+    {
+      "authority": "Bob15 merger",
+      "created_at": "2026-06-04T21:40:00Z",
+      "id": "SP-BOB15-0.18.114-merge",
+      "kind": "merge-decision",
+      "schema": "queuebash.dev_scratchpad.item.v1",
+      "status": "accepted",
+      "tags": [
+        "bob15",
+        "0.18.114",
+        "merge",
+        "cluster",
+        "queue-plan",
+        "command-json",
+        "service-coverage",
+        "ai-policy-gate",
+        "enterprise"
+      ],
+      "text": "Bob15 merged the 0.18.114 eleven-input wave onto 0.18.113. Repeated --patchset merge-plan was used for canonical inputs; Bob21 build-pipeline language coverage had a noncanonical MANIFEST and was inspected manually. Real Bob14 lane is backup_service/certificate_authority service coverage. Bob24 and Bob25 are design/contract-first queue-plan and cluster-operations lanes. Bob23 command JSON policies/list/retry and bounded queue-run smoke polish were reconciled without overwriting prior command JSON work. Version-only queuebash hunks were not allowed to overwrite real runtime changes.",
+      "updated_at": "2026-06-04T21:40:00Z"
+    },
+    {
+      "authority": {
+        "confidence": "proposed",
+        "name": "bob14",
+        "source": "patchset",
+        "type": "coding_agent"
+      },
+      "counters": {
+        "failure": 0,
+        "success": 0
+      },
+      "created_at": "2026-06-04T21:03:45Z",
+      "id": "SP-BOB14-SERVICE-WAVE12-20260604210345",
+      "kind": "evidence",
+      "provenance": {
+        "source_ref": "0.18.115",
+        "source_type": "patchset"
+      },
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "active",
+      "tags": [
+        "bob14",
+        "service-coverage",
+        "wave12",
+        "license-manager",
+        "configuration-database"
+      ],
+      "text": "Bob14 service coverage wave12 adds fixture-first license_manager and configuration_database provider families. Providers return normalized advisory JSON facts only and explicitly avoid license assignment/revocation/purchase, CMDB mutation, provisioning/destruction, live calls, and queue dispatch changes.",
+      "updated_at": "2026-06-04T21:03:45Z"
+    },
+    {
+      "authority": "Bob15 merger",
+      "created_at": "2026-06-04T21:50:00Z",
+      "id": "SP-BOB15-0.18.115-merge",
+      "kind": "merge-decision",
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "accepted",
+      "tags": [
+        "bob15",
+        "0.18.115",
+        "merge",
+        "cluster",
+        "materialisation",
+        "node-token",
+        "plan-adapter",
+        "service-coverage",
+        "enterprise",
+        "display-resources"
+      ],
+      "text": "Bob15 merged the 0.18.115 nine-input wave onto 0.18.114. Cluster work was reconciled by operation semantics: init is plan-only by default, --materialize writes explicit local file-dev state only, join/pause JSON fail closed, and node token create emits plan-only JSON without secret material. Bob24 script behaviour remains plan-adapter/fixture-first. Bob14 license_manager/configuration_database is clean service-coverage work. Bob16 display-help extraction wins over heredoc help; resource-backed help is used with static usage comments where contract tests require strings. Version-only queuebash hunks were not allowed to overwrite real runtime changes.",
+      "updated_at": "2026-06-04T21:50:00Z"
+    },
+    {
+      "authority": "Bob15 merger",
+      "created_at": "2026-06-04T22:05:00Z",
+      "id": "SP-BOB15-0.18.116-merge",
+      "kind": "merge-decision",
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "accepted",
+      "tags": [
+        "bob15",
+        "0.18.116",
+        "merge",
+        "vcs",
+        "bob26",
+        "bob19",
+        "ai-broker",
+        "health-events",
+        "version-only-guard"
+      ],
+      "text": "Bob15 merged Bob26 VCS tenant coverage and Bob19 granular AI broker health-event JSON contract staging onto the accepted 0.18.115 base. Bob26 adds neutral VCS tenant coverage for Git, Subversion, CVS, Mercurial and Perforce while preserving existing Git support. Bob19 supplied an older whole-file queuebash payload based before the 0.18.115 cluster materialisation work; Bob15 rejected that queuebash replacement and merged only the granular JSON contract test harness update. Cluster materialisation, node-token, enterprise command and display-resource help decisions from 0.18.115 remain preserved.",
+      "updated_at": "2026-06-04T22:05:00Z"
+    },
+    {
+      "authority": "Bob27 merger",
+      "created_at": "2026-06-05T09:52:00Z",
+      "id": "SP-BOB27-0.18.117-plan-lifecycle-merge",
+      "kind": "merge-decision",
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "accepted",
+      "tags": [
+        "bob27",
+        "0.18.117",
+        "merge",
+        "bob24",
+        "bob23",
+        "queue-plan",
+        "dgx",
+        "command-json",
+        "lifecycle",
+        "ai-broker-0.18.116-preserved"
+      ],
+      "text": "Bob27 verified the uploaded 0.18.116 Bob15 full delivery as the intermediate line because Bob23 0.18.117 explicitly based on it and it contains the accepted 0.18.115 delivery records. Bob23 lifecycle command JSON patch applied cleanly to 0.18.116. Bob24 queue-plan ingestion DGX policy hook was version-stale against 0.18.116, so only additive helper/docs/tests were copied and the queue plan facade was spliced into current queuebash.sh; older version-only queuebash/README/CHANGELOG hunks were not allowed to downgrade VCS, AI broker, cluster, enterprise, or lifecycle command changes.",
+      "updated_at": "2026-06-05T09:52:00Z"
+    },
+    {
+      "authority": "Bob27 merger",
+      "created_at": "2026-06-05T10:51:00Z",
+      "id": "SP-BOB27-0.18.118-merge",
+      "kind": "merge-decision",
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "accepted",
+      "tags": [
+        "bob27",
+        "0.18.118",
+        "merge",
+        "hot-seat",
+        "command-json",
+        "cluster",
+        "vcs",
+        "queue-plan",
+        "display-resources",
+        "service-coverage",
+        "policy-paths"
+      ],
+      "text": "Bob27 merged the 0.18.118 multi-lane patch wave onto 0.18.117. Noncanonical and patch-only inputs were inspected manually. Queuebash reconciliation preserved the current runtime and integrated direct-source advice/global JSON, policy paths/status JSON, cluster join plan JSON, local lease witness, restore/resubmit lifecycle JSON, VCS command JSON and probe audit, queue plan policy requirements, display plan-help resources, split-brain maintenance evidence, display line audit helper, repo dependency static-exam coverage, and service_mesh/object_storage fixture-first service coverage. Version-only queuebash hunks were not allowed to overwrite real runtime changes.",
+      "updated_at": "2026-06-05T10:51:00Z"
+    },
+    {
+      "authority": "Bob27 merger",
+      "created_at": "2026-06-05T11:50:00Z",
+      "id": "SP-BOB27-0.18.119-hot-seat-merge",
+      "kind": "merge-decision",
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "accepted",
+      "tags": [
+        "bob27",
+        "0.18.119",
+        "merge",
+        "maintenance-json",
+        "cluster",
+        "vote",
+        "leave",
+        "join-failclosed",
+        "queue-plan",
+        "display-resources",
+        "enterprise",
+        "service-coverage"
+      ],
+      "text": "Bob27 merged the 0.18.119 multi-lane wave onto 0.18.118. Join JSON fail-closed restoration supersedes the older join-plan success shape. Cluster leave is plan-only and vote proposal witness is local file-dev only with explicit --materialize. Queue plan script-behaviour runtime remains static/no-live/no-execution. Enterprise examples are validation-only. Bob29 api_gateway/package_registry providers return normalized JSON facts only and perform no live calls or mutation.",
+      "updated_at": "2026-06-05T11:50:00Z"
+    },
+    {
+      "authority": "Bob27 merger",
+      "created_at": "2026-06-05T12:30:00Z",
+      "id": "SP-BOB27-0.18.119-vcs-probe-command-surface-followup",
+      "kind": "merge-decision",
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "accepted",
+      "tags": [
+        "bob27",
+        "bob26",
+        "0.18.119",
+        "vcs",
+        "probe",
+        "command-json",
+        "follow-up"
+      ],
+      "text": "Bob27 merged the dropped Bob26 VCS probe command surface follow-up onto the 0.18.119 Bob27 full delivery. The lower-level queue-vcs-probe helper, identity/revision assets, and VCS_CHANGESET_AUDIT class already existed; this follow-up wires the read-only queue vcs probe command facade, updates queue vcs types JSON/help/docs, keeps queue-dev merge-plan wrapper available, and adds focused static/smoke command-surface tests.",
+      "updated_at": "2026-06-05T12:30:00Z"
+    },
+    {
+      "authority": "Bob27 merger",
+      "created_at": "2026-06-05T13:15:00Z",
+      "id": "SP-BOB27-0.18.120-remote-admin-installer-repair",
+      "kind": "merge-decision",
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "accepted",
+      "tags": [
+        "bob27",
+        "0.18.120",
+        "remote-admin",
+        "installer",
+        "providers.d",
+        "schemas",
+        "fixtures",
+        "contracts"
+      ],
+      "text": "Merged Bob23 remote-admin install/provider fix and broadened installer shared-tree coverage. Restored _queue_remote_admin_helper_path and _queue_remote_admin_command so dispatcher route queue remote-admin resolves providers.d/remote_admin/remote_admin_policy.sh. install-system.sh now copies providers.d plus schemas, fixtures and contracts alongside existing assets/classes/policies/tests/resources/docs/bin coverage.",
+      "updated_at": "2026-06-05T13:15:00Z"
     }
   ],
   "merge_history": [
@@ -8019,5 +8265,5 @@
   },
   "project": "bashqueues-0.18.24",
   "schema": "queuebash.dev_scratchpad.v1",
-  "updated_at": "2026-06-04T15:10:00Z"
+  "updated_at": "2026-06-05T13:15:00Z"
 }

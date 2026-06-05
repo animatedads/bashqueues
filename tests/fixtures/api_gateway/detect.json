@@ -1,0 +1,26 @@
+{
+  "check": "detect",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "api_gateway-detect-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "api_gateway",
+  "provider_output_is_shell": false,
+  "regions": [
+    "fixture-region-1"
+  ],
+  "schema": "queuebash.api_gateway.detect.v1",
+  "services_seen": [
+    "fixture-api-gateway"
+  ],
+  "source": "fixture"
+}

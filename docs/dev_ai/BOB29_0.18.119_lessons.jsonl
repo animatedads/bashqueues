@@ -1,0 +1,2 @@
+{"bob": "BOB29", "lesson": "Verify hot-seat merge contents before rebasing prior patchsets; service_mesh/object_storage were already present in 0.18.118.", "schema": "queuebash.dev_ai.lesson.v1", "status": "ok", "version": "0.18.119"}
+{"bob": "BOB29", "lesson": "Provider family helpers must stay fixture-first and normalized-JSON-only; package/API gateway coverage is useful without live route, repository, or package mutation.", "schema": "queuebash.dev_ai.lesson.v1", "status": "ok", "version": "0.18.119"}

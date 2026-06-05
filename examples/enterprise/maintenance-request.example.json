@@ -1,0 +1,15 @@
+{
+  "schema": "queuebash.enterprise.maintenance_request.v1",
+  "request_id": "CHG-EXAMPLE-0001",
+  "environment": "hospital-live-pilot",
+  "profile": "hospital-live-approved-maintenance-default",
+  "class": "approved-maintenance-readwrite",
+  "requested_action": "backup verification and approved service restart preflight",
+  "ticket": "TICKET-EXAMPLE-0001",
+  "approver": "named-human-approver-required",
+  "window_start": "2030-01-01T00:00:00Z",
+  "window_end": "2030-01-01T01:00:00Z",
+  "rollback": "restore previous service state and disable maintenance class",
+  "audit_log": "/var/log/queuebash/maintenance/CHG-EXAMPLE-0001.log",
+  "live_clearance_requested": false
+}

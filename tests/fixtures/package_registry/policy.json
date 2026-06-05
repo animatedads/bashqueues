@@ -1,0 +1,23 @@
+{
+  "check": "policy",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "package_registry-policy-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "policy_is_advisory": true,
+  "policy_mutated": false,
+  "provider": "fixture",
+  "provider_family": "package_registry",
+  "provider_output_is_shell": false,
+  "retention_policy_present": true,
+  "schema": "queuebash.package_registry.policy.v1",
+  "source": "fixture"
+}

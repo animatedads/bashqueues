@@ -6,7 +6,7 @@ trap 'rm -rf "$tmp"' EXIT
 export QUEUEBASH_ROOT="$tmp/root"
 export QUEUEBASH_ALLOW_NONINTERACTIVE=1
 mkdir -p "$QUEUEBASH_ROOT"
-echo "0.18.115" > "$QUEUEBASH_ROOT/.queuebash_bundled_install_version"
+echo "0.18.119" > "$QUEUEBASH_ROOT/.queuebash_bundled_install_version"
 source ./queuebash.sh
 
 plan="$(queue cluster init --name smoke-a --json)"

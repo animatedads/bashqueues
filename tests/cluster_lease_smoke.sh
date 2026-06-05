@@ -9,7 +9,7 @@ mkdir -p "$QUEUEBASH_ROOT/classes"
 printf '%s
 ' 'CLASS_ALLOW_PARALLEL=1' 'CLASS_MAX_CONCURRENT=0' > "$QUEUEBASH_ROOT/classes/DEFAULT.env"
 printf '%s
-' '0.18.118' > "$QUEUEBASH_ROOT/.queuebash_bundled_install_version"
+' '0.18.119' > "$QUEUEBASH_ROOT/.queuebash_bundled_install_version"
 source ./queuebash.sh
 
 queue cluster init --name lease-smoke --profile enterprise-default --materialize --json >/dev/null

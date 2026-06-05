@@ -1,0 +1,33 @@
+{
+  "allowed_checks": [
+    "detect",
+    "repository",
+    "package",
+    "provenance",
+    "policy"
+  ],
+  "blocked_operations": [
+    "package-upload",
+    "package-download",
+    "package-delete",
+    "repository-create",
+    "repository-delete",
+    "promotion",
+    "signing-key-export",
+    "policy-mutation",
+    "queue-dispatch-refactor"
+  ],
+  "credentials_required_for_default_tests": false,
+  "default_mode": "fixture_first",
+  "live_api_default": false,
+  "mutation_default": false,
+  "normalized_json_only": true,
+  "notes": [
+    "Advisory facts only. No provider calls are made by default.",
+    "Future live-read support must be separately gated and must remain read-only."
+  ],
+  "provider_family": "package_registry",
+  "provider_output_is_shell": false,
+  "provisioning_default": false,
+  "schema": "queuebash.package_registry.policy.example.v1"
+}

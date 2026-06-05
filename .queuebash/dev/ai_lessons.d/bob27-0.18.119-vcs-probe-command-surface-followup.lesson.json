@@ -1,0 +1,16 @@
+{
+  "created_at": "2026-06-05T12:30:00Z",
+  "created_from_session": "manual-bob27-followup",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-BOB27-0.18.119-vcs-probe-command-surface-followup",
+  "match": {
+    "command_glob": "queue vcs probe*",
+    "command_regex": "",
+    "intent_contains": "vcs probe command surface"
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "A dropped command-surface patch can be narrow even when the lower-level helper already exists. For Bob26 VCS probe, preserve existing helper/assets/classes and add only the read-only queue vcs probe facade, display help, docs, and tests. If queue dev merge-plan dispatch exists but its wrapper is missing, restore the small wrapper to bin/queue-dev-merge-plan.py rather than copying old queuebash files."
+}

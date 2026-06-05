@@ -1,0 +1,34 @@
+{
+  "schema": "queuebash.display_resource_locale_audit.v1",
+  "status": "ok",
+  "root": "/repo",
+  "renderer": "none-locale-audit-only",
+  "resource_rendering": false,
+  "token_substitution": false,
+  "secret_rendering": false,
+  "provider_calls": false,
+  "signing_mutation": false,
+  "install_mutation": false,
+  "permission_mutation": false,
+  "json_contract_source": false,
+  "summary": {
+    "resource_type_count": 2,
+    "errors": 0,
+    "warnings": 0
+  },
+  "resources": [
+    {
+      "resource_type": "display",
+      "manifest_path": "resources.d/display/manifest.example.tsv",
+      "manifest_entry_count": 4,
+      "languages_in_manifest": ["fallback", "lang_eng"],
+      "language_directories": ["fallback", "lang_eng"],
+      "missing_language_directories": [],
+      "unmanifested_language_directories": [],
+      "fallback_manifested": true,
+      "fallback_directory_present": true,
+      "duplicate_manifest_entries": []
+    }
+  ],
+  "findings": []
+}

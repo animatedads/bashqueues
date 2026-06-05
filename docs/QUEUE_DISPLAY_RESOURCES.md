@@ -373,3 +373,16 @@ The helper emits `queuebash.display_resource_line_audit.v1` evidence from manife
 This helper is deliberately not a renderer. It does not substitute token values, read or render secrets, call providers, sign files, install files, mutate permissions, generate command/provider JSON, or touch queue dispatch. Its file body read scope is limited to manifest-listed display/XML resource text for line hygiene evidence only.
 
 Findings are warnings unless the manifest contract is broken or a manifest-listed resource is missing, symlinked, non-regular, or not valid UTF-8.
+
+## Display/XML locale audit helper
+
+Bob18 wave 20 adds a read-only locale audit helper:
+
+```bash
+python3 bin/queue-display-resource-locale-audit.py --root . --json
+```
+
+The helper emits `queuebash.display_resource_locale_audit.v1` evidence from manifest metadata and directory/file presence checks only. It checks that display/XML manifest language identifiers use the reviewed `fallback` or `lang_<identifier>` form, that fallback rows and fallback directories are present, that manifest-listed language directories exist, that duplicate manifest rows are reported, and that unmanifested locale directories are visible as review warnings.
+
+The locale audit helper is deliberately not a renderer and not a localization engine. It does not render templates, substitute token values, read or render secrets, call providers, sign resources, install files, change permissions, or generate command/provider JSON. It only gives reviewers deterministic language-directory coverage evidence to compare with lint, catalog, coverage, lookup, token, fallback, install, permission, hash, orphan, encoding, and line-audit evidence.
+

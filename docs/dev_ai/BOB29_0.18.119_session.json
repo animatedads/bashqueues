@@ -1,0 +1,16 @@
+{
+  "agent": "Bob29",
+  "authority": "The Architect",
+  "base": "bashqueues_0.18.118_BOB27_hot_seat_multi_lane_merge_full_delivery.zip",
+  "lesson_count_at_start": 2,
+  "role": "provider-service-coverage",
+  "schema": "queuebash.dev_ai.session.v1",
+  "session_id": "AIS-20260605-110450-944263-2813-Bob29",
+  "started_at": "2026-06-05T11:04:50Z",
+  "status": "active",
+  "stopped_at": "",
+  "tags": [
+    "BOB29"
+  ],
+  "task": "continue provider-family coverage from 0.18.118 hot-seat merge with api_gateway and package_registry"
+}

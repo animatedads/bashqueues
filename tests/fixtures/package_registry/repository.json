@@ -1,0 +1,23 @@
+{
+  "check": "repository",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "package_registry-repository-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "package_registry",
+  "provider_output_is_shell": false,
+  "repository_mutated": false,
+  "repository_present": true,
+  "repository_state_is_advisory": true,
+  "schema": "queuebash.package_registry.repository.v1",
+  "source": "fixture"
+}

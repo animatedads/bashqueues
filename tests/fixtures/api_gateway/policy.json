@@ -1,0 +1,23 @@
+{
+  "check": "policy",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "api_gateway-policy-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "policy_is_advisory": true,
+  "policy_mutated": false,
+  "provider": "fixture",
+  "provider_family": "api_gateway",
+  "provider_output_is_shell": false,
+  "rate_limit_policy_present": true,
+  "schema": "queuebash.api_gateway.policy.v1",
+  "source": "fixture"
+}

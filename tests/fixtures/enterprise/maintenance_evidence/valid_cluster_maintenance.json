@@ -15,8 +15,27 @@
   },
   "change_ticket": "CHG-12345",
   "cluster": {
+    "blast_radius": {
+      "max_nodes": 2,
+      "per_batch": 1,
+      "percentage": 50
+    },
+    "canary": {
+      "completed": true,
+      "health_after": "ok",
+      "nodes": [
+        "hospital-node-a"
+      ],
+      "required": true
+    },
     "cluster_enabled": true,
     "cluster_wide_mutation_allowed": false,
+    "drain": {
+      "data_loss_risk": "none",
+      "eviction_budget_ok": true,
+      "required": true,
+      "verified": true
+    },
     "fencing": {
       "enabled": true,
       "token_hash": "sha256:930b31a20fd620932b3c8dfb2e8e2f2ad3cfb3ef1fdc1575b109d07f6f3f9a50"
@@ -44,6 +63,10 @@
       "required_count": 2
     },
     "quorum_met": true,
+    "rollback": {
+      "checkpoint_hash": "sha256:6b0bb632ce3a9af8222bf495f81839b03ad8f0cc513a3bf0f2a00c3c4e0b8a70",
+      "tested": true
+    },
     "schema": "queuebash.enterprise_maintenance_cluster_context.v1",
     "scope": "cluster",
     "split_brain_guard": true,

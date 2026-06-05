@@ -33,6 +33,31 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "api_gateway": {
+      "doc_prefix": "API_GATEWAY",
+      "fixture_dir": "api_gateway",
+      "non_goals": [
+        "gateway-create",
+        "gateway-delete",
+        "route-create",
+        "route-delete",
+        "deployment-promote",
+        "auth-secret-export",
+        "policy-mutation",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "api_gateway",
+      "priority": 29,
+      "provider_dir": "api_gateway",
+      "schemas": [
+        "queuebash.api_gateway.detect.v1",
+        "queuebash.api_gateway.gateway.v1",
+        "queuebash.api_gateway.route.v1",
+        "queuebash.api_gateway.auth.v1",
+        "queuebash.api_gateway.policy.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "artifact_store": {
       "doc_prefix": "ARTIFACT_STORE",
       "fixture_dir": "artifact_store",
@@ -475,6 +500,32 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "package_registry": {
+      "doc_prefix": "PACKAGE_REGISTRY",
+      "fixture_dir": "package_registry",
+      "non_goals": [
+        "package-upload",
+        "package-download",
+        "package-delete",
+        "repository-create",
+        "repository-delete",
+        "promotion",
+        "signing-key-export",
+        "policy-mutation",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "package_registry",
+      "priority": 30,
+      "provider_dir": "package_registry",
+      "schemas": [
+        "queuebash.package_registry.detect.v1",
+        "queuebash.package_registry.repository.v1",
+        "queuebash.package_registry.package.v1",
+        "queuebash.package_registry.provenance.v1",
+        "queuebash.package_registry.policy.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "policy_engine": {
       "doc_prefix": "POLICY_ENGINE",
       "fixture_dir": "policy_engine",
@@ -614,8 +665,8 @@
     }
   },
   "next_candidates": [
-    "service_mesh",
-    "object_storage"
+    "cdn",
+    "dns_service"
   ],
   "schema": "queuebash.provider_service_coverage.v1"
 }

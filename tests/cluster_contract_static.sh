@@ -15,6 +15,9 @@ grep -q -- '--materialize' contracts/CLUSTER_COMMAND_CONTRACT.md || fail 'materi
 grep -q '_queue_cluster_materialize_local_lease' queuebash.sh || fail 'cluster local lease helper missing'
 grep -q 'queuebash.cluster.local_lease.v1' queuebash.sh || fail 'cluster local lease JSON schema missing'
 grep -q 'queue cluster elect lease' contracts/CLUSTER_COMMAND_CONTRACT.md || fail 'cluster elect lease command contract missing'
+grep -q '_queue_cluster_vote_propose' queuebash.sh || fail 'cluster vote propose helper missing'
+grep -q 'queuebash.cluster.vote_proposal.v1' queuebash.sh || fail 'cluster vote proposal JSON schema missing'
+grep -q 'queue cluster vote propose' contracts/CLUSTER_COMMAND_CONTRACT.md || fail 'cluster vote propose command contract missing'
 
 grep -q 'Bob25 cluster operations design' docs/CLUSTER_OPERATIONS_DESIGN.md || fail 'design doc missing'
 grep -q 'queue cluster status' contracts/CLUSTER_COMMAND_CONTRACT.md || fail 'command contract missing'

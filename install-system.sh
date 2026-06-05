@@ -146,7 +146,7 @@ done
 # It can perform SSH/Git operations and must not be copied into /usr/local/share/bashqueues.
 rm -f -- "$share_dir/publish_to_github.sh"
 
-for dir in assets.d caps.d reporters.d classes envs.d policies.d docs bin systemd tests resources.d; do
+for dir in assets.d caps.d reporters.d classes envs.d policies.d docs bin systemd tests resources.d providers.d schemas fixtures contracts; do
   [[ -d "$src_dir/$dir" ]] || continue
   install -d -m 0755 "$share_dir/$dir"
   # Preserve tree contents but do not delete local additions under share.
@@ -307,6 +307,14 @@ if ! grep -q "$sha" "$code_policy" 2>/dev/null; then
     echo "QUEUEBASH_CODE_TRUSTED_PUBLIC_KEY_SHA256S=\"${existing} ${sha}\""
   } >> "$code_policy"
   echo "Installed ROOT public key into $code_policy for code/plugin signing"
+fi
+
+
+if [[ -x "$share_dir/providers.d/remote_admin/remote_admin_policy.sh" ]]; then
+  echo "Installed remote-admin provider helper under $share_dir/providers.d/remote_admin/remote_admin_policy.sh"
+else
+  echo "install-system.sh: remote-admin provider helper missing under $share_dir/providers.d/remote_admin; queue remote-admin will not work" >&2
+  exit 1
 fi
 
 if [[ -d "$share_dir/resources.d" ]]; then

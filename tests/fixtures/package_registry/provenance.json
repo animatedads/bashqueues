@@ -1,0 +1,23 @@
+{
+  "attestation_mutated": false,
+  "check": "provenance",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "package_registry-provenance-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provenance_present": true,
+  "provider": "fixture",
+  "provider_family": "package_registry",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.package_registry.provenance.v1",
+  "signature_material_exported": false,
+  "source": "fixture"
+}

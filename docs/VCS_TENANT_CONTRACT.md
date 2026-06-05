@@ -38,6 +38,8 @@ Existing `git:*` assets remain valid and preferred for Git-only classes such as 
 
 `queue vcs types [--json]` lists supported tenant systems and emits `queuebash.vcs.types.v1` for scripts. This is deliberately diagnostic and read-only: it does not checkout, update, commit, tag, submit, or mutate workspace state.
 
+`queue vcs probe [PATH] [--json] [--type TYPE] [--timeout SECONDS]` exposes `queue-vcs-probe` through the normal `queue` command surface. JSON output uses `queuebash.vcs.probe.v1` and reports the detected type, client availability, identity, revision, clean-tree summary, root, and marker. This facade is read-only and exists so operators can debug release/audit gates without knowing the helper path.
+
 ## Safety boundary
 
 The VCS plugin is preflight-only. It does not run checkout, update, commit, merge, tag, submit, or revert operations. Those remain job payload responsibilities and continue to pass through the normal class, asset, sandbox, runtime cap, authorisation, and audit paths.

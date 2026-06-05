@@ -37,3 +37,25 @@ Queue dev AI notes:
 
 - Session started with explicit Bob29/service coverage metadata.
 - Some direct non-shell test entrypoints were rejected by the 0.18.117 queue-dev-ai allowlist; the tests were then run directly as focused bounded tests and the allowlist lesson was recorded.
+
+## 0.18.119 Bob29 continuation - api_gateway + package_registry
+
+- Base inspected directly: 0.18.118 BOB27 hot-seat multi-lane merge.
+- Confirmed service_mesh/object_storage, license_manager/configuration_database, and registry entries before adding new families.
+- Added api_gateway and package_registry as fixture-first provider families only.
+- Next candidates recorded: cdn and dns_service.
+
+### Validation - 0.18.119
+
+Bounded tests run from the extracted 0.18.118 hot-seat base after additive changes:
+
+```text
+PASS bash -n queuebash.sh
+PASS api_gateway_provider_contracts_static
+PASS api_gateway_provider_fixture_smoke
+PASS api_gateway_provider_json_contract_static
+PASS package_registry_provider_contracts_static
+PASS package_registry_provider_fixture_smoke
+PASS package_registry_provider_json_contract_static
+PASS registry spot-check for api_gateway/package_registry/service_mesh/object_storage/license_manager/configuration_database
+```

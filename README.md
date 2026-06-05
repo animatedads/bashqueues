@@ -1,3 +1,66 @@
+# 0.18.120 BOB27 remote-admin install/provider repair
+
+Repairs the missing runtime remote-admin command helper and broadens installer packaging so shipped source trees under providers.d, policies.d, tests, resources.d, schemas, docs, assets.d, bin, classes, fixtures and contracts are installed into the shared runtime tree. The remote-admin provider remains an ACL-gated typed helper, not a shell/editor path.
+
+# 0.18.119 BOB26 VCS probe command surface
+
+Follow-up merge on the Bob27 0.18.119 delivery. Adds the read-only `queue vcs probe` command surface for `bin/queue-vcs-probe`, exposes identity/revision assets and `VCS_CHANGESET_AUDIT` in `queue vcs types --json`, and preserves existing Git-specific and neutral `vcs:*` tenant support.
+
+# 0.18.119 BOB27 maintenance plan vote display enterprise service merge
+
+Merged eleven 0.18.119 inputs onto the 0.18.118 Bob27 hot-seat multi-lane base. Included lanes: Bob16 VCS help resource extraction wave13, Bob17 approved-maintenance blast-radius/canary/rollback hardening, Bob18 display-resource locale audit helper, Bob20 operator runbook and enterprise examples, Bob23 maintenance command JSON and cluster leave JSON, Bob24 queue plan script-behaviour runtime adapter, Bob25 local vote proposal witness plus join fail-closed restoration, Bob28 global JSON passthrough hardening, and Bob29 api_gateway/package_registry service coverage.
+
+Merge posture: cluster join --json remains fail-closed despite the older join-plan shape; cluster leave remains plan-only and no secret/network/write; vote proposal materialisation is explicit local file-dev witness only; script-behaviour plan runtime is static/no-live/no-execution; enterprise examples are validation-only; Bob29 providers remain fixture-first normalized JSON facts only.
+
+0.18.119 BOB23 maintenance command JSON contracts
+# 0.18.118 BOB27 multi-lane hot-seat merge
+
+Merged BOB16 plan help resources, BOB17 split-brain maintenance evidence hardening, BOB18 display resource line audit, BOB20 policy paths/status JSON, BOB21 repo dependency language coverage, BOB23 cluster join and restore/resubmit lifecycle JSON, BOB24 plan policy requirements, BOB25 local lease witness, BOB26 VCS tenant command JSON plus probe audit, BOB28 direct-source/global JSON behaviour, and BOB29 service_mesh/object_storage service coverage. VCS tenant command JSON is included.
+
+# 0.18.118 BOB26 VCS probe and changeset audit continuation
+
+Continues Bob26 on the 0.18.117 base after verifying the earlier VCS tenant work is already included. Adds `bin/queue-vcs-probe`, a read-only normalised diagnostic/audit helper for Git, Subversion, CVS, Mercurial, and Perforce, plus `vcs:identity` and `vcs:revision` assets for reproducible source-control gates. Adds `VCS_CHANGESET_AUDIT` for serial jobs that must prove exact branch/tag/stream/client identity and revision/changelist/hash before running. Existing `git:*` support remains untouched.
+
+# 0.18.117 BOB27 plan ingestion DGX policy hook and lifecycle command JSON merge
+
+Merges the post-Bob15 hot-seat inputs onto the verified 0.18.116 Bob15 VCS tenant / AI broker granular-health line, which itself carries the accepted 0.18.115 cluster materialisation delivery records.
+
+Included lanes: Bob24 queue-plan ingestion command facade with DGX/GPU cloud-workflow policy hooks, and Bob23 common queue command JSON lifecycle contracts for cancel/kill/delete/pause/unpause/priority/clear style mutating commands.
+
+Merge posture: Bob23's 0.18.117 lifecycle patch applied cleanly to the verified 0.18.116 base. Bob24's queue-plan ingestion patch was version-stale against 0.18.116, so Bob27 copied only additive helper/docs/tests/fixtures and spliced the `queue plan` facade into the current queuebash.sh. No older queuebash.sh, README, or CHANGELOG file was allowed to overwrite 0.18.116 VCS, AI broker, cluster, enterprise, or 0.18.117 lifecycle work.
+
+Safety posture: queue-plan import remains no-live/no-submit/no-secret/no-cloud-apply staging. DGX/GPU cloud workflow evidence produces explicit policy-review gates. Common lifecycle JSON output preserves existing human behaviour while giving scripts a bounded `queuebash.command_result.v1` result contract.
+
+Development history reference: for validation of the architectural route and development history, the full ChatGPT development chat is located at https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
+
+# 0.18.115 BOB24 queue plan ingestion command and DGX policy hook
+
+Adds the first runtime-facing `queue plan` facade: `scan`, `explain`, `build`, and `validate` now operate through a no-live helper that recognises native bashqueues plans plus Kubernetes/cloud, cloud-batch, HPC, workflow, systemd, cron-bridge, Nomad and IaC source hints. Builds stage `queue.control_plan.v1` artifacts only. Cron remains bound to the existing bashqueues cron subsystem, and DGX/GPU cloud-workflow plans emit an explicit `DGX_CLOUD_WORKFLOW_POLICY_REVIEW` gate before any future apply path.
+
+# 0.18.116 BOB15 VCS tenant and AI broker granular health-event merge
+
+Merges Bob26 VCS tenant coverage and Bob19 AI broker granular health-event JSON contract staging onto the accepted 0.18.115 Bob15 cluster materialisation base.
+
+Bob26 adds a neutral VCS tenant layer for mixed and legacy source-control estates while preserving existing first-class Git support. The new VCS tenant coverage includes `assets.d/vcs.sh`, `bin/queue-vcs-detect`, `VCS_CHECKOUT`, `VCS_RELEASE_GATE`, and `VCS_LEGACY_SERIAL` classes, plus documentation and static tests for Git, Subversion, CVS, Mercurial, and Perforce.
+
+Bob19 splits the AI broker JSON contract health-event harness into smaller health-cache and health-event-filter stages while preserving the legacy aggregate `health_events` stage for callers. Bob19's older whole-file queuebash payload was inspected but not copied because it would have downgraded 0.18.115 cluster materialisation and enterprise command work.
+
+Development history reference: for validation of the architectural route and development history, the full ChatGPT development chat is located at https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
+
+# 0.18.115 BOB26 VCS tenant coverage
+
+Adds a neutral VCS tenant layer for mixed and legacy source-control estates while preserving existing first-class Git support. Bob26 introduces `assets.d/vcs.sh` with `vcs:repo_exists`, `vcs:clean_tree`, `vcs:branch`, and `vcs:tool_available` checks for Git, Subversion, CVS, Mercurial, and Perforce; adds `VCS_CHECKOUT`, `VCS_RELEASE_GATE`, and `VCS_LEGACY_SERIAL` classes; and documents the read-only preflight boundary in `docs/VCS_TENANT_CONTRACT.md`.
+
+Existing `git:*` facilities and `GITHUB_PUBLISH` remain unchanged. The `vcs:*` family is for mixed estates, migration paths, and old enterprise systems that still need clean queue admission, branch/tag/stream gating, and clear tool-missing failures.
+
+# 0.18.114 BOB15 cluster plan policy command JSON service coverage enterprise merge
+
+Merges eleven 0.18.114 inputs onto the accepted 0.18.113 Bob15 test-team wave base. Included lanes: Bob23 bounded queue-run smoke polish and command JSON wave2 policies/list/retry, Bob25 cluster operations contract, Bob24 queue-plan market coverage, Bob18 display resource orphan audit, Bob19 AI broker staged health JSON contracts, Bob21 build/pipeline language coverage candidate, Bob17 approved-maintenance expiry/redaction hardening, Bob16 display-help extraction wave10, Bob14 backup_service/certificate_authority service coverage, and Bob20 enterprise profile command surface.
+
+Merge posture: cluster operations and queue-plan import remain design/contract/fixture-first; Bob14 attribution is kept clean for backup_service and certificate_authority service coverage; Bob21 remains optional/local/static-only AI policy gate language coverage; Karen first-user run behaviour remains protected.
+
+Development history reference: for validation of the architectural route and development history, the full ChatGPT development chat is located at https://chatgpt.com/g/g-p-6a18124e2940819192b52b3725039b7c-bashq/project
+
 # 0.18.113 BOB15 test-team wave merge: bounded AI policy gate, command JSON, display audits, enterprise evidence
 
 Merges the 0.18.111-0.18.113 test-team wave onto the 0.18.110 Bob15 policy namespace and AI explain write-back base.

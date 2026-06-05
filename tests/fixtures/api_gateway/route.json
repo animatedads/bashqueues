@@ -1,0 +1,23 @@
+{
+  "check": "route",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "api_gateway-route-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "api_gateway",
+  "provider_output_is_shell": false,
+  "route_is_advisory": true,
+  "route_mutated": false,
+  "route_summary_present": true,
+  "schema": "queuebash.api_gateway.route.v1",
+  "source": "fixture"
+}

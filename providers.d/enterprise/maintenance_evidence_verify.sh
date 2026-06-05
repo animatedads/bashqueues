@@ -203,6 +203,67 @@ if cluster_required:
         if cluster.get('split_brain_guard') is not True:
             failures.append('cluster_split_brain_guard_required')
 
+        blast = cluster.get('blast_radius')
+        if not isinstance(blast, dict):
+            failures.append('cluster_blast_radius_required')
+        else:
+            max_nodes = blast.get('max_nodes')
+            per_batch = blast.get('per_batch')
+            percentage = blast.get('percentage')
+            if not isinstance(max_nodes, int) or max_nodes <= 0:
+                failures.append('cluster_blast_radius_max_nodes_required')
+            elif isinstance(node_targets, list) and max_nodes < len(set(node_targets)):
+                failures.append('cluster_blast_radius_covers_targets_required')
+            if not isinstance(per_batch, int) or per_batch <= 0:
+                failures.append('cluster_blast_radius_per_batch_required')
+            elif isinstance(node_targets, list) and per_batch > max(1, len(set(node_targets))):
+                failures.append('cluster_blast_radius_per_batch_exceeds_targets')
+            if not isinstance(percentage, int) or percentage <= 0 or percentage > 50:
+                failures.append('cluster_blast_radius_percentage_limited')
+
+        canary = cluster.get('canary')
+        if not isinstance(canary, dict):
+            failures.append('cluster_canary_required')
+        else:
+            canary_nodes = canary.get('nodes')
+            if canary.get('required') is not True:
+                failures.append('cluster_canary_required')
+            if canary.get('completed') is not True:
+                failures.append('cluster_canary_completion_required')
+            if not isinstance(canary_nodes, list) or not canary_nodes:
+                failures.append('cluster_canary_nodes_required')
+            elif isinstance(node_targets, list):
+                unknown_canary = [n for n in canary_nodes if n not in node_targets]
+                if unknown_canary:
+                    failures.append('cluster_canary_nodes_must_be_targeted')
+            if canary.get('health_after') != 'ok':
+                failures.append('cluster_canary_health_ok_required')
+
+        drain = cluster.get('drain')
+        if not isinstance(drain, dict):
+            failures.append('cluster_drain_evidence_required')
+        else:
+            if drain.get('required') is not True:
+                failures.append('cluster_drain_required')
+            if drain.get('verified') is not True:
+                failures.append('cluster_drain_verified_required')
+            if drain.get('eviction_budget_ok') is not True:
+                failures.append('cluster_eviction_budget_required')
+            if drain.get('data_loss_risk') not in ('none', 'low'):
+                failures.append('cluster_drain_data_loss_risk_too_high')
+
+        rollback_cluster = cluster.get('rollback')
+        if not isinstance(rollback_cluster, dict):
+            failures.append('cluster_rollback_checkpoint_required')
+        else:
+            checkpoint_hash = rollback_cluster.get('checkpoint_hash')
+            if not isinstance(checkpoint_hash, str) or not checkpoint_hash.startswith('sha256:'):
+                failures.append('cluster_rollback_checkpoint_hash_required')
+            if rollback_cluster.get('tested') is not True:
+                failures.append('cluster_rollback_tested_required')
+            if 'checkpoint' in rollback_cluster or 'raw_checkpoint' in rollback_cluster:
+                failures.append('cluster_rollback_checkpoint_must_be_redacted')
+
 created_dt = parse_utc_z(created_at, 'created_at_must_be_utc_iso8601') if created_at else None
 expires_dt = parse_utc_z(expires_at, 'expires_at_must_be_utc_iso8601') if expires_at else None
 start_dt = parse_utc_z(window_start, 'maintenance_window_start_must_be_utc_iso8601') if window_start else None
@@ -238,6 +299,11 @@ cluster_checks = {
     'cluster_fence_token_hash': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(get(cluster, 'fencing', 'token_hash'), str) and get(cluster, 'fencing', 'token_hash').startswith('sha256:')),
     'cluster_fence_token_redacted': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('fencing'), dict) and 'token' not in cluster.get('fencing', {}) and 'raw_token' not in cluster.get('fencing', {})),
     'cluster_split_brain_guard': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (cluster.get('split_brain_guard') is True),
+    'cluster_blast_radius_limited': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('blast_radius'), dict) and isinstance(get(cluster, 'blast_radius', 'percentage'), int) and 0 < get(cluster, 'blast_radius', 'percentage') <= 50),
+    'cluster_canary_completed': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('canary'), dict) and get(cluster, 'canary', 'required') is True and get(cluster, 'canary', 'completed') is True and get(cluster, 'canary', 'health_after') == 'ok'),
+    'cluster_drain_verified': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('drain'), dict) and get(cluster, 'drain', 'required') is True and get(cluster, 'drain', 'verified') is True and get(cluster, 'drain', 'eviction_budget_ok') is True),
+    'cluster_rollback_checkpoint_hash': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(get(cluster, 'rollback', 'checkpoint_hash'), str) and get(cluster, 'rollback', 'checkpoint_hash').startswith('sha256:')),
+    'cluster_rollback_checkpoint_redacted': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('rollback'), dict) and 'checkpoint' not in cluster.get('rollback', {}) and 'raw_checkpoint' not in cluster.get('rollback', {})),
 }
 
 checks = {

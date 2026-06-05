@@ -200,3 +200,53 @@ cluster_leader_must_be_in_membership
 ```
 
 This guards the fixture contract against split-brain style evidence where a request claims a quorum or leader lease but does not bind the vote to a redacted membership snapshot, explicit voter nodes, and a redacted fencing token hash.
+
+## Cluster blast-radius, canary, drain, and rollback hardening
+
+Cluster-scoped approved maintenance must also prove that the proposed change is bounded and reversible before any future runtime gate considers it eligible. This remains fixture evidence only. The verifier does not drain nodes, run health probes, create checkpoints, execute rollback, or contact the cluster.
+
+For `cluster.scope = cluster`, the cluster context must include:
+
+```text
+cluster.blast_radius.max_nodes as a positive integer
+cluster.blast_radius.per_batch as a positive integer not exceeding targeted nodes
+cluster.blast_radius.percentage as an integer between 1 and 50
+cluster.canary.required = true
+cluster.canary.completed = true
+cluster.canary.nodes as explicit targeted nodes
+cluster.canary.health_after = ok
+cluster.drain.required = true
+cluster.drain.verified = true
+cluster.drain.eviction_budget_ok = true
+cluster.drain.data_loss_risk = none | low
+cluster.rollback.checkpoint_hash = sha256:...
+cluster.rollback.tested = true
+cluster.rollback.checkpoint and cluster.rollback.raw_checkpoint absent
+```
+
+Additional blocked cluster maintenance evidence includes redacted failure reasons such as:
+
+```text
+cluster_blast_radius_required
+cluster_blast_radius_max_nodes_required
+cluster_blast_radius_covers_targets_required
+cluster_blast_radius_per_batch_required
+cluster_blast_radius_per_batch_exceeds_targets
+cluster_blast_radius_percentage_limited
+cluster_canary_required
+cluster_canary_completion_required
+cluster_canary_nodes_required
+cluster_canary_nodes_must_be_targeted
+cluster_canary_health_ok_required
+cluster_drain_evidence_required
+cluster_drain_required
+cluster_drain_verified_required
+cluster_eviction_budget_required
+cluster_drain_data_loss_risk_too_high
+cluster_rollback_checkpoint_required
+cluster_rollback_checkpoint_hash_required
+cluster_rollback_tested_required
+cluster_rollback_checkpoint_must_be_redacted
+```
+
+The `cluster.rollback.checkpoint_hash` is redacted correlation evidence only. It is not a secret, not a snapshot payload, and not proof that a live rollback has been performed by bashqueues.

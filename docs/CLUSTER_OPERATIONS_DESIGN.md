@@ -97,3 +97,10 @@ policy exposure.
 Bob25 now adds the first local election artefact: `queue cluster elect lease`. It is deliberately a witness, not consensus. The command gives operators and tests a concrete lease shape with epoch, TTL and expiry fields, while preserving the no-network default. The local lease is useful for validating timing, audit and JSON contracts before adding Kubernetes Lease, Consul or etcd-backed providers.
 
 The safe boundary remains: standalone status is read-only, cluster init writes only with `--materialize`, and lease witness state writes only with `queue cluster elect lease --materialize`.
+
+
+## 0.18.119 local vote proposal witness
+
+Bob25 now adds `queue cluster vote propose` as the first concrete voting artefact. It follows the same safety posture as cluster init and lease witness: read-only/dry-run by default, local file-dev state only with explicit `--materialize`, and no network.
+
+The local proposal record exists to prove the operation/reason/proposer/status shape before real coordination providers are attached. It deliberately does not approve work, create quorum, or unlock cluster mutations. Voting remains a governance gate for risk-bearing operations such as membership, policy, trust, egress, and destructive cluster cleanup.

@@ -22,12 +22,13 @@ SCAN_SCHEMA = "queue.plan.scan.v1"
 BUILD_SCHEMA = "queue.plan.build.v1"
 VALIDATE_SCHEMA = "queue.plan.validate.v1"
 POLICY_SCHEMA = "queue.plan.policy.v1"
+SCRIPT_BEHAVIOUR_SCHEMA = "queue.plan.script_behaviour.v1"
 DGX_REVIEW = "DGX_CLOUD_WORKFLOW_POLICY_REVIEW"
 CLOUD_WORKFLOW_REVIEW = "CLOUD_WORKFLOW_POLICY_REVIEW"
 
 TEXT_EXTENSIONS = {
     ".yaml", ".yml", ".json", ".hcl", ".nomad", ".sbatch", ".pbs", ".qsub",
-    ".sge", ".bsub", ".submit", ".dag", ".service", ".timer", ".txt", "",
+    ".sge", ".bsub", ".submit", ".dag", ".service", ".timer", ".sh", ".bash", ".txt", "",
 }
 
 ADAPTERS = {
@@ -54,6 +55,7 @@ ADAPTERS = {
     "jenkinsfile": {"native": False, "family": "workflow", "status": "read_only_scan_only"},
     "systemd": {"native": False, "family": "service_manager", "status": "recognized_pending_mapper"},
     "cron": {"native": False, "family": "existing_schedule_bridge", "status": "existing_bashqueues_cron_bridge"},
+    "script-behaviour": {"native": False, "family": "script", "status": "static_scan_and_plan"},
     "terraform": {"native": False, "family": "iac", "status": "extract_control_intent_only"},
     "unknown": {"native": False, "family": "unknown", "status": "unsupported"},
 }
@@ -66,6 +68,13 @@ DANGEROUS_PATTERNS = [
     (re.compile(r"\bAction\s*[:=]\s*[\"']?\*", re.I), "wildcard_cloud_action"),
     (re.compile(r"\bResource\s*[:=]\s*[\"']?\*", re.I), "wildcard_cloud_resource"),
     (re.compile(r"0\.0\.0\.0/0|::/0", re.I), "public_network_exposure"),
+    (re.compile(r"\bcurl\b[^\n|]*\|\s*(?:sudo\s+)?(?:sh|bash)\b", re.I), "curl_pipe_to_shell"),
+    (re.compile(r"\bwget\b[^\n|]*\|\s*(?:sudo\s+)?(?:sh|bash)\b", re.I), "wget_pipe_to_shell"),
+    (re.compile(r"\brm\s+-[A-Za-z]*r[A-Za-z]*f[A-Za-z]*\s+/(?:\s|$)", re.I), "destructive_root_delete"),
+    (re.compile(r"\bchmod\s+-R\s+777\b", re.I), "world_writable_recursive"),
+    (re.compile(r"\b(?:sudo|su|doas)\b", re.I), "privilege_escalation_command"),
+    (re.compile(r"\b(?:systemctl|service)\s+(?:restart|start|stop|enable|disable)\b", re.I), "host_service_mutation"),
+    (re.compile(r"\b(?:terraform|tofu)\s+apply\b|\bpulumi\s+up\b|\bkubectl\s+apply\b|\bhelm\s+upgrade\b", re.I), "control_plane_mutation"),
 ]
 
 WORKFLOW_TOKENS = ["workflow", "pipeline", "dag", "runAfter", "needs:", "stages:", "jobs:"]
@@ -143,6 +152,98 @@ def yaml_kinds(text: str) -> List[Tuple[str, str]]:
     return out
 
 
+
+def looks_like_shell_script(path: Path, text: str) -> bool:
+    """Conservative shell-script recognition for static script-behaviour planning."""
+    ext = path.suffix.lower()
+    first = text.splitlines()[0].strip() if text.splitlines() else ""
+    if ext in {".sh", ".bash"}:
+        return True
+    if first.startswith("#!") and any(tok in first for tok in ["/sh", "bash", "env sh", "env bash"]):
+        return True
+    return False
+
+
+def classify_script_behaviour(text: str) -> Dict[str, Any]:
+    """Return static, non-executing observations from a shell-like operational script."""
+    low = text.lower()
+    evidence: List[Dict[str, str]] = []
+    classes: List[str] = []
+    assets: List[Dict[str, str]] = []
+    identities: List[Dict[str, str]] = []
+    secrets: List[Dict[str, str]] = []
+    dependencies: List[Dict[str, str]] = []
+    review: List[Dict[str, str]] = []
+    unsafe: List[Dict[str, str]] = []
+
+    def ev(kind: str, token: str, inference: str) -> None:
+        evidence.append({"kind": kind, "token": token, "inference": inference})
+
+    def add_class(name: str, reason: str) -> None:
+        if name not in classes:
+            classes.append(name)
+            ev("class_hint", name, reason)
+
+    if re.search(r"\b(pg_dump|mysqldump|mariadb-dump|mongodump|redis-cli\s+--rdb|sqlite3\b)", low):
+        add_class("BACKUP_JOB", "database dump or backup command detected")
+        assets.append({"type": "database", "reason": "database dump/client command detected"})
+        secrets.append({"type": "database_credential_reference", "reason": "database command usually requires credential binding; do not read secrets"})
+    if re.search(r"\b(psql|mysql|migrate|liquibase|flyway|alembic)\b", low):
+        add_class("DATABASE_MIGRATION", "database client or migration tool detected")
+        assets.append({"type": "database", "reason": "database client or migration command detected"})
+    if re.search(r"\baws\s+s3\s+cp\b|\bgcloud\s+storage\s+cp\b|\baz\s+storage\b|\boci\b.*\bos\b", low):
+        add_class("BACKUP_JOB", "object-storage transfer detected")
+        assets.append({"type": "object_storage", "reason": "cloud object-storage command detected"})
+        identities.append({"type": "cloud_identity", "reason": "cloud CLI detected; identity must be policy-gated"})
+    if re.search(r"\b(aws|az|gcloud|oci|ibmcloud)\b", low):
+        assets.append({"type": "cloud_provider", "reason": "cloud CLI token detected"})
+        identities.append({"type": "cloud_identity", "reason": "cloud CLI token detected; no live calls during scan"})
+    if re.search(r"\b(kubectl\s+apply|helm\s+upgrade|terraform\s+apply|tofu\s+apply|pulumi\s+up)\b", low):
+        add_class("DEPLOYMENT_ORCHESTRATION", "control-plane mutation command detected")
+        review.append({"type": "needs_review", "reason": "control_plane_mutation", "evidence": "kubectl/helm/terraform/tofu/pulumi mutation token"})
+    if re.search(r"\b(pytest|bats|npm\s+test|go\s+test|make\s+test)\b", low):
+        add_class("TEST_RUNNER", "test command detected")
+    if re.search(r"\b(systemctl|service|logrotate|vacuumdb|chmod|chown)\b", low):
+        add_class("MAINTENANCE_JOB", "host maintenance or service-management token detected")
+    if re.search(r"\b(curl|wget|ssh|scp|rsync)\b", low):
+        assets.append({"type": "network_egress", "reason": "network client command detected"})
+    for m in re.finditer(r"(?m)^\s*(?:mkdir\s+-p|install\s+-d)\s+([^\n#;]+)", text):
+        assets.append({"type": "filesystem_writable_path", "reason": "directory creation command", "evidence": m.group(1).strip()[:120]})
+    if "set -euo pipefail" in low or "set -e" in low:
+        ev("failure_policy", "set -e", "script declares fail-fast shell behaviour")
+    if re.search(r"(?m)^\s*trap\b", text):
+        ev("cleanup_policy", "trap", "script declares cleanup or signal handling")
+    if re.search(r"(?m)^\s*for\s+\w+\s+in\s+[^`$;]+;?\s+do", text):
+        ev("fanout_hint", "for-in", "bounded literal loop may become fanout candidate")
+
+    for pat, reason in DANGEROUS_PATTERNS:
+        if pat.search(text):
+            item = {"type": "unsafe_refused" if reason in {"curl_pipe_to_shell", "wget_pipe_to_shell", "destructive_root_delete", "world_writable_recursive"} else "needs_review", "reason": reason, "evidence": pat.pattern}
+            if item["type"] == "unsafe_refused":
+                unsafe.append(item)
+            else:
+                review.append(item)
+
+    if re.search(r"\beval\b|`[^`]+`|\$\([^)]*\)", text):
+        review.append({"type": "needs_review", "reason": "dynamic_shell_evaluation", "evidence": "eval/backticks/command-substitution token"})
+    if not classes:
+        add_class("SCRIPT_BEHAVIOUR", "generic shell behaviour plan; insufficient evidence for stronger class")
+
+    dependencies.append({"from": "restriction/script_static_review", "to": "class/" + classes[0], "reason": "script-derived plans require review before execution"})
+    return {
+        "schema": SCRIPT_BEHAVIOUR_SCHEMA,
+        "classes": classes,
+        "evidence": evidence,
+        "assets": assets,
+        "identities": identities,
+        "secrets": secrets,
+        "dependencies": dependencies,
+        "needs_review": review,
+        "unsafe_refused": unsafe,
+        "safe_to_apply": False,
+        "execution_boundary": "static scan only; script is not executed, sourced, or expanded",
+    }
+
 def detect_adapter(path: Path, text: str) -> Tuple[str, List[str], str]:
     name = path.name
     lower = text.lower()
@@ -152,6 +253,9 @@ def detect_adapter(path: Path, text: str) -> Tuple[str, List[str], str]:
         return j[0], j[1], "high" if j[0] != "unknown" else "low"
     if re.search(r"(?m)^\s*schema:\s*(queue\.plan\.v1|queue\.control_plan\.v1)\b", text):
         return "bashqueues-plan", ["queue.plan.v1"], "high"
+    if looks_like_shell_script(path, text):
+        behaviour = classify_script_behaviour(text)
+        return "script-behaviour", behaviour.get("classes", ["SCRIPT_BEHAVIOUR"]), "medium"
     kinds = yaml_kinds(text)
     if kinds:
         adapters = [detect_kubernetes_kind(kind, api, text)[0] for kind, api in kinds]
@@ -231,7 +335,7 @@ def infer_class_name(adapter: str, objects: List[str], path: Path, text: str) ->
         "slurm": "SLURM", "pbs": "PBS", "torque": "TORQUE", "sge": "SGE", "lsf": "LSF",
         "htcondor": "HTCONDOR", "flux": "FLUX", "nomad": "NOMAD", "argo": "ARGO",
         "tekton": "TEKTON", "github-actions": "GITHUB_ACTIONS", "gitlab-ci": "GITLAB_CI",
-        "systemd": "SYSTEMD", "cron": "CRON", "bashqueues-plan": "NATIVE",
+        "systemd": "SYSTEMD", "cron": "CRON", "script-behaviour": "SCRIPT", "bashqueues-plan": "NATIVE",
     }.get(adapter, "PLAN")
     return f"{prefix}_{base}"[:80]
 
@@ -279,6 +383,7 @@ def analyse_file(path: Path, root: Path) -> Dict[str, Any]:
         if pat.search(text):
             dangers.append({"reason": reason, "path": str(path)})
     hooks = policy_hooks(adapter, text)
+    script_behaviour = classify_script_behaviour(text) if adapter == "script-behaviour" else None
     warnings = []
     needs_review = []
     unsafe = []
@@ -286,13 +391,20 @@ def analyse_file(path: Path, root: Path) -> Dict[str, Any]:
         warnings.append({"type": "unsupported_source", "path": str(path), "reason": "no supported adapter matched"})
     if adapter == "cron":
         warnings.append({"type": "cron_existing_subsystem", "path": str(path), "reason": "cron must bridge to existing bashqueues cron support; do not create a parallel scheduler"})
+    if adapter == "script-behaviour":
+        warnings.append({"type": "script_static_only", "path": str(path), "reason": "script is treated as operational intent only; do not execute, source, expand, or submit it"})
+        needs_review.append({"type": "needs_review", "path": str(path), "reason": "script_static_review_required"})
     if hooks:
         needs_review.extend({"type": "policy_hook", **hook, "path": str(path)} for hook in hooks)
-    for d in dangers:
-        if d["reason"] in {"privileged_container", "wildcard_cloud_action", "wildcard_cloud_resource"}:
-            unsafe.append({"type": "unsafe_refused", **d})
-        else:
-            needs_review.append({"type": "needs_review", **d})
+    if script_behaviour:
+        needs_review.extend({**nr, "path": str(path)} for nr in script_behaviour.get("needs_review", []))
+        unsafe.extend({**ur, "path": str(path)} for ur in script_behaviour.get("unsafe_refused", []))
+    if adapter != "script-behaviour":
+        for d in dangers:
+            if d["reason"] in {"privileged_container", "wildcard_cloud_action", "wildcard_cloud_resource"}:
+                unsafe.append({"type": "unsafe_refused", **d})
+            else:
+                needs_review.append({"type": "needs_review", **d})
     rel = str(path.relative_to(root)) if path.is_relative_to(root) else str(path)
     class_name = infer_class_name(adapter, objects, path, text)
     obj = {
@@ -309,6 +421,7 @@ def analyse_file(path: Path, root: Path) -> Dict[str, Any]:
         "warnings": warnings,
         "needs_review": needs_review,
         "unsafe_refused": unsafe,
+        "script_behaviour": script_behaviour,
     }
     return obj
 
@@ -362,13 +475,26 @@ def build_control_plan(path: Path) -> Dict[str, Any]:
     for s in scanned:
         cname = s["class_candidate"]
         classes.append({"name": cname, "source_ref": s["path"], "adapter": s["adapter"], "status": "candidate"})
+        sb = s.get("script_behaviour")
+        if sb:
+            for hint in sb.get("classes", []):
+                hname = re.sub(r"[^A-Z0-9]+", "_", str(hint).upper()).strip("_") or "SCRIPT_BEHAVIOUR"
+                classes.append({"name": hname, "source_ref": s["path"], "adapter": "script-behaviour", "status": "candidate_from_script_evidence"})
+            for asset in sb.get("assets", []):
+                assets.append({**asset, "source_ref": s["path"], "adapter": "script-behaviour"})
+            for ident in sb.get("identities", []):
+                identities.append({**ident, "source_ref": s["path"], "adapter": "script-behaviour"})
+            for sec in sb.get("secrets", []):
+                secrets.append({**sec, "source_ref": s["path"], "adapter": "script-behaviour"})
+            for dep in sb.get("dependencies", []):
+                dependencies.append({**dep, "source_ref": s["path"], "adapter": "script-behaviour"})
         restrictions.append({
             "name": f"{cname}_RESTRICTIONS", "class": cname, "source_ref": s["path"],
             "mode": "fail_closed", "requires_review": bool(s["needs_review"] or s["unsafe_refused"]),
         })
-        if s["adapter"] in {"kubernetes", "aws-batch", "azure-batch", "gcp-batch", "oci", "ibm-code-engine", "slurm", "pbs", "torque", "sge", "lsf", "htcondor", "flux", "nomad", "systemd", "cron", "bashqueues-plan"}:
+        if s["adapter"] in {"kubernetes", "aws-batch", "azure-batch", "gcp-batch", "oci", "ibm-code-engine", "slurm", "pbs", "torque", "sge", "lsf", "htcondor", "flux", "nomad", "systemd", "cron", "script-behaviour", "bashqueues-plan"}:
             job_templates.append({"name": f"{cname}_TEMPLATE", "class": cname, "source_ref": s["path"], "execution": "not_emitted_by_scan"})
-        if s["adapter"] in {"argo", "tekton", "github-actions", "gitlab-ci", "airflow", "jenkinsfile", "nomad"}:
+        if s["adapter"] in {"argo", "tekton", "github-actions", "gitlab-ci", "airflow", "jenkinsfile", "nomad", "script-behaviour"}:
             workflows.append({"name": f"{cname}_WORKFLOW", "source_ref": s["path"], "status": "dependency_graph_candidate"})
         if s["adapter"] == "kubernetes" and any(o in {"Gateway", "HTTPRoute", "Ingress", "Service"} for o in s["objects"]):
             gateways.append({"name": f"{cname}_GATEWAY", "source_ref": s["path"], "public_exposure": "needs_review"})
@@ -443,6 +569,12 @@ def human_explain(plan: Dict[str, Any]) -> None:
         print("approval gates:")
         for gate in plan["plan"]["approval_gates"]:
             print(f"  {gate['name']}: {gate['reason']}")
+    script_objs = [o for o in plan["analysis"].get("objects", []) if o.get("adapter") == "script-behaviour"]
+    if script_objs:
+        print("script behaviour:")
+        for obj in script_objs[:10]:
+            sb = obj.get("script_behaviour") or {}
+            print(f"  {obj['path']}: static scan only; classes={','.join(sb.get('classes', []))}")
     if plan["plan"].get("policy_requirements"):
         print("policy requirements:")
         for req in plan["plan"]["policy_requirements"]:
@@ -475,6 +607,7 @@ def write_build(plan: Dict[str, Any], outdir: Path, json_mode: bool) -> None:
         "",
         "Cron boundary: existing bashqueues cron support remains authoritative for cron-like execution.",
         "DGX boundary: DGX/GPU cloud or workflow plans require explicit policy review.",
+        "Script boundary: scripts are statically classified as intent only; they are never executed, sourced, expanded, or submitted by queue plan.",
         "",
         "Policy requirements:",
     ]

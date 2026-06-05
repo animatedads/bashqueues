@@ -70,3 +70,8 @@ remote workloads, open egress, change legal scope, or bypass voting gates.
 ## Local lease witness provider obligation
 
 The `file-dev` provider may materialize a local lease witness for test/dev use only. Production providers must expose equivalent fields: leader, lease epoch, TTL seconds, expiry epoch, provider name, scope, and network-touch marker. A provider must not imply a remote quorum from a local lease file.
+
+
+## Local vote proposal witness provider obligation
+
+The `file-dev` provider may materialize local pending vote proposals for test/dev use only. Production providers must expose equivalent fields: proposal id, operation, proposer, reason, status, provider name, scope, and network-touch marker. A local pending vote witness must never be treated as quorum or approval evidence.

@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-05T13:08:53Z",
+  "created_from_session": "AIS-20260605-130851-475727-3695-Bob27",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260605-130853-551805-6849",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "0.18.120 repair lesson: dispatcher references are not enough; provider-backed command surfaces must keep helper resolver and command functions in queuebash.sh, and install-system.sh must ship all runtime/provider/resource/schema/fixture/contract trees required by sourced and installed usage."
+}

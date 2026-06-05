@@ -1,0 +1,29 @@
+{
+  "check": "detect",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "ecosystems": [
+    "containerless-fixture",
+    "npm",
+    "pypi",
+    "maven"
+  ],
+  "evidence": [
+    {
+      "id": "package_registry-detect-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "package_registry",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.package_registry.detect.v1",
+  "services_seen": [
+    "fixture-package-registry"
+  ],
+  "source": "fixture"
+}

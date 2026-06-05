@@ -1,0 +1,8 @@
+Usage: queue vcs detect [PATH] [--json]
+       queue vcs probe [PATH] [--json] [--type TYPE] [--timeout SECONDS]
+       queue vcs types [--json]
+
+Read-only VCS tenant diagnostics for Git, Subversion, CVS, Mercurial, and
+Perforce. Existing git:* assets remain first-class; queue vcs is a neutral
+operator surface for mixed and legacy estates. Probe is also read-only and reports
+normalised identity/revision/clean-tree facts for audit gates.

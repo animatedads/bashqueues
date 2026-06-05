@@ -1,0 +1,10 @@
+{
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "lesson_id": "AIL-BOB27-0.18.119-hot-seat-merge",
+  "created_at": "2026-06-05T11:50:00Z",
+  "created_from_session": "manual-bob27-hot-seat",
+  "kind": "ok_lesson",
+  "severity": "info",
+  "status": "active",
+  "text": "When Bob23/Bob25 cluster JSON lanes disagree, preserve the stricter operation boundary: join is a mutation and must fail closed, while leave may be plan-only and vote proposal may materialise only explicit local file-dev witness evidence. Do not let version-only or whole-file queuebash hunks overwrite resource helper definitions or global JSON passthrough behaviour."
+}
