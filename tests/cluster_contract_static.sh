@@ -21,6 +21,12 @@ grep -q 'queue cluster vote propose' contracts/CLUSTER_COMMAND_CONTRACT.md || fa
 grep -q '_queue_cluster_vote_cast' queuebash.sh || fail 'cluster vote cast helper missing'
 grep -q 'queuebash.cluster.vote_cast.v1' queuebash.sh || fail 'cluster vote cast JSON schema missing'
 grep -q 'queue cluster vote cast' contracts/CLUSTER_COMMAND_CONTRACT.md || fail 'cluster vote cast command contract missing'
+grep -q '_queue_cluster_vote_tally' queuebash.sh || fail 'cluster vote tally helper missing'
+grep -q 'queuebash.cluster.vote_tally.v1' queuebash.sh || fail 'cluster vote tally JSON schema missing'
+grep -q 'queue cluster vote tally' contracts/CLUSTER_COMMAND_CONTRACT.md || fail 'cluster vote tally command contract missing'
+grep -q '_queue_cluster_vote_evaluate' queuebash.sh || fail 'cluster vote evaluate helper missing'
+grep -q 'queuebash.cluster.vote_evaluation.v1' queuebash.sh || fail 'cluster vote evaluation JSON schema missing'
+grep -q 'queue cluster vote evaluate' contracts/CLUSTER_COMMAND_CONTRACT.md || fail 'cluster vote evaluate command contract missing'
 
 grep -q 'Bob25 cluster operations design' docs/CLUSTER_OPERATIONS_DESIGN.md || fail 'design doc missing'
 grep -q 'queue cluster status' contracts/CLUSTER_COMMAND_CONTRACT.md || fail 'command contract missing'

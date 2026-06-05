@@ -22,6 +22,11 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$request" ]] || { echo "maintenance_evidence_verify: request file required" >&2; exit 2; }
 [[ -f "$request" ]] || { echo "maintenance_evidence_verify: request file missing: $request" >&2; exit 1; }
+export PYTHONNOUSERSITE=1
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
 python3 - "$request" "$json" <<'PY'
 import datetime as _dt
 import hashlib
@@ -300,6 +305,70 @@ if cluster_required:
             if 'raw_evidence' in observation or 'probe_output' in observation or 'logs' in observation:
                 failures.append('cluster_observation_raw_evidence_must_be_redacted')
 
+        abort = cluster.get('abort_criteria')
+        if not isinstance(abort, dict):
+            failures.append('cluster_abort_criteria_required')
+        else:
+            if abort.get('defined') is not True:
+                failures.append('cluster_abort_criteria_defined_required')
+            if abort.get('auto_stop_on_breach') is not True:
+                failures.append('cluster_abort_auto_stop_required')
+            triggers = abort.get('triggers')
+            if not isinstance(triggers, list) or not triggers:
+                failures.append('cluster_abort_triggers_required')
+            required_triggers = {'health_degraded', 'slo_regression', 'quorum_lost'}
+            if isinstance(triggers, list) and not required_triggers.issubset(set(triggers)):
+                failures.append('cluster_abort_required_triggers_missing')
+            if abort.get('manual_override_allowed') is not False:
+                failures.append('cluster_abort_manual_override_denied')
+            if 'raw_policy' in abort or 'script' in abort:
+                failures.append('cluster_abort_policy_must_be_redacted')
+            policy_hash = abort.get('policy_hash')
+            if not isinstance(policy_hash, str) or not policy_hash.startswith('sha256:'):
+                failures.append('cluster_abort_policy_hash_required')
+
+        incident = cluster.get('incident_response')
+        if not isinstance(incident, dict):
+            failures.append('cluster_incident_response_required')
+        else:
+            if incident.get('pager_ready') is not True:
+                failures.append('cluster_incident_pager_ready_required')
+            if incident.get('rollback_owner_ack') is not True:
+                failures.append('cluster_incident_rollback_owner_ack_required')
+            if incident.get('freeze_on_incident') is not True:
+                failures.append('cluster_incident_freeze_on_incident_required')
+            if incident.get('comms_channel_hash', '').startswith('sha256:') is not True:
+                failures.append('cluster_incident_comms_channel_hash_required')
+            if 'comms_channel' in incident or 'raw_contact' in incident:
+                failures.append('cluster_incident_contacts_must_be_redacted')
+
+        evidence_bundle = cluster.get('evidence_bundle')
+        if not isinstance(evidence_bundle, dict):
+            failures.append('cluster_evidence_bundle_required')
+        else:
+            if evidence_bundle.get('sealed') is not True:
+                failures.append('cluster_evidence_bundle_seal_required')
+            if evidence_bundle.get('tamper_evident') is not True:
+                failures.append('cluster_evidence_bundle_tamper_evidence_required')
+            bundle_hash = evidence_bundle.get('bundle_hash')
+            if not isinstance(bundle_hash, str) or not bundle_hash.startswith('sha256:'):
+                failures.append('cluster_evidence_bundle_hash_required')
+            signature_hash = evidence_bundle.get('signature_hash')
+            if not isinstance(signature_hash, str) or not signature_hash.startswith('sha256:'):
+                failures.append('cluster_evidence_bundle_signature_hash_required')
+            signer_hash = evidence_bundle.get('signer_hash')
+            if not isinstance(signer_hash, str) or not signer_hash.startswith('sha256:'):
+                failures.append('cluster_evidence_bundle_signer_hash_required')
+            if evidence_bundle.get('signature_status') != 'verified':
+                failures.append('cluster_evidence_bundle_signature_verified_required')
+            retention_days = evidence_bundle.get('retention_days')
+            if not isinstance(retention_days, int) or retention_days < 90:
+                failures.append('cluster_evidence_bundle_retention_required')
+            if evidence_bundle.get('immutable_storage') is not True:
+                failures.append('cluster_evidence_bundle_immutable_storage_required')
+            if 'raw_bundle' in evidence_bundle or 'signature' in evidence_bundle or 'signer' in evidence_bundle:
+                failures.append('cluster_evidence_bundle_raw_material_must_be_redacted')
+
 created_dt = parse_utc_z(created_at, 'created_at_must_be_utc_iso8601') if created_at else None
 expires_dt = parse_utc_z(expires_at, 'expires_at_must_be_utc_iso8601') if expires_at else None
 start_dt = parse_utc_z(window_start, 'maintenance_window_start_must_be_utc_iso8601') if window_start else None
@@ -344,6 +413,15 @@ cluster_checks = {
     'cluster_observation_health_ok': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(get(cluster, 'observation', 'health'), dict) and get(cluster, 'observation', 'health', 'status') == 'ok' and get(cluster, 'observation', 'health', 'degraded_nodes', default=[]) == []),
     'cluster_observation_slo_ok': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(get(cluster, 'observation', 'slo'), dict) and isinstance(get(cluster, 'observation', 'slo', 'error_budget_remaining_percent'), int) and get(cluster, 'observation', 'slo', 'error_budget_remaining_percent') >= 90 and get(cluster, 'observation', 'slo', 'latency_regression') is False and get(cluster, 'observation', 'slo', 'error_rate_regression') is False),
     'cluster_observation_evidence_redacted': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('observation'), dict) and isinstance(get(cluster, 'observation', 'evidence_hash'), str) and get(cluster, 'observation', 'evidence_hash').startswith('sha256:') and 'raw_evidence' not in cluster.get('observation', {}) and 'probe_output' not in cluster.get('observation', {}) and 'logs' not in cluster.get('observation', {})),
+    'cluster_abort_criteria_ready': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('abort_criteria'), dict) and get(cluster, 'abort_criteria', 'defined') is True and get(cluster, 'abort_criteria', 'auto_stop_on_breach') is True and get(cluster, 'abort_criteria', 'manual_override_allowed') is False),
+    'cluster_abort_policy_redacted': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('abort_criteria'), dict) and isinstance(get(cluster, 'abort_criteria', 'policy_hash'), str) and get(cluster, 'abort_criteria', 'policy_hash').startswith('sha256:') and 'raw_policy' not in cluster.get('abort_criteria', {}) and 'script' not in cluster.get('abort_criteria', {})),
+    'cluster_incident_response_ready': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('incident_response'), dict) and get(cluster, 'incident_response', 'pager_ready') is True and get(cluster, 'incident_response', 'rollback_owner_ack') is True and get(cluster, 'incident_response', 'freeze_on_incident') is True),
+    'cluster_incident_contacts_redacted': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('incident_response'), dict) and isinstance(get(cluster, 'incident_response', 'comms_channel_hash'), str) and get(cluster, 'incident_response', 'comms_channel_hash').startswith('sha256:') and 'comms_channel' not in cluster.get('incident_response', {}) and 'raw_contact' not in cluster.get('incident_response', {})),
+    'cluster_evidence_bundle_sealed': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('evidence_bundle'), dict) and get(cluster, 'evidence_bundle', 'sealed') is True and get(cluster, 'evidence_bundle', 'tamper_evident') is True),
+    'cluster_evidence_bundle_hashes': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('evidence_bundle'), dict) and isinstance(get(cluster, 'evidence_bundle', 'bundle_hash'), str) and get(cluster, 'evidence_bundle', 'bundle_hash').startswith('sha256:') and isinstance(get(cluster, 'evidence_bundle', 'signature_hash'), str) and get(cluster, 'evidence_bundle', 'signature_hash').startswith('sha256:') and isinstance(get(cluster, 'evidence_bundle', 'signer_hash'), str) and get(cluster, 'evidence_bundle', 'signer_hash').startswith('sha256:')),
+    'cluster_evidence_bundle_signature_verified': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('evidence_bundle'), dict) and get(cluster, 'evidence_bundle', 'signature_status') == 'verified'),
+    'cluster_evidence_bundle_retained': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('evidence_bundle'), dict) and isinstance(get(cluster, 'evidence_bundle', 'retention_days'), int) and get(cluster, 'evidence_bundle', 'retention_days') >= 90 and get(cluster, 'evidence_bundle', 'immutable_storage') is True),
+    'cluster_evidence_bundle_redacted': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('evidence_bundle'), dict) and 'raw_bundle' not in cluster.get('evidence_bundle', {}) and 'signature' not in cluster.get('evidence_bundle', {}) and 'signer' not in cluster.get('evidence_bundle', {})),
 }
 
 checks = {

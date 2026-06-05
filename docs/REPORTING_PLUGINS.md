@@ -28,7 +28,7 @@ queue reporters list --json
 Reporting policy/env files are sourced from:
 
 - `/etc/bashqueues/reporting.env`
-- `/etc/bashqueues/policies.d/reporting/default.env`
+- `/etc/queuebash/policies.d/reporting/default.env`
 - `$QUEUEBASH_ROOT/policies.d/reporting/default.env`
 - `$QUEUEBASH_ROOT/reporting.env`
 - bundled `policies.d/reporting/default.env`

@@ -106,6 +106,7 @@ bashqueues system install plan
   system daemon: $([[ "$with_daemon" == 1 ]] && echo yes || echo no)
   remote listener: $([[ "$with_remote_listener" == 1 ]] && echo yes || echo no)
   root key:      $([[ "$no_root_key" == 1 ]] && echo disabled || echo enabled)
+  support dirs:  assets.d caps.d reporters.d classes envs.d policies.d docs bin systemd tests resources.d providers.d schemas fixtures contracts
   dogfood queue: $install_queue
 PLAN
 

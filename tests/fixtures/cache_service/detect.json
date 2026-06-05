@@ -1,0 +1,25 @@
+{
+  "check": "detect",
+  "coverage_note": "Cache estates are represented as inert fixture facts for cluster, endpoint, policy, and health/metric review.",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "cache_service",
+  "provider_output_is_shell": false,
+  "providers_observed": [
+    "aws_elasticache",
+    "azure_cache_for_redis",
+    "google_memorystore",
+    "redis_enterprise",
+    "memcached",
+    "hazelcast",
+    "valkey"
+  ],
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.cache_service.detect.v1",
+  "source": "fixture"
+}

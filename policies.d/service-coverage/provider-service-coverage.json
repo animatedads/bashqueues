@@ -106,6 +106,32 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "cache_service": {
+      "doc_prefix": "CACHE_SERVICE",
+      "fixture_dir": "cache_service",
+      "non_goals": [
+        "cluster-create",
+        "cluster-delete",
+        "scale-up",
+        "scale-down",
+        "flush-cache",
+        "endpoint-mutation",
+        "parameter-mutation",
+        "failover-trigger",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "cache_service",
+      "priority": 34,
+      "provider_dir": "cache_service",
+      "schemas": [
+        "queuebash.cache_service.detect.v1",
+        "queuebash.cache_service.cluster.v1",
+        "queuebash.cache_service.endpoint.v1",
+        "queuebash.cache_service.policy.v1",
+        "queuebash.cache_service.metrics.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "certificate_authority": {
       "doc_prefix": "CERTIFICATE_AUTHORITY",
       "fixture_dir": "certificate_authority",
@@ -265,6 +291,32 @@
         "queuebash.distributed_framework.cluster.v1",
         "queuebash.distributed_framework.data_access.v1",
         "queuebash.distributed_framework.governance.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "dns_service": {
+      "doc_prefix": "DNS_SERVICE",
+      "fixture_dir": "dns_service",
+      "non_goals": [
+        "zone-create",
+        "zone-delete",
+        "record-create",
+        "record-delete",
+        "delegation-mutation",
+        "resolver-rule-mutation",
+        "dnssec-key-mutation",
+        "traffic-shift",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "dns_service",
+      "priority": 33,
+      "provider_dir": "dns_service",
+      "schemas": [
+        "queuebash.dns_service.detect.v1",
+        "queuebash.dns_service.zone.v1",
+        "queuebash.dns_service.record.v1",
+        "queuebash.dns_service.resolver.v1",
+        "queuebash.dns_service.policy.v1"
       ],
       "status": "fixture_first_provider_family"
     },
@@ -430,6 +482,31 @@
         "queuebash.load_balancer.listener.v1",
         "queuebash.load_balancer.target.v1",
         "queuebash.load_balancer.health.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "mail_service": {
+      "doc_prefix": "MAIL_SERVICE",
+      "fixture_dir": "mail_service",
+      "non_goals": [
+        "send-mail",
+        "mailbox-read",
+        "domain-create",
+        "identity-mutate",
+        "suppression-list-mutate",
+        "dns-record-mutate",
+        "provisioning",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "mail_service",
+      "priority": 31,
+      "provider_dir": "mail_service",
+      "schemas": [
+        "queuebash.mail_service.detect.v1",
+        "queuebash.mail_service.domain.v1",
+        "queuebash.mail_service.sender.v1",
+        "queuebash.mail_service.delivery.v1",
+        "queuebash.mail_service.policy.v1"
       ],
       "status": "fixture_first_provider_family"
     },
@@ -643,6 +720,31 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "secrets_scanner": {
+      "doc_prefix": "SECRETS_SCANNER",
+      "fixture_dir": "secrets_scanner",
+      "non_goals": [
+        "live-repository-scan",
+        "secret-value-disclosure",
+        "redaction-write",
+        "credential-rotation",
+        "finding-write",
+        "policy-mutation",
+        "provisioning",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "secrets_scanner",
+      "priority": 32,
+      "provider_dir": "secrets_scanner",
+      "schemas": [
+        "queuebash.secrets_scanner.detect.v1",
+        "queuebash.secrets_scanner.rule.v1",
+        "queuebash.secrets_scanner.finding.v1",
+        "queuebash.secrets_scanner.scope.v1",
+        "queuebash.secrets_scanner.policy.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "service_mesh": {
       "doc_prefix": "SERVICE_MESH",
       "fixture_dir": "service_mesh",
@@ -714,8 +816,8 @@
     }
   },
   "next_candidates": [
-    "cdn",
-    "dns_service"
+    "payment_gateway",
+    "search_service"
   ],
   "schema": "queuebash.provider_service_coverage.v1"
 }

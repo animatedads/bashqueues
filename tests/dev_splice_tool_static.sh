@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
 [[ -f queuebash.sh ]] || fail "run from repository root"
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(4[0-9]|[5-9][0-9])"' queuebash.sh || fail 'queuebash version not current enough for dev splice compatibility'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(4[0-9]|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'queuebash version not current enough for dev splice compatibility'
 [[ -f docs/DEV_SPLICE_TOOL.md ]] || fail 'missing dev splice doc'
 [[ -f tests/dev_splice_tool_smoke.sh ]] || fail 'missing dev splice smoke test'
 grep -q 'trailing newlines are preserved exactly' docs/DEV_SPLICE_TOOL.md || fail 'docs do not mention exact file-content preservation'

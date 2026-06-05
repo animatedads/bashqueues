@@ -79,3 +79,12 @@ The `file-dev` provider may materialize local pending vote proposals for test/de
 ## Local ballot witness
 
 The `file-dev` provider may materialize local ballot witnesses for development and contract testing only. A local ballot is evidence of one node's stated decision; it is not quorum, approval, or authorization. Production providers must expose equivalent proposal id, voter/node id, decision, provider, scope, created timestamp, network-touch marker, quorum result, and mutation-unlock marker.
+
+
+## Local vote tally provider shape
+
+A provider implementing the Bob25 vote contract must keep proposal storage, ballot storage, tally/evaluation, quorum grant, and mutation unlock as separate auditable steps. The file-dev provider may report local approve/reject/abstain counts for evidence, but it must not claim quorum or unlock mutations. Production providers must declare quorum rules, voter eligibility, legal scope, timing windows, and egress behaviour before returning any approval decision.
+
+## Bob25 0.18.125 vote evaluation provider contract
+
+Provider-backed quorum must implement evaluation as a distinct step from proposal creation, ballot recording, and tallying. A provider may only report quorum granted when it can prove voter eligibility, quorum threshold, timing window, policy authorization, legal scope, and egress controls. The local `file-dev` provider is evidence-only and must always report `quorum_granted:false` and `cluster_mutation_unlocked:false`.

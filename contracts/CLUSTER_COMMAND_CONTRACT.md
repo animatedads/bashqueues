@@ -10,6 +10,8 @@ queue cluster elect status [--json]
 queue cluster vote status [--json]
 queue cluster vote propose --operation OPERATION --reason REASON [--materialize] [--json]
 queue cluster vote cast --proposal-id ID --decision approve|reject|abstain --reason REASON [--materialize] [--json]
+queue cluster vote tally --proposal-id ID [--json]
+queue cluster vote evaluate --proposal-id ID [--json]
 queue cluster node list [--json]
 queue cluster explain [SUBJECT] [--json]
 ```
@@ -53,6 +55,9 @@ This is a plan-only command in this release. It validates node and role argument
 - `queuebash.cluster.election_status.v1`
 - `queuebash.cluster.vote_status.v1`
 - `queuebash.cluster.vote_proposal.v1`
+- `queuebash.cluster.vote_cast.v1`
+- `queuebash.cluster.vote_tally.v1`
+- `queuebash.cluster.vote_evaluation.v1`
 - `queuebash.cluster.node_list.v1`
 - `queuebash.cluster.explain.v1`
 - `queuebash.cluster.init_plan.v1`
@@ -102,3 +107,19 @@ JSON schema: `queuebash.cluster.vote_proposal.v1`.
 This command does not calculate or grant quorum. It does not unlock cluster mutations. Production providers must keep ballot recording, quorum evaluation, policy authorization, legal scope, and egress controls explicit and auditable.
 
 JSON schema: `queuebash.cluster.vote_cast.v1`. Required safety fields: `writes_performed`, `network_touched`, `quorum_granted`, `cluster_mutation_unlocked`, `provider`, `scope`, and `requires_policy`.
+
+## 0.18.124 local vote tally witness contract
+
+`queue cluster vote tally --proposal-id ID [--json]` reads one local file-dev proposal and its local ballot witnesses, then reports approve/reject/abstain counts. It is deliberately read-only: it writes no files, touches no network, grants no quorum, and unlocks no cluster mutation.
+
+This command gives production providers a concrete tally/evaluation output shape while keeping quorum evaluation, policy authorization, legal scope, egress controls, and mutation unlocks separate and fail-closed.
+
+JSON schema: `queuebash.cluster.vote_tally.v1`. Required safety fields: `writes_performed`, `network_touched`, `quorum_granted`, `cluster_mutation_unlocked`, `provider`, `scope`, `quorum_policy`, and `requires_policy`.
+
+## 0.18.125 local vote evaluation witness contract
+
+`queue cluster vote evaluate --proposal-id ID [--json]` reads one local file-dev proposal and its local ballots, then emits a provider-required evaluation result. It is deliberately read-only: it writes no files, touches no network, grants no quorum, and unlocks no cluster mutation.
+
+The command exists to keep quorum evaluation separate from tallying. Local file-dev evidence may show approvals and rejections, but production providers must still prove voter eligibility, quorum rule, timing window, policy authorization, legal scope, and egress status before any approval can exist.
+
+JSON schema: `queuebash.cluster.vote_evaluation.v1`. Required safety fields: `writes_performed`, `network_touched`, `quorum_granted`, `cluster_mutation_unlocked`, `provider`, `scope`, `quorum_policy`, `eligible_voters_source`, `timing_window_status`, `policy_authorization`, `legal_scope_status`, `egress_status`, and `requires_policy`.

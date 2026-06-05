@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 import json
 import subprocess
+import os
 from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 helper = root / 'providers.d' / 'enterprise' / 'maintenance_evidence_verify.sh'
 valid = root / 'tests' / 'fixtures' / 'enterprise' / 'maintenance_evidence' / 'valid_approved_maintenance.json'
 cluster_valid = root / 'tests' / 'fixtures' / 'enterprise' / 'maintenance_evidence' / 'valid_cluster_maintenance.json'
-proc = subprocess.run([str(helper), '--request', str(valid), '--json'], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+proc = subprocess.run([str(helper), '--request', str(valid), '--json'], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=20)
 obj = json.loads(proc.stdout)
 assert obj['schema'] == 'queuebash.enterprise_maintenance_evidence_decision.v1'
 assert obj['status'] == 'ok'
@@ -36,10 +37,15 @@ for key in [
     'cluster_canary_completed', 'cluster_drain_verified',
     'cluster_rollback_checkpoint_hash', 'cluster_rollback_checkpoint_redacted',
     'cluster_observation_completed', 'cluster_observation_health_ok',
-    'cluster_observation_slo_ok', 'cluster_observation_evidence_redacted'
+    'cluster_observation_slo_ok', 'cluster_observation_evidence_redacted',
+    'cluster_abort_criteria_ready', 'cluster_abort_policy_redacted',
+    'cluster_incident_response_ready', 'cluster_incident_contacts_redacted',
+    'cluster_evidence_bundle_sealed', 'cluster_evidence_bundle_hashes',
+    'cluster_evidence_bundle_signature_verified', 'cluster_evidence_bundle_retained',
+    'cluster_evidence_bundle_redacted'
 ]:
     assert key in obj['checks'], key
-proc = subprocess.run([str(helper), '--request', str(cluster_valid), '--json'], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+proc = subprocess.run([str(helper), '--request', str(cluster_valid), '--json'], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=20)
 cluster_obj = json.loads(proc.stdout)
 assert cluster_obj['checks']['cluster_context_required'] is True
 assert cluster_obj['checks']['cluster_schema'] is True
@@ -58,8 +64,18 @@ assert cluster_obj['checks']['cluster_observation_completed'] is True
 assert cluster_obj['checks']['cluster_observation_health_ok'] is True
 assert cluster_obj['checks']['cluster_observation_slo_ok'] is True
 assert cluster_obj['checks']['cluster_observation_evidence_redacted'] is True
+assert cluster_obj['checks']['cluster_abort_criteria_ready'] is True
+assert cluster_obj['checks']['cluster_abort_policy_redacted'] is True
+assert cluster_obj['checks']['cluster_incident_response_ready'] is True
+assert cluster_obj['checks']['cluster_incident_contacts_redacted'] is True
+assert cluster_obj['checks']['cluster_evidence_bundle_sealed'] is True
+assert cluster_obj['checks']['cluster_evidence_bundle_hashes'] is True
+assert cluster_obj['checks']['cluster_evidence_bundle_signature_verified'] is True
+assert cluster_obj['checks']['cluster_evidence_bundle_retained'] is True
+assert cluster_obj['checks']['cluster_evidence_bundle_redacted'] is True
 
 for sample in ['approved_maintenance_request.example.json', 'approved_maintenance_decision.allowed.example.json', 'approved_maintenance_decision.blocked.example.json', 'approved_maintenance_cluster_context.example.json']:
     loaded = json.loads((root / 'schemas' / 'enterprise' / sample).read_text())
     assert loaded['schema'].startswith(('queuebash.enterprise_maintenance_', 'queuebash.enterprise_maintenance_cluster_'))
-print('[PASS] enterprise_maintenance_evidence_json_contract_static')
+print('[PASS] enterprise_maintenance_evidence_json_contract_static', flush=True)
+os._exit(0)

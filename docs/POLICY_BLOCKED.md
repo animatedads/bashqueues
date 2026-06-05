@@ -6,7 +6,7 @@ The worker checks this before class claims, asset preflight, dynamic preflight, 
 
 ## Why this exists
 
-Submit-time `--reason` is useful audit text, but it is not a durable permission to run after an admin policy has been installed or changed under `/etc/bashqueues/policies.d`.  If the active policy requires authorisation for a weak policy or an exception overlay, the worker must see one of these before executing:
+Submit-time `--reason` is useful audit text, but it is not a durable permission to run after an admin policy has been installed or changed under `/etc/queuebash/policies.d`.  If the active policy requires authorisation for a weak policy or an exception overlay, the worker must see one of these before executing:
 
 - a standing user/command grant in the class-policy statement, or
 - a valid, unexpired, command-bound authorisation code.

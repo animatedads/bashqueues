@@ -1,0 +1,10 @@
+Usage: queue code sign --all [--tree DIR] [--key NAME] [--signer-root DIR] [--json]
+
+Sign queuebash code-signature targets in a tree.
+
+Options:
+  --all              sign all configured targets
+  --tree DIR         target tree, default is the queuebash script tree
+  --key NAME         signing key name
+  --signer-root DIR  signer key root
+  --json             emit machine-readable output

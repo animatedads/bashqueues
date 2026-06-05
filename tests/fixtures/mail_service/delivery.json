@@ -1,0 +1,19 @@
+{
+  "bounce_handling": "described_not_changed",
+  "check": "delivery",
+  "credentials_required": false,
+  "decision": "allow",
+  "delivery_mode": "transactional_reference",
+  "fail_closed": true,
+  "live_api_used": false,
+  "messages_sent": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "mail_service",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.mail_service.delivery.v1",
+  "source": "fixture",
+  "webhook_target": "https://example.invalid/mail-webhook"
+}

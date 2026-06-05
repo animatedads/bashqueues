@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Read-only VCS assertion helper for bashqueues class authoring and diagnostics.
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: queue-vcs-assert [--json] [--type auto|git|svn|cvs|hg|p4] [--timeout SECONDS] \
+                        [--require-identity VALUE] [--require-revision VALUE] \
+                        [--require-fingerprint VALUE] [PATH]
+
+Runs queue-vcs-probe and compares the observed identity, revision, and/or
+fingerprint against required values. It is read-only and never runs checkout,
+update, commit, merge, tag, submit, or revert operations.
+USAGE
+}
+
+json=0
+type=auto
+timeout_s=10
+require_identity=""
+require_revision=""
+require_fingerprint=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json|-j) json=1; shift ;;
+    --type) type="${2:-}"; shift 2 ;;
+    --type=*) type="${1#*=}"; shift ;;
+    --timeout) timeout_s="${2:-10}"; shift 2 ;;
+    --timeout=*) timeout_s="${1#*=}"; shift ;;
+    --require-identity|--identity) require_identity="${2:-}"; shift 2 ;;
+    --require-identity=*|--identity=*) require_identity="${1#*=}"; shift ;;
+    --require-revision|--revision|--require-changelist|--changelist) require_revision="${2:-}"; shift 2 ;;
+    --require-revision=*|--revision=*|--require-changelist=*|--changelist=*) require_revision="${1#*=}"; shift ;;
+    --require-fingerprint|--fingerprint) require_fingerprint="${2:-}"; shift 2 ;;
+    --require-fingerprint=*|--fingerprint=*) require_fingerprint="${1#*=}"; shift ;;
+    --help|-h) usage; exit 0 ;;
+    --*) echo "queue-vcs-assert: unknown option: $1" >&2; usage; exit 2 ;;
+    *) break ;;
+  esac
+done
+path="${1:-.}"
+[[ -d "$path" ]] || { echo "queue-vcs-assert: not a directory: $path" >&2; exit 2; }
+[[ -n "$require_identity$require_revision$require_fingerprint" ]] || {
+  echo "queue-vcs-assert: at least one --require-identity, --require-revision, or --require-fingerprint value is required" >&2
+  exit 2
+}
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+probe="$script_dir/queue-vcs-probe"
+if [[ ! -x "$probe" ]]; then
+  probe="$(command -v queue-vcs-probe || true)"
+fi
+[[ -n "$probe" ]] || { echo "queue-vcs-assert: helper not found: queue-vcs-probe" >&2; exit 1; }
+
+probe_json="$($probe --json --type "$type" --timeout "$timeout_s" "$path")"
+python3 - "$json" "$require_identity" "$require_revision" "$require_fingerprint" "$probe_json" <<'PY'
+import json, sys
+json_mode = sys.argv[1] == "1"
+requirements = {
+    "identity": sys.argv[2],
+    "revision": sys.argv[3],
+    "fingerprint": sys.argv[4],
+}
+probe = json.loads(sys.argv[5])
+checks = []
+failures = []
+for field, required in requirements.items():
+    if not required:
+        continue
+    observed = probe.get(field, "")
+    matched = observed == required
+    item = {"field": field, "required": required, "observed": observed, "matched": matched}
+    checks.append(item)
+    if not matched:
+        failures.append(item)
+matched = not failures
+out = {
+    "schema": "queuebash.vcs.assert.v1",
+    "read_only": True,
+    "matched": matched,
+    "type": probe.get("type", ""),
+    "path": probe.get("path", ""),
+    "root": probe.get("root", ""),
+    "identity": probe.get("identity", ""),
+    "revision": probe.get("revision", ""),
+    "fingerprint": probe.get("fingerprint", ""),
+    "clean": probe.get("clean", ""),
+    "status_summary": probe.get("status_summary", ""),
+    "checks": checks,
+    "failures": failures,
+}
+if json_mode:
+    print(json.dumps(out, sort_keys=True, separators=(",",":")))
+else:
+    print("matched=%s" % ("true" if matched else "false"))
+    for key in ("type", "path", "root", "identity", "revision", "fingerprint", "clean", "status_summary"):
+        print("%s=%s" % (key, out.get(key, "")))
+    for item in checks:
+        print("check.%s=%s required=%s observed=%s" % (item["field"], "ok" if item["matched"] else "blocked", item["required"], item["observed"]))
+sys.exit(0 if matched else 1)
+PY

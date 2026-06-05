@@ -1,4 +1,15 @@
 {
+  "abort_criteria": {
+    "auto_stop_on_breach": true,
+    "defined": true,
+    "manual_override_allowed": false,
+    "policy_hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "triggers": [
+      "health_degraded",
+      "slo_regression",
+      "quorum_lost"
+    ]
+  },
   "blast_radius": {
     "max_nodes": 2,
     "per_batch": 1,
@@ -20,9 +31,25 @@
     "required": true,
     "verified": true
   },
+  "evidence_bundle": {
+    "bundle_hash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "immutable_storage": true,
+    "retention_days": 365,
+    "sealed": true,
+    "signature_hash": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "signature_status": "verified",
+    "signer_hash": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "tamper_evident": true
+  },
   "fencing": {
     "enabled": true,
     "token_hash": "sha256:930b31a20fd620932b3c8dfb2e8e2f2ad3cfb3ef1fdc1575b109d07f6f3f9a50"
+  },
+  "incident_response": {
+    "comms_channel_hash": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "freeze_on_incident": true,
+    "pager_ready": true,
+    "rollback_owner_ack": true
   },
   "leader_lease": {
     "expires_at": "2026-06-04T23:00:00Z",

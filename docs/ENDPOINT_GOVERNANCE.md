@@ -26,8 +26,8 @@ CLASS_POLICY_MANDATORY_ASSETS=$'endpoint\tcommand_jurisdiction_allowed\tUK_DPA\t
 
 Endpoint region mapping lives in:
 
-- `/etc/bashqueues/policies.d/endpoint-jurisdiction/default.env`
-- `/etc/bashqueues/policies.d/endpoint_jurisdiction.env`
+- `/etc/queuebash/policies.d/endpoint-jurisdiction/default.env`
+- `/etc/queuebash/policies.d/endpoint_jurisdiction.env`
 - `$QUEUEBASH_ROOT/policies.d/endpoint-jurisdiction/default.env`
 - bundled `policies.d/endpoint-jurisdiction/default.env`
 

@@ -23,7 +23,7 @@ queue version --json >/tmp/karen-version.json
 python3 -m json.tool /tmp/karen-version.json >/dev/null
 
 queue submit hello -- echo hello-from-queue >/tmp/karen-submit.out
-queue run --workers 1 >/tmp/karen-run.out
+queue run >/tmp/karen-run.out
 queue list --state done --json >/tmp/karen-done.json
 grep -Fq 'hello' /tmp/karen-done.json
 queue show hello --tail 30 >/tmp/karen-show.out

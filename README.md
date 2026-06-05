@@ -1,3 +1,44 @@
+# 0.18.125 BOB28 user selector JSON hardening
+
+Adds top-level `queue --json user USER` and `queue --json --queue-user USER` selector JSON/error hardening so queue-root selection failures are machine readable.
+
+# 0.18.125 BOB27 urgent Rupert Karen Jimbob hot-seat merge
+
+Consolidates BOB32 urgent Rupert/Karen/Jimbob fixes plus the 0.18.125 edge wave. Includes BOB30 Windows platform doctor surface, BOB24 queue plan collector contracts, BOB25 cluster vote evaluation witness, BOB20 runner prelaunch fail-closed guard, BOB19 command catalog JSON discoverability, BOB23 install-system executable guard and stale version cleanup, BOB16 platform help resource extraction wave15, BOB17 evidence bundle retention hardening, BOB18 display note audit, BOB26 VCS assert helper/audit fingerprint, BOB28 user selector JSON hardening, and BOB29 mail_service/secrets_scanner service coverage.
+
+# 0.18.125 BOB30 Windows platform doctor surface
+
+Adds `queue platform doctor --json` with `queuebash.platform_doctor.v1` for Windows/WSL runtime readiness checks without enabling unsupported workers.
+
+# 0.18.125 BOB19 command catalog JSON discoverability repair
+
+- Adds recently JSON-capable common commands to the global `queue --json help` / `queue --json` command catalog.
+- Covers lifecycle, maintenance, diagnostics, policy, event, and health JSON surfaces so script front-ends can discover them without scraping prose help.
+- Preserves human help output and command runtime behaviour; this is a catalog/contract repair only.
+- Adds focused static and smoke coverage for command catalog discoverability.
+
+# 0.18.124 BOB27 health/install/policy/plan/platform/service merge
+## 0.18.125 BOB26 VCS assert helper and audit fingerprint class gate
+
+Adds `queue-vcs-assert` and `queue vcs assert` as a read-only assertion surface over the existing VCS probe. Operators and automation can now compare observed VCS identity, revision/changelist, and fingerprint against required values using `queuebash.vcs.assert.v1` JSON without writing bespoke parsing around `queue vcs probe`. `VCS_CHANGESET_AUDIT` also accepts `QUEUEBASH_VCS_AUDIT_FINGERPRINT` so compact reproducibility tokens can be class gates, not just diagnostics.
+
+
+Urgent patchset on 0.18.124: prevents postclaim class/resource preflight blocks from stranding not-started jobs in running; adds cron JSON envelopes and security-preview fields; adds class explain multi-record JSON; fixes installer executable packaging, stale edge/static version guard, Karen beginner smoke command, operator runbook smoke, enterprise helper examples, and active policy-root wording.
+
+
+Consolidates the 0.18.124 wave onto the 0.18.123 BOB27 edge consolidation base. Included lanes: BOB23 health command JSON (`queue health --json`, `--fix`, `--deep`) and install-support dry-run evidence/policy namespace docs, BOB16 display-help wave14, BOB17 abort/incident maintenance evidence hardening, BOB18 display-resource surface audit helper, BOB20 pending dispatch diagnosis JSON clarity, BOB21 office/spreadsheet AI-policy language coverage, BOB24 queue-plan evidence bundle contract, BOB25 local vote tally witness, BOB26 VCS fingerprint gate, BOB28 top-level option order hardening, BOB29 dns_service/cache_service service coverage, and BOB30 Windows platform fact surface.
+
+0.18.124 BOB30 Windows platform fact surface. BOB28 top-level option order hardening.
+
+Merge posture: preserved 0.18.123 core surfaces, kept active system policy root `/etc/queuebash/policies.d`, kept `assets.d/net_usage.sh` absent, treated health as a core JSON surface with schema `queuebash.health.v1`, and avoided whole-file downgrades from overlapping queuebash patches.
+
+# 0.18.124 BOB23 health command JSON contract
+
+- Adds `queue health --json` with schema `queuebash.health.v1` for script-facing health checks.
+- Preserves default human `queue health` output and existing `--fix` / `--deep` behaviour.
+- JSON health output reports status, root, version, fix/deep flags, summary counts, and structured check lines.
+- Adds focused static and smoke coverage for the health JSON contract.
+
 # 0.18.123 BOB27 edge patch consolidation and core-surface carry-forward
 
 Consolidates the full 0.18.121 edge patch set onto the repaired 0.18.122 core-surface dispatch base. Several contributors clearly worked from function-access trees labelled 0.18.121; Bob27 treated those labels as stale and merged by current content and lane ownership rather than version strings.
@@ -625,7 +666,7 @@ Add cron bridge support with:
 sudo ./install-system.sh --with-cron
 ```
 
-The system installer uses an isolated temporary bashqueues queue to perform the privileged installation steps, installs shared policies under `/etc/bashqueues/policies.d`, and can generate/install root's authorisation signing public key into the shared class-statement policy. The generated `/usr/local/bin/queue` wrapper is explicitly non-interactive-safe, so scripts can call `queue ...` without first sourcing a shell profile. See `docs/SYSTEM_INSTALL.md`.
+The system installer uses an isolated temporary bashqueues queue to perform the privileged installation steps, installs shared policies under `/etc/queuebash/policies.d` (the older `/etc/bashqueues/policies.d` spelling is legacy-only), and can generate/install root's authorisation signing public key into the shared class-statement policy. The generated `/usr/local/bin/queue` wrapper is explicitly non-interactive-safe, so scripts can call `queue ...` without first sourcing a shell profile. See `docs/SYSTEM_INSTALL.md`.
 
 # bashqueues
 
@@ -675,7 +716,7 @@ Normal users still edit queue-local policies by default. Use `--shared` or `--pe
 
 A plain submit that inherits the default sandbox/seccomp settings is no longer treated as an explicit weak-policy request. Explicit selections such as `--sandbox off` still follow the active class-statement requirement.
 
-`/etc/bashqueues/policies.d/class-statement/default.env` may contain:
+`/etc/queuebash/policies.d/class-statement/default.env` may contain:
 
 ```bash
 CLASS_POLICY_USER_WEBADMINS_ALLOW_ADD_PORTS="80 1080 8080"
@@ -3485,7 +3526,7 @@ See `docs/SECURITY_POLICIES.md`. See also `docs/SECURITY_EXCEPTION_GUIDANCE.md`.
 ### Security policy snapshots
 
 Sandbox and seccomp names are policy files, not hard-coded launch profiles.
-Shared/admin policy files under `/etc/bashqueues/policies.d` take precedence
+Shared/admin policy files under `/etc/queuebash/policies.d` take precedence; `/etc/bashqueues/policies.d` is legacy/migration-only
 over queue-root personal policy files with the same name.
 
 When a job is submitted, bashqueues snapshots the resolved sandbox/seccomp
@@ -3551,7 +3592,7 @@ queue keys show root
 
 The private key remains in `$QUEUEBASH_ROOT/keys/private/` with mode `0600`.
 The generated public-key lines can be pasted into a central read-only policy,
-for example `/etc/bashqueues/policies.d/class-statement/default.env`:
+for example `/etc/queuebash/policies.d/class-statement/default.env`:
 
 ```bash
 CLASS_POLICY_AUTHORISATION_SIGNATURE_REQUIRED="if-trusted-key"
@@ -3562,7 +3603,7 @@ Inspect the active authorisation trust policy with:
 queue authorisation policy
 ```
 
-When a site policy declares a public key for an admin, new authorisations by that admin must be signed at creation time. For example, if `/etc/bashqueues/policies.d/class-statement/default.env` declares `CLASS_POLICY_AUTHORISATION_SIGNER_ROOT_PUBLIC_KEY_*`, then `root` authorisations require a matching queue-local private key and cannot silently fall back to unsigned records. If any trust-list keys are present, an undeclared admin is not trusted to create authorisations unless that admin's public key is also present in the policy.
+When a site policy declares a public key for an admin, new authorisations by that admin must be signed at creation time. For example, if `/etc/queuebash/policies.d/class-statement/default.env` declares `CLASS_POLICY_AUTHORISATION_SIGNER_ROOT_PUBLIC_KEY_*`, then `root` authorisations require a matching queue-local private key and cannot silently fall back to unsigned records. If any trust-list keys are present, an undeclared admin is not trusted to create authorisations unless that admin's public key is also present in the policy.
 CLASS_POLICY_AUTHORISATION_SIGNER_ROOT_PUBLIC_KEY_SHA256="..."
 CLASS_POLICY_AUTHORISATION_SIGNER_ROOT_PUBLIC_KEY_PEM_B64="..."
 CLASS_POLICY_AUTHORISATION_SIGNER_HC3_PUBLIC_KEY_SHA256="..."
@@ -3686,7 +3727,7 @@ The sentinel currently removes dead detached-worker PID files, marks definitely 
 
 The Queue Manager tab order now starts with day-to-day operational views: Jobs, Task Creator, Drafts, Classes, Assets, Policies, Global Resources, Exceptions, Queue Users, Modules, Maintenance, and Class Creator.
 
-The Policies panel lists sandbox, seccomp, and class-statement policies and exposes actions for show/explain, path, edit, and create-copy. Root editing defaults to `/etc/bashqueues/policies.d`; normal users edit queue-local policy files unless `--shared` or `--personal` is specified.
+The Policies panel lists sandbox, seccomp, and class-statement policies and exposes actions for show/explain, path, edit, and create-copy. Root editing defaults to `/etc/queuebash/policies.d`; the older `/etc/bashqueues/policies.d` path is legacy/migration-only; normal users edit queue-local policy files unless `--shared` or `--personal` is specified.
 
 The Global Resources panel exposes claims, explain, cleanup dry-run, cleanup, and force-release actions.
 
@@ -3894,3 +3935,7 @@ Bundled policy installation now covers newer ACL/key/profile-signature/IBM/gover
 
 `queue dev ai` provides an LLM-oriented development session ledger: `discover`, `session start/list/lessons/stop`, `try`, `lesson`, and the compatibility alias `learn`. `try` executes only bounded allowlisted commands and records rc/stdout/stderr tails and lesson matches. Lessons are stored as separate JSON files under `.queuebash/dev/ai_lessons.d/` so future sessions can scan them without scratchpad merge collisions. In 0.18.93, allowlisted read-only `queue dev ai discover` and `queue dev ai session list/lessons` can be dogfooded through `queue dev ai try`; mutating recursive AI commands remain blocked.
 
+
+## 0.18.125 BOB29 mail service + secrets scanner provider coverage
+
+Adds fixture-first `mail_service` and `secrets_scanner` provider-family coverage with docs, policy examples, fixtures, registry entries, and static/smoke/JSON tests. Helpers are advisory/read-only and return normalized JSON facts only; they do not send mail, read mailboxes, scan live repositories, disclose secret values, mutate provider state, provision services, or change queue dispatch.

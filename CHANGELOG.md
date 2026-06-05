@@ -1,3 +1,37 @@
+# 0.18.125 BOB28 user selector JSON hardening
+
+Adds top-level `queue --json user USER` and `queue --json --queue-user USER` selector JSON/error hardening so queue-root selection failures are machine readable.
+
+# 0.18.125 BOB27 urgent Rupert Karen Jimbob hot-seat merge
+
+Consolidates BOB32 urgent Rupert/Karen/Jimbob fixes plus the 0.18.125 edge wave. Includes BOB30 Windows platform doctor surface, BOB24 queue plan collector contracts, BOB25 cluster vote evaluation witness, BOB20 runner prelaunch fail-closed guard, BOB19 command catalog JSON discoverability, BOB23 install-system executable guard and stale version cleanup, BOB16 platform help resource extraction wave15, BOB17 evidence bundle retention hardening, BOB18 display note audit, BOB26 VCS assert helper/audit fingerprint, BOB28 user selector JSON hardening, and BOB29 mail_service/secrets_scanner service coverage.
+
+# 0.18.125 BOB30 Windows platform doctor surface
+
+Adds `queue platform doctor --json` with `queuebash.platform_doctor.v1` for Windows/WSL runtime readiness checks without enabling unsupported workers.
+
+## 0.18.125 BOB32 urgent Rupert Karen Jimbob fixes
+
+Urgent patchset on 0.18.124: prevents postclaim class/resource preflight blocks from stranding not-started jobs in running; adds cron JSON envelopes and security-preview fields; adds class explain multi-record JSON; fixes installer executable packaging, stale edge/static version guard, Karen beginner smoke command, operator runbook smoke, enterprise helper examples, and active policy-root wording.
+
+# 0.18.124 BOB27 health/install/policy/plan/platform/service merge
+
+- Added `queue health --json`, `queue health --json --fix`, and `queue health --json --deep` with schema `queuebash.health.v1`.
+- Merged install support dry-run evidence, operator policy namespace docs sweep, and pending dispatch diagnosis JSON clarity.
+- Merged BOB16 code-signing display-help extraction wave14 and BOB18 display-resource surface audit helper.
+- Merged BOB24 queue-plan evidence bundle contract and BOB25 local vote tally witness.
+- Merged BOB26 VCS fingerprint gate, BOB28 top-level option order hardening, BOB29 dns_service/cache_service service coverage, and BOB30 Windows platform fact surface.
+- Merged BOB17 abort/incident maintenance evidence hardening and BOB21 office/spreadsheet AI-policy language coverage.
+
+0.18.124 BOB30 Windows platform fact surface. BOB28 top-level option order hardening.
+
+# 0.18.124 BOB23 health command JSON contract
+
+- Adds `queue health --json` with schema `queuebash.health.v1` for script-facing health checks.
+- Preserves default human `queue health` output and existing `--fix` / `--deep` behaviour.
+- JSON health output reports status, root, version, fix/deep flags, summary counts, and structured check lines.
+- Adds focused static and smoke coverage for the health JSON contract.
+
 # 0.18.123 BOB27 edge patch consolidation and core-surface carry-forward
 
 - Consolidated the 0.18.121 edge patch set onto the 0.18.122 repaired core-surface base without undoing dispatcher repairs.
@@ -2952,3 +2986,7 @@ Initial public queuebash release:
 - 2026-05-27 16:07:28 BST — AI-PATCH _queue_ai_ask_command in `queuebash.sh`: 0.18.1: add opt-in local Ollama advisory provider path with live policy gate and audit-preserving handoff
 
 - 2026-05-27 17:45:21 BST — AI-PATCH _queue_module_command in `queuebash.sh`: 0.18.5: centralise module/provider command surface.
+
+## 0.18.125 BOB29 mail service + secrets scanner provider coverage
+
+Adds fixture-first `mail_service` and `secrets_scanner` provider-family coverage with docs, policy examples, fixtures, registry entries, and static/smoke/JSON tests. Helpers are advisory/read-only and return normalized JSON facts only; they do not send mail, read mailboxes, scan live repositories, disclose secret values, mutate provider state, provision services, or change queue dispatch.

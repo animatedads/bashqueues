@@ -5,7 +5,7 @@ cd "$ROOT"
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
 [[ -f queuebash.sh ]] || fail "run from repository root"
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(4[0-9]|[5-9][0-9])"' queuebash.sh || fail 'queuebash version must be 0.18.28 or newer'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(4[0-9]|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'queuebash version must be 0.18.28 or newer'
 grep -Eq 'WIZARD_VERSION="0\.18\.(27|28|29|30)"' bin/queue-policy-wizard || fail 'wizard version missing expected 0.18.x line'
 grep -q '^## 0.18.24 internal dev scratchpad import contract' README.md || fail 'README missing scratchpad release section'
 grep -q '^## 0.18.24 - internal dev scratchpad import contract' CHANGELOG.md || fail 'CHANGELOG missing scratchpad release section'

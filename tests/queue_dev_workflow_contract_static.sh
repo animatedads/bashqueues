@@ -5,7 +5,7 @@ cd "$ROOT"
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
 [[ -f queuebash.sh ]] || fail 'run from repository root'
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(43|44|4[5-9]|[5-9][0-9])"' queuebash.sh || fail 'queuebash version must preserve 0.18.43+ workflow contract line'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(43|44|4[5-9]|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'queuebash version must preserve 0.18.43+ workflow contract line'
 grep -Eq '^#{1,2} 0.18.43 BOB12 dev workflow command contracts' README.md || fail 'README missing 0.18.43 workflow contract entry'
 grep -q '^## 0.18.43 - BOB12 dev workflow command contracts' CHANGELOG.md || fail 'CHANGELOG missing 0.18.43 workflow contract entry'
 

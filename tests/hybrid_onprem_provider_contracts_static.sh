@@ -14,7 +14,7 @@ for f in \
   tests/fixtures/hybrid_onprem/vmware/detect.json; do
   [[ -f "$f" ]] || { echo "missing $f" >&2; exit 1; }
 done
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(48|49|[5-9][0-9])"' queuebash.sh
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(48|49|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh
 grep -q '0.18.46 BOB2 primary-source validation + BOB12 patchset registry merged' CHANGELOG.md || grep -q '0.18.46 - BOB2 primary-source validation + BOB12 patchset registry merged' CHANGELOG.md || grep -q '0.18.41 - BOB2 hybrid/on-prem provider contracts merged with cloud lifecycle + ask provider' CHANGELOG.md
 grep -q '0.18.46 BOB2 primary-source validation + BOB12 patchset registry merged' README.md || grep -q '0.18.46 - BOB2 primary-source validation + BOB12 patchset registry merged' README.md || grep -q '0.18.41 BOB2 hybrid/on-prem provider contracts merged with cloud lifecycle + ask provider' README.md
 grep -q 'queuebash.hybrid_onprem.vmware.detect.v1' docs/HYBRID_ONPREM_PROVIDER_CONTRACTS.md

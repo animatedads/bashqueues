@@ -1,0 +1,25 @@
+{
+  "check": "detect",
+  "coverage_note": "DNS estates are represented as inert fixture facts for zone, record, resolver, and policy review.",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "dns_service",
+  "provider_output_is_shell": false,
+  "providers_observed": [
+    "aws_route53",
+    "azure_dns",
+    "google_cloud_dns",
+    "cloudflare_dns",
+    "akamai_edge_dns",
+    "ns1",
+    "bind9_legacy"
+  ],
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.dns_service.detect.v1",
+  "source": "fixture"
+}

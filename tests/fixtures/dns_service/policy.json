@@ -1,0 +1,18 @@
+{
+  "check": "policy",
+  "credentials_required": false,
+  "decision": "allow",
+  "delegation_guard": "advisory_only",
+  "dnssec_policy": "described_not_changed",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "dns_service",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.dns_service.policy.v1",
+  "source": "fixture",
+  "wildcard_records": "review_required"
+}

@@ -3,7 +3,7 @@
 Shared/admin class-policy statements can rapidly block a command before it runs.
 This is intended for zero-hour operational response: if a tool or invocation is
 suddenly known to be unsafe, an administrator can put a read-only policy under
-`/etc/bashqueues/policies.d/class-statement/` and stop matching jobs from
+`/etc/queuebash/policies.d/class-statement/` and stop matching jobs from
 executing, including jobs submitted by cron.
 
 The worker checks command blocks before class claims, asset preflight, dynamic

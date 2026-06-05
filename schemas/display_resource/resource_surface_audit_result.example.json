@@ -1,0 +1,36 @@
+{
+  "schema": "queuebash.display_resource_surface_audit.v1",
+  "status": "ok",
+  "renderer": "none-surface-audit-only",
+  "root": "/repo",
+  "manifest_only": true,
+  "resource_rendering": false,
+  "resource_body_read": false,
+  "token_substitution": false,
+  "secret_rendering": false,
+  "provider_calls": false,
+  "signing_mutation": false,
+  "install_mutation": false,
+  "permission_mutation": false,
+  "json_contract_source": false,
+  "summary": {
+    "entries": 2,
+    "audited_surfaces": 2,
+    "unique_surface_labels": 2,
+    "errors": 0,
+    "warnings": 0
+  },
+  "surfaces": [
+    {
+      "resource_type": "display",
+      "name": "status-panel.example.txt",
+      "language": "lang_eng",
+      "surface": "panel status card example",
+      "surface_length": 25,
+      "safe_surface": true,
+      "manifest_path": "resources.d/display/manifest.example.tsv",
+      "manifest_line": 3
+    }
+  ],
+  "findings": []
+}

@@ -181,19 +181,12 @@ case "$ntype" in
     ;;
 esac
 
+fingerprint="$(python3 -c 'import hashlib,sys; print(hashlib.sha256("\0".join(sys.argv[1:]).encode("utf-8","surrogateescape")).hexdigest())' "$ntype" "$marker" "$identity" "$revision" "$clean" "$status_summary")"
+
 if [[ "$json" -eq 1 ]]; then
-  python3 - "$ntype" "$abs" "$root" "$marker" "$client" "$client_available" "$identity" "$revision" "$clean" "$status_summary" <<'PY'
-import json, sys
-keys = ["type","path","root","marker","client","client_available","identity","revision","clean","status_summary"]
-data = dict(zip(keys, sys.argv[1:]))
-data["schema"] = "queuebash.vcs.probe.v1"
-data["client_available"] = data["client_available"] == "1"
-if data["clean"] == "true": data["clean"] = True
-elif data["clean"] == "false": data["clean"] = False
-print(json.dumps(data, sort_keys=True, separators=(",",":")))
-PY
+  python3 -c 'import json,sys; keys=["type","path","root","marker","client","client_available","identity","revision","clean","status_summary","fingerprint"]; data=dict(zip(keys,sys.argv[1:])); data["schema"]="queuebash.vcs.probe.v1"; data["client_available"]=(data["client_available"]=="1"); data["clean"] = True if data["clean"] == "true" else False if data["clean"] == "false" else data["clean"]; print(json.dumps(data,sort_keys=True,separators=(",",":")))' "$ntype" "$abs" "$root" "$marker" "$client" "$client_available" "$identity" "$revision" "$clean" "$status_summary" "$fingerprint"
 else
-  printf 'type=%s\npath=%s\nroot=%s\nmarker=%s\nclient=%s\nclient_available=%s\nidentity=%s\nrevision=%s\nclean=%s\nstatus_summary=%s\n' \
-    "$ntype" "$abs" "$root" "$marker" "$client" "$client_available" "$identity" "$revision" "$clean" "$status_summary"
+  printf 'type=%s\npath=%s\nroot=%s\nmarker=%s\nclient=%s\nclient_available=%s\nidentity=%s\nrevision=%s\nclean=%s\nstatus_summary=%s\nfingerprint=%s\n' \
+    "$ntype" "$abs" "$root" "$marker" "$client" "$client_available" "$identity" "$revision" "$clean" "$status_summary" "$fingerprint"
 fi
 [[ "$ntype" != unknown ]]

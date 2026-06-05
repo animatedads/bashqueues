@@ -68,7 +68,7 @@ queue plugins verify --tree /usr/local/share/bashqueues --mode enforce
 Shared policy lives at:
 
 ```text
-/etc/bashqueues/policies.d/code-signing/default.env
+/etc/queuebash/policies.d/code-signing/default.env
 ```
 
 Queue-local policy can live at:

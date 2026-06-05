@@ -1,0 +1,18 @@
+{
+  "check": "resolver",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "inbound_endpoints": "described_not_created",
+  "live_api_used": false,
+  "mutated": false,
+  "outbound_rules": "described_not_mutated",
+  "provider": "fixture",
+  "provider_family": "dns_service",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "resolver_profile": "hybrid-reference",
+  "schema": "queuebash.dns_service.resolver.v1",
+  "source": "fixture"
+}

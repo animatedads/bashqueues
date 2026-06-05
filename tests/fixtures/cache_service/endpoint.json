@@ -1,0 +1,19 @@
+{
+  "auth_mode": "reference_only",
+  "check": "endpoint",
+  "credentials_required": false,
+  "decision": "allow",
+  "endpoint": "cache.example.invalid",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "network_exposure": "private_reference_only",
+  "port": 6379,
+  "provider": "fixture",
+  "provider_family": "cache_service",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.cache_service.endpoint.v1",
+  "source": "fixture"
+}

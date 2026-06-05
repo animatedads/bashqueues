@@ -1,0 +1,20 @@
+{
+  "check": "domain",
+  "credentials_required": false,
+  "decision": "allow",
+  "dkim_state": "reference_only",
+  "dmarc_policy": "p=quarantine reference",
+  "domain_name": "example.invalid",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "mx_posture": "reference_only",
+  "provider": "fixture",
+  "provider_family": "mail_service",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.mail_service.domain.v1",
+  "source": "fixture",
+  "verification_state": "described_not_changed"
+}

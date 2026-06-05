@@ -1,0 +1,19 @@
+{
+  "check": "policy",
+  "content_policy": "described_not_enforced",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "legal_hold": "not_applicable_fixture",
+  "live_api_used": false,
+  "mutated": false,
+  "pii_payload_accessed": false,
+  "provider": "fixture",
+  "provider_family": "mail_service",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "rate_limit_policy": "advisory_only",
+  "schema": "queuebash.mail_service.policy.v1",
+  "source": "fixture"
+}

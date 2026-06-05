@@ -10,10 +10,10 @@ class claims, asset preflight, dynamic preflight, global claims, or payload laun
 ## Install as shared/admin policy
 
 ```bash
-sudo mkdir -p /etc/bashqueues/policies.d/class-statement
+sudo mkdir -p /etc/queuebash/policies.d/class-statement
 sudo cp policies.d/class-statement/policyblock-test.env \
-  /etc/bashqueues/policies.d/class-statement/policyblock-test.env
-sudo chmod 0644 /etc/bashqueues/policies.d/class-statement/policyblock-test.env
+  /etc/queuebash/policies.d/class-statement/policyblock-test.env
+sudo chmod 0644 /etc/queuebash/policies.d/class-statement/policyblock-test.env
 ```
 
 Then select it for the queue process:

@@ -24,6 +24,8 @@ VALIDATE_SCHEMA = "queue.plan.validate.v1"
 POLICY_SCHEMA = "queue.plan.policy.v1"
 STATUS_SCHEMA = "queue.plan.status.v1"
 SOURCES_SCHEMA = "queue.plan.sources.v1"
+EVIDENCE_SCHEMA = "queue.plan.evidence.v1"
+COLLECTORS_SCHEMA = "queue.plan.collectors.v1"
 SCRIPT_BEHAVIOUR_SCHEMA = "queue.plan.script_behaviour.v1"
 CLOUD_RUNTIME_SCHEMA = "queue.plan.runtime_status.v1"
 DGX_REVIEW = "DGX_CLOUD_WORKFLOW_POLICY_REVIEW"
@@ -374,6 +376,142 @@ def runtime_status_observation(adapter: str, objects: List[str], path: Path) -> 
         "boundary": "no live SDK/API/CLI/WinRM/SMB/RPC/REST calls, no credential loading, no log retrieval, no job submission, no provider mutation",
         "plan_use": "normalise exported job, workflow, schedule, queue, task or run facts into queue.control_plan.v1 reviewable status sources",
         "extraction_contract": source_contract_for_adapter(adapter),
+    }
+
+
+
+def collector_contract_for_adapter(adapter: str) -> Dict[str, Any]:
+    """Return the future live-collector contract for an adapter.
+
+    This is descriptive only. queue plan collectors must not import SDKs,
+    open network connections, read credentials, run CLIs, or collect logs.
+    The contract records what a separate, policy-gated exporter would have to do
+    to produce inert files for queue plan evidence/status/sources.
+    """
+    src = source_contract_for_adapter(adapter)
+    provider = src.get("provider", "unknown")
+    family = src.get("family", "unknown")
+    packages: List[str] = []
+    protocols: List[str] = []
+    credential_refs: List[str] = []
+    collector_kind = src.get("extractor", "external_exporter_required")
+
+    if adapter.startswith("azure-"):
+        protocols = ["Azure ARM/data-plane SDK export"]
+        credential_refs = ["AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "managed identity"]
+        packages = {
+            "azure-logic-apps": ["azure-mgmt-logic"],
+            "azure-functions": ["azure-mgmt-web"],
+            "azure-webjobs": ["azure-mgmt-web"],
+            "azure-automation": ["azure-mgmt-automation"],
+            "azure-container-apps-jobs": ["azure-mgmt-appcontainers"],
+            "azure-sql-elastic-jobs": ["azure-mgmt-sql"],
+            "azure-devops-pipelines": ["azure-devops", "PAT required outside queue plan"],
+        }.get(adapter, ["azure-identity"])
+    elif adapter.startswith("aws-"):
+        protocols = ["AWS SDK/CLI export"]
+        credential_refs = ["AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "IAM role"]
+        packages = ["boto3"]
+    elif adapter.startswith("gcp-"):
+        protocols = ["Google Cloud client library export", "Application Default Credentials outside queue plan"]
+        credential_refs = ["GOOGLE_APPLICATION_CREDENTIALS", "ADC", "workload identity"]
+        packages = {
+            "gcp-workflows": ["google-cloud-workflows"],
+            "gcp-cloud-tasks": ["google-cloud-tasks"],
+            "gcp-cloud-run-jobs": ["google-cloud-run"],
+            "gcp-batch": ["google-cloud-batch"],
+        }.get(adapter, ["google-cloud-*"])
+    elif adapter.startswith("oci-") or adapter == "oci":
+        protocols = ["OCI SDK/CLI export"]
+        credential_refs = ["~/.oci/config", "OCI_CONFIG_FILE", "instance principal"]
+        packages = ["oci"]
+    elif adapter.startswith("ibm-watsonx"):
+        protocols = ["IBM watsonx SDK/API export"]
+        credential_refs = ["IBM_CLOUD_API_KEY", "watsonx service credentials", "CPD credentials"]
+        packages = {
+            "ibm-watsonx-ai": ["ibm-watsonx-ai"],
+            "ibm-watsonx-data": ["ibm-watsonx-data-integration"],
+            "ibm-watsonx-governance": ["ibm-watsonopenscale"],
+        }.get(adapter, ["ibm-watsonx-ai"])
+    elif adapter.startswith("alibaba-"):
+        protocols = ["Alibaba Cloud SDK export"]
+        credential_refs = ["ALIBABA_CLOUD_ACCESS_KEY_ID", "ALIBABA_CLOUD_ACCESS_KEY_SECRET"]
+        packages = {
+            "alibaba-ehpc": ["alibabacloud_ehpc20180412"],
+            "alibaba-batch-compute": ["alibabacloud_batchcompute"],
+            "alibaba-serverless-workflow": ["alibabacloud_fnf"],
+        }.get(adapter, ["alibabacloud-*"])
+    elif adapter.startswith("huawei-"):
+        protocols = ["Huawei Cloud SDK export"]
+        credential_refs = ["HUAWEI_SDK_AK", "HUAWEI_SDK_SK"]
+        packages = {"huawei-batch": ["huaweicloudsdkbatch"], "huawei-functiongraph": ["huaweicloudsdkfunctiongraph"]}.get(adapter, ["huaweicloudsdk*"])
+    elif adapter.startswith("tencent-"):
+        protocols = ["Tencent Cloud SDK export"]
+        credential_refs = ["TENCENTCLOUD_SECRET_ID", "TENCENTCLOUD_SECRET_KEY"]
+        packages = ["tencentcloud-sdk-python"]
+    elif adapter == "windows-task-scheduler":
+        protocols = ["WinRM PowerShell JSON export", "SMB/RPC schtasks CSV/XML export"]
+        credential_refs = ["Windows domain/local credentials", "Kerberos/NTLM credential material"]
+        packages = ["pywinrm", "impacket optional"]
+    elif adapter in {"celery-runtime", "rq-runtime", "apscheduler-runtime"}:
+        protocols = ["application-owned Python exporter"]
+        credential_refs = ["broker/application credentials outside queue plan"]
+        packages = {"celery-runtime": ["celery"], "rq-runtime": ["rq", "redis"], "apscheduler-runtime": ["apscheduler"]}.get(adapter, [])
+    elif adapter in {"slurm-runtime", "htcondor-runtime", "slurm", "htcondor", "pbs", "torque", "sge", "lsf", "flux"}:
+        protocols = ["scheduler command/daemon export performed outside queue plan"]
+        credential_refs = ["scheduler account/session outside queue plan"]
+        packages = {"htcondor-runtime": ["htcondor"], "htcondor": ["htcondor"]}.get(adapter, [])
+    elif adapter in {"kubernetes-runtime", "volcano-runtime", "kubernetes", "argo", "tekton"}:
+        protocols = ["kubectl/API exported manifests and status files"]
+        credential_refs = ["KUBECONFIG", "service account token outside queue plan"]
+        packages = ["kubernetes"]
+    elif adapter in {"airflow-runtime", "prefect-runtime", "dagster-runtime", "airflow"}:
+        protocols = ["workflow REST/GraphQL/API export outside queue plan"]
+        credential_refs = ["workflow API token/basic auth outside queue plan"]
+        packages = {"airflow-runtime": ["requests"], "prefect-runtime": ["prefect"], "dagster-runtime": ["requests"]}.get(adapter, [])
+    elif adapter in {"local-cron-status", "cron"}:
+        protocols = ["existing bashqueues cron bridge", "crontab/log export outside queue plan"]
+        credential_refs = ["local account only; no credential loading in queue plan"]
+        collector_kind = "existing_cron_bridge_or_external_local_exporter"
+    elif adapter in {"local-systemd-timer-status", "systemd"}:
+        protocols = ["systemctl/journal export outside queue plan"]
+        credential_refs = ["local account/polkit outside queue plan"]
+
+    review_gates = ["QUEUE_PLAN_COLLECTOR_REVIEW"]
+    if provider in {"azure", "azure-devops", "aws", "gcp", "oci", "ibm", "alibaba", "huawei", "tencent"}:
+        review_gates.append(CLOUD_WORKFLOW_REVIEW)
+    if adapter.startswith("ibm-watsonx"):
+        review_gates.append("AI_GOVERNANCE_POLICY_REVIEW")
+    if adapter == "cron" or adapter == "local-cron-status":
+        review_gates.append("EXISTING_CRON_BRIDGE_REQUIRED")
+
+    return {
+        "adapter": adapter,
+        "provider": provider,
+        "family": family,
+        "collector_kind": collector_kind,
+        "plan_sources": src.get("plan_sources", []),
+        "job_sources": src.get("job_sources", []),
+        "python_packages": packages,
+        "protocols": protocols,
+        "credential_refs": credential_refs,
+        "review_gates": sorted(set(review_gates)),
+        "output_contract": "write inert JSON/CSV/YAML evidence files, then run queue plan status/sources/evidence on those files",
+        "safe_to_run_inside_queue_plan": False,
+        "boundary": "collector contracts are documentation/facts only; queue plan does not execute collectors, load credentials, call APIs, run CLIs, tail logs, or mutate providers",
+    }
+
+
+def build_collectors_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
+    adapters = sorted(set(plan.get("source", {}).get("adapters", [])))
+    collectors = [collector_contract_for_adapter(a) for a in adapters]
+    return {
+        "schema": COLLECTORS_SCHEMA,
+        "status": "ok",
+        "source": plan.get("source", {}),
+        "collectors": collectors,
+        "safe_to_collect_here": False,
+        "execution_boundary": "contracts only; no SDK/API/CLI/WinRM/SMB/RPC/REST/GraphQL/Kubernetes API calls, no credentials, no logs, no mutations",
     }
 
 def detect_json_adapter(path: Path, text: str) -> Optional[Tuple[str, List[str]]]:
@@ -876,6 +1014,68 @@ def emit_json(obj: Dict[str, Any]) -> None:
     print(json.dumps(obj, sort_keys=True, separators=(",", ":")))
 
 
+
+def build_evidence_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a compact review bundle for plan/job evidence handoff.
+
+    This command is intentionally a static manifest over already supplied files.
+    It lets future collectors, reviewers, and automation see which facts are
+    plan definitions, which are runtime/job status observations, and which
+    policy/source contracts must be satisfied before anything can be trusted.
+    """
+    objects = plan.get("analysis", {}).get("objects", [])
+    plan_objects: List[Dict[str, Any]] = []
+    job_objects: List[Dict[str, Any]] = []
+    for obj in objects:
+        adapter = obj.get("adapter", "unknown")
+        item = {
+            "path": obj.get("path"),
+            "adapter": adapter,
+            "objects": obj.get("objects", []),
+            "confidence": obj.get("confidence", "low"),
+            "digest": obj.get("digest"),
+        }
+        if adapter in CLOUD_RUNTIME_ADAPTERS or str(ADAPTERS.get(adapter, {}).get("family", "")).endswith("runtime_status"):
+            job_objects.append(item)
+        else:
+            plan_objects.append(item)
+
+    return {
+        "schema": EVIDENCE_SCHEMA,
+        "status": "ok",
+        "source": plan.get("source", {}),
+        "evidence": {
+            "plan_definitions": plan_objects,
+            "runtime_job_status": job_objects,
+            "counts": {
+                "plan_definitions": len(plan_objects),
+                "runtime_job_status": len(job_objects),
+                "policy_requirements": len(plan.get("plan", {}).get("policy_requirements", [])),
+                "source_contracts": len(plan.get("plan", {}).get("source_contracts", [])),
+                "unsafe_refused": len(plan.get("analysis", {}).get("unsafe_refused", [])),
+                "needs_review": len(plan.get("analysis", {}).get("needs_review", [])),
+            },
+        },
+        "policy_requirements": plan.get("plan", {}).get("policy_requirements", []),
+        "source_contracts": plan.get("plan", {}).get("source_contracts", []),
+        "status_sources": plan.get("plan", {}).get("status_sources", []),
+        "review": {
+            "safe_to_stage": bool(plan.get("analysis", {}).get("safe_to_stage")),
+            "safe_to_apply": False,
+            "needs_review": plan.get("analysis", {}).get("needs_review", []),
+            "unsafe_refused": plan.get("analysis", {}).get("unsafe_refused", []),
+        },
+        "attestations": [
+            "queue plan evidence consumes supplied files only",
+            "no SDK/API/CLI calls",
+            "no WinRM/SMB/RPC/REST/GraphQL/Kubernetes API calls",
+            "no credential loading or secret reads",
+            "no log tailing or provider mutation",
+            "no job submission and no source execution",
+            "no parallel cron scheduler; cron evidence bridges to existing bashqueues cron support",
+        ],
+    }
+
 def human_scan(plan: Dict[str, Any]) -> None:
     print("queue plan scan")
     print(f"source: {plan['source']['path']}")
@@ -981,7 +1181,7 @@ def validate_plan(path: Path, json_mode: bool) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="queue-plan-ingest.py")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ["scan", "explain", "policy", "status", "sources"]:
+    for name in ["scan", "explain", "policy", "status", "sources", "evidence", "collectors"]:
         p = sub.add_parser(name)
         p.add_argument("path")
         p.add_argument("--json", "-j", action="store_true")
@@ -996,6 +1196,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     if a.command == "validate":
         return validate_plan(Path(a.path), a.json)
     plan = build_control_plan(Path(a.path))
+    if a.command == "collectors":
+        out = build_collectors_summary(plan)
+        if a.json:
+            emit_json(out)
+        else:
+            print("queue plan collectors")
+            if not out["collectors"]:
+                print("collectors: none")
+            for c in out["collectors"]:
+                pkgs = ",".join(c.get("python_packages", [])[:3]) or "none"
+                gates = ",".join(c.get("review_gates", [])) or "none"
+                print(f"  {c.get('provider')}: {c.get('adapter')} packages={pkgs} gates={gates}")
+            print("boundary: contracts only; queue plan does not run collectors, load credentials, call APIs/CLIs or mutate providers")
+        return 0
     if a.command == "status":
         out = {"schema": STATUS_SCHEMA, "status": "ok", "source": plan["source"], "status_sources": plan["plan"].get("status_sources", []), "policy_requirements": plan["plan"].get("policy_requirements", []), "safe_to_apply": False, "execution_boundary": "static exported status only; no SDK/API/CLI/WinRM/SMB/RPC/REST polling"}
         if a.json:
@@ -1019,6 +1233,21 @@ def main(argv: Optional[List[str]] = None) -> int:
             for contract in out["source_contracts"]:
                 print(f"  {contract.get('adapter')}: plans={','.join(contract.get('plan_sources', []))}; jobs={','.join(contract.get('job_sources', []))}")
             print("boundary: no collection in queue plan; no credentials, no network, no SDK/API/CLI/WinRM/SMB/RPC/REST calls")
+        return 0
+    if a.command == "evidence":
+        out = build_evidence_summary(plan)
+        if a.json:
+            emit_json(out)
+        else:
+            print("queue plan evidence")
+            counts = out["evidence"]["counts"]
+            print(f"plan_definitions: {counts['plan_definitions']}")
+            print(f"runtime_job_status: {counts['runtime_job_status']}")
+            print(f"policy_requirements: {counts['policy_requirements']}")
+            print(f"source_contracts: {counts['source_contracts']}")
+            print(f"needs_review: {counts['needs_review']}")
+            print(f"unsafe_refused: {counts['unsafe_refused']}")
+            print("boundary: supplied-file evidence only; no collection, credentials, network/API calls, logs, mutations or submissions")
         return 0
     if a.command == "policy":
         out = {"schema": POLICY_SCHEMA, "status": "ok", "source": plan["source"], "policy_requirements": plan["plan"].get("policy_requirements", []), "approval_gates": plan["plan"].get("approval_gates", []), "safe_to_apply": False}

@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(33|34|35|36|37|38|39|40|41|42|43|44|45|46|47|48|49|[5-9][0-9])"' queuebash.sh || fail 'version not bumped to 0.18.31 or newer'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(33|34|35|36|37|38|39|40|41|42|43|44|45|46|47|48|49|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'version not bumped to 0.18.31 or newer'
 grep -q '0.18.35 - APAC/China cloud provider contracts' CHANGELOG.md || fail 'CHANGELOG 0.18.31 entry missing'
 grep -q '0.18.35 APAC/China cloud provider contracts' README.md || fail 'README 0.18.31 entry missing'
 

@@ -3,8 +3,8 @@
 
 This test does not change provider behaviour. It verifies that provider/static
 tests cleaned by the Bob2 0.18.49/0.18.50 patch line keep a
-future-compatible QUEUEBASH_VERSION assertion, so future accepted patch bases do
-not fail solely because the release number advanced.
+three-digit-compatible QUEUEBASH_VERSION assertion, so future accepted patch bases do
+not fail solely because the release minor advanced beyond two digits.
 """
 from pathlib import Path
 import re
@@ -28,7 +28,7 @@ TARGETS = [
     "tests/provider_primary_source_validation_static.sh",
 ]
 
-future_guard = re.compile(r"\[5-9\]\[0-9\]")
+future_guard = re.compile(r"\[1-9\]\[0-9\]\[0-9\]")
 exact_queue_version = re.compile(r"grep\s+-q\s+['\"]QUEUEBASH_VERSION=\\?\"0\.18\.\d+\\?\"")
 
 for rel in TARGETS:
@@ -36,7 +36,7 @@ for rel in TARGETS:
     assert path.exists(), f"missing target static test: {rel}"
     text = path.read_text(encoding="utf-8")
     assert "QUEUEBASH_VERSION" in text, f"{rel} has no version guard to verify"
-    assert future_guard.search(text), f"{rel} lacks future-compatible [5-9][0-9] guard"
+    assert future_guard.search(text), f"{rel} lacks future-compatible ([5-9][0-9]|[1-9][0-9][0-9]) guard"
     assert "grep -Eq" in text, f"{rel} should use grep -Eq for version compatibility"
     assert not exact_queue_version.search(text), f"{rel} still uses exact stale QUEUEBASH_VERSION grep"
 

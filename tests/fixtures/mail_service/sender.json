@@ -1,0 +1,19 @@
+{
+  "check": "sender",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "identity_type": "domain_sender_reference",
+  "live_api_used": false,
+  "mailbox_content_accessed": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "mail_service",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.mail_service.sender.v1",
+  "sender_identity": "noreply@example.invalid",
+  "source": "fixture",
+  "suppression_list": "described_not_mutated"
+}

@@ -56,7 +56,7 @@ fi
 # Preserve a simple default prompt if caller has none.
 : "${PS1:='\u@\h:\w> '}"
 
-QUEUEBASH_VERSION="0.18.123"
+QUEUEBASH_VERSION="0.18.125"
 
 # -------------------------------------------------------------------
 # overdir / overfiles
@@ -3241,21 +3241,217 @@ _queue_user_exists() {
     getent passwd "$user" >/dev/null 2>&1
 }
 
+# [AI-PATCH | 2026-06-05 Bob30]: Windows/platform runtime fact surface.
+_queue_platform_detect_id() {
+    local ostype="${OSTYPE:-}" osrel="" cygwin_root=""
+    if [[ -r /proc/sys/kernel/osrelease ]]; then
+        osrel="$(cat /proc/sys/kernel/osrelease 2>/dev/null || true)"
+    fi
+    if [[ -n "${WSL_INTEROP:-}" ]] || printf '%s' "$osrel" | grep -qi 'microsoft.*wsl2\|wsl2'; then
+        printf 'wsl2\n'
+        return 0
+    fi
+    if printf '%s' "$osrel" | grep -qi 'microsoft'; then
+        printf 'wsl\n'
+        return 0
+    fi
+    case "$ostype" in
+        cygwin*) printf 'cygwin\n'; return 0 ;;
+        msys*|mingw*)
+            if command -v cygpath >/dev/null 2>&1; then
+                cygwin_root="$(cygpath -w / 2>/dev/null || true)"
+                case "$cygwin_root" in
+                    *Git*|*git*) printf 'git-bash\n'; return 0 ;;
+                esac
+            fi
+            if [[ -n "${MSYSTEM:-}" ]]; then
+                printf 'msys2\n'
+                return 0
+            fi
+            printf 'git-bash\n'
+            return 0
+            ;;
+    esac
+    if [[ "${OS:-}" == "Windows_NT" && -n "${PSModulePath:-}" && -z "${BASH_VERSION:-}" ]]; then
+        printf 'native-windows-powershell\n'
+        return 0
+    fi
+    if [[ "$ostype" == linux* ]] || [[ "$(uname -s 2>/dev/null || true)" == "Linux" ]]; then
+        printf 'linux\n'
+        return 0
+    fi
+    printf 'unknown\n'
+}
+
+_queue_platform_facts_values() {
+    local id="${1:-$(_queue_platform_detect_id)}"
+    local family="posix" tier="supported_linux_posix" runtime_supported="true" worker_supported="true" note="Linux/POSIX runtime"
+    case "$id" in
+        linux)
+            family="posix"; tier="supported_linux_posix"; runtime_supported="true"; worker_supported="true"; note="Linux/POSIX runtime" ;;
+        wsl2)
+            family="windows_host_linux_guest"; tier="W1"; runtime_supported="true"; worker_supported="true"; note="first viable Windows route: run inside WSL2 Linux guest" ;;
+        wsl)
+            family="windows_host_linux_guest"; tier="W1_legacy_wsl"; runtime_supported="true"; worker_supported="false"; note="WSL detected; WSL2 is the documented first viable Windows route" ;;
+        git-bash|msys2|cygwin)
+            family="posix_on_windows"; tier="W2"; runtime_supported="false"; worker_supported="false"; note="constrained client/dev shell only; no worker/service support claim" ;;
+        native-windows-powershell)
+            family="native_windows"; tier="W3"; runtime_supported="false"; worker_supported="false"; note="future adapter required; native PowerShell/Windows Service runtime not supported yet" ;;
+        *)
+            family="unknown"; tier="unknown"; runtime_supported="false"; worker_supported="false"; note="unknown runtime; no support claim" ;;
+    esac
+    printf '%s\t%s\t%s\t%s\t%s\n' "$family" "$tier" "$runtime_supported" "$worker_supported" "$note"
+}
+
+_queue_platform_json_facts() {
+    local id="${1:-$(_queue_platform_detect_id)}" family tier runtime_supported worker_supported note shell_name policy_ref
+    IFS=$'\t' read -r family tier runtime_supported worker_supported note < <(_queue_platform_facts_values "$id")
+    shell_name="${SHELL:-${COMSPEC:-unknown}}"
+    policy_ref="policies.d/platform/windows-runtime-parity.json"
+    printf '{"schema":"queuebash.platform_facts.v1","platform_id":"%s","family":"%s","support_tier":"%s","runtime_supported":%s,"worker_runtime_supported":%s,"shell":"%s","ostype":"%s","os":"%s","wsl_interop_present":%s,"queue_root":"%s","policy_ref":"%s","note":"%s"}\n' \
+        "$(_queue_json_escape "$id")" \
+        "$(_queue_json_escape "$family")" \
+        "$(_queue_json_escape "$tier")" \
+        "$runtime_supported" \
+        "$worker_supported" \
+        "$(_queue_json_escape "$shell_name")" \
+        "$(_queue_json_escape "${OSTYPE:-}")" \
+        "$(_queue_json_escape "${OS:-}")" \
+        "$([[ -n "${WSL_INTEROP:-}" ]] && printf true || printf false)" \
+        "$(_queue_json_escape "$(_queue_root)")" \
+        "$(_queue_json_escape "$policy_ref")" \
+        "$(_queue_json_escape "$note")"
+}
+
+_queue_platform_doctor_command() {
+    local json=0 id family tier runtime_supported worker_supported note root status="ok" checks="" check_count=0 fail_count=0 warn_count=0
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            --help|-h)
+                echo "Usage: queue platform doctor [--json]"
+                echo "       Reports Windows/WSL runtime readiness without enabling unsupported workers."
+                return 0
+                ;;
+            *) echo "queue platform doctor: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    id="$(_queue_platform_detect_id)"
+    root="$(_queue_root)"
+    IFS=$'\t' read -r family tier runtime_supported worker_supported note < <(_queue_platform_facts_values "$id")
+    _queue_platform_doctor_add_check() {
+        local name="$1" result="$2" message="$3"
+        check_count=$((check_count + 1))
+        case "$result" in
+            fail) fail_count=$((fail_count + 1)); status="blocked" ;;
+            warn) warn_count=$((warn_count + 1)); [[ "$status" == "ok" ]] && status="warning" ;;
+        esac
+        checks="${checks}{\"name\":\"$(_queue_json_escape "$name")\",\"result\":\"$(_queue_json_escape "$result")\",\"message\":\"$(_queue_json_escape "$message")\"},"
+    }
+    case "$id" in
+        linux)
+            _queue_platform_doctor_add_check "linux_posix_runtime" "ok" "Linux/POSIX runtime detected; this is not native Windows." ;;
+        wsl2)
+            _queue_platform_doctor_add_check "wsl2_runtime" "ok" "WSL2 Linux guest detected; this is the first viable Windows runtime route." ;;
+        wsl)
+            _queue_platform_doctor_add_check "legacy_wsl_runtime" "warn" "WSL detected, but WSL2 is the documented first viable Windows route." ;;
+        git-bash|msys2|cygwin)
+            _queue_platform_doctor_add_check "posix_on_windows_worker_block" "fail" "Compatibility shell detected; worker/service/runtime mutation support is not claimed." ;;
+        native-windows-powershell)
+            _queue_platform_doctor_add_check "native_windows_worker_block" "fail" "Native PowerShell/Windows Service runtime needs future adapters before support." ;;
+        *)
+            _queue_platform_doctor_add_check "unknown_platform_block" "fail" "Unknown platform; no worker/runtime support claim." ;;
+    esac
+    if [[ "$id" == "wsl2" || "$id" == "wsl" ]]; then
+        case "$root" in
+            /mnt/*)
+                _queue_platform_doctor_add_check "wsl_queue_root_location" "warn" "Queue root is under /mnt; prefer the WSL Linux filesystem for locks, modes, and path semantics." ;;
+            *)
+                _queue_platform_doctor_add_check "wsl_queue_root_location" "ok" "Queue root is outside /mnt; this matches the WSL2 quickstart guidance." ;;
+        esac
+    fi
+    if [[ -r "${BASH_SOURCE[0]}" ]] && grep -Iq . "${BASH_SOURCE[0]}" 2>/dev/null && grep -q $'\r' "${BASH_SOURCE[0]}" 2>/dev/null; then
+        _queue_platform_doctor_add_check "line_endings" "warn" "queuebash.sh appears to contain CRLF line endings; LF is recommended for Bash parsing."
+    else
+        _queue_platform_doctor_add_check "line_endings" "ok" "queuebash.sh line endings look Bash-safe."
+    fi
+    checks="[${checks%,}]"
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.platform_doctor.v1","platform_id":"%s","support_tier":"%s","status":"%s","runtime_supported":%s,"worker_runtime_supported":%s,"queue_root":"%s","policy_ref":"policies.d/platform/windows-runtime-parity.json","summary":{"checks":%s,"failures":%s,"warnings":%s},"checks":%s}\n' \
+            "$(_queue_json_escape "$id")" "$(_queue_json_escape "$tier")" "$(_queue_json_escape "$status")" \
+            "$runtime_supported" "$worker_supported" "$(_queue_json_escape "$root")" \
+            "$check_count" "$fail_count" "$warn_count" "$checks"
+        return 0
+    fi
+    echo "platform doctor: $status"
+    echo "platform:        $id"
+    echo "tier:            $tier"
+    echo "worker support:  $worker_supported"
+    echo "queue root:      $root"
+    echo "checks:          $check_count (failures=$fail_count warnings=$warn_count)"
+}
+
+_queue_platform_command() {
+    local json=0 id family tier runtime_supported worker_supported note
+    case "${1:-}" in
+        doctor|check|diagnose)
+            shift
+            _queue_platform_doctor_command "$@"
+            return $?
+            ;;
+    esac
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j) json=1; shift ;;
+            --help|-h)
+                _queue_resource_fetch_i18nl_command --name platform-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
+                return 0
+                ;;
+            *) echo "queue platform: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    id="$(_queue_platform_detect_id)"
+    IFS=$'\t' read -r family tier runtime_supported worker_supported note < <(_queue_platform_facts_values "$id")
+    if [[ "$json" -eq 1 ]]; then
+        _queue_platform_json_facts "$id"
+        return 0
+    fi
+    echo "platform: $id"
+    echo "family:   $family"
+    echo "tier:     $tier"
+    echo "runtime:  $runtime_supported"
+    echo "worker:   $worker_supported"
+    echo "note:     $note"
+}
+
+
 _queue_select_user_queue() {
     local user="${1:-}"
     local user_home selected_root
 
     _queue_user_exists "$user" || {
-        echo "queue user: no such user: $user" >&2
+        if [[ "${QUEUEBASH_OUTPUT_JSON:-0}" == "1" ]]; then
+            _queue_json_error "no_such_user" "queue user: no such user: $user" "queue [--json] user USER [command] [args...]" 2
+        else
+            echo "queue user: no such user: $user" >&2
+        fi
         return 2
     }
 
     user_home="$(_queue_home_for_user "$user")" || {
-        echo "queue user: cannot determine home for user: $user" >&2
+        if [[ "${QUEUEBASH_OUTPUT_JSON:-0}" == "1" ]]; then
+            _queue_json_error "user_home_unavailable" "queue user: cannot determine home for user: $user" "queue [--json] user USER [command] [args...]" 2
+        else
+            echo "queue user: cannot determine home for user: $user" >&2
+        fi
         return 2
     }
     [[ -n "$user_home" ]] || {
-        echo "queue user: empty home for user: $user" >&2
+        if [[ "${QUEUEBASH_OUTPUT_JSON:-0}" == "1" ]]; then
+            _queue_json_error "user_home_empty" "queue user: empty home for user: $user" "queue [--json] user USER [command] [args...]" 2
+        else
+            echo "queue user: empty home for user: $user" >&2
+        fi
         return 2
     }
 
@@ -4739,13 +4935,15 @@ _queue_class_available() {
     )
     rc="$?"
     if [[ "$rc" -ne 0 ]]; then
-        case "$rc" in
-            23) _queue_log_event "resource_blocked" "$id" "$name" "pending" "class=$class reason=asset_preflight" ;;
-            24) _queue_log_event "resource_blocked" "$id" "$name" "pending" "class=$class reason=preflight" ;;
-            25) : ;; # global claim helper already logged the claim key and holder summary
-            10|11|12|13) _queue_log_event "class_blocked" "$id" "$name" "pending" "class=$class rc=$rc" ;;
-            *) _queue_log_event "class_blocked" "$id" "$name" "pending" "class=$class rc=$rc" ;;
-        esac
+        if [[ "${QUEUEBASH_SUPPRESS_CLASS_AVAILABLE_EVENTS:-0}" != "1" ]]; then
+            case "$rc" in
+                23) _queue_log_event "resource_blocked" "$id" "$name" "pending" "class=$class reason=asset_preflight" ;;
+                24) _queue_log_event "resource_blocked" "$id" "$name" "pending" "class=$class reason=preflight" ;;
+                25) : ;; # global claim helper already logged the claim key and holder summary
+                10|11|12|13) _queue_log_event "class_blocked" "$id" "$name" "pending" "class=$class rc=$rc" ;;
+                *) _queue_log_event "class_blocked" "$id" "$name" "pending" "class=$class rc=$rc" ;;
+            esac
+        fi
         return 1
     fi
     return 0
@@ -5540,7 +5738,8 @@ _queue_help_json() {
     # Keep this catalog broad enough for frontends to discover the dispatcher
     # without scraping prose help. Aliases are intentionally omitted; canonical
     # command names below are the stable automation surface.
-    printf '{"schema":"queuebash.command_catalog.v1","version":"%s","queue_root":"%s","json_switches":["--json","-j"],"global_json":true,"commands":["acl","ai","ask","authorisation","backup","class-infer","cloud","cloud-signals","cluster","code","cron","dev","draft","enterprise","env","generate","global","help","key-provider","keygen","keys","limits","list","plan","plugins","profile","profile-signature","queue-user","queue-users","remote","remote-admin","resource-fetch-i18nl","reevaluate","run","secrets","status","stats","submit","submit-at","submit-in","token","vcs","version","worker"]}\n' "$(_queue_json_escape "${QUEUEBASH_VERSION:-}")" "$(_queue_json_escape "$root")"
+    printf '{"schema":"queuebash.command_catalog.v1","version":"%s","queue_root":"%s","json_switches":["--json","-j"],"global_json":true,"commands":["acl","ai","ask","authorisation","backup","cancel","class-infer","clean-logs","clear","cloud","cloud-signals","cluster","code","compress-logs","cron","delete","dev","draft","enterprise","env","events","generate","global","health","help","hooks","key-provider","keygen","keys","limits","list","metrics","pause","pids","plan","platform","plugins","policies","priority","profile","profile-signature","queue-user","queue-users","reevaluate","remote","remote-admin","resubmit","resource-fetch-i18nl","restore","run","secrets","status","stats","submit","submit-at","submit-in","token","unpause","vcs","version","worker"]}
+' "$(_queue_json_escape "${QUEUEBASH_VERSION:-}")" "$(_queue_json_escape "$root")"
 }
 _queue_json_error() {
     local code="${1:-error}" message="${2:-queue command failed}" usage="${3:-}" rc="${4:-2}"
@@ -5840,7 +6039,7 @@ _queue_code_sign_command() {
             --signer-root) signer_root="${2:-}"; shift 2 ;;
             --all) all=1; shift ;;
             --json|-j) json=1; shift ;;
-            --help|-h) echo "Usage: queue code sign --all [--tree DIR] [--key NAME] [--signer-root DIR] [--json]"; return 0 ;;
+            --help|-h) _queue_resource_fetch_i18nl_command --name code-sign-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"; return 0 ;;
             *) echo "queue code sign: unexpected argument: $1" >&2; return 2 ;;
         esac
     done
@@ -5864,7 +6063,7 @@ _queue_code_verify_command() {
             --tree) tree="${2:-}"; shift 2 ;;
             --mode|--require) mode="${2:-}"; shift 2 ;;
             --json|-j) json=1; shift ;;
-            --help|-h) echo "Usage: queue code verify [--tree DIR] [--mode off|warn|enforce] [--json]"; return 0 ;;
+            --help|-h) _queue_resource_fetch_i18nl_command --name code-verify-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"; return 0 ;;
             *) echo "queue code verify: unexpected argument: $1" >&2; return 2 ;;
         esac
     done
@@ -5895,7 +6094,7 @@ _queue_code_audit_command() {
             --tree) tree="${2:-}"; shift 2 ;;
             --mode|--require) mode="${2:-}"; shift 2 ;;
             --json|-j) json=1; shift ;;
-            --help|-h) echo "Usage: queue code audit [--tree DIR] [--mode off|warn|enforce] [--json]"; return 0 ;;
+            --help|-h) _queue_resource_fetch_i18nl_command --name code-audit-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"; return 0 ;;
             *) echo "queue code audit: unexpected argument: $1" >&2; return 2 ;;
         esac
     done
@@ -5971,7 +6170,7 @@ _queue_code_trust_command() {
             --public-key) pub="${2:-}"; shift 2 ;;
             --shared|--system) shared=1; shift ;;
             --personal) shared=0; shift ;;
-            --help|-h) echo "Usage: queue code trust --public-key FILE [--shared|--personal]"; return 0 ;;
+            --help|-h) _queue_resource_fetch_i18nl_command --name code-trust-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"; return 0 ;;
             *) [[ -z "$pub" ]] && { pub="$1"; shift; } || { echo "queue code trust: unexpected argument: $1" >&2; return 2; } ;;
         esac
     done
@@ -5999,7 +6198,7 @@ _queue_code_command() {
         audit|components|inventory) _queue_code_audit_command "$@" ;;
         trust) _queue_code_trust_command "$@" ;;
         policy) _queue_code_signing_source_config; echo "mode=$(_queue_code_signature_mode)"; echo "trusted_sha=$(_queue_code_trusted_sha_list)" ;;
-        help|--help|-h|"") echo "Usage: queue code sign|verify|audit|trust|policy" ;;
+        help|--help|-h|"") _queue_resource_fetch_i18nl_command --name code-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}" ;;
         *) echo "queue code: unknown subcommand: $sub" >&2; return 2 ;;
     esac
 }
@@ -6578,6 +6777,127 @@ _queue_cleared_jobs_list() {
     rm -f "$tmp"
     printf 'cleared=%s states=%s\n' "$count" "$states"
 }
+_queue_job_pending_dispatch_diagnose_json() {
+    local f="$1"
+    local root="$(_queue_root)"
+    local id state class class_file now not_before deps dep dep_state dep_first=1
+    local blocked=0 status="runnable" reason="no dispatch blocker detected" class_rc=0 class_out="" tmp
+
+    id="$(basename "$f" .job)"
+    state="$(_queue_state_for_job_path "$f" "$root")"
+    class="$(_queue_class_for_job_file "$f" 2>/dev/null || echo DEFAULT)"
+    class_file="$(_queue_class_file "${class:-DEFAULT}")"
+
+    printf '{'
+    printf '"schema":"queuebash.dispatch_diagnosis.v1"'
+    printf ',"qid":"%s"' "$(_queue_json_escape "$id")"
+    printf ',"state":"%s"' "$(_queue_json_escape "$state")"
+
+    if [[ "$state" != "pending" ]]; then
+        printf ',"pending":false,"status":"not_pending","reason":"dispatch diagnosis only applies to pending jobs"}'
+        return 0
+    fi
+
+    now="$(_queue_now_epoch)"
+    not_before="$(_queue_file_not_before_epoch "$f")"
+    if [[ "$not_before" =~ ^[0-9]+$ && "$not_before" -gt "$now" ]]; then
+        blocked=1
+        status="blocked"
+        reason="scheduled for the future"
+    fi
+
+    if [[ ! -f "$class_file" ]]; then
+        blocked=1
+        status="blocked"
+        reason="class file missing"
+    fi
+
+    deps="$(_queue_file_depends_after_success "$f")"
+    if [[ -n "$deps" ]]; then
+        for dep in $deps; do
+            dep_state="$(_queue_dep_token_status "$dep")"
+            case "$dep_state" in
+                done) ;;
+                *) blocked=1; status="blocked"; [[ "$reason" == "no dispatch blocker detected" ]] && reason="dependency not satisfied" ;;
+            esac
+        done
+    fi
+
+    tmp="$(mktemp)"
+    if QUEUEBASH_SUPPRESS_CLASS_AVAILABLE_EVENTS=1 _queue_class_available "$f" >"$tmp" 2>&1; then
+        class_rc=0
+    else
+        class_rc="$?"
+        blocked=1
+        status="blocked"
+        case "$class_rc" in
+            23) reason="asset preflight rejected job" ;;
+            24) reason="class dynamic preflight rejected job" ;;
+            25) reason="global claim rejected job" ;;
+            10|11|12|13) reason="class/resource claim unavailable" ;;
+            *) reason="class/resource gate rejected job" ;;
+        esac
+    fi
+    class_out="$(cat "$tmp")"
+    rm -f "$tmp"
+
+    printf ',"pending":true'
+    printf ',"status":"%s"' "$(_queue_json_escape "$status")"
+    printf ',"reason":"%s"' "$(_queue_json_escape "$reason")"
+    printf ',"class":"%s"' "$(_queue_json_escape "${class:-DEFAULT}")"
+    printf ',"class_file":"%s"' "$(_queue_json_escape "$class_file")"
+    printf ',"class_file_exists":%s' "$([[ -f "$class_file" ]] && printf true || printf false)"
+    printf ',"schedule":{"now_epoch":%s,"not_before_epoch":%s,"due":%s}' \
+        "$now" "${not_before:-0}" "$([[ ! "$not_before" =~ ^[0-9]+$ || "$not_before" -le "$now" ]] && printf true || printf false)"
+    printf ',"dependencies":['
+    dep_first=1
+    for dep in $deps; do
+        dep_state="$(_queue_dep_token_status "$dep")"
+        _queue_json_comma dep_first
+        printf '{"token":"%s","state":"%s","satisfied":%s}' \
+            "$(_queue_json_escape "$dep")" "$(_queue_json_escape "$dep_state")" "$([[ "$dep_state" == "done" ]] && printf true || printf false)"
+    done
+    printf ']'
+    printf ',"class_resource":{"available":%s,"rc":%s,"output":"%s"}' \
+        "$([[ "$class_rc" -eq 0 ]] && printf true || printf false)" "$class_rc" "$(_queue_json_escape "$class_out")"
+    printf ',"system_modified":false}'
+}
+
+_queue_find_jobs_by_class() {
+    local class="$1" root="$(_queue_root)" state f jclass
+    [[ -n "$class" ]] || return 1
+    for state in pending running paused done failed pol_blocked policy_blocked interrupted cancelled deleted; do
+        if [[ "$state" == "pending" ]]; then
+            while IFS= read -r f; do
+                [[ -f "$f" ]] || continue
+                jclass="$(_queue_class_for_job_file "$f" 2>/dev/null || _queue_job_var_value "$f" JOB_CLASS 2>/dev/null || echo DEFAULT)"
+                [[ "$jclass" == "$class" ]] && printf '%s\n' "$f"
+            done < <(_queue_pending_job_files "$root" 2>/dev/null || true)
+            continue
+        fi
+        shopt -s nullglob
+        for f in "$root/$state"/*.job; do
+            [[ -f "$f" ]] || continue
+            jclass="$(_queue_class_for_job_file "$f" 2>/dev/null || _queue_job_var_value "$f" JOB_CLASS 2>/dev/null || echo DEFAULT)"
+            [[ "$jclass" == "$class" ]] && printf '%s\n' "$f"
+        done
+        shopt -u nullglob
+    done
+}
+
+_queue_explain_multi_json_for_class() {
+    local query="$1" tail_lines="${2:-20}" f first=0 count=0 id
+    local -a records=()
+    while IFS= read -r f; do [[ -f "$f" ]] && records+=("$f"); done < <(_queue_find_jobs_by_class "$query" 2>/dev/null || true)
+    printf '{"schema":"queuebash.explain.multi.v1","query":"%s","query_type":"class","matched_count":%s,"records":[' "$(_queue_json_escape "$query")" "${#records[@]}"
+    for f in "${records[@]}"; do
+        id="$(basename "$f" .job)"
+        _queue_json_comma first
+        _queue_status_job "$id" --json --tail "$tail_lines"
+    done
+    printf ']}\n'
+}
+
 _queue_status_job() {
     if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
         _queue_resource_fetch_i18nl_command --name status-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
@@ -6665,6 +6985,10 @@ _queue_status_job() {
             "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED_BY 2>/dev/null || true)")" \
             "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED_POLICY_STATEMENT 2>/dev/null || true)")" \
             "$(_queue_json_escape "$(_queue_job_var_value "$f" JOB_CLEARED_STAGE 2>/dev/null || true)")"
+        if [[ "$state" == "pending" ]]; then
+            printf ',"dispatch_diagnosis":'
+            _queue_job_pending_dispatch_diagnose_json "$f"
+        fi
         printf ',"log":{"path":"%s","size_bytes":%s,"tail_lines":%s,"tail":"%s"}' \
             "$(_queue_json_escape "$log")" "${log_size:-0}" "$tail_lines" "$(_queue_json_escape "$tail_text")"
         printf ',"job_file":"%s"' "$(_queue_json_escape "$f")"
@@ -12582,7 +12906,7 @@ _queue_health_pending_cycle_warnings() {
     return 0
 }
 
-_queue_health_report() {
+_queue_health_report_text() {
     local fix=0
     local deep=0
     local root="$(_queue_root)"
@@ -12748,6 +13072,106 @@ _queue_health_report() {
     echo "Health summary: errors=$errors warnings=$warnings fix=$fix deep=$deep"
 
     [[ "$errors" -eq 0 ]]
+}
+
+
+_queue_health_report_json_from_text() {
+    local rc="$1" fix="$2" deep="$3" text_file="$4"
+    local root="$(_queue_root)"
+    local errors=0 warnings=0 fixes=0 status="ok" line level first=1
+    local summary
+
+    summary="$(grep 'Health summary:' "$text_file" 2>/dev/null | tail -1 || true)"
+    if [[ "$summary" =~ errors=([0-9]+) ]]; then errors="${BASH_REMATCH[1]}"; fi
+    if [[ "$summary" =~ warnings=([0-9]+) ]]; then warnings="${BASH_REMATCH[1]}"; fi
+    fixes="$(grep -c '^FIX ' "$text_file" 2>/dev/null || true)"
+    [[ -z "$fixes" ]] && fixes=0
+
+    if [[ "$errors" -gt 0 || "$rc" -ne 0 ]]; then
+        status="unhealthy"
+    elif [[ "$warnings" -gt 0 ]]; then
+        status="degraded"
+    else
+        status="ok"
+    fi
+
+    printf '{"schema":"queuebash.health.v1","ok":%s,"status":"%s","queue_root":"%s","version":"%s","fix":%s,"deep":%s,"timestamp":"%s","summary":{"errors":%s,"warnings":%s,"fixes":%s},"checks":[' \
+        "$([[ "$rc" -eq 0 ]] && printf true || printf false)" \
+        "$(_queue_json_escape "$status")" \
+        "$(_queue_json_escape "$root")" \
+        "$(_queue_json_escape "${QUEUEBASH_VERSION:-}")" \
+        "$([[ "$fix" -eq 1 ]] && printf true || printf false)" \
+        "$([[ "$deep" -eq 1 ]] && printf true || printf false)" \
+        "$(_queue_json_escape "$(_queue_now_iso)")" \
+        "$errors" "$warnings" "$fixes"
+
+    while IFS= read -r line; do
+        case "$line" in
+            OK\ *) level="ok" ;;
+            BAD\ *) level="bad" ;;
+            WARN\ *) level="warn" ;;
+            INFO\ *) level="info" ;;
+            FIX\ *) level="fix" ;;
+            "=== "*) level="section" ;;
+            "Health summary:"*) level="summary" ;;
+            *) [[ -z "$line" ]] && continue; level="detail" ;;
+        esac
+        if [[ "$first" -eq 0 ]]; then printf ','; fi
+        first=0
+        printf '{"level":"%s","message":"%s"}' "$(_queue_json_escape "$level")" "$(_queue_json_escape "$line")"
+    done < "$text_file"
+
+    printf ']}'
+    printf '\n'
+}
+
+_queue_health_report_json_usage_error() {
+    local msg="$1"
+    printf '{"schema":"queuebash.health.v1","ok":false,"status":"usage_error","queue_root":"%s","version":"%s","error":{"code":"unexpected_argument","message":"%s"}}\n' \
+        "$(_queue_json_escape "$(_queue_root)")" \
+        "$(_queue_json_escape "${QUEUEBASH_VERSION:-}")" \
+        "$(_queue_json_escape "$msg")"
+}
+
+_queue_health_report() {
+    local json_output=0 fix=0 deep=0 arg text_file rc
+    local text_args=()
+
+    for arg in "$@"; do
+        case "$arg" in
+            --json|-j) json_output=1 ;;
+            --fix) fix=1; text_args+=("--fix") ;;
+            --deep) deep=1; text_args+=("--deep") ;;
+            --help|-h)
+                if [[ "$json_output" -eq 1 ]]; then
+                    printf '{"schema":"queuebash.health.v1","ok":true,"status":"help","queue_root":"%s","version":"%s","usage":"queue health [--json] [--fix] [--deep]"}\n' "$(_queue_json_escape "$(_queue_root)")" "$(_queue_json_escape "${QUEUEBASH_VERSION:-}")"
+                    return 0
+                fi
+                _queue_health_report_text "$arg"
+                return $?
+                ;;
+            *)
+                if [[ "$json_output" -eq 1 ]]; then
+                    _queue_health_report_json_usage_error "queue health: unknown option: $arg"
+                else
+                    echo "queue health: unknown option: $arg" >&2
+                fi
+                return 2
+                ;;
+        esac
+    done
+
+    if [[ "$json_output" -ne 1 ]]; then
+        _queue_health_report_text "$@"
+        return $?
+    fi
+
+    text_file="$(mktemp "${TMPDIR:-/tmp}/queue-health-json.XXXXXX")" || return 1
+    _queue_health_report_text "${text_args[@]}" > "$text_file" 2>&1
+    rc=$?
+    _queue_health_report_json_from_text "$rc" "$fix" "$deep" "$text_file"
+    rm -f -- "$text_file"
+    return "$rc"
 }
 
 _queue_restore_print_non_deleted_matches() {
@@ -13215,8 +13639,116 @@ _queue_cron_test() {
     "$ticker" --dryrun "$@"
 }
 
+_queue_cron_security_preview_json() {
+    local class="${1:-DEFAULT}" class_file sandbox caps runner workdir policy_source network_warning shell_warning
+    class_file="$(_queue_class_file "$class" 2>/dev/null || true)"
+    sandbox="unknown"; caps=""; runner="auto"; workdir="submit-time"; policy_source="class-defaults"
+    if [[ -f "$class_file" ]]; then
+        sandbox="$(_queue_job_field_fast "$class_file" SANDBOX_LEVEL 2>/dev/null || echo unknown)"
+        caps="$(_queue_job_field_fast "$class_file" RUNTIME_CAPS 2>/dev/null || true)"
+        runner="$(_queue_job_field_fast "$class_file" RUNNER 2>/dev/null || echo auto)"
+        policy_source="$class_file"
+    fi
+    network_warning="review class/runtime caps before enabling networked cron payloads"
+    shell_warning="cron command is shell text; inspect quoting and policy before activation"
+    printf '{"sandbox":"%s","caps":"%s","runner":"%s","working_directory":"%s","policy_source":"%s","network_warning":"%s","shell_warning":"%s"}' \
+        "$(_queue_json_escape "$sandbox")" "$(_queue_json_escape "$caps")" "$(_queue_json_escape "$runner")" \
+        "$(_queue_json_escape "$workdir")" "$(_queue_json_escape "$policy_source")" \
+        "$(_queue_json_escape "$network_warning")" "$(_queue_json_escape "$shell_warning")"
+}
+
+_queue_cron_entries_json_for_file() {
+    local owner="$1" file="$2" raw line min hour dom mon dow cmd class val generated_class n=0 first=0 active_class="" active_auth=""
+    printf '['
+    [[ -r "$file" ]] || { printf ']'; return 0; }
+    while IFS= read -r raw || [[ -n "$raw" ]]; do
+        if val="$(_queue_cron_comment_directive_value "$raw" class 2>/dev/null)"; then active_class="$val"; continue; fi
+        if val="$(_queue_cron_comment_directive_value "$raw" authorisation 2>/dev/null)" || val="$(_queue_cron_comment_directive_value "$raw" authorization 2>/dev/null)"; then active_auth="$val"; continue; fi
+        line="${raw%%#*}"
+        line="${line#${line%%[![:space:]]*}}"
+        line="${line%${line##*[![:space:]]}}"
+        [[ -z "$line" ]] && continue
+        _queue_cron_is_assignment_line "$line" && continue
+        if [[ "$line" == @* ]]; then
+            local macro rest
+            macro="${line%%[[:space:]]*}"; rest="${line#${macro}}"; rest="${rest#${rest%%[![:space:]]*}}"
+            case "$macro" in
+                @hourly) min="0"; hour="*"; dom="*"; mon="*"; dow="*"; cmd="$rest" ;;
+                @daily|@midnight) min="0"; hour="0"; dom="*"; mon="*"; dow="*"; cmd="$rest" ;;
+                @weekly) min="0"; hour="0"; dom="*"; mon="*"; dow="0"; cmd="$rest" ;;
+                @monthly) min="0"; hour="0"; dom="1"; mon="*"; dow="*"; cmd="$rest" ;;
+                @yearly|@annually) min="0"; hour="0"; dom="1"; mon="1"; dow="*"; cmd="$rest" ;;
+                @reboot) min="@reboot"; hour=""; dom=""; mon=""; dow=""; cmd="$rest" ;;
+                *) continue ;;
+            esac
+        else
+            read -r min hour dom mon dow cmd <<< "$line"
+            [[ -n "${cmd:-}" ]] || continue
+        fi
+        n=$((n+1))
+        class="${active_class:-}"
+        if [[ -z "$class" ]]; then generated_class="$(_queue_cron_stable_class "$owner" "$cmd")"; class="$generated_class"; else generated_class=""; fi
+        _queue_json_comma first
+        printf '{"entry":%s,"owner":"%s","line":"%s","schedule":{"minute":"%s","hour":"%s","day_of_month":"%s","month":"%s","day_of_week":"%s"},"command":"%s","class":"%s","class_source":"%s","authorisation":"%s","security_preview":' \
+            "$n" "$(_queue_json_escape "$owner")" "$(_queue_json_escape "$raw")" \
+            "$(_queue_json_escape "$min")" "$(_queue_json_escape "$hour")" "$(_queue_json_escape "$dom")" "$(_queue_json_escape "$mon")" "$(_queue_json_escape "$dow")" \
+            "$(_queue_json_escape "$cmd")" "$(_queue_json_escape "$class")" "$([[ -n "$generated_class" ]] && echo generated || echo explicit)" "$(_queue_json_escape "$active_auth")"
+        _queue_cron_security_preview_json "$class"
+        printf '}'
+    done < "$file"
+    printf ']'
+}
+
+_queue_cron_status_json() {
+    local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" state="$(_queue_cron_state_dir)" ticker f files=0 entries=0 sfiles=0 sentries=0 n
+    ticker="$(_queue_cron_ticker_path)"
+    if [[ -d "$d" ]]; then for f in "$d"/*; do [[ -f "$f" ]] || continue; files=$((files+1)); n="$(_queue_cron_count_active_entries_file "$f")"; entries=$((entries+n)); done; fi
+    if [[ -d "$d2" ]]; then for f in "$d2"/*; do [[ -f "$f" ]] || continue; sfiles=$((sfiles+1)); n="$(_queue_cron_count_active_entries_file "$f")"; sentries=$((sentries+n)); done; fi
+    printf '{"schema":"queuebash.cron.status.v1","ok":true,"queue_root":"%s","spool_dir":"%s","system_dir":"%s","state_dir":"%s","ticker":"%s","user_files":%s,"user_entries":%s,"system_files":%s,"system_entries":%s,"last_marker":"%s","services":{"timer":"%s","cron_service":"%s","daemon_service":"%s"},"system_modified":false}\n' \
+        "$(_queue_json_escape "$(_queue_root)")" "$(_queue_json_escape "$d")" "$(_queue_json_escape "$d2")" "$(_queue_json_escape "$state")" "$(_queue_json_escape "$ticker")" \
+        "$files" "$entries" "$sfiles" "$sentries" "$(_queue_json_escape "$(_queue_cron_latest_marker)")" \
+        "$(_queue_json_escape "$(_queue_cron_systemd_unit_state bashqueues-cron.timer)")" "$(_queue_json_escape "$(_queue_cron_systemd_unit_state bashqueues-cron.service)")" "$(_queue_json_escape "$(_queue_cron_systemd_unit_state bashqueues-daemon.service)")"
+}
+
+_queue_cron_list_json() {
+    local list_all="${1:-0}" d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" selected="${QUEUEBASH_SELECTED_USER:-}" f first=0 owner
+    printf '{"schema":"queuebash.cron.list.v1","ok":true,"spool_dir":"%s","system_dir":"%s","files":[' "$(_queue_json_escape "$d")" "$(_queue_json_escape "$d2")"
+    if [[ -d "$d" ]]; then
+        if [[ -n "$selected" && "$list_all" -ne 1 ]]; then
+            f="$d/$selected"; [[ -f "$f" ]] && { printf '{"scope":"user","owner":"%s","path":"%s","entries":' "$(_queue_json_escape "$selected")" "$(_queue_json_escape "$f")"; _queue_cron_entries_json_for_file "$selected" "$f"; printf '}'; first=1; }
+        else
+            for f in "$d"/*; do [[ -f "$f" ]] || continue; _queue_json_comma first; owner="$(basename "$f")"; printf '{"scope":"user","owner":"%s","path":"%s","entries":' "$(_queue_json_escape "$owner")" "$(_queue_json_escape "$f")"; _queue_cron_entries_json_for_file "$owner" "$f"; printf '}'; done
+        fi
+    fi
+    if [[ -d "$d2" ]]; then
+        for f in "$d2"/*; do [[ -f "$f" ]] || continue; _queue_json_comma first; owner="system:$(basename "$f")"; printf '{"scope":"system","owner":"%s","path":"%s","entries":' "$(_queue_json_escape "$owner")" "$(_queue_json_escape "$f")"; _queue_cron_entries_json_for_file "$owner" "$f"; printf '}'; done
+    fi
+    printf '],"system_modified":false}\n'
+}
+
+_queue_cron_explain_json() {
+    local target="${1:-}" d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" selected="${QUEUEBASH_SELECTED_USER:-}" current_user f first=0 owner any=0
+    current_user="$(id -un 2>/dev/null || echo unknown)"
+    [[ -n "$target" ]] || target="${selected:-$current_user}"
+    printf '{"schema":"queuebash.cron.explain.v1","ok":true,"target":"%s","files":[' "$(_queue_json_escape "$target")"
+    if [[ "$target" == "--all" ]]; then
+        if [[ -d "$d" ]]; then for f in "$d"/*; do [[ -f "$f" ]] || continue; _queue_json_comma first; owner="$(basename "$f")"; printf '{"owner":"%s","path":"%s","entries":' "$(_queue_json_escape "$owner")" "$(_queue_json_escape "$f")"; _queue_cron_entries_json_for_file "$owner" "$f"; printf '}'; any=1; done; fi
+        if [[ -d "$d2" ]]; then for f in "$d2"/*; do [[ -f "$f" ]] || continue; _queue_json_comma first; owner="system:$(basename "$f")"; printf '{"owner":"%s","path":"%s","entries":' "$(_queue_json_escape "$owner")" "$(_queue_json_escape "$f")"; _queue_cron_entries_json_for_file "$owner" "$f"; printf '}'; any=1; done; fi
+    elif [[ "$target" == "system" ]]; then
+        if [[ -d "$d2" ]]; then for f in "$d2"/*; do [[ -f "$f" ]] || continue; _queue_json_comma first; owner="system:$(basename "$f")"; printf '{"owner":"%s","path":"%s","entries":' "$(_queue_json_escape "$owner")" "$(_queue_json_escape "$f")"; _queue_cron_entries_json_for_file "$owner" "$f"; printf '}'; any=1; done; fi
+    else
+        f="$d/$target"; if [[ -f "$f" ]]; then printf '{"owner":"%s","path":"%s","entries":' "$(_queue_json_escape "$target")" "$(_queue_json_escape "$f")"; _queue_cron_entries_json_for_file "$target" "$f"; printf '}'; any=1; fi
+    fi
+    printf '],"matched":%s,"system_modified":false}\n' "$any"
+}
+
 _queue_cron_command() {
-    local action="${1:-list}"
+    local action="${1:-list}" json_output=0
+    if [[ "$action" == "--json" || "$action" == "-j" ]]; then
+        json_output=1
+        shift || true
+        action="${1:-list}"
+    fi
     case "$action" in
         root|roots)
             echo "spool:  $(_queue_cron_spool_dir)"
@@ -13226,7 +13758,14 @@ _queue_cron_command() {
         list|ls|"")
             shift || true
             local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" f any=0 list_all=0 selected="${QUEUEBASH_SELECTED_USER:-}"
-            [[ "${1:-}" == "--all" ]] && list_all=1
+            while [[ "$#" -gt 0 ]]; do
+                case "${1:-}" in
+                    --json|-j) json_output=1; shift ;;
+                    --all) list_all=1; shift ;;
+                    *) echo "queue cron list: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+            if [[ "$json_output" -eq 1 ]]; then _queue_cron_list_json "$list_all"; return 0; fi
             echo "=== user bashqueues crontabs ==="
             if [[ -d "$d" ]]; then
                 if [[ -n "$selected" && "$list_all" -ne 1 ]]; then
@@ -13261,7 +13800,13 @@ _queue_cron_command() {
             ;;
         status|stat)
             shift || true
-            _queue_cron_status "$@"
+            while [[ "$#" -gt 0 ]]; do
+                case "${1:-}" in
+                    --json|-j) json_output=1; shift ;;
+                    *) echo "queue cron status: unexpected argument: $1" >&2; return 2 ;;
+                esac
+            done
+            if [[ "$json_output" -eq 1 ]]; then _queue_cron_status_json; else _queue_cron_status; fi
             ;;
         test|doctor|check)
             shift || true
@@ -13269,7 +13814,14 @@ _queue_cron_command() {
             ;;
         explain|why)
             shift || true
-            local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" target="${1:-}" selected="${QUEUEBASH_SELECTED_USER:-}" current_user
+            local d="$(_queue_cron_spool_dir)" d2="$(_queue_cron_system_dir)" target="" selected="${QUEUEBASH_SELECTED_USER:-}" current_user
+            while [[ "$#" -gt 0 ]]; do
+                case "${1:-}" in
+                    --json|-j) json_output=1; shift ;;
+                    *) if [[ -z "$target" ]]; then target="$1"; shift; else echo "queue cron explain: unexpected argument: $1" >&2; return 2; fi ;;
+                esac
+            done
+            if [[ "$json_output" -eq 1 ]]; then _queue_cron_explain_json "$target"; return 0; fi
             current_user="$(id -un 2>/dev/null || echo unknown)"
             if [[ -z "$target" ]]; then
                 target="${selected:-$current_user}"
@@ -16415,7 +16967,8 @@ _queue_plan_command() {
     local sub="${1:-}" helper=""
     shift || true
     case "$sub" in
-        scan|explain|policy|status|sources|build|validate)
+        # legacy static guard: scan|explain|policy|status|sources|evidence|build|validate
+        scan|explain|policy|status|sources|evidence|collectors|build|validate)
             helper="$(_queue_plan_helper_path)"
             [[ -n "$helper" && -f "$helper" ]] || { echo "queue plan: helper not found: queue-plan-ingest.py" >&2; return 1; }
             "${QUEUEBASH_PYTHON:-/usr/bin/python3}" "$helper" "$sub" "$@"
@@ -16427,11 +16980,13 @@ _queue_plan_command() {
             # queue plan policy PATH [--json]
             # queue plan status PATH [--json]
             # queue plan sources PATH [--json]
+            # queue plan evidence PATH [--json]
+            # queue plan collectors PATH [--json]
             # queue plan build PATH --output DIR [--json]
             # queue plan validate DIR|normalized.json [--json]
             _queue_resource_fetch_i18nl_command --name plan-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
             ;;
-        *) echo "Usage: queue plan scan|explain|policy|status|sources|build|validate|help" >&2; return 2 ;;
+        *) echo "Usage: queue plan scan|explain|policy|status|sources|evidence|collectors|build|validate|help" >&2; return 2 ;;
     esac
 }
 
@@ -16962,6 +17517,123 @@ _queue_cluster_vote_cast() {
     echo "network touched: no"
 }
 
+
+_queue_cluster_vote_tally_counts() {
+    local proposal_id="${1:-}" ballots_dir file decision approve=0 reject=0 abstain=0 total=0
+    _queue_cluster_safe_vote_value "$proposal_id" || return 2
+    ballots_dir="$(_queue_cluster_votes_dir)/$proposal_id.ballots.d"
+    if [[ -d "$ballots_dir" ]]; then
+        for file in "$ballots_dir"/*.env; do
+            [[ -f "$file" ]] || continue
+            decision="$(grep -E '^QUEUEBASH_CLUSTER_BALLOT_DECISION=' "$file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+            case "$decision" in
+                approve) approve=$((approve + 1)); total=$((total + 1)) ;;
+                reject) reject=$((reject + 1)); total=$((total + 1)) ;;
+                abstain) abstain=$((abstain + 1)); total=$((total + 1)) ;;
+                *) ;;
+            esac
+        done
+    fi
+    printf '%s\t%s\t%s\t%s\n' "$approve" "$reject" "$abstain" "$total"
+}
+
+_queue_cluster_vote_tally() {
+    local proposal_id="" json=0 proposal_file operation status proposer reason approve reject abstain total
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --proposal-id|--id) proposal_id="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h)
+                echo "Usage: queue cluster vote tally --proposal-id ID [--json]"
+                echo "       Read-only local file-dev ballot tally. It never grants quorum or unlocks a mutation."
+                return 0
+                ;;
+            *) echo "queue cluster vote tally: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    _queue_cluster_safe_vote_value "$proposal_id" || { echo "queue cluster vote tally: --proposal-id is required and must be safe" >&2; return 2; }
+    proposal_file="$(_queue_cluster_vote_proposal_file "$proposal_id")" || return 2
+    if [[ ! -f "$proposal_file" ]]; then
+        if [[ "$json" -eq 1 ]]; then
+            printf '{"schema":"queuebash.cluster.vote_tally.v1","status":"missing","proposal_id":"%s","local_ballots":0,"approve":0,"reject":0,"abstain":0,"quorum_granted":false,"cluster_mutation_unlocked":false,"writes_performed":false,"network_touched":false,"provider":"file-dev","scope":"local-only"}\n' "$(_queue_json_escape "$proposal_id")"
+        else
+            echo "queue cluster vote tally: local proposal not found" >&2
+        fi
+        return 1
+    fi
+    operation="$(grep -E '^QUEUEBASH_CLUSTER_VOTE_OPERATION=' "$proposal_file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+    status="$(grep -E '^QUEUEBASH_CLUSTER_VOTE_STATUS=' "$proposal_file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+    proposer="$(grep -E '^QUEUEBASH_CLUSTER_VOTE_PROPOSER=' "$proposal_file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+    reason="$(grep -E '^QUEUEBASH_CLUSTER_VOTE_REASON=' "$proposal_file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+    IFS=$'\t' read -r approve reject abstain total < <(_queue_cluster_vote_tally_counts "$proposal_id")
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.cluster.vote_tally.v1","status":"tallied","proposal_id":"%s","operation":"%s","proposal_status":"%s","proposer":"%s","reason":"%s","local_ballots":%s,"approve":%s,"reject":%s,"abstain":%s,"quorum_policy":"provider-required-not-local-file-dev","quorum_granted":false,"cluster_mutation_unlocked":false,"writes_performed":false,"network_touched":false,"provider":"file-dev","scope":"local-only","requires_policy":"cluster-vote-tally"}\n' \
+            "$(_queue_json_escape "$proposal_id")" "$(_queue_json_escape "$operation")" "$(_queue_json_escape "${status:-pending}")" "$(_queue_json_escape "$proposer")" "$(_queue_json_escape "$reason")" "${total:-0}" "${approve:-0}" "${reject:-0}" "${abstain:-0}"
+        return 0
+    fi
+    echo "queue cluster vote tally: local file-dev ballot tally"
+    echo "proposal id: $proposal_id"
+    echo "operation:   $operation"
+    echo "status:      ${status:-pending}"
+    echo "local ballots: ${total:-0}"
+    echo "approve:     ${approve:-0}"
+    echo "reject:      ${reject:-0}"
+    echo "abstain:     ${abstain:-0}"
+    echo "quorum granted: no"
+    echo "mutation unlocked: no"
+    echo "network touched: no"
+}
+
+
+_queue_cluster_vote_evaluate() {
+    local proposal_id="" json=0 proposal_file operation status proposer reason approve reject abstain total decision="blocked_provider_required"
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --proposal-id|--id) proposal_id="${2:-}"; shift 2 ;;
+            --json|-j) json=1; shift ;;
+            --help|-h)
+                echo "Usage: queue cluster vote evaluate --proposal-id ID [--json]"
+                echo "       Read-only local file-dev vote evaluation. It never grants quorum or unlocks a mutation."
+                return 0
+                ;;
+            *) echo "queue cluster vote evaluate: unexpected argument: $1" >&2; return 2 ;;
+        esac
+    done
+    _queue_cluster_safe_vote_value "$proposal_id" || { echo "queue cluster vote evaluate: --proposal-id is required and must be safe" >&2; return 2; }
+    proposal_file="$(_queue_cluster_vote_proposal_file "$proposal_id")" || return 2
+    if [[ ! -f "$proposal_file" ]]; then
+        if [[ "$json" -eq 1 ]]; then
+            printf '{"schema":"queuebash.cluster.vote_evaluation.v1","status":"missing","proposal_id":"%s","decision":"blocked_missing_proposal","local_ballots":0,"approve":0,"reject":0,"abstain":0,"quorum_granted":false,"cluster_mutation_unlocked":false,"writes_performed":false,"network_touched":false,"provider":"file-dev","scope":"local-only"}\n' "$(_queue_json_escape "$proposal_id")"
+        else
+            echo "queue cluster vote evaluate: local proposal not found" >&2
+        fi
+        return 1
+    fi
+    operation="$(grep -E '^QUEUEBASH_CLUSTER_VOTE_OPERATION=' "$proposal_file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+    status="$(grep -E '^QUEUEBASH_CLUSTER_VOTE_STATUS=' "$proposal_file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+    proposer="$(grep -E '^QUEUEBASH_CLUSTER_VOTE_PROPOSER=' "$proposal_file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+    reason="$(grep -E '^QUEUEBASH_CLUSTER_VOTE_REASON=' "$proposal_file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+    IFS=$'\t' read -r approve reject abstain total < <(_queue_cluster_vote_tally_counts "$proposal_id")
+    if [[ "${reject:-0}" -gt 0 ]]; then decision="blocked_reject_present"; fi
+    if [[ "$json" -eq 1 ]]; then
+        printf '{"schema":"queuebash.cluster.vote_evaluation.v1","status":"evaluated","proposal_id":"%s","operation":"%s","proposal_status":"%s","proposer":"%s","reason":"%s","local_ballots":%s,"approve":%s,"reject":%s,"abstain":%s,"decision":"%s","quorum_policy":"provider-required-not-local-file-dev","eligible_voters_source":"provider-required","timing_window_status":"local-evidence-only","policy_authorization":"not-evaluated-without-provider","legal_scope_status":"not-evaluated-without-provider","egress_status":"local-only","quorum_granted":false,"cluster_mutation_unlocked":false,"writes_performed":false,"network_touched":false,"provider":"file-dev","scope":"local-only","requires_policy":"cluster-vote-evaluate"}\n' \
+            "$(_queue_json_escape "$proposal_id")" "$(_queue_json_escape "$operation")" "$(_queue_json_escape "${status:-pending}")" "$(_queue_json_escape "$proposer")" "$(_queue_json_escape "$reason")" "${total:-0}" "${approve:-0}" "${reject:-0}" "${abstain:-0}" "$(_queue_json_escape "$decision")"
+        return 0
+    fi
+    echo "queue cluster vote evaluate: local file-dev vote evaluation"
+    echo "proposal id: $proposal_id"
+    echo "operation:   $operation"
+    echo "status:      ${status:-pending}"
+    echo "local ballots: ${total:-0}"
+    echo "approve:     ${approve:-0}"
+    echo "reject:      ${reject:-0}"
+    echo "abstain:     ${abstain:-0}"
+    echo "decision:    $decision"
+    echo "quorum granted: no"
+    echo "mutation unlocked: no"
+    echo "network touched: no"
+}
+
 _queue_cluster_vote_status() {
     local json=0 pending latest ballots
     while [[ "$#" -gt 0 ]]; do
@@ -17265,7 +17937,7 @@ _queue_cluster_command() {
         node|nodes) _queue_cluster_node_command "$@" ;;
         vote|voting)
             local vote_sub="${1:-status}"; shift || true
-            case "$vote_sub" in status|list) _queue_cluster_vote_status "$@" ;; propose) _queue_cluster_vote_propose "$@" ;; cast) _queue_cluster_vote_cast "$@" ;; *) echo "Usage: queue cluster vote status|propose|cast [--json]" >&2; return 2 ;; esac
+            case "$vote_sub" in status|list) _queue_cluster_vote_status "$@" ;; propose) _queue_cluster_vote_propose "$@" ;; cast) _queue_cluster_vote_cast "$@" ;; tally|count) _queue_cluster_vote_tally "$@" ;; evaluate|eval) _queue_cluster_vote_evaluate "$@" ;; *) echo "Usage: queue cluster vote status|propose|cast|tally|evaluate [--json]" >&2; return 2 ;; esac
             ;;
         elect|election)
             local elect_sub="${1:-status}"; shift || true
@@ -17288,6 +17960,8 @@ _queue_cluster_command() {
             # queue cluster leave [--node NODE] [--provider PROVIDER] [--reason TEXT] [--dryrun] [--json]
             # queue cluster vote propose --operation OPERATION --reason REASON [--materialize] [--json]
             # queue cluster vote cast --proposal-id ID --decision approve|reject|abstain --reason REASON [--materialize] [--json]
+            # queue cluster vote tally --proposal-id ID [--json]
+            # queue cluster vote evaluate --proposal-id ID [--json]
             # queue cluster node token create --node NODE --role worker|controller|observer [--json]
             _queue_resource_fetch_i18nl_command --name cluster-help.txt --lang "${QUEUEBASH_LANG:-${LANG:-lang_eng}}"
             ;;
@@ -17364,7 +18038,7 @@ _queue_vcs_command() {
             done
             if [[ "$json" -eq 1 ]]; then
                 cat <<'JSON'
-{"schema":"queuebash.vcs.types.v1","read_only":true,"systems":[{"type":"git","command":"git","legacy":false},{"type":"svn","command":"svn","legacy":true,"name":"Subversion"},{"type":"cvs","command":"cvs","legacy":true,"name":"CVS"},{"type":"hg","command":"hg","legacy":false,"name":"Mercurial"},{"type":"p4","command":"p4","legacy":true,"name":"Perforce"}],"assets":["vcs:repo_exists","vcs:clean_tree","vcs:branch","vcs:identity","vcs:revision","vcs:tool_available"],"classes":["VCS_CHECKOUT","VCS_RELEASE_GATE","VCS_LEGACY_SERIAL","VCS_CHANGESET_AUDIT"]}
+{"schema":"queuebash.vcs.types.v1","read_only":true,"systems":[{"type":"git","command":"git","legacy":false},{"type":"svn","command":"svn","legacy":true,"name":"Subversion"},{"type":"cvs","command":"cvs","legacy":true,"name":"CVS"},{"type":"hg","command":"hg","legacy":false,"name":"Mercurial"},{"type":"p4","command":"p4","legacy":true,"name":"Perforce"}],"assets":["vcs:repo_exists","vcs:clean_tree","vcs:branch","vcs:identity","vcs:revision","vcs:fingerprint","vcs:tool_available"],"classes":["VCS_CHECKOUT","VCS_RELEASE_GATE","VCS_LEGACY_SERIAL","VCS_CHANGESET_AUDIT"],"helpers":["queue-vcs-detect","queue-vcs-probe","queue-vcs-assert"]}
 JSON
             else
                 printf '%s\n' git svn cvs hg p4
@@ -17389,6 +18063,35 @@ JSON
                 "$helper" "$path"
             fi
             ;;
+        assert|verify)
+            local json=0 path="." type="auto" timeout_s="10" require_identity="" require_revision="" require_fingerprint=""
+            while [[ "$#" -gt 0 ]]; do
+                case "$1" in
+                    --json|-j) json=1; shift ;;
+                    --type) shift; [[ "$#" -gt 0 ]] || { echo "queue vcs assert: --type requires a value" >&2; return 2; }; type="$1"; shift ;;
+                    --type=*) type="${1#*=}"; shift ;;
+                    --timeout) shift; [[ "$#" -gt 0 ]] || { echo "queue vcs assert: --timeout requires a value" >&2; return 2; }; timeout_s="$1"; shift ;;
+                    --timeout=*) timeout_s="${1#*=}"; shift ;;
+                    --require-identity|--identity) shift; [[ "$#" -gt 0 ]] || { echo "queue vcs assert: --require-identity requires a value" >&2; return 2; }; require_identity="$1"; shift ;;
+                    --require-identity=*|--identity=*) require_identity="${1#*=}"; shift ;;
+                    --require-revision|--revision|--require-changelist|--changelist) shift; [[ "$#" -gt 0 ]] || { echo "queue vcs assert: --require-revision requires a value" >&2; return 2; }; require_revision="$1"; shift ;;
+                    --require-revision=*|--revision=*|--require-changelist=*|--changelist=*) require_revision="${1#*=}"; shift ;;
+                    --require-fingerprint|--fingerprint) shift; [[ "$#" -gt 0 ]] || { echo "queue vcs assert: --require-fingerprint requires a value" >&2; return 2; }; require_fingerprint="$1"; shift ;;
+                    --require-fingerprint=*|--fingerprint=*) require_fingerprint="${1#*=}"; shift ;;
+                    --) shift; [[ "$#" -gt 0 ]] && path="$1"; shift || true ;;
+                    --help|-h) echo "Usage: queue vcs assert [PATH] [--json] [--type TYPE] [--timeout SECONDS] [--require-identity VALUE] [--require-revision VALUE] [--require-fingerprint VALUE]"; return 0 ;;
+                    -*) echo "queue vcs assert: unexpected argument: $1" >&2; return 2 ;;
+                    *) path="$1"; shift ;;
+                esac
+            done
+            local helper args=()
+            helper="$(_queue_profile_helper_path queue-vcs-assert)" || { echo "queue vcs assert: helper not found: queue-vcs-assert" >&2; return 1; }
+            [[ "$json" -eq 1 ]] && args+=(--json)
+            [[ -n "$require_identity" ]] && args+=(--require-identity "$require_identity")
+            [[ -n "$require_revision" ]] && args+=(--require-revision "$require_revision")
+            [[ -n "$require_fingerprint" ]] && args+=(--require-fingerprint "$require_fingerprint")
+            "$helper" "${args[@]}" --type "$type" --timeout "$timeout_s" "$path"
+            ;;
         probe|audit|inspect)
             local json=0 path="." type="auto" timeout_s="10"
             while [[ "$#" -gt 0 ]]; do
@@ -17399,7 +18102,8 @@ JSON
                     --timeout) shift; [[ "$#" -gt 0 ]] || { echo "queue vcs probe: --timeout requires a value" >&2; return 2; }; timeout_s="$1"; shift ;;
                     --timeout=*) timeout_s="${1#*=}"; shift ;;
                     --) shift; [[ "$#" -gt 0 ]] && path="$1"; shift || true ;;
-                    --help|-h) echo "Usage: queue vcs probe [PATH] [--json] [--type TYPE] [--timeout SECONDS]"; return 0 ;;
+                    --help|-h) echo "Usage: queue vcs probe [PATH] [--json] [--type TYPE] [--timeout SECONDS]
+  queue vcs assert [PATH] [--json] [--type TYPE] [--timeout SECONDS] [--require-identity VALUE] [--require-revision VALUE] [--require-fingerprint VALUE]"; return 0 ;;
                     -*) echo "queue vcs probe: unexpected argument: $1" >&2; return 2 ;;
                     *) path="$1"; shift ;;
                 esac
@@ -17413,7 +18117,7 @@ JSON
             fi
             ;;
         *)
-            echo "Usage: queue vcs detect|probe|types|help" >&2
+            echo "Usage: queue vcs detect|probe|assert|types|help" >&2
             return 2
             ;;
     esac
@@ -21848,23 +22552,43 @@ queue() {
     local json_global=0
     local QUEUEBASH_OUTPUT_JSON="${QUEUEBASH_OUTPUT_JSON:-0}"
 
-    if [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]]; then
-        json_global=1
-        QUEUEBASH_OUTPUT_JSON=1
-        shift
-    fi
-
-    if [[ "${1:-}" == "--dryrun" || "${1:-}" == "-n" ]]; then
-        dryrun=1
-        shift
-    fi
+    # Accept top-level frontend switches in any leading order, so both
+    # `queue --json --dryrun help` and `queue --dryrun --json help` are
+    # machine-readable. Command-local parsing still owns switches after the
+    # command name, and payloads after `--` remain untouched.
+    while [[ "$#" -gt 0 ]]; do
+        case "${1:-}" in
+            --json|-j)
+                json_global=1
+                QUEUEBASH_OUTPUT_JSON=1
+                shift
+                ;;
+            --dryrun|-n)
+                dryrun=1
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
 
     # User queue selection is deliberately exact and must happen before
     # _queue_init/root capture. Otherwise `queue user hc3 list` can still
-    # initialise and read the previous/root queue.
+    # initialise and read the previous/root queue. Honour already-parsed
+    # top-level --json here too, because selector success/errors happen before
+    # the normal command dispatcher can emit machine-readable output.
     case "${1:-}" in
         --queue-user|--user-queue)
-            [[ "$#" -ge 2 ]] || { echo "Usage: queue ${1:---queue-user} USER [command] [args...]" >&2; return 2; }
+            local selector_switch="${1:---queue-user}"
+            if [[ "$#" -lt 2 ]]; then
+                if [[ "${QUEUEBASH_OUTPUT_JSON:-0}" == "1" ]]; then
+                    _queue_json_error "missing_user" "queue ${selector_switch} requires USER" "queue ${selector_switch} USER [command] [args...]" 2
+                else
+                    echo "Usage: queue ${selector_switch} USER [command] [args...]" >&2
+                fi
+                return 2
+            fi
             _queue_select_user_queue "$2" || return "$?"
             shift 2
             if [[ "$#" -eq 0 ]]; then
@@ -21877,15 +22601,27 @@ queue() {
             fi
             ;;
         user)
-            [[ "$#" -ge 2 ]] || { echo "Usage: queue user USER [command] [args...]" >&2; return 2; }
+            if [[ "$#" -lt 2 ]]; then
+                if [[ "${QUEUEBASH_OUTPUT_JSON:-0}" == "1" ]]; then
+                    _queue_json_error "missing_user" "queue user requires USER" "queue user USER [command] [args...]" 2
+                else
+                    echo "Usage: queue user USER [command] [args...]" >&2
+                fi
+                return 2
+            fi
             _queue_select_user_queue "$2" || return "$?"
             shift 2
             if [[ "$#" -eq 0 ]]; then
                 _queue_init
-                echo "selected user: $(_queue_selected_user_for_display)"
-                echo "queue root:    $(_queue_root)"
-                [[ -n "${QUEUEBASH_SELECTED_ROOT:-}" ]] && echo "selected root: ${QUEUEBASH_SELECTED_ROOT}"
-                echo "root owner:    $(_queue_root_owner_user 2>/dev/null || echo unknown)"
+                if [[ "${QUEUEBASH_OUTPUT_JSON:-0}" == "1" ]]; then
+                    printf '{"schema":"queuebash.selected_user.v1","selected_user":"%s","queue_root":"%s","selected_root":"%s","root_owner":"%s"}
+'                         "$(_queue_json_escape "$(_queue_selected_user_for_display)")"                         "$(_queue_json_escape "$(_queue_root)")"                         "$(_queue_json_escape "${QUEUEBASH_SELECTED_ROOT:-}")"                         "$(_queue_json_escape "$(_queue_root_owner_user 2>/dev/null || echo unknown)")"
+                else
+                    echo "selected user: $(_queue_selected_user_for_display)"
+                    echo "queue root:    $(_queue_root)"
+                    [[ -n "${QUEUEBASH_SELECTED_ROOT:-}" ]] && echo "selected root: ${QUEUEBASH_SELECTED_ROOT}"
+                    echo "root owner:    $(_queue_root_owner_user 2>/dev/null || echo unknown)"
+                fi
                 return 0
             fi
             ;;
@@ -21910,6 +22646,10 @@ queue() {
     _queue_guard_foreign_user_queue_eval "$cmd" "${1:-}" "$cmd" "$@" || return "$?"
 
     case "$cmd" in
+
+        platform|platforms|runtime-platform)
+            _queue_platform_command "$@"
+            ;;
 
         plan)
             _queue_plan_command "$@"
@@ -22849,6 +23589,12 @@ queue() {
             done
             [[ -z "$target" ]] && { echo "Usage: queue explain <qid-or-exact-job-name> [--json] [--tail N]" >&2; return 2; }
             if [[ "$json_output" -eq 1 ]]; then
+                local class_matches_count
+                class_matches_count="$(_queue_find_jobs_by_class "$target" 2>/dev/null | wc -l | tr -d ' ')"
+                if [[ "$class_matches_count" =~ ^[0-9]+$ && "$class_matches_count" -gt 0 ]]; then
+                    _queue_explain_multi_json_for_class "$target" "$explain_tail"
+                    return 0
+                fi
                 _queue_status_job "$target" --json --tail "$explain_tail"
                 return "$?"
             fi
@@ -25128,7 +25874,7 @@ EOF
                 _queue_json_error "unknown_command" "Unknown queue command: $cmd" "queue help" 2
             else
                 echo "Unknown queue command: $cmd" >&2
-                _queue_help
+                echo "Use: queue help" >&2
             fi
             return 2
             ;;
@@ -25637,6 +26383,53 @@ _queue_sentinel_command() {
     done
 }
 
+_queue_worker_postclaim_preflight_block() {
+    local src="$1" id="$2" root="$3" worker_id="${4:-?}" rc="${5:-1}" detail="${6:-}"
+    local dest log name class now
+
+    [[ -f "$src" ]] || return 1
+    mkdir -p "$root/interrupted" "$root/logs"
+    dest="$root/interrupted/$id.job"
+    log="$root/logs/$id.log"
+    now="$(_queue_now_iso)"
+    name="$(_queue_job_name "$src" 2>/dev/null || echo -)"
+    class="$(_queue_class_for_job_file "$src" 2>/dev/null || _queue_job_var_value "$src" JOB_CLASS 2>/dev/null || echo DEFAULT)"
+
+    {
+        printf '\n# Blocked by worker postclaim preflight at %q\n' "$now"
+        printf 'POSTCLAIM_PREFLIGHT_BLOCKED=1\n'
+        printf 'POSTCLAIM_PREFLIGHT_BLOCKED_AT=%q\n' "$now"
+        printf 'POSTCLAIM_PREFLIGHT_STAGE=%q\n' "postclaim_preflight"
+        printf 'POSTCLAIM_PREFLIGHT_RC=%q\n' "$rc"
+        printf 'POSTCLAIM_PREFLIGHT_CLASS=%q\n' "$class"
+        printf 'RUNNER_USED=%q\n' "none"
+        printf 'EXEC_FINISHED_AT=%q\n' "$now"
+        printf 'EXIT_CODE=%q\n' "78"
+    } >> "$src" 2>/dev/null || true
+
+    {
+        echo "=== queue job $id : $name ==="
+        echo "blocked: $now"
+        echo "state: interrupted"
+        echo "worker: $worker_id"
+        echo "stage: postclaim_preflight"
+        echo "class: $class"
+        echo "rc: $rc"
+        echo
+        echo "CLASS_RESOURCE_BLOCKED"
+        [[ -n "$detail" ]] && printf '%s\n' "$detail"
+        echo
+        echo "Runner was not started. This is a class/resource preflight refusal, not a payload failure."
+    } > "$log" 2>&1 || true
+
+    mv -f -- "$src" "$dest" || return 1
+    _queue_class_release_claims "$id" 2>/dev/null || true
+    _queue_global_release_job_claims "$id" "$root" 2>/dev/null || true
+    _queue_log_event "class_blocked" "$id" "$name" "interrupted" "worker=$worker_id stage=postclaim_preflight rc=$rc class=$class"
+    echo "[worker $worker_id] class_blocked $id (postclaim_preflight)"
+    return 0
+}
+
 _queue_worker_external_move_state() {
     local id="$1"
     local root="$(_queue_root)"
@@ -25673,10 +26466,16 @@ _queue_worker ()
             [[ -e "$job" ]] && sleep "${QUEUEBASH_MOVE_FAIL_SLEEP:-1}";
             continue;
         fi;
-        if ! _queue_class_available "$running" > /dev/null 2>&1; then
-            _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "class/resource unavailable after claim $id";
-            _queue_move_to_pending_bucket "$running" "$id" "$root" 2> /dev/null || true;
-            _queue_log_event "class_blocked" "$id" "$(_queue_job_name "$(_queue_job_pending_path_by_id "$id" "$root" 2> /dev/null || true)" 2> /dev/null || echo "-")" "pending" "worker=$worker_id stage=postclaim_preflight";
+        local postclaim_preflight_out="" postclaim_preflight_rc=0;
+        postclaim_preflight_out="$(_queue_class_available "$running" 2>&1)";
+        postclaim_preflight_rc="$?";
+        if [[ "$postclaim_preflight_rc" -ne 0 ]]; then
+            _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "class/resource unavailable after claim $id rc=$postclaim_preflight_rc";
+            _queue_worker_postclaim_preflight_block "$running" "$id" "$root" "${worker_id:-${1:-?}}" "$postclaim_preflight_rc" "$postclaim_preflight_out" || {
+                _queue_dispatch_trace_log "${worker_id:-${1:-?}}" "postclaim preflight block move failed $id";
+                _queue_move_to_pending_bucket "$running" "$id" "$root" 2> /dev/null || true;
+                _queue_log_event "class_blocked" "$id" "$(_queue_job_name "$(_queue_job_pending_path_by_id "$id" "$root" 2> /dev/null || true)" 2> /dev/null || echo "-")" "pending" "worker=$worker_id stage=postclaim_preflight move_fallback=1";
+            };
             continue;
         fi;
         local policy_reason="";
@@ -25791,6 +26590,14 @@ _queue_worker ()
             { 
                 printf 'RUNNER_USED=%q\n' "$runner_used"
             } >> "$running";
+            case "$runner_used" in
+                direct|systemd) ;;
+                *)
+                    echo;
+                    echo "RUNNER_PRELAUNCH_BLOCKED: requested=${RUNNER:-${QUEUEBASH_RUNNER:-auto}} resolved=$runner_used run_user=${RUN_USER:-} reason=runner_unavailable_or_unsafe";
+                    exit 78
+                    ;;
+            esac;
             if [[ "${SECCOMP_PROFILED_ENFORCE:-}" == "1" || -n "${SECCOMP_PROFILED_NAME:-}" ]]; then
                 if [[ "$runner_used" != "systemd" ]]; then
                     echo;

@@ -1,0 +1,18 @@
+{
+  "check": "policy",
+  "credentials_required": false,
+  "decision": "allow",
+  "eviction_policy": "allkeys-lru-reference",
+  "fail_closed": true,
+  "live_api_used": false,
+  "maintenance_window": "sunday-02:00-reference",
+  "mutated": false,
+  "persistence": "described_not_changed",
+  "provider": "fixture",
+  "provider_family": "cache_service",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.cache_service.policy.v1",
+  "source": "fixture"
+}

@@ -1,0 +1,24 @@
+# mixed exported evidence bundle fixture
+# plan side
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nightly-dgx-score
+spec:
+  schedule: "0 2 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: score
+            image: example/dgx-score:latest
+            resources:
+              limits:
+                nvidia.com/gpu: 1
+# job/status side
+AWS Step Functions exported execution status
+stateMachineArn: arn:aws:states:us-east-1:123456789012:stateMachine:NightlyScore
+executions: RUNNING SUCCEEDED FAILED
+# windows exported status side
+Get-ScheduledTask | Get-ScheduledTaskInfo | ConvertTo-Json

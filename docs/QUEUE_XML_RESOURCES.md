@@ -241,3 +241,15 @@ The helper emits `queuebash.display_resource_namespace_audit.v1` evidence from X
 This helper is deliberately not a renderer and not an installer. It does not render templates, substitute token values, read resource bodies, read or render secrets, call providers, sign files, install files, mutate permissions, generate command/provider JSON, or touch queue dispatch. It only gives reviewers deterministic namespace evidence to compare with lint, catalog, coverage, lookup, token, fallback, install, permission, hash, orphan, encoding, line, and locale audit evidence.
 
 Namespace audit is stricter than orphan audit: orphan audit answers whether extra files exist; namespace audit answers whether manifest-declared names are safe to resolve under the reviewed resource directories.
+
+
+## XML surface-label audit helper
+
+XML display resources participate in the same `queue-display-resource-surface-audit.py` contract as text display resources. The helper validates `resources.d/xml/manifest.example.tsv` surface metadata and emits `queuebash.display_resource_surface_audit.v1` without parsing XML bodies, rendering templates, substituting tokens, reading secrets, signing, installing, mutating files, or generating command/provider JSON. XML parseability remains the lint helper's job; surface audit is manifest metadata evidence only.
+
+## Bob18 note-audit helper
+
+`bin/queue-display-resource-note-audit.py` is a read-only release-review helper for manifest reviewer notes. It emits `queuebash.display_resource_note_audit.v1` evidence from manifest rows only. It checks that notes are bounded human metadata rather than an accidental control surface, secret renderer, JSON contract source, provider instruction, or shell-expansion carrier.
+
+The helper does not render resources, substitute tokens, read resource bodies, read or render secrets, call providers, sign, install, chmod/chown, or mutate queue dispatch. Findings are intended for packaging and review gates before human-facing display/XML resource bundles are installed or signed.
+

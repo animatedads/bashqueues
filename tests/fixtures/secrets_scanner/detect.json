@@ -1,0 +1,25 @@
+{
+  "check": "detect",
+  "coverage_note": "Secrets scanner services are represented as inert fixture facts for rule, finding, scope, and policy review.",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "secrets_scanner",
+  "provider_output_is_shell": false,
+  "providers_observed": [
+    "github_secret_scanning",
+    "gitlab_secret_detection",
+    "gitleaks",
+    "trufflehog",
+    "detect_secrets",
+    "azure_devops_credential_scanner",
+    "custom_legacy_regex"
+  ],
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.secrets_scanner.detect.v1",
+  "source": "fixture"
+}

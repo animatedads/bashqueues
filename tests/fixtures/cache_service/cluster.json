@@ -1,0 +1,19 @@
+{
+  "check": "cluster",
+  "cluster_id": "cache-fixture-001",
+  "credentials_required": false,
+  "decision": "allow",
+  "encrypted_in_transit": true,
+  "engine": "redis-compatible",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "cache_service",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "replication": "primary_replica_reference_only",
+  "schema": "queuebash.cache_service.cluster.v1",
+  "source": "fixture"
+}

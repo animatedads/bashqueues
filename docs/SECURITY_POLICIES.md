@@ -18,7 +18,7 @@ $QUEUEBASH_ROOT/policies.d/seccomp/*.env
 
 Policy lookup order is:
 
-1. shared/admin policy folder, normally `/etc/bashqueues/policies.d`
+1. shared/admin policy folder, normally `/etc/queuebash/policies.d`
 2. personal queue-root policy folder, `$QUEUEBASH_ROOT/policies.d`
 3. bundled repository policy folder, `policies.d`
 

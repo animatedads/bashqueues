@@ -11,6 +11,7 @@ queue_asset_facilities() {
     cat <<'FACILITIES'
 vcs:branch	Check the current branch/tag/stream/client marker for a VCS workspace
 vcs:identity	Check the normalised VCS identity reported by queue-vcs-probe
+vcs:fingerprint	Check the stable VCS probe fingerprint for audit reproducibility
 vcs:revision	Check the current revision/changelist/hash reported by the VCS client
 vcs:clean_tree	Check that a VCS workspace has no pending local changes
 vcs:repo_exists	Check that a directory is a recognised VCS workspace
@@ -25,6 +26,7 @@ vcs:clean_tree	target=working-copy directory	params=type=auto|git|svn|cvs|hg|p4 
 vcs:branch	target=working-copy directory	params=type=auto require_branch=main require_tag=RELEASE require_url_contains=/trunk require_stream=//depot/main require_client=build-client timeout=10	example=queue_class_shared_asset vcs branch "/srv/legacy/src" type=svn require_url_contains=/branches/release	notes=Maps branch-like identity across systems: Git/Hg branch, SVN URL fragment, CVS sticky tag, and Perforce stream/client.
 vcs:identity	target=working-copy directory	params=type=auto require_identity=main timeout=10	example=queue_class_shared_asset vcs identity "/srv/legacy/src" type=auto require_identity=HEAD	notes=Uses queue-vcs-probe to normalise branch/tag/stream/client identity without mutating the checkout.
 vcs:revision	target=working-copy directory	params=type=auto require_revision=abc123 timeout=10	example=queue_class_shared_asset vcs revision "/srv/legacy/src" type=svn require_revision=18422	notes=Checks the currently observed hash, revision, root marker, or changelist for reproducible release and audit gates.
+vcs:fingerprint	target=working-copy directory	params=type=auto require_fingerprint=SHA256 timeout=10	example=queue_class_shared_asset vcs fingerprint "/srv/legacy/src" type=cvs require_fingerprint=<sha256>	notes=Compares the queue-vcs-probe fingerprint derived from type, marker, identity, revision, cleanliness, and status summary.
 vcs:tool_available	target=vcs type or command	params=type=git|svn|cvs|hg|p4	example=queue_class_shared_asset vcs tool_available svn type=svn	notes=Passes when the needed VCS client binary is available.
 HINTS
 }
@@ -262,12 +264,22 @@ _vcs_probe_helper_path() {
 }
 
 _vcs_probe_field() {
-    local field="$1" target="$2" type="$3" timeout_s="$4" raw helper
+    local field="$1" target="$2" type="$3" timeout_s="$4" raw helper value
     helper="$(_vcs_probe_helper_path || true)"
     [[ -n "$helper" ]] || { echo "asset_check_blocked: vcs:$field helper_missing=queue-vcs-probe"; return 1; }
     raw="$(bash "$helper" --json --type "$type" --timeout "$timeout_s" "$target" 2>/dev/null)" || return 1
-    python3 -c 'import json, sys; data=json.loads(sys.argv[2]); value=data.get(sys.argv[1], ""); print("true" if value is True else "false" if value is False else value)' "$field" "$raw"
+    case "$field" in
+        clean|client_available)
+            value="$(printf '%s\n' "$raw" | sed -n 's/.*"'"$field"'":\(true\|false\).*/\1/p')"
+            ;;
+        *)
+            value="$(printf '%s\n' "$raw" | sed -n 's/.*"'"$field"'":"\([^"\\]*\)".*/\1/p')"
+            ;;
+    esac
+    [[ -n "$value" ]] || return 1
+    printf '%s\n' "$value"
 }
+
 queue_asset_check_vcs_identity() {
     local token="$1" target="$2"
     shift 2 || true
@@ -301,5 +313,23 @@ queue_asset_check_vcs_revision() {
         return 0
     fi
     echo "asset_check_blocked: vcs:revision type=$type current=${current:-unknown} requires=$required"
+    return 1
+}
+
+queue_asset_check_vcs_fingerprint() {
+    local token="$1" target="$2"
+    shift 2 || true
+    [[ -d "$target" ]] || { echo "asset_check_blocked: vcs:fingerprint target is not a directory: $target"; return 1; }
+    local type required current timeout_s
+    type="$(_vcs_type_for_target "$target" "$@")" || return 1
+    required="$(queue_asset_param require_fingerprint "$@" || true)"
+    [[ -n "$required" ]] || { echo "asset_check_blocked: vcs:fingerprint requires require_fingerprint="; return 1; }
+    timeout_s="$(_vcs_timeout "$@")"
+    current="$(_vcs_probe_field fingerprint "$target" "$type" "$timeout_s" || true)"
+    if [[ "$current" == "$required" ]]; then
+        echo "asset_check_ok: $token"
+        return 0
+    fi
+    echo "asset_check_blocked: vcs:fingerprint type=$type current=${current:-unknown} requires=$required"
     return 1
 }

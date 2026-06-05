@@ -5,7 +5,7 @@ cd "$ROOT"
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
 [[ -f queuebash.sh ]] || fail 'run from repository root'
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(44|45|46|47|[5-9][0-9])"' queuebash.sh || fail 'version must be 0.18.44 or later'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(44|45|46|47|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'version must be 0.18.44 or later'
 grep -q '^# 0.18.44 BOB12 scratchpad lifecycle commands' README.md || fail 'README missing historical 0.18.44 entry'
 grep -q '^## 0.18.44 - BOB12 scratchpad lifecycle commands' CHANGELOG.md || fail 'CHANGELOG missing historical 0.18.44 entry'
 [[ -f docs/QUEUE_DEV_SCRATCHPAD_LIFECYCLE.md ]] || fail 'missing lifecycle doc'

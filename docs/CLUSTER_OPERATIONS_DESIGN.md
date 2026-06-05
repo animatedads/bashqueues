@@ -110,3 +110,15 @@ The local proposal record exists to prove the operation/reason/proposer/status s
 Bob25 now adds `queue cluster vote cast` as the first concrete ballot artefact. This keeps the proposal and ballot phases separate: proposing a risky operation does not approve it, and casting a local ballot does not grant quorum or unlock a mutation.
 
 The implementation remains local-only and dry-run by default. With `--materialize`, it writes one file-dev ballot witness for an existing local proposal and appends audit evidence. Future Kubernetes, Consul, etcd or signed-peer providers must implement the same fields while adding real quorum evaluation under policy, legal and egress controls.
+
+
+## 0.18.124 Bob25 local vote tally witness
+
+Bob25 now adds `queue cluster vote tally` as the read-only evidence view over local file-dev proposals and ballots. The design intentionally keeps tallying separate from granting quorum: local evidence can show one or more approve/reject/abstain ballots, but only a future provider with declared quorum, voter eligibility, policy, timing, legal and egress controls may turn that into an approval.
+
+This is the next provider contract shape after proposal and ballot witnesses: future Kubernetes, Consul, etcd or signed-peer providers must be able to produce the same JSON facts while preserving fail-closed mutation behaviour.
+
+
+## 0.18.125 vote evaluation witness
+
+Bob25 now adds `queue cluster vote evaluate` as the read-only bridge between local ballot tallying and future production quorum providers. The command intentionally reports a fail-closed decision for file-dev because local evidence alone cannot prove voter eligibility, timing window, policy authorization, legal scope, or egress compliance. This keeps the admin surface simple while preventing accidental treatment of local test ballots as corporate approval.

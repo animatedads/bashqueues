@@ -68,5 +68,43 @@
     "no_ask_provider_runtime",
     "no_secrets_runtime_ownership",
     "no_native_windows_support_claim"
-  ]
+  ],
+  "platform_fact_surface": {
+    "command": "queue platform [--json]",
+    "schema": "queuebash.platform_facts.v1",
+    "status": "observational_fail_closed",
+    "must_not_enable_worker_runtime_for": [
+      "git-bash",
+      "msys2",
+      "cygwin",
+      "native-windows-powershell",
+      "unknown"
+    ],
+    "wsl2_worker_claim": "supported as Linux guest runtime, not native Windows runtime"
+  },
+  "platform_doctor_surface": {
+    "command": "queue platform doctor [--json]",
+    "schema": "queuebash.platform_doctor.v1",
+    "status": "read_only_readiness_fail_closed",
+    "must_not_mutate": [
+      "workers",
+      "services",
+      "policies",
+      "queue_records",
+      "secrets",
+      "remote_resources"
+    ],
+    "warns_for": [
+      "wsl_queue_root_under_mnt",
+      "crlf_sensitive_line_endings",
+      "legacy_wsl"
+    ],
+    "blocks_worker_claim_for": [
+      "git-bash",
+      "msys2",
+      "cygwin",
+      "native-windows-powershell",
+      "unknown"
+    ]
+  }
 }

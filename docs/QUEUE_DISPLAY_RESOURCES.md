@@ -401,3 +401,23 @@ The helper emits `queuebash.display_resource_namespace_audit.v1` evidence from d
 This helper is deliberately not a renderer and not an installer. It does not render templates, substitute token values, read resource bodies, read or render secrets, call providers, sign files, install files, mutate permissions, generate command/provider JSON, or touch queue dispatch. It only gives reviewers deterministic namespace evidence to compare with lint, catalog, coverage, lookup, token, fallback, install, permission, hash, orphan, encoding, line, and locale audit evidence.
 
 Namespace audit is stricter than orphan audit: orphan audit answers whether extra files exist; namespace audit answers whether manifest-declared names are safe to resolve under the reviewed resource directories.
+
+
+## Display/XML surface-label audit helper
+
+Bob18 wave 24 adds a read-only surface-label audit helper:
+
+```bash
+python3 bin/queue-display-resource-surface-audit.py --root . --json
+```
+
+The helper emits `queuebash.display_resource_surface_audit.v1` evidence from display/XML manifest metadata only. It checks human-facing `surface` labels for empty values, leading/trailing whitespace, overlong labels, shell-looking expansion, secret-looking words, concrete secret-looking values, unsafe characters, duplicate manifest rows, and language rows whose labels differ for the same resource.
+
+This helper is deliberately not a renderer and not a localisation engine. It does not render templates, substitute token values, read resource bodies, read or render secrets, call providers, sign resources, install files, change permissions, generate command/provider JSON, or touch queue dispatch. It only gives reviewers deterministic surface-label metadata evidence to compare with lint, catalog, coverage, lookup, token, fallback, install, permission, hash, orphan, encoding, line, locale, and namespace audit evidence.
+
+## Bob18 note-audit helper
+
+`bin/queue-display-resource-note-audit.py` is a read-only release-review helper for manifest reviewer notes. It emits `queuebash.display_resource_note_audit.v1` evidence from manifest rows only. It checks that notes are bounded human metadata rather than an accidental control surface, secret renderer, JSON contract source, provider instruction, or shell-expansion carrier.
+
+The helper does not render resources, substitute tokens, read resource bodies, read or render secrets, call providers, sign, install, chmod/chown, or mutate queue dispatch. Findings are intended for packaging and review gates before human-facing display/XML resource bundles are installed or signed.
+

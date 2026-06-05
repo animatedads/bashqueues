@@ -87,7 +87,7 @@ has fewer than two approvers
 lists requester as an approver
 omits rollback evidence
 omits audit path
-uses /etc/bashqueues/policies.d as the active policy root
+uses /etc/bashqueues/policies.d as the active policy root (legacy path; should be rejected or migrated to /etc/queuebash/policies.d)
 allows secret values in environment variables
 allows secret values in JSON
 allows external AI provider use by default
@@ -291,3 +291,36 @@ cluster_observation_raw_evidence_must_be_redacted
 ```
 
 The observation evidence is a redacted attestation envelope, not monitoring output. It must not include raw logs, raw probe output, or sensitive service telemetry.
+
+## Cluster abort criteria and incident-response evidence hardening
+
+Cluster-scoped approved maintenance must include a redacted stop/abort plan and incident-response readiness evidence before a future runtime gate can consider the request complete enough for controlled pilot workflows. This remains fixture evidence only. The verifier does not run probes, page responders, freeze a cluster, execute rollback, contact monitoring, or alter live systems.
+
+Required fixture fields:
+
+```text
+cluster.abort_criteria.defined = true
+cluster.abort_criteria.auto_stop_on_breach = true
+cluster.abort_criteria.triggers includes health_degraded, slo_regression, quorum_lost
+cluster.abort_criteria.manual_override_allowed = false
+cluster.abort_criteria.policy_hash = sha256:...
+cluster.incident_response.pager_ready = true
+cluster.incident_response.rollback_owner_ack = true
+cluster.incident_response.freeze_on_incident = true
+cluster.incident_response.comms_channel_hash = sha256:...
+```
+
+Forbidden fixture fields:
+
+```text
+cluster.abort_criteria.raw_policy
+cluster.abort_criteria.script
+cluster.incident_response.comms_channel
+cluster.incident_response.raw_contact
+```
+
+Fail-closed cases include missing abort criteria, missing incident response, manual override allowed, raw abort policy/script, missing policy hash, missing required triggers, raw comms channel/contact, pager not ready, rollback owner not acknowledged, or incident freeze not enabled.
+
+## 0.18.125 evidence bundle retention hardening carry-forward
+
+Required redacted evidence paths include `cluster.evidence_bundle.bundle_hash`, `cluster.evidence_bundle.retention_days >= 90`, and `cluster.observation.evidence_hash`. These requirements preserve the cluster evidence bundle hash contract while avoiding raw secret or raw bundle material in queued maintenance evidence.

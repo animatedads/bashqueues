@@ -16,7 +16,7 @@ for f in \
   [[ -f "$f" ]] || { echo "missing $f" >&2; exit 1; }
 done
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(35|36|37|38|39|4[0-9]|[5-9][0-9])"' queuebash.sh
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(35|36|37|38|39|4[0-9]|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh
 grep -q '0.18.46 BOB2 primary-source validation + BOB12 patchset registry merged' CHANGELOG.md || grep -q '0.18.46 - BOB2 primary-source validation + BOB12 patchset registry merged' CHANGELOG.md || grep -q '0.18.35 - APAC/China cloud provider contracts' CHANGELOG.md
 grep -q '0.18.46 BOB2 primary-source validation + BOB12 patchset registry merged' README.md || grep -q '0.18.46 - BOB2 primary-source validation + BOB12 patchset registry merged' README.md || grep -q '0.18.35 APAC/China cloud provider contracts' README.md
 grep -q 'queuebash.apac_china.alibaba.detect.v1' docs/APAC_CHINA_PROVIDER_CONTRACTS.md

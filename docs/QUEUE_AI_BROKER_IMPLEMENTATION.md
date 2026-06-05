@@ -4,8 +4,8 @@
 
 The implementation is intentionally conservative:
 
-- it loads AI profiles from `policies.d/ai-profiles/*.env` or `/etc/bashqueues/policies.d/ai-profiles/*.env`;
-- it loads the provider registry from `policies.d/ai-broker/provider-registry*.json` or `/etc/bashqueues/policies.d/ai-broker/provider-registry.json`;
+- it loads AI profiles from `policies.d/ai-profiles/*.env` or `/etc/queuebash/policies.d/ai-profiles/*.env`;
+- it loads the provider registry from `policies.d/ai-broker/provider-registry*.json` or `/etc/queuebash/policies.d/ai-broker/provider-registry.json`;
 - it scores providers/models by profile order, required capabilities, health state, locality, and approximate cost;
 - it exposes provider/model inventory, health, explain, and selection-only chat/json responses;
 - it performs no live provider call in this implementation stage.

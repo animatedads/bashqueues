@@ -1,0 +1,19 @@
+{
+  "check": "finding",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "finding_id": "finding-fixture-001",
+  "finding_state": "described_not_written",
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "secrets_scanner",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "redacted_example": "***fixture-redacted***",
+  "schema": "queuebash.secrets_scanner.finding.v1",
+  "secret_value_present": false,
+  "source": "fixture"
+}

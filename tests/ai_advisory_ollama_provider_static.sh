@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(4[3-9]|[5-9][0-9]|42|43|44|45|46)"' queuebash.sh || fail 'version not current enough for AI advisory compatibility'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(4[3-9]|([5-9][0-9]|[1-9][0-9][0-9])|42|43|44|45|46)"' queuebash.sh || fail 'version not current enough for AI advisory compatibility'
 grep -q '0.18.2 - Ollama advisory provider failure handling' CHANGELOG.md || fail 'changelog entry missing'
 test -x bin/queue-ai-ask-ollama || fail 'ollama helper missing'
 test -f examples/providers/ai/ollama.env.example || fail 'ollama example missing'

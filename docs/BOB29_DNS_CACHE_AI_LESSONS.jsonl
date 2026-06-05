@@ -1,0 +1,1 @@
+{"agent": "Bob29", "base": "0.18.123", "lesson": "Verify carry-forward in the current merge before applying provider-family continuation. next_candidates may lag when a synonym such as edge_cdn already covers cdn; continue with the distinct missing family and another adjacent fixture-first coverage gap.", "status": "ok"}

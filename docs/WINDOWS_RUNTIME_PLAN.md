@@ -145,7 +145,9 @@ has a JSON-safe fail-closed path and at least one Windows CI/smoke path.
 1. Add platform detection facts: `linux`, `wsl2`, `git-bash`, `msys2`, `cygwin`,
    `native-windows-powershell`, and `unknown`.
 2. Add a `queue platform --json` or equivalent platform fact surface before any
-   behavioural changes.
+   behavioural changes. **Implemented as `queue platform [--json]` with schema
+   `queuebash.platform_facts.v1`; it reports W1/W2/W3 posture but does not
+   enable unsupported Windows worker behaviour.**
 3. Add a docs-only WSL2 quickstart and a static guard preventing unsupported
    native claims.
 4. Introduce internal platform adapters for path, process, lock, permissions,
@@ -179,3 +181,33 @@ worker support until the adapter and smoke-test gates exist.
 - No queue-dev/display-resource/command-contract ownership except for static
   documentation guards if needed.
 - No claim that Windows native operation is complete.
+
+
+## Platform fact surface
+
+`queue platform [--json]` is the first runtime-facing Windows portability
+surface. It is deliberately observational. It reports `linux`, `wsl2`, `wsl`,
+`git-bash`, `msys2`, `cygwin`, `native-windows-powershell`, or `unknown`, maps
+that result to the W1/W2/W3 plan, and keeps worker support false for constrained
+POSIX-on-Windows and native Windows roadmap environments.
+
+The command must not silently enable worker lifecycle, service installation,
+process-tree cancellation, chmod/chown enforcement, or lock-sensitive concurrent
+runs on Windows compatibility shells. Those behaviours remain behind future
+adapter gates.
+
+## Platform doctor surface
+
+`queue platform doctor [--json]` is the next Bob30 runtime-facing surface. It is
+read-only and readiness-oriented. It does not launch workers, install services,
+modify policies, or enable native Windows behaviour.
+
+The JSON schema is `queuebash.platform_doctor.v1`. The command reports the
+current platform tier, whether worker runtime is supported for that tier, the
+queue root, a summary count, and structured checks. For WSL/WSL2 it warns when
+the queue root is under `/mnt/...`, because the recommended first deployment is
+inside the WSL Linux filesystem. It also checks for CRLF-sensitive line endings
+in `queuebash.sh`.
+
+Compatibility shells and native Windows remain fail-closed for worker/service
+support. A blocked doctor result is a support boundary, not a repair action.

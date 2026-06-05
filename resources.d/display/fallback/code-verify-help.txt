@@ -1,0 +1,8 @@
+Usage: queue code verify [--tree DIR] [--mode off|warn|enforce] [--json]
+
+Verify code signatures for queuebash code-signature targets.
+
+Options:
+  --tree DIR                 target tree, default is the queuebash script tree
+  --mode off|warn|enforce    verification mode
+  --json                     emit machine-readable output

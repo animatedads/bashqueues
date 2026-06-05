@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(49|[5-9][0-9])"' queuebash.sh || fail 'version not compatible with 0.18.49+ current package'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(49|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'version not compatible with 0.18.49+ current package'
 # Preserve the OpenAI provider delivery ledger while allowing later Bob11 packages to advance version.
 grep -q '0.18.43 - BOB11 ask OpenAI live-provider pack' CHANGELOG.md || fail 'changelog missing OpenAI provider entry'
 grep -q 'queue-ai-ask-openai' queuebash.sh || fail 'queue ask does not resolve OpenAI helper'

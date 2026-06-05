@@ -16,7 +16,7 @@ for f in \
   [[ -f "$f" ]] || { echo "missing $f" >&2; exit 1; }
 done
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(36|37|38|39|4[0-9]|[5-9][0-9])"' queuebash.sh
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(36|37|38|39|4[0-9]|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh
 grep -q '0.18.36 - GPU cloud provider contracts' CHANGELOG.md
 grep -q '0.18.36 GPU cloud provider contracts' README.md
 grep -q 'queuebash.gpu_cloud.coreweave.detect.v1' docs/GPU_CLOUD_PROVIDER_CONTRACTS.md

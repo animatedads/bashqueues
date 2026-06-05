@@ -11,7 +11,7 @@ Read order:
 ```text
 $QUEUEBASH_AI_BROKER_HEALTH_CACHE
 $QUEUEBASH_ROOT/ai-broker/health-cache.json
-/etc/bashqueues/policies.d/ai-broker/health-cache.json
+/etc/queuebash/policies.d/ai-broker/health-cache.json
 ./policies.d/ai-broker/health-cache.json
 ./policies.d/ai-broker/health-cache.example.json
 ./tests/fixtures/ai_broker/health_cache.example.json

@@ -1,0 +1,8 @@
+Usage: queue code trust --public-key FILE [--shared|--personal]
+
+Trust a public key for queuebash code-signature verification.
+
+Options:
+  --public-key FILE  public key to trust
+  --shared           write shared system policy when permitted
+  --personal         write personal queue-root policy

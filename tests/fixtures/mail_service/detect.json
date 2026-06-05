@@ -1,0 +1,25 @@
+{
+  "check": "detect",
+  "coverage_note": "Mail services are represented as inert fixture facts for domain, sender, delivery, and policy review.",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "mail_service",
+  "provider_output_is_shell": false,
+  "providers_observed": [
+    "aws_ses",
+    "azure_communication_email",
+    "google_gmail_api",
+    "sendgrid",
+    "mailgun",
+    "postmark",
+    "smtp_relay_legacy"
+  ],
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.mail_service.detect.v1",
+  "source": "fixture"
+}

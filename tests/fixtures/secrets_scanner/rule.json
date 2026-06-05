@@ -1,0 +1,19 @@
+{
+  "check": "rule",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "pattern_material_included": false,
+  "provider": "fixture",
+  "provider_family": "secrets_scanner",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "rule_id": "generic-api-token-fixture",
+  "rule_source": "fixture_catalog",
+  "schema": "queuebash.secrets_scanner.rule.v1",
+  "severity": "high_reference",
+  "source": "fixture"
+}

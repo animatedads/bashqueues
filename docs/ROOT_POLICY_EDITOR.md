@@ -5,7 +5,7 @@
 When run as root, the default edit target is the shared site policy tree:
 
 ```text
-/etc/bashqueues/policies.d
+/etc/queuebash/policies.d
 ```
 
 When run as a normal user, the default edit target remains the queue-local policy tree:
@@ -24,7 +24,7 @@ queue policies path class-statement default --shared
 queue policies path class-statement default --personal
 ```
 
-Shared policy editing requires root. This is deliberate: shared policies are the site-wide guardrails and normally live under `/etc/bashqueues/policies.d`.
+Shared policy editing requires root. This is deliberate: shared policies are the site-wide guardrails and normally live under `/etc/queuebash/policies.d`.
 
 ## Implicit defaults versus explicit weak choices
 

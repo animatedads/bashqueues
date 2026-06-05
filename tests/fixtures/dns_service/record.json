@@ -1,0 +1,20 @@
+{
+  "check": "record",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "dns_service",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "record_name": "www.example.invalid",
+  "record_type": "A",
+  "routing_policy": "simple_reference_only",
+  "schema": "queuebash.dns_service.record.v1",
+  "source": "fixture",
+  "target": "192.0.2.10",
+  "ttl_seconds": 300
+}

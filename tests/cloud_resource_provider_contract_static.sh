@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 cd "$ROOT"
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(30|31|32|33|34|35|36|37|38|39|40|41|47|48|49|[5-9][0-9])"' queuebash.sh || fail 'version not bumped to 0.18.30 or newer'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(30|31|32|33|34|35|36|37|38|39|40|41|47|48|49|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'version not bumped to 0.18.30 or newer'
 grep -q '0.18.35 - APAC/China cloud provider contracts' CHANGELOG.md || fail 'changelog entry missing'
 grep -q '0.18.35 APAC/China cloud provider contracts' README.md || fail 'README entry missing'
 

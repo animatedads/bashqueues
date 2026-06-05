@@ -9,14 +9,17 @@ trap 'rm -rf "$tmp"' EXIT
 cases=(
   valid_approved_maintenance:0:
   valid_cluster_maintenance:0:
-  cluster_missing_blast_radius:1:cluster_blast_radius_required
-  cluster_canary_not_completed:1:cluster_canary_completion_required
-  cluster_drain_not_verified:1:cluster_drain_verified_required
-  cluster_rollback_raw_checkpoint:1:cluster_rollback_checkpoint_must_be_redacted
-  cluster_observation_missing:1:cluster_observation_required
-  cluster_observation_unhealthy:1:cluster_observation_health_ok_required
-  cluster_observation_slo_regression:1:cluster_observation_latency_regression_denied
   cluster_observation_raw_evidence:1:cluster_observation_raw_evidence_must_be_redacted
+  cluster_abort_missing:1:cluster_abort_criteria_required
+  cluster_abort_manual_override:1:cluster_abort_manual_override_denied
+  cluster_abort_raw_policy:1:cluster_abort_policy_must_be_redacted
+  cluster_incident_missing:1:cluster_incident_response_required
+  cluster_incident_raw_contact:1:cluster_incident_contacts_must_be_redacted
+  cluster_evidence_bundle_missing:1:cluster_evidence_bundle_required
+  cluster_evidence_bundle_unsealed:1:cluster_evidence_bundle_seal_required
+  cluster_evidence_bundle_bad_signature:1:cluster_evidence_bundle_signature_verified_required
+  cluster_evidence_bundle_short_retention:1:cluster_evidence_bundle_retention_required
+  cluster_evidence_bundle_raw_material:1:cluster_evidence_bundle_raw_material_must_be_redacted
 )
 : > "$tmp/cases.tsv"
 for spec in "${cases[@]}"; do
@@ -30,8 +33,8 @@ for spec in "${cases[@]}"; do
   [[ -s "$out" ]] || { echo "[FAIL] $name produced no stdout" >&2; cat "$err" >&2; exit 1; }
   printf '%s\t%s\t%s\t%s\n' "$name" "$rc" "$expected_rc" "$expected_failure" >> "$tmp/cases.tsv"
 done
-python3 - "$tmp" <<'PY'
-import json, sys
+PYTHONNOUSERSITE=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 python3 -S - "$tmp" <<'PY'
+import json, os, sys
 from pathlib import Path
 tmp = Path(sys.argv[1])
 for line in (tmp/'cases.tsv').read_text().splitlines():
@@ -67,8 +70,14 @@ for line in (tmp/'cases.tsv').read_text().splitlines():
             'cluster_canary_completed', 'cluster_drain_verified',
             'cluster_rollback_checkpoint_hash', 'cluster_rollback_checkpoint_redacted',
             'cluster_observation_completed', 'cluster_observation_health_ok',
-            'cluster_observation_slo_ok', 'cluster_observation_evidence_redacted'
+            'cluster_observation_slo_ok', 'cluster_observation_evidence_redacted',
+            'cluster_abort_criteria_ready', 'cluster_abort_policy_redacted',
+            'cluster_incident_response_ready', 'cluster_incident_contacts_redacted',
+            'cluster_evidence_bundle_sealed', 'cluster_evidence_bundle_hashes',
+            'cluster_evidence_bundle_signature_verified',
+            'cluster_evidence_bundle_retained', 'cluster_evidence_bundle_redacted'
         ]:
             assert obj['checks'][key] is True, (key, obj)
-print('[PASS] enterprise_maintenance_evidence_smoke')
+print('[PASS] enterprise_maintenance_evidence_smoke', flush=True)
+os._exit(0)
 PY

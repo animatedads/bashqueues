@@ -1,0 +1,11 @@
+# mixed collector source hints
+Azure Logic Apps azure-mgmt-logic workflow_runs exported JSON
+AWS Step Functions boto3 list_executions StateMachineArn exported JSON
+GCP Cloud Run Jobs google-cloud-run ListExecutions exported JSON
+OCI Work Requests oci WorkRequestClient list_work_requests exported JSON
+IBM watsonx.ai ibm-watsonx-ai client.jobs.get_details exported JSON
+Windows Task Scheduler pywinrm Get-ScheduledTask ConvertTo-Json export
+Cron crontab -l plus /var/log/cron export; preserve existing bashqueues cron bridge
+Celery control.inspect registered active scheduled exported JSON
+Slurm squeue exported CSV
+Airflow /api/v1/dags and dagRuns exported JSON

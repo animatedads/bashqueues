@@ -1,0 +1,18 @@
+{
+  "check": "metrics",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "failover_state": "nominal_fixture",
+  "hit_rate_percent": 97.2,
+  "live_api_used": false,
+  "memory_used_percent": 62.5,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "cache_service",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.cache_service.metrics.v1",
+  "source": "fixture"
+}

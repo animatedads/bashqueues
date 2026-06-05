@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-05T16:15:00Z",
+  "created_from_session": "BOB27-0.18.124-hot-seat",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-BOB27-0.18.124-health-install-plan-platform-merge",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": "health merge noncanonical patch"
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Small noncanonical patches can carry core user-facing surfaces. The 0.18.124 health JSON patch had no queue-dev manifest root, so merge-plan aborted, but manual inspection showed it should be treated as core surface work: queue health --json/--fix/--deep under queuebash.health.v1. Preserve prior core-surface repairs and apply queuebash hunks by function semantics, not whole-file replacement."
+}

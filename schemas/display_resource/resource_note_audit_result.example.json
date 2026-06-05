@@ -1,0 +1,37 @@
+{
+  "schema": "queuebash.display_resource_note_audit.v1",
+  "status": "ok",
+  "renderer": "none-note-audit-only",
+  "root": "/path/to/bashqueues",
+  "manifest_only": true,
+  "resource_rendering": false,
+  "resource_body_read": false,
+  "token_substitution": false,
+  "secret_rendering": false,
+  "provider_calls": false,
+  "signing_mutation": false,
+  "install_mutation": false,
+  "permission_mutation": false,
+  "json_contract_source": false,
+  "summary": {
+    "entries": 6,
+    "audited_notes": 6,
+    "notes_present": 6,
+    "safe_notes": 6,
+    "errors": 0,
+    "warnings": 0
+  },
+  "notes": [
+    {
+      "resource_type": "display",
+      "name": "status-panel.example.txt",
+      "language": "lang_eng",
+      "note_length": 61,
+      "note_present": true,
+      "safe_note": true,
+      "manifest_path": "resources.d/display/manifest.example.tsv",
+      "manifest_line": 4
+    }
+  ],
+  "findings": []
+}

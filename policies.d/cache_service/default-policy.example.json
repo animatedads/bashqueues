@@ -1,0 +1,23 @@
+{
+  "credentials_required_for_default_tests": false,
+  "fixture_first": true,
+  "live_api_default": false,
+  "mutation_default": false,
+  "non_goals": [
+    "cluster-create",
+    "cluster-delete",
+    "scale-up",
+    "scale-down",
+    "flush-cache",
+    "endpoint-mutation",
+    "parameter-mutation",
+    "failover-trigger",
+    "queue-dispatch-refactor"
+  ],
+  "normalized_json_only": true,
+  "provider_family": "cache_service",
+  "provider_output_is_shell": false,
+  "provisioning_default": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.cache_service.policy.example.v1"
+}

@@ -22,7 +22,7 @@ explicitly approved maintenance pilot classes
 
 ## Policy-root warning
 
-Operators must not have to guess whether the active system policy tree is `/etc/bashqueues/policies.d` or `/etc/queuebash/policies.d`. This Bob17 package does not change installer/wizard code; that is a P0 Bob23 operational clarity task. These hospital profiles use the canonical project policy examples under `policies.d/enterprise/` and require any installer/wizard output to report the active system policy root loudly before live use.
+Operators must not have to guess whether the active system policy tree is `/etc/queuebash/policies.d`; `/etc/bashqueues/policies.d` is legacy/migration-only and must not silently become active. These hospital profiles use the canonical project policy examples under `policies.d/enterprise/` and require any installer/wizard output to report the active system policy root loudly before live use.
 
 ## Read-only hospital profile
 

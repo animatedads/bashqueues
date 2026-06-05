@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(28|29|30|31|32|33|34|35|36|37|38|39|4[0-9]|[5-9][0-9])"' queuebash.sh || fail 'version does not preserve remote service line at 0.18.28 or newer'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(28|29|30|31|32|33|34|35|36|37|38|39|4[0-9]|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'version does not preserve remote service line at 0.18.28 or newer'
 grep -q '0.18.28 - remote queue service provider contract' CHANGELOG.md || fail 'changelog entry missing'
 grep -q '0.18.28 remote queue service provider contract' README.md || fail 'README remote service entry missing'
 

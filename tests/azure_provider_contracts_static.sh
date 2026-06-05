@@ -17,7 +17,7 @@ for f in \
   [[ -f "$f" ]] || { echo "missing $f" >&2; exit 1; }
 done
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(33|34|35|36|37|38|39|40|41|46|47|48|49|[5-9][0-9])"' queuebash.sh
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(33|34|35|36|37|38|39|40|41|46|47|48|49|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh
 grep -q '0.18.49 - BOB12 patchset file-registry hardening' CHANGELOG.md || grep -q '0.18.48 BOB12 Bob10 handoff evidence merge repair' CHANGELOG.md || grep -q '0.18.48 - BOB12 Bob10 handoff evidence merge repair' CHANGELOG.md || grep -q '0.18.35 - APAC/China cloud provider contracts' CHANGELOG.md
 grep -q '0.18.49 BOB12 patchset file-registry hardening' README.md || grep -q '0.18.48 BOB12 Bob10 handoff evidence merge repair' README.md || grep -q '0.18.48 - BOB12 Bob10 handoff evidence merge repair' README.md || grep -q '0.18.35 APAC/China cloud provider contracts' README.md
 grep -q 'queuebash.azure.detect.v1' docs/AZURE_PROVIDER_CONTRACTS.md

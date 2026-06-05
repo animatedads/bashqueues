@@ -49,12 +49,12 @@ SCRIPT_TEXT_SUFFIXES = {
     ".ps1", ".psm1", ".js", ".mjs", ".cjs", ".ts", ".php", ".rb", ".pl", ".pm", ".go",
     ".java", ".cs", ".scala", ".kt", ".kts", ".rs", ".lua", ".r", ".R", ".psql",
     ".yml", ".yaml", ".json", ".tf", ".tfvars", ".hcl", ".service", ".timer", ".socket", ".cron", ".mk", ".make", ".toml",
-    ".ini", ".cfg", ".conf", ".in", ".ipynb", ".xml",
+    ".ini", ".cfg", ".conf", ".in", ".ipynb", ".xml", ".bas", ".vba", ".vbs", ".wsf", ".gs", ".csv", ".tsv",
 }
 SCRIPT_TEXT_NAMES = {
     "Dockerfile", "Containerfile", "dockerfile", "containerfile", "crontab", "Makefile", "makefile", "GNUmakefile", "package.json", "pyproject.toml", "Cargo.toml",
     "requirements.txt", "constraints.txt", "requirements.in", "tox.ini", "setup.cfg", "Pipfile", "Gemfile", "go.mod", ".pre-commit-config.yaml",
-    ".pre-commit-config.yml", "dbt_project.yml", "dbt_project.yaml", "profiles.yml", "profiles.yaml", "schema.yml", "schema.yaml", "alembic.ini", "flyway.conf", "liquibase.properties",
+    ".pre-commit-config.yml", "dbt_project.yml", "dbt_project.yaml", "profiles.yml", "profiles.yaml", "schema.yml", "schema.yaml", "alembic.ini", "flyway.conf", "liquibase.properties", "appsscript.json",
 }
 SHELL_STARTUP_NAMES = (".bashrc", ".bash_profile", ".profile", ".bash_login")
 SCRIPT_READ_MAX_BYTES_DEFAULT = 32768
@@ -687,6 +687,12 @@ def read_static_payload_file(resolved: pathlib.Path, lang: str, source: str, max
         detected = "db_migration_config"
     elif suf in {".ipynb"}:
         detected = "notebook_json"
+    elif suf in {".bas", ".vba", ".vbs", ".wsf"}:
+        detected = "office_macro"
+    elif suf == ".gs" or resolved.name == "appsscript.json":
+        detected = "apps_script"
+    elif suf in {".csv", ".tsv"}:
+        detected = "spreadsheet_text"
     elif resolved.name in {"tox.ini", "setup.cfg"} or suf in {".ini", ".cfg"}:
         detected = "ini_config"
     elif suf in {".json"}:
@@ -1081,6 +1087,32 @@ def command_payloads(job: Dict[str, Any], max_chars: int) -> List[Dict[str, str]
         if script_items:
             items.extend(script_items)
         add("db_migration_config", lower0, raw)
+    elif lower0 in {"cscript", "wscript", "powershell", "pwsh"}:
+        # Static-only Windows/office automation script inspection.
+        script_items = safe_script_payloads(words, "office_macro", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+        add("office_macro", lower0, raw)
+    elif lower0 in {"clasp", "gas"}:
+        # Static-only Google Apps Script project inspection; never deploy or run scripts.
+        for mf in ["appsscript.json"]:
+            resolved = resolve_local_payload_path(mf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "apps_script", "apps_script_manifest_file", max_chars)
+                if item:
+                    item["language"] = "apps_script"
+                    items.append(item)
+        for gs in sorted(submit_dir.glob("*.gs"))[:3]:
+            item = read_static_payload_file(gs.resolve(), "apps_script", "apps_script_file", max_chars)
+            if item:
+                items.append(item)
+        add("apps_script", lower0, raw)
+    elif lower0 in {"csvkit", "csvsql", "xsv", "mlr", "miller"}:
+        # Static-only spreadsheet/CSV text inspection; never open a spreadsheet engine.
+        script_items = safe_script_payloads(words, "spreadsheet_text", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+        add("spreadsheet_text", lower0, raw)
     elif lower0 in {"pre-commit"}:
         for mf in [".pre-commit-config.yaml", ".pre-commit-config.yml"]:
             resolved = resolve_local_payload_path(mf, submit_dir)
@@ -1632,6 +1664,54 @@ def scan_db_migration_config(text: str, findings: List[Dict[str, Any]]) -> None:
     scan_ini_config(text, findings)
 
 
+def scan_office_macro(text: str, findings: List[Dict[str, Any]]) -> None:
+    """Scan VBA/VBScript/Windows Script text as evidence only."""
+    checks = [
+        ("office_macro_shell_execute", "high", "subprocess_execution", r"(?is)\b(?:Shell|WScript\.Shell|CreateObject\s*\(\s*['\"]WScript\.Shell|Run\s*\(|Exec\s*\()"),
+        ("office_macro_remote_download", "high", "data_transfer", r"(?is)\b(?:XMLHTTP|WinHttp\.WinHttpRequest|URLDownloadToFile|ADODB\.Stream|curl|wget|Invoke-WebRequest)\b"),
+        ("office_macro_autorun", "medium", "script_capability", r"(?is)\b(?:AutoOpen|Workbook_Open|Document_Open|Auto_Close|Application\.OnTime)\b"),
+        ("office_macro_powershell", "high", "dynamic_code_execution", r"(?is)\bpowershell(?:\.exe)?\b.{0,160}(?:-enc|-encodedcommand|iex|invoke-expression)"),
+        ("office_macro_base64_decode", "medium", "payload_decode_transform", r"(?is)\b(?:FromBase64String|base64|ADODB\.Stream)\b"),
+        ("office_macro_secret_exposure", "high", "secrets_handling", r"(?is)\b(?:Environ|GetObject|OpenTextFile|FileSystemObject)\b.{0,160}\b(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY|id_rsa|\.ssh)\b"),
+        ("office_macro_destructive_files", "critical", "destructive_operation", r"(?is)\b(?:Kill|DeleteFile|DeleteFolder|rmdir|del)\b.{0,120}(?:\\\*|/s|/q|C:\\\|/)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_powershell(text, findings)
+
+
+def scan_apps_script(text: str, findings: List[Dict[str, Any]]) -> None:
+    """Scan Google Apps Script text/manifests without executing or deploying."""
+    checks = [
+        ("apps_script_urlfetch", "medium", "data_transfer", r"(?is)\bUrlFetchApp\.fetch\s*\("),
+        ("apps_script_external_post", "high", "data_transfer", r"(?is)\bUrlFetchApp\.fetch\s*\([^)]{0,260}(?:method\s*:\s*['\"]post|payload\s*:|Authorization|Bearer)"),
+        ("apps_script_drive_wide_access", "medium", "sensitive_data_read", r"(?is)\bDriveApp\.(?:getFiles|getFolders|getRootFolder|getFileById|getFolderById)\s*\("),
+        ("apps_script_gmail_send", "medium", "data_transfer", r"(?is)\b(?:GmailApp|MailApp)\.sendEmail\s*\("),
+        ("apps_script_secret_literal", "high", "secrets_handling", r"(?is)\b(?:token|secret|password|api[_-]?key)\b\s*[:=]\s*['\"][^'\"]{4,}"),
+        ("apps_script_eval", "high", "dynamic_code_execution", r"(?is)\b(?:eval|Function)\s*\("),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_javascript(text, findings)
+
+
+def scan_spreadsheet_text(text: str, findings: List[Dict[str, Any]]) -> None:
+    """Scan CSV/TSV-like spreadsheet text for formula injection and risky import patterns."""
+    checks = [
+        ("spreadsheet_formula_injection", "high", "dynamic_code_execution", r"(?im)(?:^|[,\t])\s*[=+@-]\s*(?:cmd|powershell|bash|sh|HYPERLINK|WEBSERVICE|IMPORTXML|IMPORTDATA|IMAGE|DDE|EXEC)\b"),
+        ("spreadsheet_external_import", "medium", "data_transfer", r"(?is)\b(?:IMPORTXML|IMPORTDATA|IMPORTRANGE|WEBSERVICE|HYPERLINK)\s*\([^)]{0,260}https?://"),
+        ("spreadsheet_secret_literal", "high", "secrets_handling", r"(?im)\b(?:password|token|secret|api[_-]?key)\b\s*[,=:\t]\s*[^,\t\r\n]{4,}"),
+        ("spreadsheet_sql_dml", "medium", "database_command_execution", r"(?is)\b(?:select|insert|update|delete|grant\s+all|create\s+role|create\s+user)\b.{0,180}\b(?:from|into|set|privileges|login)\b"),
+        ("spreadsheet_destructive_sql", "high", "destructive_operation", r"(?is)\b(?:drop\s+database|drop\s+schema|truncate\s+table|delete\s+from\s+\w+\s*;)\b"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_sql(text, findings)
+
+
 def command_data_usage_summary(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Return compact command/data-use evidence derived only from static findings."""
     categories = [str(f.get("category")) for f in findings]
@@ -1873,6 +1953,21 @@ def examine_job(job: Dict[str, Any], max_chars: int) -> Dict[str, Any]:
         elif lang == "db_migration_config":
             selected_checks.append("db_migration_config_patterns")
             scan_db_migration_config(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "office_macro":
+            selected_checks.append("office_macro_patterns")
+            scan_office_macro(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "apps_script":
+            selected_checks.append("apps_script_patterns")
+            scan_apps_script(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "spreadsheet_text":
+            selected_checks.append("spreadsheet_text_patterns")
+            scan_spreadsheet_text(text, findings)
             selected_checks.append("legal_case_restriction_hints")
             scan_legal_case_hints(text, lang, findings)
         elif lang == "systemd":

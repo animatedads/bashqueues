@@ -1,0 +1,8 @@
+Usage: queue code audit [--tree DIR] [--mode off|warn|enforce] [--json]
+
+Audit code-signature coverage and metadata by component category.
+
+Options:
+  --tree DIR                 target tree, default is the queuebash script tree
+  --mode off|warn|enforce    verification mode
+  --json                     emit machine-readable output

@@ -1,0 +1,19 @@
+{
+  "check": "scope",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "history_scan_performed": false,
+  "live_api_used": false,
+  "live_repository_accessed": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "secrets_scanner",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.secrets_scanner.scope.v1",
+  "scope_name": "example/repo-fixture",
+  "scope_type": "repository_reference",
+  "source": "fixture"
+}

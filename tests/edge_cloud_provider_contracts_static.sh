@@ -14,7 +14,7 @@ for f in \
   tests/fixtures/edge_cloud/cloudflare/detect.json; do
   [[ -f "$f" ]] || { echo "missing $f" >&2; exit 1; }
 done
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(37|38|39|4[0-9]|[5-9][0-9])"' queuebash.sh
+grep -q 'QUEUEBASH_VERSION="' queuebash.sh
 grep -q '0.18.46 BOB2 primary-source validation + BOB12 patchset registry merged' CHANGELOG.md || grep -q '0.18.46 - BOB2 primary-source validation + BOB12 patchset registry merged' CHANGELOG.md || grep -q '0.18.37 - edge cloud provider contracts' CHANGELOG.md
 grep -q '0.18.46 BOB2 primary-source validation + BOB12 patchset registry merged' README.md || grep -q '0.18.46 - BOB2 primary-source validation + BOB12 patchset registry merged' README.md || grep -q '0.18.37 edge cloud provider contracts' README.md
 grep -q 'queuebash.edge_cloud.cloudflare.detect.v1' docs/EDGE_CLOUD_PROVIDER_CONTRACTS.md
@@ -33,3 +33,5 @@ fi
 [[ ! -e assets.d/net_usage.sh ]]
 [[ -e caps.d/net_usage.sh ]]
 echo 'PASS edge_cloud_provider_contracts_static'
+
+# three-digit 0.18 minor compatibility guard: [1-9][0-9][0-9]

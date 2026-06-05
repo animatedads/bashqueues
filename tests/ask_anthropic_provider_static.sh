@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(49|[5-9][0-9])"' queuebash.sh || fail 'version not compatible with 0.18.49+'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(49|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'version not compatible with 0.18.49+'
 grep -q '0.18.44 - BOB11 ask Anthropic live-provider pack' CHANGELOG.md || fail 'changelog missing Anthropic provider entry'
 grep -q 'queue-ai-ask-anthropic' queuebash.sh || fail 'queue ask does not resolve Anthropic helper'
 grep -q 'live_anthropic_provider' queuebash.sh || fail 'Anthropic live audit reason missing'

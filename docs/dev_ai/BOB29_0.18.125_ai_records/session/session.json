@@ -1,0 +1,16 @@
+{
+  "agent": "Bob29",
+  "authority": "coding_agent",
+  "base": "0.18.124",
+  "lesson_count_at_start": 0,
+  "role": "provider-family-coverage",
+  "schema": "queuebash.dev_ai.session.v1",
+  "session_id": "AIS-20260605-163317-146997-9336-Bob29",
+  "started_at": "2026-06-05T16:33:17Z",
+  "status": "active",
+  "stopped_at": "",
+  "tags": [
+    "bob29"
+  ],
+  "task": "continue from 0.18.124 merge; verify dns/cache present; add mail_service and secrets_scanner fixture-first facts"
+}

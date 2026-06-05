@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 fail(){ echo "FAIL: $*" >&2; exit 1; }
 [[ -f queuebash.sh ]] || fail 'run from repository root'
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(49|[5-9][0-9])"' queuebash.sh || fail 'version not compatible with 0.18.49+'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(49|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'version not compatible with 0.18.49+'
 grep -q '0.18.46 BOB12 attempt evidence linkage' README.md || fail 'README missing 0.18.46 entry'
 grep -q '0.18.46 - BOB12 attempt evidence linkage' CHANGELOG.md || fail 'CHANGELOG missing 0.18.46 entry'
 grep -q 'queue dev attempt begin --text TEXT' queuebash.sh || fail 'dev usage missing attempt begin'

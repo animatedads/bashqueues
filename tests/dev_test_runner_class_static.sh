@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 fail(){ echo "FAIL $*" >&2; exit 1; }
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(4[0-9]|[5-9][0-9])"' queuebash.sh || fail 'queuebash version not current enough for dev test runner compatibility'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(4[0-9]|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'queuebash version not current enough for dev test runner compatibility'
 grep -Eq 'WIZARD_VERSION="0\.[0-9]+\.[0-9]+"' bin/queue-policy-wizard || fail 'wizard version string missing/malformed'
 grep -q '^## 0.18.25 internal dev test runner class' README.md || fail 'README release section missing'
 grep -q '^## 0.18.25 - internal dev test runner class' CHANGELOG.md || fail 'CHANGELOG release section missing'

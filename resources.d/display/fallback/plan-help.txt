@@ -14,3 +14,5 @@ queue plan status PATH [--json]
   Summarise exported runtime/job/status evidence as reviewable plan facts. Static only: no SDK/API/CLI/WinRM/SMB/RPC/REST polling, no credentials, no logs, no mutation.
 queue plan sources PATH [--json]
   Explain plan/job extraction-source contracts for recognised exported evidence and the boundary to future collectors.
+queue plan evidence PATH [--json]
+  Produce a supplied-file evidence bundle separating plan definitions from runtime/job status facts, with source contracts, policy gates and no-live attestations.

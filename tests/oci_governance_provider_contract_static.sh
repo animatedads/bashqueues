@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(28|29|30|31|32|33|34|35|36|37|38|39|40|41|47|48|49|[5-9][0-9])"' queuebash.sh || fail 'version not bumped to 0.18.28 or newer'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(28|29|30|31|32|33|34|35|36|37|38|39|40|41|47|48|49|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'version not bumped to 0.18.28 or newer'
 grep -q '0.18.26 - Oracle Cloud Infrastructure governance provider contract' CHANGELOG.md || fail 'changelog entry missing'
 
 for f in docs/OCI_GOVERNANCE_PROVIDER.md docs/TRUST_PROVIDERS.md examples/providers/oci.env.example; do

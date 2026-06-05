@@ -106,7 +106,7 @@ offline
 Profile files live under:
 
 ```text
-/etc/bashqueues/policies.d/ai-profiles/
+/etc/queuebash/policies.d/ai-profiles/
 ```
 
 Example:

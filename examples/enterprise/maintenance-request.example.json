@@ -1,15 +1,45 @@
 {
-  "schema": "queuebash.enterprise.maintenance_request.v1",
-  "request_id": "CHG-EXAMPLE-0001",
-  "environment": "hospital-live-pilot",
+  "schema": "queuebash.enterprise_maintenance_evidence_request.v1",
   "profile": "hospital-live-approved-maintenance-default",
-  "class": "approved-maintenance-readwrite",
-  "requested_action": "backup verification and approved service restart preflight",
-  "ticket": "TICKET-EXAMPLE-0001",
-  "approver": "named-human-approver-required",
-  "window_start": "2030-01-01T00:00:00Z",
-  "window_end": "2030-01-01T01:00:00Z",
-  "rollback": "restore previous service state and disable maintenance class",
-  "audit_log": "/var/log/queuebash/maintenance/CHG-EXAMPLE-0001.log",
-  "live_clearance_requested": false
+  "change_ticket": "CHG-12345",
+  "maintenance_class": "approved-backup-repair",
+  "purpose": "repair verified backup metadata during approved maintenance window",
+  "maintenance_window": {
+    "start": "2026-06-04T22:00:00Z",
+    "end": "2026-06-04T22:30:00Z"
+  },
+  "requested_actions": [
+    "backup-verify",
+    "approved-maintenance-readwrite"
+  ],
+  "approval": {
+    "dual_control": true,
+    "signed_approval": true,
+    "approvers": [
+      "ops-lead@example.invalid",
+      "clinical-owner@example.invalid"
+    ]
+  },
+  "rollback": {
+    "procedure": "restore previous metadata snapshot and re-run backup verification"
+  },
+  "audit": {
+    "audit_path": "/var/lib/queuebash/audit/CHG-12345"
+  },
+  "policy": {
+    "policy_root": "/etc/queuebash/policies.d"
+  },
+  "secrets": {
+    "secret_env_allowed": false,
+    "secret_value_json_allowed": false,
+    "break_glass_used": false
+  },
+  "ai": {
+    "external_provider_allowed": false
+  },
+  "live_clearance_requested": false,
+  "evidence_id": "maint-CHG-12345-001",
+  "requester": "maintenance-requester@example.invalid",
+  "created_at": "2026-06-04T21:30:00Z",
+  "expires_at": "2026-06-04T23:00:00Z"
 }

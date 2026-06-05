@@ -1,0 +1,10 @@
+Usage: queue code sign|verify|audit|trust|policy
+
+Code signing commands:
+  queue code sign --all [--tree DIR] [--key NAME] [--signer-root DIR] [--json]
+  queue code verify [--tree DIR] [--mode off|warn|enforce] [--json]
+  queue code audit [--tree DIR] [--mode off|warn|enforce] [--json]
+  queue code trust --public-key FILE [--shared|--personal]
+  queue code policy
+
+This family reports and verifies code signing metadata. JSON output remains command-specific.

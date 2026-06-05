@@ -7,9 +7,11 @@ Usage: queue cluster status [--json]
        queue cluster vote status [--json]
        queue cluster vote propose --operation OPERATION --reason REASON [--materialize] [--json]
        queue cluster vote cast --proposal-id ID --decision approve|reject|abstain --reason REASON [--materialize] [--json]
+       queue cluster vote tally --proposal-id ID [--json]
+       queue cluster vote evaluate --proposal-id ID [--json]
        queue cluster elect status [--json]
        queue cluster elect lease [--materialize|--renew] [--ttl-seconds N] [--json]
        queue cluster policy status|paths [--json]
        queue cluster explain [SUBJECT] [--json]
 
-Bob25 cluster operations remain standalone-safe: status and explain commands are read-only, init writes only when --materialize is explicit, elect lease, vote propose and vote cast write only when --materialize is explicit, and no cluster command touches the network.
+Bob25 cluster operations remain standalone-safe: status and explain commands are read-only, init writes only when --materialize is explicit, elect lease, vote propose and vote cast write only when --materialize is explicit; vote tally and vote evaluate are read-only, and no cluster command touches the network.

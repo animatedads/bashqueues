@@ -1,0 +1,19 @@
+{
+  "auto_revocation": "described_not_performed",
+  "case_hint_controls": "not_modified",
+  "check": "policy",
+  "credentials_required": false,
+  "decision": "allow",
+  "enforcement_mode": "advisory_only",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "secrets_scanner",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "retention_policy": "fixture_metadata_only",
+  "schema": "queuebash.secrets_scanner.policy.v1",
+  "source": "fixture"
+}

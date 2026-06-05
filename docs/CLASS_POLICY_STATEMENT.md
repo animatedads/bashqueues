@@ -12,7 +12,7 @@ policies.d/class-statement/default.env
 
 Policy lookup uses the same precedence as sandbox/seccomp policies:
 
-1. `/etc/bashqueues/policies.d/class-statement/default.env`
+1. `/etc/queuebash/policies.d/class-statement/default.env`
 2. `$QUEUEBASH_ROOT/policies.d/class-statement/default.env`
 3. bundled repository `policies.d/class-statement/default.env`
 
@@ -140,7 +140,7 @@ $QUEUEBASH_ROOT/keys/meta/NAME.env
 a central policy such as:
 
 ```text
-/etc/bashqueues/policies.d/class-statement/default.env
+/etc/queuebash/policies.d/class-statement/default.env
 ```
 
 and make it read-only/admin-owned if required:
@@ -225,7 +225,7 @@ Example:
 CLASS_POLICY_USER_WEBADMINS_ALLOW_ADD_PORTS="80 1080 8080"
 ```
 
-With this in `/etc/bashqueues/policies.d/class-statement/default.env`, the
+With this in `/etc/queuebash/policies.d/class-statement/default.env`, the
 `webadmins` queue user may submit with `--add-port 80`, `--add-port 1080`, or
 `--add-port 8080` without a per-command authorisation.  A different user, for
 example `dba`, still needs the normal reason or signed command-bound

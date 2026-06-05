@@ -54,11 +54,23 @@ queue-vcs-probe --json --type auto /srv/src/project
 
 It reports `queuebash.vcs.probe.v1` with the detected type, root marker, client availability, branch/tag/stream/client identity, observed revision/changelist/hash, and clean-tree summary when the native client is available. For old CVS trees it can still report metadata-only identity such as `HEAD` or the sticky tag even when the CVS client is absent.
 
-The `vcs:identity` and `vcs:revision` assets build on the probe helper for reproducible gates. They are intentionally read-only and are suitable for audit or release admission where “whatever is checked out on the worker” is not good enough.
+The `vcs:identity`, `vcs:revision`, and `vcs:fingerprint` assets build on the probe helper for reproducible gates. They are intentionally read-only and are suitable for audit or release admission where “whatever is checked out on the worker” is not good enough.
 
 `VCS_CHANGESET_AUDIT` is the conservative class for that case. It serialises by audit name, requires repository existence and a clean tree, and optionally pins `QUEUEBASH_VCS_AUDIT_IDENTITY` and `QUEUEBASH_VCS_AUDIT_REVISION`.
 
 
 ## Installed helper resolution
 
-Probe-backed assets (`vcs:identity` and `vcs:revision`) must work when class assets are evaluated from an installed shared tree, not only from the source checkout. The asset plugin resolves `queue-vcs-probe` relative to `assets.d/vcs.sh`, then via `QUEUEBASH_ROOT`, `QUEUEBASH_HOME`, a source-tree `./bin` fallback, and finally `PATH`. This keeps legacy VCS gates usable under package installs, copied runtime trees, and admin shells that run from arbitrary working directories.
+Probe-backed assets (`vcs:identity`, `vcs:revision`, and `vcs:fingerprint`) must work when class assets are evaluated from an installed shared tree, not only from the source checkout. The asset plugin resolves `queue-vcs-probe` relative to `assets.d/vcs.sh`, then via `QUEUEBASH_ROOT`, `QUEUEBASH_HOME`, a source-tree `./bin` fallback, and finally `PATH`. This keeps legacy VCS gates usable under package installs, copied runtime trees, and admin shells that run from arbitrary working directories.
+
+### Probe fingerprint
+
+`queue-vcs-probe` now also reports a stable `fingerprint` field. The fingerprint is a SHA-256 digest over the normalised VCS type, marker, identity, revision, clean-state, and status summary. It deliberately excludes the local filesystem path so the same checked-out changeset can be compared across build workers and installed queuebash trees.
+
+The `vcs:fingerprint` asset gates on that value with `require_fingerprint=...`. This is useful for elderly CVS/SVN/Perforce estates where an audit wants one compact immutable token rather than several fragile branch/revision/client fields.
+
+### VCS assert helper
+
+`queue-vcs-assert` and `queue vcs assert` provide a read-only assertion layer over the normal probe. They compare the observed identity, revision/changelist, and/or fingerprint with required values and emit `queuebash.vcs.assert.v1` JSON for automation. This gives release scripts and sysadmin runbooks one stable command for Git, SVN, CVS, Mercurial, and Perforce estates rather than hand-parsing each vendor client.
+
+`VCS_CHANGESET_AUDIT` can also gate directly on `QUEUEBASH_VCS_AUDIT_FINGERPRINT`, which is useful when a brittle legacy checkout is best represented by one compact reproducibility token.

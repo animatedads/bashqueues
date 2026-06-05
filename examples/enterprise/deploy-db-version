@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+version="${1:-}"
+[[ -n "$version" ]] || { echo "Usage: examples/enterprise/deploy-db-version VERSION [--json]" >&2; exit 2; }
+json=0
+[[ "${2:-}" == "--json" ]] && json=1
+cmd=(queue submit "deploy-db-$version" --class DB_MIGRATION -- bash -lc "echo deploy-db-version $version")
+if [[ "$json" -eq 1 ]]; then
+  printf '{"schema":"queuebash.enterprise.deploy_example.v1","ok":true,"kind":"db","version":"%s","dryrun":true,"command":' "$version"
+  python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "${cmd[@]}"
+  printf '}\n'
+else
+  echo "Example only; review maintenance evidence before live use."
+  printf 'Would run:'; printf ' %q' "${cmd[@]}"; echo
+fi

@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail(){ echo "[FAIL] $*" >&2; exit 1; }
 
-grep -Eq 'QUEUEBASH_VERSION="0\.18\.(49|[5-9][0-9])"' queuebash.sh || fail 'version not compatible with 0.18.49+'
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.(49|([5-9][0-9]|[1-9][0-9][0-9]))"' queuebash.sh || fail 'version not compatible with 0.18.49+'
 grep -Fq '0.18.46 BOB2 primary-source validation + BOB12 patchset registry merged' README.md || fail 'README 0.18.46 entry missing'
 grep -Fq '0.18.46 - BOB2 primary-source validation + BOB12 patchset registry merged' CHANGELOG.md || fail 'CHANGELOG 0.18.46 entry missing'
 

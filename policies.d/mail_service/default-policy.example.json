@@ -1,0 +1,14 @@
+{
+  "live_api_used": false,
+  "mode": "fixture_first",
+  "mutation_allowed": false,
+  "normalized_json_only": true,
+  "notes": [
+    "Mail Service coverage is advisory/read-only.",
+    "Live reads require a later explicit gate and are not enabled by this provider helper."
+  ],
+  "provider_family": "mail_service",
+  "provider_output_is_shell": false,
+  "provisioning_allowed": false,
+  "schema": "queuebash.mail_service.policy.example.v1"
+}

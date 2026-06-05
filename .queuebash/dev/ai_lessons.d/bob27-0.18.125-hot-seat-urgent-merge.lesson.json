@@ -1,0 +1,10 @@
+{
+  "created_at": "2026-06-05T17:55:00Z",
+  "created_from_session": "Bob27-hot-seat-0.18.125",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-BOB27-0.18.125-hot-seat-urgent-merge",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "For hot-seat waves, apply urgent user-facing fixes first, then merge edge patches by lane semantics. When several patches are based on the same prior version, applying a version hunk can cause later queuebash hunks to be skipped as reversed; manually carry forward function-level changes instead of trusting whole-file payloads. Keep installer executable coverage, command catalog JSON discoverability, and core-surface dispatcher tests in the validation set."
+}
