@@ -1,0 +1,7 @@
+AIRFLOW_URL = "http://localhost:8080/api/v1"
+requests.get(f"{AIRFLOW_URL}/dags")
+requests.get(f"{AIRFLOW_URL}/dagRuns?state=running")
+from prefect.client import get_client
+client.read_deployments(); client.read_flow_runs()
+DAGSTER_URL = "http://localhost:3000/graphql"
+repositoriesOrError pipelineRunsOrError

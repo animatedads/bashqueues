@@ -49,11 +49,12 @@ SCRIPT_TEXT_SUFFIXES = {
     ".ps1", ".psm1", ".js", ".mjs", ".cjs", ".ts", ".php", ".rb", ".pl", ".pm", ".go",
     ".java", ".cs", ".scala", ".kt", ".kts", ".rs", ".lua", ".r", ".R", ".psql",
     ".yml", ".yaml", ".json", ".tf", ".tfvars", ".hcl", ".service", ".timer", ".socket", ".cron", ".mk", ".make", ".toml",
-    ".ini", ".cfg", ".conf", ".in",
+    ".ini", ".cfg", ".conf", ".in", ".ipynb", ".xml",
 }
 SCRIPT_TEXT_NAMES = {
     "Dockerfile", "Containerfile", "dockerfile", "containerfile", "crontab", "Makefile", "makefile", "GNUmakefile", "package.json", "pyproject.toml", "Cargo.toml",
     "requirements.txt", "constraints.txt", "requirements.in", "tox.ini", "setup.cfg", "Pipfile", "Gemfile", "go.mod", ".pre-commit-config.yaml",
+    ".pre-commit-config.yml", "dbt_project.yml", "dbt_project.yaml", "profiles.yml", "profiles.yaml", "schema.yml", "schema.yaml", "alembic.ini", "flyway.conf", "liquibase.properties",
 }
 SHELL_STARTUP_NAMES = (".bashrc", ".bash_profile", ".profile", ".bash_login")
 SCRIPT_READ_MAX_BYTES_DEFAULT = 32768
@@ -632,7 +633,7 @@ def read_static_payload_file(resolved: pathlib.Path, lang: str, source: str, max
         return None
     max_bytes = int(os.environ.get("QUEUEBASH_AI_POLICY_GATE_SCRIPT_MAX_BYTES", str(SCRIPT_READ_MAX_BYTES_DEFAULT)))
     suf = resolved.suffix.lower()
-    if resolved.name not in SHELL_STARTUP_NAMES and resolved.name not in SCRIPT_TEXT_NAMES and suf not in SCRIPT_TEXT_SUFFIXES and lang not in {"bash", "vcs_hook", "dependency_manifest", "ini_config"}:
+    if resolved.name not in SHELL_STARTUP_NAMES and resolved.name not in SCRIPT_TEXT_NAMES and suf not in SCRIPT_TEXT_SUFFIXES and lang not in {"bash", "vcs_hook", "dependency_manifest", "ini_config", "notebook_json", "data_migration_manifest", "db_migration_config"}:
         return None
     try:
         data = resolved.read_bytes()[:max_bytes]
@@ -678,6 +679,14 @@ def read_static_payload_file(resolved: pathlib.Path, lang: str, source: str, max
         detected = "package_manifest"
     elif resolved.name in {"requirements.txt", "constraints.txt", "requirements.in", "Pipfile", "Gemfile", "go.mod"}:
         detected = "dependency_manifest"
+    elif resolved.name in {"dbt_project.yml", "dbt_project.yaml", "profiles.yml", "profiles.yaml", "schema.yml", "schema.yaml"}:
+        detected = "data_migration_manifest"
+    elif resolved.name in {"alembic.ini", "flyway.conf", "liquibase.properties"}:
+        detected = "db_migration_config"
+    elif "liquibase" in resolved.name.lower() and suf in {".xml", ".yaml", ".yml", ".json"}:
+        detected = "db_migration_config"
+    elif suf in {".ipynb"}:
+        detected = "notebook_json"
     elif resolved.name in {"tox.ini", "setup.cfg"} or suf in {".ini", ".cfg"}:
         detected = "ini_config"
     elif suf in {".json"}:
@@ -1038,6 +1047,40 @@ def command_payloads(job: Dict[str, Any], max_chars: int) -> List[Dict[str, str]
                 if item:
                     items.append(item)
         add("ini_config", lower0, raw)
+    elif lower0 in {"jupyter", "jupyter-notebook", "papermill", "nbconvert"}:
+        # Static-only notebook inspection; never execute cells or kernels.
+        script_items = safe_script_payloads(words, "notebook_json", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+        for nb in sorted(submit_dir.glob("*.ipynb"))[:3]:
+            item = read_static_payload_file(nb.resolve(), "notebook_json", "notebook_file", max_chars)
+            if item:
+                items.append(item)
+        add("notebook_json", lower0, raw)
+    elif lower0 in {"dbt"}:
+        # Static-only dbt manifest inspection; never run dbt macros/models.
+        for mf in ["dbt_project.yml", "dbt_project.yaml", "profiles.yml", "profiles.yaml"]:
+            resolved = resolve_local_payload_path(mf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "data_migration_manifest", "data_migration_manifest_file", max_chars)
+                if item:
+                    item["language"] = "data_migration_manifest"
+                    items.append(item)
+        add("data_migration_manifest", lower0, raw)
+    elif lower0 in {"alembic", "flyway", "liquibase"}:
+        # Static-only migration config/changelog inspection; never run migrations.
+        names = ["alembic.ini", "flyway.conf", "liquibase.properties", "changelog.xml", "db.changelog.xml", "liquibase.yml", "liquibase.yaml"]
+        for mf in names:
+            resolved = resolve_local_payload_path(mf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "db_migration_config", "db_migration_config_file", max_chars)
+                if item:
+                    item["language"] = "db_migration_config"
+                    items.append(item)
+        script_items = safe_script_payloads(words, "db_migration_config", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+        add("db_migration_config", lower0, raw)
     elif lower0 in {"pre-commit"}:
         for mf in [".pre-commit-config.yaml", ".pre-commit-config.yml"]:
             resolved = resolve_local_payload_path(mf, submit_dir)
@@ -1531,6 +1574,64 @@ def scan_vcs_hook(text: str, findings: List[Dict[str, Any]]) -> None:
             finding(findings, fid, sev, cat, m.group(0), position=m.start())
     scan_bash(text, findings)
 
+
+def scan_notebook_json(text: str, findings: List[Dict[str, Any]]) -> None:
+    """Scan Jupyter-style notebook JSON as static text only.
+
+    Notebook cells are never executed. The checks look for execution-like cell
+    content, encoded payloads, shell escapes, DB sinks, and secret exposure in
+    the stored JSON representation.
+    """
+    checks = [
+        ("notebook_shell_escape", "medium", "subprocess_execution", r"(?is)(?:!|%sx|%%bash|subprocess\.|os\.system|ProcessBuilder|child_process)"),
+        ("notebook_remote_shell", "high", "dynamic_code_execution", r"(?is)\b(?:curl|wget)\b.{0,180}\|\s*(?:sh|bash)\b"),
+        ("notebook_base64_decode", "medium", "payload_decode_transform", r"(?is)(?:base64\.b64decode|Buffer\.from\([^\n]{0,80}base64|FromBase64String|base64\s+(?:-d|--decode))"),
+        ("notebook_database_execute", "high", "database_command_execution", r"(?is)(?:cursor\.execute|cur\.execute|conn\.execute|\.query\(|psql\b|mysql\b|sqlalchemy)"),
+        ("notebook_secret_exposure", "high", "secrets_handling", r"(?is)\b(?:print|echo|display|cat|open)\b.{0,120}\b(?:[A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD)|API[_-]?KEY|id_rsa|\.ssh)\b"),
+        ("notebook_destructive_root", "critical", "destructive_operation", r"(?is)\brm\s+-rf\s+/(?:\s|$)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_python(text, findings)
+    scan_bash(text, findings)
+    scan_sql(text, findings)
+
+
+def scan_data_migration_manifest(text: str, findings: List[Dict[str, Any]]) -> None:
+    """Scan dbt/data-pipeline manifests as static text."""
+    checks = [
+        ("data_migration_pre_hook_remote_shell", "high", "dynamic_code_execution", r"(?is)\b(?:pre-hook|post-hook|pre_hook|post_hook|pre\s*-\s*hook|post\s*-\s*hook|on-run-start|on-run-end)\b.{0,240}\b(?:curl|wget)\b.{0,160}\|\s*(?:sh|bash)\b"),
+        ("data_migration_run_operation_shell", "high", "subprocess_execution", r"(?is)\b(?:run-operation|local-exec|bash\s+-c|sh\s+-c|subprocess\.|os\.system)\b"),
+        ("data_migration_secret_literal", "high", "secrets_handling", r"(?im)^\s*(?:password|token|secret|api[_-]?key)\s*[:=]\s*['\"]?[^\s#'\"]{4,}"),
+        ("data_migration_open_target", "medium", "external_payload_read", r"(?is)\b(?:target|database|schema|profile)\b.{0,80}\b(?:prod|production|main_erp|erp)\b"),
+        ("data_migration_destructive_sql", "high", "destructive_operation", r"(?is)\b(?:drop\s+database|drop\s+schema|truncate\s+table|delete\s+from\s+\w+\s*;|grant\s+all\s+privileges)\b"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_yaml_iac(text, findings)
+    scan_sql(text, findings)
+    scan_bash(text, findings)
+
+
+def scan_db_migration_config(text: str, findings: List[Dict[str, Any]]) -> None:
+    """Scan Alembic/Flyway/Liquibase migration configuration/changelogs."""
+    checks = [
+        ("db_migration_plaintext_db_url", "high", "secrets_handling", r"(?im)^\s*(?:sqlalchemy\.url|flyway\.url|url)\s*[=:]\s*[^\n#]*://[^\s/@]+:[^\s/@]+@"),
+        ("db_migration_callback_shell", "high", "subprocess_execution", r"(?is)\b(?:callback|beforeMigrate|afterMigrate|executeCommand|sqlFile|shell|bash\s+-c|sh\s+-c)\b.{0,200}"),
+        ("db_migration_remote_shell", "high", "dynamic_code_execution", r"(?is)\b(?:curl|wget)\b.{0,180}\|\s*(?:sh|bash)\b"),
+        ("db_migration_passwordless_login", "high", "passwordless_db_login", r"(?is)\bCREATE\s+(?:USER|ROLE)\b(?:(?!PASSWORD|IDENTIFIED\s+BY|LOGIN\s+PASSWORD).){0,220}\bLOGIN\b"),
+        ("db_migration_grant_all", "high", "grant_all_privileges", r"(?is)\bGRANT\s+ALL\s+PRIVILEGES\b"),
+        ("db_migration_destructive_schema", "high", "destructive_operation", r"(?is)\b(?:drop\s+database|drop\s+schema|truncate\s+table|delete\s+from\s+\w+\s*;)\b"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_sql(text, findings)
+    scan_ini_config(text, findings)
+
+
 def command_data_usage_summary(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Return compact command/data-use evidence derived only from static findings."""
     categories = [str(f.get("category")) for f in findings]
@@ -1757,6 +1858,21 @@ def examine_job(job: Dict[str, Any], max_chars: int) -> Dict[str, Any]:
         elif lang == "vcs_hook":
             selected_checks.append("vcs_hook_execution_patterns")
             scan_vcs_hook(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "notebook_json":
+            selected_checks.append("notebook_json_cell_patterns")
+            scan_notebook_json(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "data_migration_manifest":
+            selected_checks.append("data_migration_manifest_patterns")
+            scan_data_migration_manifest(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "db_migration_config":
+            selected_checks.append("db_migration_config_patterns")
+            scan_db_migration_config(text, findings)
             selected_checks.append("legal_case_restriction_hints")
             scan_legal_case_hints(text, lang, findings)
         elif lang == "systemd":

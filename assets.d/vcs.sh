@@ -249,10 +249,23 @@ queue_asset_check_vcs_branch() {
     return 1
 }
 
+_vcs_probe_helper_path() {
+    local here candidate
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+    for candidate in         "${here}/../bin/queue-vcs-probe"         "${QUEUEBASH_ROOT:-}/bin/queue-vcs-probe"         "${QUEUEBASH_HOME:-}/bin/queue-vcs-probe"         "./bin/queue-vcs-probe"; do
+        [[ -n "$candidate" && -x "$candidate" ]] && { printf '%s
+' "$candidate"; return 0; }
+        [[ -n "$candidate" && -f "$candidate" ]] && { printf '%s
+' "$candidate"; return 0; }
+    done
+    command -v queue-vcs-probe 2>/dev/null || return 1
+}
+
 _vcs_probe_field() {
-    local field="$1" target="$2" type="$3" timeout_s="$4" raw
-    [[ -f "bin/queue-vcs-probe" ]] || { echo "asset_check_blocked: vcs:$field helper_missing=bin/queue-vcs-probe"; return 1; }
-    raw="$(bash bin/queue-vcs-probe --json --type "$type" --timeout "$timeout_s" "$target" 2>/dev/null)" || return 1
+    local field="$1" target="$2" type="$3" timeout_s="$4" raw helper
+    helper="$(_vcs_probe_helper_path || true)"
+    [[ -n "$helper" ]] || { echo "asset_check_blocked: vcs:$field helper_missing=queue-vcs-probe"; return 1; }
+    raw="$(bash "$helper" --json --type "$type" --timeout "$timeout_s" "$target" 2>/dev/null)" || return 1
     python3 -c 'import json, sys; data=json.loads(sys.argv[2]); value=data.get(sys.argv[1], ""); print("true" if value is True else "false" if value is False else value)' "$field" "$raw"
 }
 queue_asset_check_vcs_identity() {

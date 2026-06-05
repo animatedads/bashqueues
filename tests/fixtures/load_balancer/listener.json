@@ -1,0 +1,19 @@
+{
+  "certificate_reference": "cert-ref-only",
+  "check": "listener",
+  "credentials_required": false,
+  "decision": "allow",
+  "default_action": "forward_reference_only",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "port": 443,
+  "protocol": "HTTPS",
+  "provider": "fixture",
+  "provider_family": "load_balancer",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.load_balancer.listener.v1",
+  "source": "fixture"
+}

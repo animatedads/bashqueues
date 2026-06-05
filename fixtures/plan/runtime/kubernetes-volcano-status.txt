@@ -1,0 +1,5 @@
+from kubernetes import client, config
+batch_v1 = client.BatchV1Api()
+batch_v1.list_namespaced_cron_job(namespace)
+batch_v1.list_namespaced_job(namespace)
+custom_api.list_namespaced_custom_object(group="batch.volcano.sh", plural="jobs")

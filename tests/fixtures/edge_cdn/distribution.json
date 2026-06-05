@@ -1,0 +1,22 @@
+{
+  "check": "distribution",
+  "credentials_required": false,
+  "decision": "allow",
+  "distribution_id": "dist-fixture-001",
+  "domain": "static.example.invalid",
+  "edge_networks": [
+    "global"
+  ],
+  "enabled": true,
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "edge_cdn",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.edge_cdn.distribution.v1",
+  "source": "fixture",
+  "tls_mode": "managed_certificate_reference_only"
+}

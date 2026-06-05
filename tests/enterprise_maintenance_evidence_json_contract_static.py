@@ -34,7 +34,9 @@ for key in [
     'cluster_fence_token_hash', 'cluster_fence_token_redacted',
     'cluster_split_brain_guard', 'cluster_blast_radius_limited',
     'cluster_canary_completed', 'cluster_drain_verified',
-    'cluster_rollback_checkpoint_hash', 'cluster_rollback_checkpoint_redacted'
+    'cluster_rollback_checkpoint_hash', 'cluster_rollback_checkpoint_redacted',
+    'cluster_observation_completed', 'cluster_observation_health_ok',
+    'cluster_observation_slo_ok', 'cluster_observation_evidence_redacted'
 ]:
     assert key in obj['checks'], key
 proc = subprocess.run([str(helper), '--request', str(cluster_valid), '--json'], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
@@ -52,6 +54,10 @@ assert cluster_obj['checks']['cluster_canary_completed'] is True
 assert cluster_obj['checks']['cluster_drain_verified'] is True
 assert cluster_obj['checks']['cluster_rollback_checkpoint_hash'] is True
 assert cluster_obj['checks']['cluster_rollback_checkpoint_redacted'] is True
+assert cluster_obj['checks']['cluster_observation_completed'] is True
+assert cluster_obj['checks']['cluster_observation_health_ok'] is True
+assert cluster_obj['checks']['cluster_observation_slo_ok'] is True
+assert cluster_obj['checks']['cluster_observation_evidence_redacted'] is True
 
 for sample in ['approved_maintenance_request.example.json', 'approved_maintenance_decision.allowed.example.json', 'approved_maintenance_decision.blocked.example.json', 'approved_maintenance_cluster_context.example.json']:
     loaded = json.loads((root / 'schemas' / 'enterprise' / sample).read_text())

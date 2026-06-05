@@ -5,7 +5,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$repo_root"
 
-grep -q 'QUEUEBASH_VERSION="0.18.119"' queuebash.sh || fail "version not bumped to Bob28 delivery"
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.[0-9]+"' queuebash.sh || fail "queuebash version shape missing"
 grep -q 'queuebash.direct_execution_advice.v1' queuebash.sh || fail "direct execution JSON advice schema missing"
 grep -q 'queuebash.command_catalog.v1' queuebash.sh || fail "global JSON command catalog schema missing"
 grep -q 'QUEUEBASH_OUTPUT_JSON' queuebash.sh || fail "global JSON dynamic-scope switch missing"
@@ -41,10 +41,10 @@ python3 - <<PY
 import json, pathlib
 obj=json.loads(pathlib.Path('/tmp/queuebash_version_json.$$').read_text())
 assert obj['schema'] == 'queuebash.version.v1', obj
-assert obj['version'] == '0.18.119', obj
+assert obj['version'].startswith('0.18.'), obj
 PY
 queue version >/tmp/queuebash_version_text.$$
-grep -q '^queuebash 0.18.119$' /tmp/queuebash_version_text.$$ || fail "global JSON leaked into later human command"
+grep -Eq '^queuebash 0\.18\.[0-9]+$' /tmp/queuebash_version_text.$$ || fail "global JSON leaked into later human command"
 queue --json help >/tmp/queuebash_help_json.$$
 python3 - <<PY
 import json, pathlib
@@ -53,6 +53,9 @@ assert obj['schema'] == 'queuebash.command_catalog.v1', obj
 assert obj['global_json'] is True, obj
 assert '--json' in obj['json_switches'], obj
 assert 'submit' in obj['commands'], obj
+assert 'remote-admin' in obj['commands'], obj
+assert 'vcs' in obj['commands'], obj
+assert 'dev' in obj['commands'], obj
 PY
 set +e
 queue --json definitely-not-a-command >/tmp/queuebash_unknown_json.$$ 2>/tmp/queuebash_unknown_err.$$

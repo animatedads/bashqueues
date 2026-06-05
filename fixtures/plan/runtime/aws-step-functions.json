@@ -1,0 +1,6 @@
+{
+  "source": "exported AWS Step Functions evidence",
+  "stateMachineArn": "arn:aws:states:us-east-1:123456789012:stateMachine:Example",
+  "executions": [{"name": "run-1", "status": "RUNNING"}],
+  "client": "stepfunctions"
+}

@@ -1,0 +1,24 @@
+{
+  "check": "detect",
+  "coverage_note": "L4/L7 balancing surfaces are represented as inert fixture facts for admission and dependency review.",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "load_balancer",
+  "provider_output_is_shell": false,
+  "providers_observed": [
+    "aws_elb_alb_nlb",
+    "azure_load_balancer_application_gateway",
+    "google_cloud_load_balancing",
+    "haproxy",
+    "nginx",
+    "f5_big_ip"
+  ],
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.load_balancer.detect.v1",
+  "source": "fixture"
+}

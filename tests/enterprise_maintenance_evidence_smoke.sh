@@ -13,6 +13,10 @@ cases=(
   cluster_canary_not_completed:1:cluster_canary_completion_required
   cluster_drain_not_verified:1:cluster_drain_verified_required
   cluster_rollback_raw_checkpoint:1:cluster_rollback_checkpoint_must_be_redacted
+  cluster_observation_missing:1:cluster_observation_required
+  cluster_observation_unhealthy:1:cluster_observation_health_ok_required
+  cluster_observation_slo_regression:1:cluster_observation_latency_regression_denied
+  cluster_observation_raw_evidence:1:cluster_observation_raw_evidence_must_be_redacted
 )
 : > "$tmp/cases.tsv"
 for spec in "${cases[@]}"; do
@@ -61,7 +65,9 @@ for line in (tmp/'cases.tsv').read_text().splitlines():
             'cluster_fence_token_hash', 'cluster_fence_token_redacted',
             'cluster_split_brain_guard', 'cluster_blast_radius_limited',
             'cluster_canary_completed', 'cluster_drain_verified',
-            'cluster_rollback_checkpoint_hash', 'cluster_rollback_checkpoint_redacted'
+            'cluster_rollback_checkpoint_hash', 'cluster_rollback_checkpoint_redacted',
+            'cluster_observation_completed', 'cluster_observation_health_ok',
+            'cluster_observation_slo_ok', 'cluster_observation_evidence_redacted'
         ]:
             assert obj['checks'][key] is True, (key, obj)
 print('[PASS] enterprise_maintenance_evidence_smoke')

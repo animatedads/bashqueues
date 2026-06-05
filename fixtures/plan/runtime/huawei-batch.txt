@@ -1,0 +1,2 @@
+from huaweicloudsdkbatch.v1.batch_client import BatchClient
+# Volcano batch status.phase exported facts

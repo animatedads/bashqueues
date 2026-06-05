@@ -1,0 +1,2 @@
+pywinrm WinRM Session Get-ScheduledTask ConvertTo-Json TaskName TaskPath LastRunTime
+schtasks /query /fo CSV /v via impacket wmiexec

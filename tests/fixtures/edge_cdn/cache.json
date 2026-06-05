@@ -1,0 +1,23 @@
+{
+  "cache_key_dimensions": [
+    "host",
+    "path",
+    "query_allowlist"
+  ],
+  "check": "cache",
+  "credentials_required": false,
+  "decision": "allow",
+  "default_ttl_seconds": 3600,
+  "fail_closed": true,
+  "invalidation_supported": "described_not_run",
+  "live_api_used": false,
+  "max_ttl_seconds": 86400,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "edge_cdn",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.edge_cdn.cache.v1",
+  "source": "fixture"
+}

@@ -1,0 +1,3 @@
+crontab -l
+/var/log/syslog CRON[1234]: (root) CMD (/usr/local/bin/job)
+/var/log/cron

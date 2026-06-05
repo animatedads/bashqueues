@@ -264,6 +264,42 @@ if cluster_required:
             if 'checkpoint' in rollback_cluster or 'raw_checkpoint' in rollback_cluster:
                 failures.append('cluster_rollback_checkpoint_must_be_redacted')
 
+        observation = cluster.get('observation')
+        if not isinstance(observation, dict):
+            failures.append('cluster_observation_required')
+        else:
+            if observation.get('required') is not True:
+                failures.append('cluster_observation_required')
+            if observation.get('completed') is not True:
+                failures.append('cluster_observation_completion_required')
+            window_seconds = observation.get('window_seconds')
+            if not isinstance(window_seconds, int) or window_seconds < 300 or window_seconds > 86400:
+                failures.append('cluster_observation_window_required')
+            health = observation.get('health')
+            if not isinstance(health, dict):
+                failures.append('cluster_observation_health_required')
+            else:
+                if health.get('status') != 'ok':
+                    failures.append('cluster_observation_health_ok_required')
+                if health.get('degraded_nodes') not in ([], None):
+                    failures.append('cluster_observation_no_degraded_nodes_required')
+            slo = observation.get('slo')
+            if not isinstance(slo, dict):
+                failures.append('cluster_observation_slo_required')
+            else:
+                error_budget = slo.get('error_budget_remaining_percent')
+                if not isinstance(error_budget, int) or error_budget < 90:
+                    failures.append('cluster_observation_error_budget_required')
+                if slo.get('latency_regression') is not False:
+                    failures.append('cluster_observation_latency_regression_denied')
+                if slo.get('error_rate_regression') is not False:
+                    failures.append('cluster_observation_error_rate_regression_denied')
+            evidence_hash = observation.get('evidence_hash')
+            if not isinstance(evidence_hash, str) or not evidence_hash.startswith('sha256:'):
+                failures.append('cluster_observation_evidence_hash_required')
+            if 'raw_evidence' in observation or 'probe_output' in observation or 'logs' in observation:
+                failures.append('cluster_observation_raw_evidence_must_be_redacted')
+
 created_dt = parse_utc_z(created_at, 'created_at_must_be_utc_iso8601') if created_at else None
 expires_dt = parse_utc_z(expires_at, 'expires_at_must_be_utc_iso8601') if expires_at else None
 start_dt = parse_utc_z(window_start, 'maintenance_window_start_must_be_utc_iso8601') if window_start else None
@@ -304,6 +340,10 @@ cluster_checks = {
     'cluster_drain_verified': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('drain'), dict) and get(cluster, 'drain', 'required') is True and get(cluster, 'drain', 'verified') is True and get(cluster, 'drain', 'eviction_budget_ok') is True),
     'cluster_rollback_checkpoint_hash': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(get(cluster, 'rollback', 'checkpoint_hash'), str) and get(cluster, 'rollback', 'checkpoint_hash').startswith('sha256:')),
     'cluster_rollback_checkpoint_redacted': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('rollback'), dict) and 'checkpoint' not in cluster.get('rollback', {}) and 'raw_checkpoint' not in cluster.get('rollback', {})),
+    'cluster_observation_completed': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('observation'), dict) and get(cluster, 'observation', 'required') is True and get(cluster, 'observation', 'completed') is True),
+    'cluster_observation_health_ok': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(get(cluster, 'observation', 'health'), dict) and get(cluster, 'observation', 'health', 'status') == 'ok' and get(cluster, 'observation', 'health', 'degraded_nodes', default=[]) == []),
+    'cluster_observation_slo_ok': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(get(cluster, 'observation', 'slo'), dict) and isinstance(get(cluster, 'observation', 'slo', 'error_budget_remaining_percent'), int) and get(cluster, 'observation', 'slo', 'error_budget_remaining_percent') >= 90 and get(cluster, 'observation', 'slo', 'latency_regression') is False and get(cluster, 'observation', 'slo', 'error_rate_regression') is False),
+    'cluster_observation_evidence_redacted': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('observation'), dict) and isinstance(get(cluster, 'observation', 'evidence_hash'), str) and get(cluster, 'observation', 'evidence_hash').startswith('sha256:') and 'raw_evidence' not in cluster.get('observation', {}) and 'probe_output' not in cluster.get('observation', {}) and 'logs' not in cluster.get('observation', {})),
 }
 
 checks = {

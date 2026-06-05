@@ -57,6 +57,21 @@
     "node_targets": [
       "*"
     ],
+    "observation": {
+      "completed": true,
+      "evidence_hash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "health": {
+        "degraded_nodes": [],
+        "status": "ok"
+      },
+      "required": true,
+      "slo": {
+        "error_budget_remaining_percent": 97,
+        "error_rate_regression": false,
+        "latency_regression": false
+      },
+      "window_seconds": 900
+    },
     "quorum": {
       "observed_count": 3,
       "required_count": 2

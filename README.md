@@ -1,3 +1,22 @@
+# 0.18.123 BOB27 edge patch consolidation and core-surface carry-forward
+
+Consolidates the full 0.18.121 edge patch set onto the repaired 0.18.122 core-surface dispatch base. Several contributors clearly worked from function-access trees labelled 0.18.121; Bob27 treated those labels as stale and merged by current content and lane ownership rather than version strings.
+
+Included lanes: Bob23 remote-admin policy namespace follow-up and diagnostic hook command JSON, Bob17 cluster maintenance observation/SLO hardening, Bob21 data-migration/notebook AI-policy language coverage, Bob28 command catalog future hardening, Bob25 cluster local vote-cast witness contract, Bob29 edge_cdn/load_balancer service coverage, Bob18 display-resource namespace audit helper, Bob24 queue-plan extraction/source/runtime status contracts, Bob20 RUN_USER runner consistency guard, Bob30 Windows runtime plan carry-forward, and Bob26 VCS probe helper path hardening.
+
+Merge posture: preserved 0.18.122 dispatcher/core-surface repairs, kept `assets.d/net_usage.sh` absent, avoided whole-file queuebash downgrades, and claimed only bounded focused rc=0 validation evidence.
+
+# 0.18.122 BOB27 core surface dispatcher repair
+
+- Restores missing cloud, cloud-signals, and secrets core command surfaces after the queue-dev restore left dispatcher references without function bodies.
+- Adds core dispatcher static and smoke coverage so queue dispatcher references must resolve to defined functions.
+- Preserves 0.18.121 queue-dev core restoration and 0.18.120 remote-admin installer repair.
+
+
+## 0.18.121 BOB23 queue-dev core surface restore
+
+Restores the core `queue dev` helper function bodies after a hot-seat merge left the dispatcher entries in place but dropped the implementation for `queue dev functions`, `queue dev extract`, `queue dev patchset`, and related developer tooling. Adds a static guard so dispatcher entries and implementation functions stay aligned.
+
 # 0.18.120 BOB27 remote-admin install/provider repair
 
 Repairs the missing runtime remote-admin command helper and broadens installer packaging so shipped source trees under providers.d, policies.d, tests, resources.d, schemas, docs, assets.d, bin, classes, fixtures and contracts are installed into the shared runtime tree. The remote-admin provider remains an ACL-gated typed helper, not a shell/editor path.

@@ -9,6 +9,7 @@ queue cluster policy paths [--json]
 queue cluster elect status [--json]
 queue cluster vote status [--json]
 queue cluster vote propose --operation OPERATION --reason REASON [--materialize] [--json]
+queue cluster vote cast --proposal-id ID --decision approve|reject|abstain --reason REASON [--materialize] [--json]
 queue cluster node list [--json]
 queue cluster explain [SUBJECT] [--json]
 ```
@@ -93,3 +94,11 @@ JSON schema: `queuebash.cluster.local_lease.v1`.
 This does not approve the operation, does not contact peers, does not create quorum, and does not allow any cluster mutation to proceed. It gives future providers a concrete proposal shape while preserving fail-closed voting semantics.
 
 JSON schema: `queuebash.cluster.vote_proposal.v1`.
+
+## 0.18.121 local vote cast witness contract
+
+`queue cluster vote cast --proposal-id ID --decision approve|reject|abstain --reason REASON [--materialize] [--json]` records the first local ballot witness. Without `--materialize`, it emits a dry-run ballot plan only. With `--materialize`, the file-dev provider requires an existing local proposal, writes one ballot record under `$QUEUEBASH_ROOT/cluster/votes.d/<proposal-id>.ballots.d/`, and appends a `cluster_vote_cast_materialized` audit event.
+
+This command does not calculate or grant quorum. It does not unlock cluster mutations. Production providers must keep ballot recording, quorum evaluation, policy authorization, legal scope, and egress controls explicit and auditable.
+
+JSON schema: `queuebash.cluster.vote_cast.v1`. Required safety fields: `writes_performed`, `network_touched`, `quorum_granted`, `cluster_mutation_unlocked`, `provider`, `scope`, and `requires_policy`.

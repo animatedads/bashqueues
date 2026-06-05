@@ -1,0 +1,3 @@
+from rq import Queue, Worker
+queues = Queue.all(connection=redis_conn)
+workers = Worker.all(connection=redis_conn)

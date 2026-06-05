@@ -1,0 +1,3 @@
+from tencentcloud.batch.v20170312 import batch_client, models
+request = models.DescribeJobsRequest()
+response.JobSet[0].JobState

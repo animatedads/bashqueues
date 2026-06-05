@@ -1,0 +1,6 @@
+{
+  "source": "Get-ScheduledTask export from external WinRM collector",
+  "tasks": [
+    {"TaskName": "NightlyBackup", "TaskPath": "\\Custom\\", "State": "Ready", "LastRun": "2026-06-05T01:00:00Z"}
+  ]
+}

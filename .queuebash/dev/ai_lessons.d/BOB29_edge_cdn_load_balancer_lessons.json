@@ -1,0 +1,18 @@
+{
+  "agent": "Bob29",
+  "base": "0.18.120",
+  "lessons": [
+    {
+      "lesson": "Verify hot-seat merge contents before reapplying earlier Bob29 provider families.",
+      "result": "success"
+    },
+    {
+      "lesson": "CDN and load balancer surfaces must be described as read-only fixture facts because cache invalidation, target registration and traffic shifts are mutation paths.",
+      "result": "success"
+    }
+  ],
+  "live_api_used": false,
+  "mutated": false,
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "task": "edge_cdn_load_balancer_provider_coverage"
+}

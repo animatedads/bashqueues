@@ -1,0 +1,13 @@
+Cron Plan: crontab -l export plus /var/log/cron CRON CMD lines
+Systemd Timer Plan: systemctl list-timers --all --output=json export
+Windows Task Scheduler: Get-ScheduledTask and Get-ScheduledTaskInfo JSON export over pywinrm
+Celery runtime: registered() active() scheduled() exported from inspect only
+RQ runtime: Queue.all Worker.all exported from Redis-facing reporter only
+APScheduler runtime: scheduler.get_jobs() exported by the owning process
+Slurm runtime: squeue --format export from external scheduler reporter
+HTCondor runtime: Schedd ClassAds export from external reporter
+Kubernetes runtime: CronJobs and Jobs exported by kubectl/API reporter
+Volcano runtime: batch.volcano.sh jobs exported by kubectl/API reporter
+Airflow runtime: REST API DAGs and dagRuns export
+Prefect runtime: deployments and flow_runs export
+Dagster runtime: GraphQL repositories and pipelineRuns export

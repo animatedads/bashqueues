@@ -1,0 +1,24 @@
+{
+  "schema": "queuebash.windows_wsl2_quickstart.v1",
+  "owner": "BOB30",
+  "status": "guidance",
+  "first_supported_route": "wsl2_linux_guest_runtime",
+  "checkout_recommendation": "linux_filesystem_not_mnt_c",
+  "line_endings": "lf_required_for_shell_scripts",
+  "native_windows_claim": "not_supported_yet",
+  "blocked_native_claims": [
+    "native_powershell_worker_runtime",
+    "windows_service_worker_installation",
+    "task_scheduler_replaces_cron_systemd",
+    "ntfs_acl_chmod_chown_parity",
+    "native_process_tree_cancellation_parity"
+  ],
+  "minimum_wsl2_smoke": [
+    "bash -n queuebash.sh",
+    "source ./queuebash.sh",
+    "queue version --json",
+    "queue help",
+    "queue submit --help",
+    "queue list --json"
+  ]
+}

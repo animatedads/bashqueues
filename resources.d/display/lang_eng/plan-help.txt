@@ -10,3 +10,7 @@ artifacts only. It does not submit jobs, apply cloud resources, read secrets,
 or create a parallel scheduler path. Cron-like input must bridge to existing
 bashqueues cron support. DGX/GPU cloud and workflow plans require explicit
 policy review before any future apply path.
+queue plan status PATH [--json]
+  Summarise exported runtime/job/status evidence as reviewable plan facts. Static only: no SDK/API/CLI/WinRM/SMB/RPC/REST polling, no credentials, no logs, no mutation.
+queue plan sources PATH [--json]
+  Explain plan/job extraction-source contracts for recognised exported evidence and the boundary to future collectors.

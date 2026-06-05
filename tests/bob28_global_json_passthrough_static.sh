@@ -6,8 +6,8 @@ cd "$repo_root"
 
 bash -n queuebash.sh
 
-grep -q 'QUEUEBASH_VERSION="0.18.119"' queuebash.sh
+grep -Eq 'QUEUEBASH_VERSION="0\.18\.[0-9]+"' queuebash.sh
 grep -q '_queue_inject_global_json_arg' queuebash.sh
 grep -q 'queuebash.submit_result.v1' queuebash.sh
-grep -q '0.18.119 BOB28 global JSON passthrough hardening' README.md
-grep -q '0.18.119 BOB28 global JSON passthrough hardening' CHANGELOG.md
+grep -q 'Bob28 global JSON passthrough hardening' README.md
+grep -q 'Bob28 global JSON passthrough hardening' CHANGELOG.md

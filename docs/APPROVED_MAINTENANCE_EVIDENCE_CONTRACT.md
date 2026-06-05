@@ -250,3 +250,44 @@ cluster_rollback_checkpoint_must_be_redacted
 ```
 
 The `cluster.rollback.checkpoint_hash` is redacted correlation evidence only. It is not a secret, not a snapshot payload, and not proof that a live rollback has been performed by bashqueues.
+
+
+## Cluster observation and SLO hardening
+
+Cluster-scoped approved maintenance must include post-change observation evidence before a future runtime gate can consider the request complete enough for controlled pilot workflows. This remains fixture evidence only. The verifier does not run probes, contact monitoring systems, read logs, or alter a live cluster.
+
+For `cluster.scope = cluster`, the cluster context must include:
+
+```text
+cluster.observation.required = true
+cluster.observation.completed = true
+cluster.observation.window_seconds between 300 and 86400
+cluster.observation.health.status = ok
+cluster.observation.health.degraded_nodes = []
+cluster.observation.slo.error_budget_remaining_percent >= 90
+cluster.observation.slo.latency_regression = false
+cluster.observation.slo.error_rate_regression = false
+cluster.observation.evidence_hash = sha256:...
+cluster.observation.raw_evidence absent
+cluster.observation.probe_output absent
+cluster.observation.logs absent
+```
+
+Additional blocked cluster maintenance evidence includes redacted failure reasons such as:
+
+```text
+cluster_observation_required
+cluster_observation_completion_required
+cluster_observation_window_required
+cluster_observation_health_required
+cluster_observation_health_ok_required
+cluster_observation_no_degraded_nodes_required
+cluster_observation_slo_required
+cluster_observation_error_budget_required
+cluster_observation_latency_regression_denied
+cluster_observation_error_rate_regression_denied
+cluster_observation_evidence_hash_required
+cluster_observation_raw_evidence_must_be_redacted
+```
+
+The observation evidence is a redacted attestation envelope, not monitoring output. It must not include raw logs, raw probe output, or sensitive service telemetry.

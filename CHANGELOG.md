@@ -1,3 +1,29 @@
+# 0.18.123 BOB27 edge patch consolidation and core-surface carry-forward
+
+- Consolidated the 0.18.121 edge patch set onto the 0.18.122 repaired core-surface base without undoing dispatcher repairs.
+- Added remote-admin policy namespace follow-up checks.
+- Added diagnostic hook command JSON for hooks/on-success/on-failure/pids/metrics style surfaces.
+- Added queue-plan sources/status extraction contracts and runtime fixture coverage.
+- Added cluster vote-cast local file-dev ballot witness contract.
+- Added display-resource namespace audit helper contract.
+- Added edge_cdn and load_balancer service-coverage provider families.
+- Added VCS probe helper path hardening for installed/shared-tree asset evaluation.
+- Added Windows runtime plan carry-forward docs and policy fixtures.
+- Added RUN_USER runner consistency guard and data-migration/notebook AI-policy static language coverage.
+- Broadened the command catalog while preserving global JSON behaviour.
+
+# 0.18.122 BOB27 core surface dispatcher repair
+
+- Restores missing cloud, cloud-signals, and secrets core command surfaces after the queue-dev restore left dispatcher references without function bodies.
+- Adds core dispatcher static and smoke coverage so queue dispatcher references must resolve to defined functions.
+- Preserves 0.18.121 queue-dev core restoration and 0.18.120 remote-admin installer repair.
+
+
+## 0.18.121 BOB23 queue-dev core surface restore
+
+- Restored core queue-dev implementation functions for functions/list, extract, locate, patch, patchset, merge-plan, validate, and related developer commands after dispatcher-only merge drift.
+- Added tests/queue_dev_core_surface_static.sh to assert queue-dev dispatcher/function alignment and smoke `queue dev functions` plus `queue dev extract` from a sourced shell.
+
 # 0.18.120 BOB27 remote-admin install/provider repair
 
 - Restored `_queue_remote_admin_helper_path` and `_queue_remote_admin_command` so the dispatcher route `queue remote-admin` resolves the existing provider helper.

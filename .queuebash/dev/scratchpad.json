@@ -8058,6 +8058,68 @@
       ],
       "text": "Merged Bob23 remote-admin install/provider fix and broadened installer shared-tree coverage. Restored _queue_remote_admin_helper_path and _queue_remote_admin_command so dispatcher route queue remote-admin resolves providers.d/remote_admin/remote_admin_policy.sh. install-system.sh now copies providers.d plus schemas, fixtures and contracts alongside existing assets/classes/policies/tests/resources/docs/bin coverage.",
       "updated_at": "2026-06-05T13:15:00Z"
+    },
+    {
+      "authority": "Bob27 merger",
+      "created_at": "2026-06-05T13:55:00Z",
+      "id": "SP-BOB27-0.18.121-queue-dev-core-surface-restore",
+      "kind": "urgent-repair",
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "accepted",
+      "tags": [
+        "bob27",
+        "0.18.121",
+        "queue-dev",
+        "urgent-repair",
+        "bob23",
+        "core-surface"
+      ],
+      "text": "Merged Bob23 queue-dev core surface restore after 0.18.120 remote-admin installer repair left dispatcher entries without core queue dev helper implementations. Restored queue dev usage/functions/locate/extract/scope/patchset-related developer tooling and added static guard coverage. Validated queue dev --help, functions, extract, locate, merge-plan JSON, and remote-admin installer tests.",
+      "updated_at": "2026-06-05T13:55:00Z"
+    },
+    {
+      "authority": "Bob27 merger",
+      "created_at": "2026-06-05T14:08:00Z",
+      "id": "SP-BOB27-0.18.122-core-surface-dispatch-repair",
+      "kind": "repair-decision",
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "accepted",
+      "tags": [
+        "bob27",
+        "0.18.122",
+        "core-surface",
+        "dispatcher",
+        "cloud",
+        "secrets",
+        "repair"
+      ],
+      "text": "0.18.121 restored queue-dev but dispatcher audit found missing _queue_cloud_command, _queue_cloud_signals_command, and _queue_secrets_command definitions. 0.18.122 restores those surfaces from the last known good 0.18.118 implementation and adds core dispatcher static/smoke coverage to catch dispatcher references without function bodies.",
+      "updated_at": "2026-06-05T14:08:00Z"
+    },
+    {
+      "authority": "Bob27 merger",
+      "created_at": "2026-06-05T14:45:00Z",
+      "id": "SP-BOB27-0.18.123-edge-consolidation",
+      "kind": "merge-decision",
+      "schema": "queuebash.dev_scratchpad_item.v1",
+      "status": "accepted",
+      "tags": [
+        "bob27",
+        "0.18.123",
+        "merge",
+        "edge-patches",
+        "core-surfaces",
+        "queue-dev",
+        "cluster",
+        "plan",
+        "vcs",
+        "display-resources",
+        "remote-admin",
+        "windows",
+        "service-coverage"
+      ],
+      "text": "Bob27 consolidated the full 0.18.121 edge patch set onto the repaired 0.18.122 core-surface base. Patch labels were treated as stale rather than authoritative; content was merged semantically without undoing the 0.18.122 dispatcher repair. Included remote-admin namespace follow-up, diagnostic hook JSON, queue-plan extraction/status source contracts, cluster vote cast witnesses, VCS probe helper path hardening, command catalog broadening, Windows runtime carry-forward, runner RUN_USER guard, data migration/notebook AI-policy language coverage, display resource namespace audit, observation/SLO maintenance hardening, and edge_cdn/load_balancer service coverage. Broad wrappers can overrun; focused rc=0 checks only are delivery evidence.",
+      "updated_at": "2026-06-05T14:45:00Z"
     }
   ],
   "merge_history": [
@@ -8265,5 +8327,5 @@
   },
   "project": "bashqueues-0.18.24",
   "schema": "queuebash.dev_scratchpad.v1",
-  "updated_at": "2026-06-05T13:15:00Z"
+  "updated_at": "2026-06-05T14:45:00Z"
 }

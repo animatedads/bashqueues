@@ -22,13 +22,16 @@ SCAN_SCHEMA = "queue.plan.scan.v1"
 BUILD_SCHEMA = "queue.plan.build.v1"
 VALIDATE_SCHEMA = "queue.plan.validate.v1"
 POLICY_SCHEMA = "queue.plan.policy.v1"
+STATUS_SCHEMA = "queue.plan.status.v1"
+SOURCES_SCHEMA = "queue.plan.sources.v1"
 SCRIPT_BEHAVIOUR_SCHEMA = "queue.plan.script_behaviour.v1"
+CLOUD_RUNTIME_SCHEMA = "queue.plan.runtime_status.v1"
 DGX_REVIEW = "DGX_CLOUD_WORKFLOW_POLICY_REVIEW"
 CLOUD_WORKFLOW_REVIEW = "CLOUD_WORKFLOW_POLICY_REVIEW"
 
 TEXT_EXTENSIONS = {
     ".yaml", ".yml", ".json", ".hcl", ".nomad", ".sbatch", ".pbs", ".qsub",
-    ".sge", ".bsub", ".submit", ".dag", ".service", ".timer", ".sh", ".bash", ".txt", "",
+    ".sge", ".bsub", ".submit", ".dag", ".service", ".timer", ".sh", ".bash", ".py", ".ps1", ".csv", ".txt", "",
 }
 
 ADAPTERS = {
@@ -36,9 +39,40 @@ ADAPTERS = {
     "kubernetes": {"native": False, "family": "cloud_native", "status": "scan_and_plan"},
     "aws-batch": {"native": False, "family": "cloud_batch", "status": "scan_and_plan"},
     "azure-batch": {"native": False, "family": "cloud_batch", "status": "recognized_pending_mapper"},
+    "azure-logic-apps": {"native": False, "family": "cloud_workflow_status", "status": "exported_status_scan_only"},
+    "azure-functions": {"native": False, "family": "serverless_runtime_status", "status": "exported_status_scan_only"},
+    "azure-webjobs": {"native": False, "family": "serverless_runtime_status", "status": "exported_status_scan_only"},
+    "azure-automation": {"native": False, "family": "cloud_automation_status", "status": "exported_status_scan_only"},
+    "azure-container-apps-jobs": {"native": False, "family": "container_job_status", "status": "exported_status_scan_only"},
+    "azure-sql-elastic-jobs": {"native": False, "family": "database_job_status", "status": "exported_status_scan_only"},
+    "azure-devops-pipelines": {"native": False, "family": "workflow_status", "status": "exported_status_scan_only"},
+    "aws-step-functions": {"native": False, "family": "cloud_workflow_status", "status": "exported_status_scan_only"},
+    "aws-eventbridge-scheduler": {"native": False, "family": "cloud_schedule_status", "status": "exported_status_scan_only"},
+    "aws-lambda": {"native": False, "family": "serverless_runtime_status", "status": "exported_status_scan_only"},
+    "aws-ecs-task": {"native": False, "family": "container_task_status", "status": "exported_status_scan_only"},
+    "aws-glue": {"native": False, "family": "data_pipeline_status", "status": "exported_status_scan_only"},
+    "aws-codepipeline": {"native": False, "family": "workflow_status", "status": "exported_status_scan_only"},
     "gcp-batch": {"native": False, "family": "cloud_batch", "status": "recognized_pending_mapper"},
+    "gcp-workflows": {"native": False, "family": "cloud_workflow_status", "status": "exported_status_scan_only"},
+    "gcp-cloud-tasks": {"native": False, "family": "worker_queue_status", "status": "exported_status_scan_only"},
+    "gcp-cloud-run-jobs": {"native": False, "family": "container_job_status", "status": "exported_status_scan_only"},
     "oci": {"native": False, "family": "cloud_batch", "status": "recognized_pending_mapper"},
+    "oci-resource-scheduler": {"native": False, "family": "cloud_schedule_status", "status": "exported_status_scan_only"},
+    "oci-os-management-hub": {"native": False, "family": "ops_job_status", "status": "exported_status_scan_only"},
+    "oci-data-flow": {"native": False, "family": "data_pipeline_status", "status": "exported_status_scan_only"},
+    "oci-devops": {"native": False, "family": "workflow_status", "status": "exported_status_scan_only"},
+    "oci-work-request": {"native": False, "family": "cloud_work_request_status", "status": "exported_status_scan_only"},
     "ibm-code-engine": {"native": False, "family": "cloud_batch", "status": "recognized_pending_mapper"},
+    "ibm-watsonx-ai": {"native": False, "family": "ai_job_status", "status": "exported_status_scan_only"},
+    "ibm-watsonx-data": {"native": False, "family": "data_pipeline_status", "status": "exported_status_scan_only"},
+    "ibm-watsonx-governance": {"native": False, "family": "ai_governance_status", "status": "exported_status_scan_only"},
+    "alibaba-ehpc": {"native": False, "family": "hpc_status", "status": "exported_status_scan_only"},
+    "alibaba-batch-compute": {"native": False, "family": "cloud_batch_status", "status": "exported_status_scan_only"},
+    "alibaba-serverless-workflow": {"native": False, "family": "cloud_workflow_status", "status": "exported_status_scan_only"},
+    "huawei-batch": {"native": False, "family": "cloud_batch_status", "status": "exported_status_scan_only"},
+    "huawei-functiongraph": {"native": False, "family": "cloud_workflow_status", "status": "exported_status_scan_only"},
+    "tencent-batch": {"native": False, "family": "cloud_batch_status", "status": "exported_status_scan_only"},
+    "tencent-tke-task": {"native": False, "family": "container_task_status", "status": "exported_status_scan_only"},
     "slurm": {"native": False, "family": "hpc", "status": "scan_and_plan"},
     "pbs": {"native": False, "family": "hpc", "status": "scan_and_plan"},
     "torque": {"native": False, "family": "hpc", "status": "recognized_legacy"},
@@ -56,6 +90,19 @@ ADAPTERS = {
     "systemd": {"native": False, "family": "service_manager", "status": "recognized_pending_mapper"},
     "cron": {"native": False, "family": "existing_schedule_bridge", "status": "existing_bashqueues_cron_bridge"},
     "script-behaviour": {"native": False, "family": "script", "status": "static_scan_and_plan"},
+    "windows-task-scheduler": {"native": False, "family": "remote_scheduler_status", "status": "exported_status_scan_only"},
+    "local-cron-status": {"native": False, "family": "local_automation_status", "status": "exported_status_scan_only_existing_cron_bridge"},
+    "local-systemd-timer-status": {"native": False, "family": "local_automation_status", "status": "exported_status_scan_only"},
+    "celery-runtime": {"native": False, "family": "python_queue_status", "status": "exported_status_scan_only"},
+    "rq-runtime": {"native": False, "family": "python_queue_status", "status": "exported_status_scan_only"},
+    "apscheduler-runtime": {"native": False, "family": "python_scheduler_status", "status": "exported_status_scan_only"},
+    "slurm-runtime": {"native": False, "family": "hpc_runtime_status", "status": "exported_status_scan_only"},
+    "htcondor-runtime": {"native": False, "family": "hpc_runtime_status", "status": "exported_status_scan_only"},
+    "kubernetes-runtime": {"native": False, "family": "cloud_native_runtime_status", "status": "exported_status_scan_only"},
+    "volcano-runtime": {"native": False, "family": "cloud_native_runtime_status", "status": "exported_status_scan_only"},
+    "airflow-runtime": {"native": False, "family": "workflow_runtime_status", "status": "exported_status_scan_only"},
+    "prefect-runtime": {"native": False, "family": "workflow_runtime_status", "status": "exported_status_scan_only"},
+    "dagster-runtime": {"native": False, "family": "workflow_runtime_status", "status": "exported_status_scan_only"},
     "terraform": {"native": False, "family": "iac", "status": "extract_control_intent_only"},
     "unknown": {"native": False, "family": "unknown", "status": "unsupported"},
 }
@@ -80,6 +127,42 @@ DANGEROUS_PATTERNS = [
 WORKFLOW_TOKENS = ["workflow", "pipeline", "dag", "runAfter", "needs:", "stages:", "jobs:"]
 CLOUD_TOKENS = ["aws", "azure", "gcp", "google", "oci", "oracle", "ibm", "cloud", "kubernetes", "eks", "aks", "gke", "oke"]
 
+CLOUD_RUNTIME_ADAPTERS = {
+    "azure-logic-apps", "azure-functions", "azure-webjobs", "azure-automation",
+    "azure-container-apps-jobs", "azure-sql-elastic-jobs", "azure-devops-pipelines",
+    "aws-step-functions", "aws-eventbridge-scheduler", "aws-lambda", "aws-ecs-task",
+    "aws-glue", "aws-codepipeline",
+    "gcp-workflows", "gcp-cloud-tasks", "gcp-cloud-run-jobs",
+    "oci-resource-scheduler", "oci-os-management-hub", "oci-data-flow", "oci-devops",
+    "oci-work-request", "ibm-watsonx-ai", "ibm-watsonx-data", "ibm-watsonx-governance",
+    "alibaba-ehpc", "alibaba-batch-compute", "alibaba-serverless-workflow",
+    "huawei-batch", "huawei-functiongraph", "tencent-batch", "tencent-tke-task",
+    "windows-task-scheduler", "local-cron-status", "local-systemd-timer-status",
+    "celery-runtime", "rq-runtime", "apscheduler-runtime",
+    "slurm-runtime", "htcondor-runtime", "kubernetes-runtime", "volcano-runtime",
+    "airflow-runtime", "prefect-runtime", "dagster-runtime",
+}
+
+PROVIDER_BY_ADAPTER = {
+    "azure-logic-apps": "azure", "azure-functions": "azure", "azure-webjobs": "azure",
+    "azure-automation": "azure", "azure-container-apps-jobs": "azure",
+    "azure-sql-elastic-jobs": "azure", "azure-devops-pipelines": "azure-devops",
+    "aws-step-functions": "aws", "aws-eventbridge-scheduler": "aws", "aws-lambda": "aws",
+    "aws-ecs-task": "aws", "aws-glue": "aws", "aws-codepipeline": "aws",
+    "gcp-workflows": "gcp", "gcp-cloud-tasks": "gcp", "gcp-cloud-run-jobs": "gcp",
+    "oci-resource-scheduler": "oci", "oci-os-management-hub": "oci", "oci-data-flow": "oci",
+    "oci-devops": "oci", "oci-work-request": "oci",
+    "ibm-watsonx-ai": "ibm", "ibm-watsonx-data": "ibm", "ibm-watsonx-governance": "ibm",
+    "alibaba-ehpc": "alibaba", "alibaba-batch-compute": "alibaba",
+    "alibaba-serverless-workflow": "alibaba", "huawei-batch": "huawei",
+    "huawei-functiongraph": "huawei", "tencent-batch": "tencent", "tencent-tke-task": "tencent",
+    "windows-task-scheduler": "windows", "local-cron-status": "local",
+    "local-systemd-timer-status": "local", "celery-runtime": "python", "rq-runtime": "python",
+    "apscheduler-runtime": "python", "slurm-runtime": "hpc", "htcondor-runtime": "hpc",
+    "kubernetes-runtime": "kubernetes", "volcano-runtime": "kubernetes",
+    "airflow-runtime": "workflow", "prefect-runtime": "workflow", "dagster-runtime": "workflow",
+}
+
 
 def sha256_text(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
@@ -102,12 +185,206 @@ def iter_input_files(path: Path) -> List[Path]:
     raise SystemExit(f"queue plan: path not found: {path}")
 
 
+
+def detect_cloud_runtime_adapter(raw: str) -> Optional[Tuple[str, List[str]]]:
+    """Recognise exported cloud job/workflow/status facts without live SDK access."""
+    r = raw.lower()
+    # Azure runtime/workflow surfaces.
+    if "microsoft.logic/workflows" in r or ("logic app" in r and "workflow" in r) or ("workflow_runs" in r and "azure" in r):
+        return "azure-logic-apps", ["AzureLogicAppWorkflow"]
+    if "list_functions" in r or "functionapp" in r or ("bindings" in r and "trigger" in r and "azure" in r) or "microsoft.web/sites/functions" in r:
+        return "azure-functions", ["AzureFunction"]
+    if "web_job_type" in r or "webjob" in r or "list_web_jobs" in r:
+        return "azure-webjobs", ["AzureWebJob"]
+    if "automation account" in r or "automation_account" in r or "runbook" in r or "microsoft.automation" in r:
+        return "azure-automation", ["AzureAutomationRunbook"]
+    if "container_apps_jobs" in r or "microsoft.app/jobs" in r or "container apps job" in r:
+        return "azure-container-apps-jobs", ["AzureContainerAppsJob"]
+    if "elastic job" in r or "elastic-job" in r or "jobs.list_by_agent" in r or "job_execution_id" in r:
+        return "azure-sql-elastic-jobs", ["AzureSQLElasticJob"]
+    if "azure devops" in r or "build_number" in r or "get_builds" in r or "definition.name" in r:
+        return "azure-devops-pipelines", ["AzureDevOpsPipeline"]
+    # AWS runtime/workflow surfaces.
+    if "statemachinearn" in r or '"startat"' in r and '"states"' in r or "stepfunctions" in r:
+        return "aws-step-functions", ["AWSStepFunctionsStateMachine"]
+    if "scheduleexpression" in r or "flexibletimewindow" in r or "eventbridge scheduler" in r:
+        return "aws-eventbridge-scheduler", ["AWSEventBridgeSchedule"]
+    if "functionname" in r and "runtime" in r and "handler" in r or "lambda" in r and "lastmodified" in r:
+        return "aws-lambda", ["AWSLambdaFunction"]
+    if "taskdefinitionarn" in r or "taskarns" in r or "laststatus" in r and "ecs" in r:
+        return "aws-ecs-task", ["AWSECSTask"]
+    if "glue" in r and ("jobrunstate" in r or "get_job_runs" in r or "glueetl" in r):
+        return "aws-glue", ["AWSGlueJob"]
+    if "codepipeline" in r or "pipelinename" in r and "stagestates" in r:
+        return "aws-codepipeline", ["AWSCodePipeline"]
+    # GCP runtime/workflow surfaces.
+    if "run.googleapis.com" in r or "cloud run jobs" in r or "jobsclient" in r and "executionsclient" in r or "succeeded_count" in r and "task_count" in r:
+        return "gcp-cloud-run-jobs", ["GCPCloudRunJob"]
+    if "cloudtasks" in r or "cloud tasks" in r or "dispatch_count" in r or "http_request" in r and "queue_path" in r:
+        return "gcp-cloud-tasks", ["GCPCloudTaskQueue"]
+    if "workflows.googleapis.com" in r or "google.cloud.workflows" in r or "workflow job" in r and "state" in r:
+        return "gcp-workflows", ["GCPWorkflow"]
+    # OCI runtime/workflow surfaces.
+    if "resource_scheduler" in r or "scheduleclient" in r or "resource scheduler" in r:
+        return "oci-resource-scheduler", ["OCIResourceSchedule"]
+    if "os_management_hub" in r or "workrequestclient" in r and "percent_complete" in r:
+        return "oci-os-management-hub", ["OCIOSManagementHubWorkRequest"]
+    if "data_flow" in r or "dataflow" in r and ("lifecycle_state" in r or "duration_in_seconds" in r):
+        return "oci-data-flow", ["OCIDataFlowRun"]
+    if "oci.devops" in r or "deployment_collection" in r or "list_deployments" in r:
+        return "oci-devops", ["OCIDevOpsDeployment"]
+    if "operation_type" in r and "percent_complete" in r and "oci" in r:
+        return "oci-work-request", ["OCIWorkRequest"]
+    # IBM / watsonx runtime surfaces.
+    if "watsonx" in r and ("deployment_job" in r or "client.jobs" in r or "batch scoring" in r):
+        return "ibm-watsonx-ai", ["IBMWatsonxAIJob"]
+    if "watsonx_data" in r or "data-integration" in r or "dataintegrationclient" in r or "get_flow_run_status" in r:
+        return "ibm-watsonx-data", ["IBMWatsonxDataFlow"]
+    if "watson_openscale" in r or "openscale" in r or "data_marts" in r:
+        return "ibm-watsonx-governance", ["IBMWatsonxGovernanceMonitor"]
+    # Asian hyperscaler runtime surfaces.
+    if "alibabacloud_ehpc" in r or "listjobsrequest" in r and "cluster_id" in r:
+        return "alibaba-ehpc", ["AlibabaEHPCJob"]
+    if "batchcompute" in r or "batch compute" in r and "alibaba" in r:
+        return "alibaba-batch-compute", ["AlibabaBatchComputeJob"]
+    if "serverless workflow" in r and "alibaba" in r or "fnf" in r and "aliyun" in r:
+        return "alibaba-serverless-workflow", ["AlibabaServerlessWorkflow"]
+    if "huaweicloudsdkbatch" in r or "huaweicloud" in r and "volcano" in r or "status.phase" in r and "huawei" in r:
+        return "huawei-batch", ["HuaweiBatchJob"]
+    if "functiongraph" in r or "huawei" in r and "workflow" in r and "function" in r:
+        return "huawei-functiongraph", ["HuaweiFunctionGraphWorkflow"]
+    if "tencentcloud" in r and "describejobs" in r or "jobset" in r and "jobstate" in r and "tencent" in r:
+        return "tencent-batch", ["TencentBatchJob"]
+    if "tke" in r and "tencent" in r and ("task" in r or "pod" in r):
+        return "tencent-tke-task", ["TencentTKETask"]
+    # Remote and in-house runtime/status surfaces. These are exported evidence only.
+    if "get-scheduledtask" in r or "schtasks /query" in r or "pywinrm" in r or "winrm.session" in r or "wmiexec" in r or "impacket" in r and "schtasks" in r:
+        return "windows-task-scheduler", ["WindowsScheduledTask"]
+    if "crontab -l" in r or "/var/log/cron" in r or "/var/log/syslog" in r and "cron" in r or "cron[" in r and "cmd" in r:
+        return "local-cron-status", ["CronPlanAndRunLog"]
+    if "list-timers" in r or "systemctl" in r and "--output=json" in r or "next" in r and "last" in r and ".timer" in r:
+        return "local-systemd-timer-status", ["SystemdTimerStatus"]
+    if "celery" in r and ("control.inspect" in r or "registered()" in r or "active()" in r or "scheduled()" in r):
+        return "celery-runtime", ["CeleryRegisteredAndActiveTasks"]
+    if "from rq" in r or "rq import" in r or "queue.all" in r or "worker.all" in r or "redis queue" in r:
+        return "rq-runtime", ["RQQueueAndWorkerStatus"]
+    if "apscheduler" in r or "backgroundscheduler" in r or "scheduler.get_jobs" in r:
+        return "apscheduler-runtime", ["APSchedulerJobStore"]
+    if "squeue" in r or "scontrol" in r and "partition" in r:
+        return "slurm-runtime", ["SlurmQueueStatus"]
+    if "htcondor" in r and ("schedd" in r or "classads" in r or "clusterid" in r and "procid" in r):
+        return "htcondor-runtime", ["HTCondorClassAdStatus"]
+    if "kubernetes" in r and ("batchv1api" in r or "list_namespaced_cron_job" in r or "list_namespaced_job" in r):
+        return "kubernetes-runtime", ["KubernetesJobCronJobStatus"]
+    if "batch.volcano.sh" in r or "volcano" in r and "podgroup" in r or "volcano" in r and "customobjectsapi" in r:
+        return "volcano-runtime", ["VolcanoBatchStatus"]
+    if "airflow" in r and ("/api/v1" in r or "dagruns" in r or "task instances" in r or "dag_runs" in r):
+        return "airflow-runtime", ["AirflowDagAndRunStatus"]
+    if "prefect" in r and ("read_deployments" in r or "read_flow_runs" in r or "prefectclient" in r):
+        return "prefect-runtime", ["PrefectDeploymentAndFlowRunStatus"]
+    if "dagster" in r and ("graphql" in r or "pipelineruns" in r or "repositoriesorerror" in r):
+        return "dagster-runtime", ["DagsterRepositoryAndRunStatus"]
+    return None
+
+
+def source_contract_for_adapter(adapter: str) -> Dict[str, Any]:
+    """Describe how plan/job evidence must be obtained outside queue plan.
+
+    This is a contract for future collectors and external exporters.  The queue
+    plan helper itself remains static and only reads files already handed to it.
+    """
+    meta = ADAPTERS.get(adapter, ADAPTERS["unknown"])
+    provider = PROVIDER_BY_ADAPTER.get(adapter, meta.get("family", "unknown"))
+    plan_sources = ["exported_definition_file"]
+    job_sources = ["exported_runtime_status_file"]
+    mode = "static_file_only"
+    boundary = "queue plan does not perform collection; it consumes supplied files only"
+    extractor = "external_exporter_required"
+
+    if adapter == "cron":
+        provider = "local"
+        plan_sources = ["existing_bashqueues_cron_model", "crontab_export"]
+        job_sources = ["cron_log_export"]
+        extractor = "existing_cron_bridge"
+        boundary = "preserve existing bashqueues cron semantics; no parallel scheduler"
+    elif adapter == "local-cron-status":
+        plan_sources = ["crontab_export", "existing_bashqueues_cron_model"]
+        job_sources = ["/var/log/cron export", "/var/log/syslog CRON export"]
+        extractor = "external_local_exporter_or_existing_cron_bridge"
+        boundary = "do not tail logs from queue plan; do not bypass existing cron support"
+    elif adapter == "local-systemd-timer-status" or adapter == "systemd":
+        provider = "local"
+        plan_sources = ["systemd unit/timer file", "systemctl list-timers --output=json export"]
+        job_sources = ["systemctl status/list-units export", "journal export"]
+        extractor = "external_systemd_exporter"
+    elif adapter == "windows-task-scheduler":
+        plan_sources = ["Get-ScheduledTask JSON export", "schtasks CSV/XML export"]
+        job_sources = ["Get-ScheduledTaskInfo JSON export", "Task Scheduler history export"]
+        extractor = "external_winrm_or_smb_rpc_exporter"
+        boundary = "queue plan must not open WinRM, SMB, RPC or use Windows credentials"
+    elif adapter in {"celery-runtime", "rq-runtime", "apscheduler-runtime"}:
+        plan_sources = ["application-exported registered task/job definitions"]
+        job_sources = ["application-exported active/scheduled/failed state"]
+        extractor = "external_python_runtime_exporter"
+        boundary = "queue plan must not connect to brokers, Redis, worker control APIs or process memory"
+    elif adapter in {"slurm-runtime", "htcondor-runtime"}:
+        plan_sources = ["scheduler configuration export"]
+        job_sources = ["squeue/condor_q/ClassAds export"]
+        extractor = "external_hpc_exporter"
+        boundary = "queue plan must not run scheduler commands or contact scheduler daemons"
+    elif adapter in {"kubernetes-runtime", "volcano-runtime"}:
+        plan_sources = ["kubectl/API exported Job/CronJob/CRD definitions"]
+        job_sources = ["kubectl/API exported Job/Pod/PodGroup status"]
+        extractor = "external_kubernetes_exporter"
+        boundary = "queue plan must not load kubeconfig or contact API servers"
+    elif adapter in {"airflow-runtime", "prefect-runtime", "dagster-runtime"}:
+        plan_sources = ["workflow API exported topology/deployments/repositories"]
+        job_sources = ["workflow API exported runs/task instances"]
+        extractor = "external_workflow_exporter"
+        boundary = "queue plan must not call REST/GraphQL services or use workflow credentials"
+    elif adapter in CLOUD_RUNTIME_ADAPTERS:
+        plan_sources = ["provider SDK/API/CLI exported definitions"]
+        job_sources = ["provider SDK/API/CLI exported run/status facts"]
+        extractor = "external_cloud_exporter"
+        boundary = "queue plan must not load credentials or call cloud/provider SDKs/APIs/CLIs"
+
+    return {
+        "adapter": adapter,
+        "provider": provider,
+        "family": meta.get("family", "unknown"),
+        "mode": mode,
+        "plan_sources": plan_sources,
+        "job_sources": job_sources,
+        "extractor": extractor,
+        "boundary": boundary,
+        "safe_to_collect_here": False,
+    }
+
+
+def runtime_status_observation(adapter: str, objects: List[str], path: Path) -> Optional[Dict[str, Any]]:
+    if adapter not in CLOUD_RUNTIME_ADAPTERS:
+        return None
+    return {
+        "schema": CLOUD_RUNTIME_SCHEMA,
+        "adapter": adapter,
+        "provider": PROVIDER_BY_ADAPTER.get(adapter, "unknown"),
+        "objects": objects,
+        "source_ref": str(path),
+        "mode": "exported_status_or_definition_only",
+        "boundary": "no live SDK/API/CLI/WinRM/SMB/RPC/REST calls, no credential loading, no log retrieval, no job submission, no provider mutation",
+        "plan_use": "normalise exported job, workflow, schedule, queue, task or run facts into queue.control_plan.v1 reviewable status sources",
+        "extraction_contract": source_contract_for_adapter(adapter),
+    }
+
 def detect_json_adapter(path: Path, text: str) -> Optional[Tuple[str, List[str]]]:
     try:
         obj = json.loads(text)
     except Exception:
         return None
     raw = text.lower()
+    runtime = detect_cloud_runtime_adapter(raw)
+    if runtime:
+        return runtime
     objects: List[str] = []
     if isinstance(obj, dict):
         schema = str(obj.get("schema", ""))
@@ -248,6 +525,9 @@ def detect_adapter(path: Path, text: str) -> Tuple[str, List[str], str]:
     name = path.name
     lower = text.lower()
     ext = path.suffix.lower()
+    runtime = detect_cloud_runtime_adapter(lower)
+    if runtime:
+        return runtime[0], runtime[1], "medium"
     j = detect_json_adapter(path, text)
     if j:
         return j[0], j[1], "high" if j[0] != "unknown" else "low"
@@ -331,11 +611,26 @@ def infer_class_name(adapter: str, objects: List[str], path: Path, text: str) ->
         return "DGX_GPU_WORKFLOW"
     prefix = {
         "kubernetes": "K8S", "aws-batch": "AWS_BATCH", "azure-batch": "AZURE_BATCH",
-        "gcp-batch": "GCP_BATCH", "oci": "OCI", "ibm-code-engine": "IBM_CODE_ENGINE",
+        "azure-logic-apps": "AZURE_LOGIC", "azure-functions": "AZURE_FUNCTION", "azure-webjobs": "AZURE_WEBJOB",
+        "azure-automation": "AZURE_AUTOMATION", "azure-container-apps-jobs": "AZURE_CONTAINER_JOB",
+        "azure-sql-elastic-jobs": "AZURE_SQL_JOB", "azure-devops-pipelines": "AZURE_DEVOPS",
+        "aws-step-functions": "AWS_SFN", "aws-eventbridge-scheduler": "AWS_SCHEDULER", "aws-lambda": "AWS_LAMBDA",
+        "aws-ecs-task": "AWS_ECS_TASK", "aws-glue": "AWS_GLUE", "aws-codepipeline": "AWS_CODEPIPELINE",
+        "gcp-batch": "GCP_BATCH", "gcp-workflows": "GCP_WORKFLOW", "gcp-cloud-tasks": "GCP_TASKS", "gcp-cloud-run-jobs": "GCP_RUN_JOB",
+        "oci": "OCI", "oci-resource-scheduler": "OCI_SCHEDULER", "oci-os-management-hub": "OCI_OS_JOB", "oci-data-flow": "OCI_DATA_FLOW", "oci-devops": "OCI_DEVOPS", "oci-work-request": "OCI_WORK_REQUEST",
+        "ibm-code-engine": "IBM_CODE_ENGINE", "ibm-watsonx-ai": "IBM_WATSONX_AI", "ibm-watsonx-data": "IBM_WATSONX_DATA", "ibm-watsonx-governance": "IBM_WATSONX_GOVERNANCE",
+        "alibaba-ehpc": "ALIBABA_EHPC", "alibaba-batch-compute": "ALIBABA_BATCH", "alibaba-serverless-workflow": "ALIBABA_WORKFLOW",
+        "huawei-batch": "HUAWEI_BATCH", "huawei-functiongraph": "HUAWEI_FUNCTIONGRAPH", "tencent-batch": "TENCENT_BATCH", "tencent-tke-task": "TENCENT_TKE",
         "slurm": "SLURM", "pbs": "PBS", "torque": "TORQUE", "sge": "SGE", "lsf": "LSF",
         "htcondor": "HTCONDOR", "flux": "FLUX", "nomad": "NOMAD", "argo": "ARGO",
         "tekton": "TEKTON", "github-actions": "GITHUB_ACTIONS", "gitlab-ci": "GITLAB_CI",
-        "systemd": "SYSTEMD", "cron": "CRON", "script-behaviour": "SCRIPT", "bashqueues-plan": "NATIVE",
+        "systemd": "SYSTEMD", "cron": "CRON", "script-behaviour": "SCRIPT",
+        "windows-task-scheduler": "WINDOWS_TASK", "local-cron-status": "LOCAL_CRON_STATUS", "local-systemd-timer-status": "LOCAL_SYSTEMD_STATUS",
+        "celery-runtime": "CELERY", "rq-runtime": "RQ", "apscheduler-runtime": "APSCHEDULER",
+        "slurm-runtime": "SLURM_STATUS", "htcondor-runtime": "HTCONDOR_STATUS",
+        "kubernetes-runtime": "K8S_STATUS", "volcano-runtime": "VOLCANO_STATUS",
+        "airflow-runtime": "AIRFLOW_STATUS", "prefect-runtime": "PREFECT", "dagster-runtime": "DAGSTER",
+        "bashqueues-plan": "NATIVE",
     }.get(adapter, "PLAN")
     return f"{prefix}_{base}"[:80]
 
@@ -371,6 +666,29 @@ def policy_hooks(adapter: str, text: str) -> List[Dict[str, Any]]:
             ],
             "lifecycle_boundary": "dry-run handoff only; live cloud lifecycle remains out of queue plan",
         })
+    runtime = detect_cloud_runtime_adapter(text)
+    if runtime and runtime[0] in CLOUD_RUNTIME_ADAPTERS:
+        adapter = runtime[0]
+        provider = PROVIDER_BY_ADAPTER.get(adapter, "unknown")
+        policy_family = "runtime-status"
+        if adapter.startswith("ibm-watsonx"):
+            policy_family = "ai-governance-runtime-status"
+        elif adapter in {"windows-task-scheduler"}:
+            policy_family = "remote-windows-scheduler-status"
+        elif adapter in {"local-cron-status", "local-systemd-timer-status"}:
+            policy_family = "local-automation-status"
+        elif adapter in {"celery-runtime", "rq-runtime", "apscheduler-runtime"}:
+            policy_family = "python-queue-runtime-status"
+        elif adapter in {"airflow-runtime", "prefect-runtime", "dagster-runtime"}:
+            policy_family = "workflow-runtime-status"
+        hooks.append({
+            "policy": f"{adapter.upper().replace('-', '_')}_EXPORT_REVIEW",
+            "reason": "runtime/status evidence detected; require exported-fact review and preserve no-live queue plan boundary",
+            "applies_to": ["plans", "jobs", "runtime-status", "readonly-export", "identity", "logs"],
+            "policy_family": policy_family,
+            "policy_files": ["docs/PLAN_RUNTIME_STATUS_COVERAGE.md"],
+            "lifecycle_boundary": "status/export only; no SDK/API/CLI/WinRM/SMB/RPC/REST polling, credential use, log retrieval or job mutation from queue plan",
+        })
     return hooks
 
 
@@ -384,6 +702,7 @@ def analyse_file(path: Path, root: Path) -> Dict[str, Any]:
             dangers.append({"reason": reason, "path": str(path)})
     hooks = policy_hooks(adapter, text)
     script_behaviour = classify_script_behaviour(text) if adapter == "script-behaviour" else None
+    runtime_status = runtime_status_observation(adapter, objects, path)
     warnings = []
     needs_review = []
     unsafe = []
@@ -391,6 +710,9 @@ def analyse_file(path: Path, root: Path) -> Dict[str, Any]:
         warnings.append({"type": "unsupported_source", "path": str(path), "reason": "no supported adapter matched"})
     if adapter == "cron":
         warnings.append({"type": "cron_existing_subsystem", "path": str(path), "reason": "cron must bridge to existing bashqueues cron support; do not create a parallel scheduler"})
+    if runtime_status:
+        warnings.append({"type": "cloud_runtime_status_static_only", "path": str(path), "reason": "runtime/status source is parsed only from exported facts; no SDK/API/CLI/WinRM/SMB/RPC/REST query or credential handling is performed"})
+        needs_review.append({"type": "needs_review", "path": str(path), "reason": "runtime_status_review_required", "provider": runtime_status.get("provider"), "adapter": adapter})
     if adapter == "script-behaviour":
         warnings.append({"type": "script_static_only", "path": str(path), "reason": "script is treated as operational intent only; do not execute, source, expand, or submit it"})
         needs_review.append({"type": "needs_review", "path": str(path), "reason": "script_static_review_required"})
@@ -422,6 +744,7 @@ def analyse_file(path: Path, root: Path) -> Dict[str, Any]:
         "needs_review": needs_review,
         "unsafe_refused": unsafe,
         "script_behaviour": script_behaviour,
+        "runtime_status": runtime_status,
     }
     return obj
 
@@ -472,9 +795,15 @@ def build_control_plan(path: Path) -> Dict[str, Any]:
     identities = []
     secrets = []
     workflows = []
+    status_sources = []
     for s in scanned:
         cname = s["class_candidate"]
         classes.append({"name": cname, "source_ref": s["path"], "adapter": s["adapter"], "status": "candidate"})
+        rt = s.get("runtime_status")
+        if rt:
+            status_sources.append({**rt, "source_ref": s["path"]})
+            identities.append({"name": f"{cname}_PROVIDER_IDENTITY_REVIEW", "source_ref": s["path"], "adapter": s["adapter"], "provider": rt.get("provider"), "mode": "credentials_not_loaded"})
+            dependencies.append({"from": f"status_source/{cname}", "to": f"class/{cname}", "reason": "exported cloud runtime/status facts inform plan review only"})
         sb = s.get("script_behaviour")
         if sb:
             for hint in sb.get("classes", []):
@@ -492,9 +821,9 @@ def build_control_plan(path: Path) -> Dict[str, Any]:
             "name": f"{cname}_RESTRICTIONS", "class": cname, "source_ref": s["path"],
             "mode": "fail_closed", "requires_review": bool(s["needs_review"] or s["unsafe_refused"]),
         })
-        if s["adapter"] in {"kubernetes", "aws-batch", "azure-batch", "gcp-batch", "oci", "ibm-code-engine", "slurm", "pbs", "torque", "sge", "lsf", "htcondor", "flux", "nomad", "systemd", "cron", "script-behaviour", "bashqueues-plan"}:
+        if s["adapter"] in {"kubernetes", "aws-batch", "azure-batch", "gcp-batch", "oci", "ibm-code-engine", *CLOUD_RUNTIME_ADAPTERS, "slurm", "pbs", "torque", "sge", "lsf", "htcondor", "flux", "nomad", "systemd", "cron", "script-behaviour", "bashqueues-plan"}:
             job_templates.append({"name": f"{cname}_TEMPLATE", "class": cname, "source_ref": s["path"], "execution": "not_emitted_by_scan"})
-        if s["adapter"] in {"argo", "tekton", "github-actions", "gitlab-ci", "airflow", "jenkinsfile", "nomad", "script-behaviour"}:
+        if s["adapter"] in {"argo", "tekton", "github-actions", "gitlab-ci", "airflow", "jenkinsfile", "nomad", "script-behaviour", *CLOUD_RUNTIME_ADAPTERS}:
             workflows.append({"name": f"{cname}_WORKFLOW", "source_ref": s["path"], "status": "dependency_graph_candidate"})
         if s["adapter"] == "kubernetes" and any(o in {"Gateway", "HTTPRoute", "Ingress", "Service"} for o in s["objects"]):
             gateways.append({"name": f"{cname}_GATEWAY", "source_ref": s["path"], "public_exposure": "needs_review"})
@@ -522,6 +851,8 @@ def build_control_plan(path: Path) -> Dict[str, Any]:
             "secrets": secrets,
             "job_templates": job_templates,
             "workflows": workflows,
+            "status_sources": status_sources,
+            "source_contracts": [source_contract_for_adapter(a) for a in sorted(set(s["adapter"] for s in scanned))],
             "dependencies": dependencies,
             "approval_gates": approval_gates,
             "policy_requirements": policy_requirements,
@@ -575,6 +906,10 @@ def human_explain(plan: Dict[str, Any]) -> None:
         for obj in script_objs[:10]:
             sb = obj.get("script_behaviour") or {}
             print(f"  {obj['path']}: static scan only; classes={','.join(sb.get('classes', []))}")
+    if plan["plan"].get("status_sources"):
+        print("runtime/status sources:")
+        for src in plan["plan"]["status_sources"][:12]:
+            print(f"  {src['provider']}: {src['adapter']} ({','.join(src.get('objects', []))})")
     if plan["plan"].get("policy_requirements"):
         print("policy requirements:")
         for req in plan["plan"]["policy_requirements"]:
@@ -608,6 +943,8 @@ def write_build(plan: Dict[str, Any], outdir: Path, json_mode: bool) -> None:
         "Cron boundary: existing bashqueues cron support remains authoritative for cron-like execution.",
         "DGX boundary: DGX/GPU cloud or workflow plans require explicit policy review.",
         "Script boundary: scripts are statically classified as intent only; they are never executed, sourced, expanded, or submitted by queue plan.",
+        "",
+        "Runtime/status sources are exported-fact inputs only; queue plan does not run SDK/API/CLI/WinRM/SMB/RPC/REST queries or load credentials.",
         "",
         "Policy requirements:",
     ]
@@ -644,7 +981,7 @@ def validate_plan(path: Path, json_mode: bool) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="queue-plan-ingest.py")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ["scan", "explain", "policy"]:
+    for name in ["scan", "explain", "policy", "status", "sources"]:
         p = sub.add_parser(name)
         p.add_argument("path")
         p.add_argument("--json", "-j", action="store_true")
@@ -659,6 +996,30 @@ def main(argv: Optional[List[str]] = None) -> int:
     if a.command == "validate":
         return validate_plan(Path(a.path), a.json)
     plan = build_control_plan(Path(a.path))
+    if a.command == "status":
+        out = {"schema": STATUS_SCHEMA, "status": "ok", "source": plan["source"], "status_sources": plan["plan"].get("status_sources", []), "policy_requirements": plan["plan"].get("policy_requirements", []), "safe_to_apply": False, "execution_boundary": "static exported status only; no SDK/API/CLI/WinRM/SMB/RPC/REST polling"}
+        if a.json:
+            emit_json(out)
+        else:
+            print("queue plan status")
+            if not out["status_sources"]:
+                print("status_sources: none")
+            for src in out["status_sources"]:
+                print(f"  {src.get('provider')}: {src.get('adapter')} ({','.join(src.get('objects', []))})")
+            print("boundary: static exported status only; no live polling, credentials, logs or mutations")
+        return 0
+    if a.command == "sources":
+        out = {"schema": SOURCES_SCHEMA, "status": "ok", "source": plan["source"], "source_contracts": plan["plan"].get("source_contracts", []), "safe_to_collect_here": False, "execution_boundary": "queue plan consumes supplied plan/job exports only; collectors must be separate, policy-gated tools"}
+        if a.json:
+            emit_json(out)
+        else:
+            print("queue plan sources")
+            if not out["source_contracts"]:
+                print("source_contracts: none")
+            for contract in out["source_contracts"]:
+                print(f"  {contract.get('adapter')}: plans={','.join(contract.get('plan_sources', []))}; jobs={','.join(contract.get('job_sources', []))}")
+            print("boundary: no collection in queue plan; no credentials, no network, no SDK/API/CLI/WinRM/SMB/RPC/REST calls")
+        return 0
     if a.command == "policy":
         out = {"schema": POLICY_SCHEMA, "status": "ok", "source": plan["source"], "policy_requirements": plan["plan"].get("policy_requirements", []), "approval_gates": plan["plan"].get("approval_gates", []), "safe_to_apply": False}
         if a.json:

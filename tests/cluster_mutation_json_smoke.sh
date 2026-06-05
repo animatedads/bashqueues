@@ -8,7 +8,7 @@ mkdir -p "$QUEUEBASH_ROOT/classes"
 printf '%s
 ' 'CLASS_ALLOW_PARALLEL=1' 'CLASS_MAX_CONCURRENT=0' > "$QUEUEBASH_ROOT/classes/DEFAULT.env"
 printf '%s
-' '0.18.119' > "$QUEUEBASH_ROOT/.queuebash_bundled_install_version"
+' '0.18.123' > "$QUEUEBASH_ROOT/.queuebash_bundled_install_version"
 export QUEUEBASH_ALLOW_NONINTERACTIVE=1
 source ./queuebash.sh
 

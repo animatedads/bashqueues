@@ -1,0 +1,3 @@
+from ibm_watsonx_ai import APIClient
+client.jobs.get_details(job_id)
+entity deployment_job status state completed

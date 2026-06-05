@@ -57,3 +57,8 @@ It reports `queuebash.vcs.probe.v1` with the detected type, root marker, client 
 The `vcs:identity` and `vcs:revision` assets build on the probe helper for reproducible gates. They are intentionally read-only and are suitable for audit or release admission where “whatever is checked out on the worker” is not good enough.
 
 `VCS_CHANGESET_AUDIT` is the conservative class for that case. It serialises by audit name, requires repository existence and a clean tree, and optionally pins `QUEUEBASH_VCS_AUDIT_IDENTITY` and `QUEUEBASH_VCS_AUDIT_REVISION`.
+
+
+## Installed helper resolution
+
+Probe-backed assets (`vcs:identity` and `vcs:revision`) must work when class assets are evaluated from an installed shared tree, not only from the source checkout. The asset plugin resolves `queue-vcs-probe` relative to `assets.d/vcs.sh`, then via `QUEUEBASH_ROOT`, `QUEUEBASH_HOME`, a source-tree `./bin` fallback, and finally `PATH`. This keeps legacy VCS gates usable under package installs, copied runtime trees, and admin shells that run from arbitrary working directories.

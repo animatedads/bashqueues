@@ -226,3 +226,18 @@ The helper emits `queuebash.display_resource_locale_audit.v1` evidence from mani
 
 The locale audit helper is deliberately not a renderer and not a localization engine. It does not render templates, substitute token values, read or render secrets, call providers, sign resources, install files, change permissions, or generate command/provider JSON. It only gives reviewers deterministic language-directory coverage evidence to compare with lint, catalog, coverage, lookup, token, fallback, install, permission, hash, orphan, encoding, and line-audit evidence.
 
+
+
+## Display/XML namespace audit helper
+
+Bob18 wave 21 adds a read-only namespace/path hygiene audit helper:
+
+```bash
+python3 bin/queue-display-resource-namespace-audit.py --root . --json
+```
+
+The helper emits `queuebash.display_resource_namespace_audit.v1` evidence from XML/display manifest metadata and manifest-listed file paths. It reports unsafe resource names, absolute or home-relative paths, parent traversal, unsafe path components, duplicate manifest rows, XML extension mismatches, missing manifest-listed files, symlink resources, and non-regular resources.
+
+This helper is deliberately not a renderer and not an installer. It does not render templates, substitute token values, read resource bodies, read or render secrets, call providers, sign files, install files, mutate permissions, generate command/provider JSON, or touch queue dispatch. It only gives reviewers deterministic namespace evidence to compare with lint, catalog, coverage, lookup, token, fallback, install, permission, hash, orphan, encoding, line, and locale audit evidence.
+
+Namespace audit is stricter than orphan audit: orphan audit answers whether extra files exist; namespace audit answers whether manifest-declared names are safe to resolve under the reviewed resource directories.

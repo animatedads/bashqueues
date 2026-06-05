@@ -1,0 +1,20 @@
+{
+  "check": "health",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "healthy_threshold": 3,
+  "interval_seconds": 30,
+  "live_api_used": false,
+  "mutated": false,
+  "path": "/healthz",
+  "provider": "fixture",
+  "provider_family": "load_balancer",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.load_balancer.health.v1",
+  "source": "fixture",
+  "traffic_shift_allowed": false,
+  "unhealthy_threshold": 2
+}

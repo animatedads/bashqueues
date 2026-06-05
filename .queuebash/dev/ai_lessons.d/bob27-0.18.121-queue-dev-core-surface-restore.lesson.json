@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-05T13:48:41Z",
+  "created_from_session": "AIS-20260605-134836-931536-1598-Bob27",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260605-134841-069962-7482",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "0.18.121 urgent repair lesson: after command-surface hot-seat merges, dispatcher entries are not enough; queue dev core helpers such as usage/functions/extract/locate/patchset must be statically guarded and runtime-smoked before delivery."
+}

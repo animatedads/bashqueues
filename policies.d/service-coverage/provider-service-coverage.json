@@ -268,6 +268,30 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "edge_cdn": {
+      "doc_prefix": "EDGE_CDN",
+      "fixture_dir": "edge_cdn",
+      "non_goals": [
+        "distribution-create",
+        "distribution-delete",
+        "origin-mutation",
+        "cache-invalidation",
+        "certificate-mutation",
+        "waf-policy-mutation",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "edge_cdn",
+      "priority": 31,
+      "provider_dir": "edge_cdn",
+      "schemas": [
+        "queuebash.edge_cdn.detect.v1",
+        "queuebash.edge_cdn.distribution.v1",
+        "queuebash.edge_cdn.origin.v1",
+        "queuebash.edge_cdn.cache.v1",
+        "queuebash.edge_cdn.policy.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "event_stream": {
       "doc_prefix": "EVENT_STREAM",
       "fixture_dir": "event_stream",
@@ -381,6 +405,31 @@
         "queuebash.license_manager.pool.v1",
         "queuebash.license_manager.usage.v1",
         "queuebash.license_manager.policy.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "load_balancer": {
+      "doc_prefix": "LOAD_BALANCER",
+      "fixture_dir": "load_balancer",
+      "non_goals": [
+        "balancer-create",
+        "balancer-delete",
+        "listener-create",
+        "listener-delete",
+        "target-registration",
+        "health-policy-mutation",
+        "traffic-shift",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "load_balancer",
+      "priority": 32,
+      "provider_dir": "load_balancer",
+      "schemas": [
+        "queuebash.load_balancer.detect.v1",
+        "queuebash.load_balancer.balancer.v1",
+        "queuebash.load_balancer.listener.v1",
+        "queuebash.load_balancer.target.v1",
+        "queuebash.load_balancer.health.v1"
       ],
       "status": "fixture_first_provider_family"
     },

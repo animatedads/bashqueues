@@ -1,0 +1,19 @@
+{
+  "check": "origin",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "origin_id": "origin-app-fixture",
+  "origin_type": "object_storage_or_http",
+  "private_origin": "reference_only",
+  "provider": "fixture",
+  "provider_family": "edge_cdn",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.edge_cdn.origin.v1",
+  "shielding": "enabled",
+  "source": "fixture"
+}

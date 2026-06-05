@@ -1,0 +1,22 @@
+{
+  "check": "policy",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "mutation_allowed": false,
+  "provider": "fixture",
+  "provider_family": "edge_cdn",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "required_controls": [
+    "tls_minimum_version",
+    "origin_access_control",
+    "waf_attached",
+    "log_delivery_enabled"
+  ],
+  "schema": "queuebash.edge_cdn.policy.v1",
+  "source": "fixture"
+}

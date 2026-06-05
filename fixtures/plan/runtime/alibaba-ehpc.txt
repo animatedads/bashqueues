@@ -1,0 +1,2 @@
+from alibabacloud_ehpc20180412.models import ListJobsRequest
+request = ListJobsRequest(cluster_id="cluster")

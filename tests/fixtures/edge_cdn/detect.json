@@ -1,0 +1,24 @@
+{
+  "check": "detect",
+  "coverage_note": "CDN/edge estates are represented as inert fixture facts for routing and cache policy review.",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "edge_cdn",
+  "provider_output_is_shell": false,
+  "providers_observed": [
+    "aws_cloudfront",
+    "azure_front_door",
+    "akamai",
+    "fastly",
+    "cloudflare_cdn",
+    "google_cloud_cdn"
+  ],
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "schema": "queuebash.edge_cdn.detect.v1",
+  "source": "fixture"
+}

@@ -1,0 +1,10 @@
+{
+  "created_at": "2026-06-05T14:08:00Z",
+  "created_from_session": "manual-bob27-hot-seat",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-BOB27-0.18.122-core-surface-dispatch-repair",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "high",
+  "status": "active",
+  "text": "After restoring queue-dev, always audit queue() dispatcher references against actual function definitions. 0.18.121 still referenced cloud, cloud-signals, and secrets commands without function bodies; a static dispatcher-ref test catches this before release."
+}

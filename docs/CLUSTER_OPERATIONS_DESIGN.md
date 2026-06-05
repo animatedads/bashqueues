@@ -104,3 +104,9 @@ The safe boundary remains: standalone status is read-only, cluster init writes o
 Bob25 now adds `queue cluster vote propose` as the first concrete voting artefact. It follows the same safety posture as cluster init and lease witness: read-only/dry-run by default, local file-dev state only with explicit `--materialize`, and no network.
 
 The local proposal record exists to prove the operation/reason/proposer/status shape before real coordination providers are attached. It deliberately does not approve work, create quorum, or unlock cluster mutations. Voting remains a governance gate for risk-bearing operations such as membership, policy, trust, egress, and destructive cluster cleanup.
+
+## 0.18.121 local vote cast witness
+
+Bob25 now adds `queue cluster vote cast` as the first concrete ballot artefact. This keeps the proposal and ballot phases separate: proposing a risky operation does not approve it, and casting a local ballot does not grant quorum or unlock a mutation.
+
+The implementation remains local-only and dry-run by default. With `--materialize`, it writes one file-dev ballot witness for an existing local proposal and appends audit evidence. Future Kubernetes, Consul, etcd or signed-peer providers must implement the same fields while adding real quorum evaluation under policy, legal and egress controls.

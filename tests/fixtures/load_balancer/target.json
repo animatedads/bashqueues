@@ -1,0 +1,19 @@
+{
+  "check": "target",
+  "credentials_required": false,
+  "decision": "allow",
+  "draining_targets_count": 0,
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "load_balancer",
+  "provider_output_is_shell": false,
+  "provisioning_performed": false,
+  "queue_dispatch_refactor": false,
+  "registered_targets_count": 3,
+  "schema": "queuebash.load_balancer.target.v1",
+  "source": "fixture",
+  "target_group": "tg-app-fixture",
+  "target_type": "instance_or_ip"
+}

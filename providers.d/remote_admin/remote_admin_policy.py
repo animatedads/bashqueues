@@ -21,7 +21,7 @@ import tempfile
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 SCHEMA_PREFIX = "queuebash.remote_admin"
-DEFAULT_ROOT = "/etc/bashqueues"
+DEFAULT_ROOT = "/etc/queuebash"
 DEFAULT_AUDIT = "/var/log/queuebash/remote-queue-management-audit.jsonl"
 
 READ_OPS = {

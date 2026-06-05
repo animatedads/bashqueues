@@ -75,3 +75,7 @@ The `file-dev` provider may materialize a local lease witness for test/dev use o
 ## Local vote proposal witness provider obligation
 
 The `file-dev` provider may materialize local pending vote proposals for test/dev use only. Production providers must expose equivalent fields: proposal id, operation, proposer, reason, status, provider name, scope, and network-touch marker. A local pending vote witness must never be treated as quorum or approval evidence.
+
+## Local ballot witness
+
+The `file-dev` provider may materialize local ballot witnesses for development and contract testing only. A local ballot is evidence of one node's stated decision; it is not quorum, approval, or authorization. Production providers must expose equivalent proposal id, voter/node id, decision, provider, scope, created timestamp, network-touch marker, quorum result, and mutation-unlock marker.

@@ -1,0 +1,6 @@
+{
+  "source": "exported Azure Logic App evidence",
+  "resourceType": "Microsoft.Logic/workflows",
+  "workflow_runs": [{"name": "run-1", "status": "Running"}],
+  "LogicManagementClient": "snippet evidence only"
+}
