@@ -1,0 +1,9 @@
+apiVersion: codeengine.cloud.ibm.com/v1beta1
+kind: Job
+metadata:
+  name: thumbnailer
+spec:
+  image: icr.io/example/thumbnailer:latest
+  runArguments: ["--batch"]
+  scale:
+    maxExecutionTime: 3600

@@ -1,0 +1,49 @@
+{
+  "schema": "queue.control_plan.v1",
+  "source": {
+    "adapter": "script-behaviour",
+    "format": "shell",
+    "path": "fixtures/plan/script/backup-and-upload.sh",
+    "native": false,
+    "confidence": "medium"
+  },
+  "plan": {
+    "classes": [
+      { "name": "BACKUP_JOB", "confidence": "candidate", "evidence": ["pg_dump", "aws s3 cp"] }
+    ],
+    "restrictions": [
+      { "type": "network", "egress": ["database", "object-storage"], "ingress": "none" },
+      { "type": "filesystem", "writable_paths": ["/var/backups/example-app"] }
+    ],
+    "assets": [
+      { "type": "database", "source": "PGDATABASE" },
+      { "type": "object_storage", "source": "BACKUP_BUCKET" },
+      { "type": "filesystem", "path": "/var/backups/example-app" }
+    ],
+    "gateways": [],
+    "identities": [],
+    "secrets": [
+      { "name": "database-or-object-storage-credentials", "values_imported": false }
+    ],
+    "job_templates": [
+      { "name": "backup-and-upload", "class": "BACKUP_JOB", "source_script": "backup-and-upload.sh" }
+    ],
+    "workflows": [],
+    "dependencies": [
+      { "from": "asset/database", "to": "job_template/backup-and-upload", "reason": "pg_dump requires database access" },
+      { "from": "asset/object_storage", "to": "job_template/backup-and-upload", "reason": "aws s3 cp uploads backup output" }
+    ],
+    "approval_gates": [
+      { "reason": "script-derived plan requires review before live apply" }
+    ]
+  },
+  "analysis": {
+    "intent": ["backup-like", "object-storage-upload"],
+    "warnings": ["static script inference only; script not executed"],
+    "unsupported": [],
+    "needs_review": ["script-derived plan confidence is not equivalent to native declarative input"],
+    "unsafe_refused": [],
+    "safe_to_stage": true,
+    "safe_to_apply": false
+  }
+}

@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: image-transform
+spec:
+  template:
+    spec:
+      serviceAccountName: transform-runner
+      containers:
+        - name: worker
+          image: example/transform:latest
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          envFrom:
+            - secretRef:
+                name: object-store-creds
+      restartPolicy: Never

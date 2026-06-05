@@ -1,0 +1,87 @@
+{
+  "discovered_resource_files": [
+    {
+      "exists": true,
+      "is_regular_file": true,
+      "is_symlink": false,
+      "language": "lang_eng",
+      "mode": "-rw-r--r--",
+      "name": "queue-version.txt",
+      "path": "resources.d/display/lang_eng/queue-version.txt",
+      "resource_type": "display"
+    }
+  ],
+  "duplicate_manifest_entries": [],
+  "file_content_read": false,
+  "findings": [
+    {
+      "code": "unmanifested_resource_file",
+      "level": "warning",
+      "message": "resource file is not represented by the display/XML manifest",
+      "path": "resources.d/display/fallback/legacy-help.txt"
+    }
+  ],
+  "forbidden": [
+    "resource_rendering",
+    "token_substitution",
+    "secret_values",
+    "provider_credentials",
+    "command_json_generation_from_templates",
+    "signing_mutation",
+    "install_mutation",
+    "permission_mutation",
+    "eval",
+    "source",
+    "shell_expansion"
+  ],
+  "installer": false,
+  "json_contract_source": false,
+  "manifest_entries": [
+    {
+      "fallback_required": "yes",
+      "language": "lang_eng",
+      "manifest_line": 3,
+      "manifest_path": "resources.d/display/manifest.example.tsv",
+      "name": "queue-version.txt",
+      "path": "resources.d/display/lang_eng/queue-version.txt",
+      "resource_type": "display",
+      "surface": "queue version human output",
+      "tokens_declared": [
+        "VERSION"
+      ]
+    }
+  ],
+  "missing_manifest_resources": [],
+  "orphan_resource_files": [
+    {
+      "exists": true,
+      "is_regular_file": true,
+      "is_symlink": false,
+      "language": "fallback",
+      "mode": "-rw-r--r--",
+      "name": "legacy-help.txt",
+      "path": "resources.d/display/fallback/legacy-help.txt",
+      "resource_type": "display"
+    }
+  ],
+  "owner_lane": "bob18-display-resources",
+  "permission_mutation": false,
+  "read_only": true,
+  "redacted": true,
+  "renderer": "none-orphan-audit-only",
+  "root": "/example/bashqueues",
+  "schema": "queuebash.display_resource_orphan_audit.v1",
+  "secret_rendering_allowed": false,
+  "signing_mutation": false,
+  "source": "manifest-rows-and-resource-file-presence-only",
+  "stats": {
+    "discovered_resource_files": 3,
+    "duplicate_manifest_entries": 0,
+    "findings": 1,
+    "manifest_entries": 2,
+    "missing_manifest_resources": 0,
+    "orphan_resource_files": 1
+  },
+  "status": "warning",
+  "token_value_substitution": false
+}

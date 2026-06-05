@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-04T19:22:59Z",
+  "created_from_session": "AIS-20260604-191939-047967-2059-bob14",
+  "created_from_try": "",
+  "kind": "warning_lesson",
+  "lesson_id": "AIL-20260604-192259-284738-4040",
+  "match": {
+    "command_glob": "tests/*_provider_fixture_smoke.sh",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "warn",
+  "status": "active",
+  "text": "Wave11 provider static and smoke tests triggered existing AI lessons about direct test invocation and fixture-smoke timing. After the queue-dev-ai wrapper blocked the unsafe form, the tests were validated with bounded direct runs and JSON contract tests; report that distinction honestly."
+}

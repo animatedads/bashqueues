@@ -1,0 +1,23 @@
+{
+  "approval_required_for_cmdb_write": true,
+  "check": "policy",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "configuration_database-policy-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "policy_is_advisory": true,
+  "policy_mutated": false,
+  "provider": "fixture",
+  "provider_family": "configuration_database",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.configuration_database.policy.v1",
+  "source": "fixture"
+}

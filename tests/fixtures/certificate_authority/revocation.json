@@ -1,0 +1,23 @@
+{
+  "check": "revocation",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "certificate_authority-revocation-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "certificate_authority",
+  "provider_output_is_shell": false,
+  "revocation_is_advisory": true,
+  "revocation_mutated": false,
+  "revocation_status": "good",
+  "schema": "queuebash.certificate_authority.revocation.v1",
+  "source": "fixture"
+}

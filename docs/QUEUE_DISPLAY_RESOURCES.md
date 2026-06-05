@@ -329,3 +329,47 @@ Required boundaries:
 
 Fail-closed findings include missing manifests, non-regular or symlink manifests, malformed manifest rows, duplicate resource entries, missing manifest-listed resources, symlink resources, non-regular resources, shell-looking manifest expansion, concrete secret-looking manifest content, display/XML metadata that attempts to become a JSON source, and any display/XML metadata that allows secret rendering.
 
+
+## Display resource orphan audit helper
+
+Bob18 wave 15 adds a read-only orphan audit helper:
+
+```bash
+bin/queue-display-resource-orphan-audit.py --root . --json
+```
+
+The helper emits `queuebash.display_resource_orphan_audit.v1` evidence by comparing display/XML manifest rows with files present under `resources.d/display` and `resources.d/xml`. It reports manifest entries, discovered resource files, unmanifested/orphan resource files, missing manifest-listed resources, duplicate manifest rows, and findings.
+
+Unmanifested files are reported as warnings rather than hard errors because older extracted display/help resources may predate full manifest coverage. Missing files referenced by a manifest, duplicate manifest rows, symlinks, invalid manifest shape, JSON-source flags, or secret-rendering flags remain errors.
+
+The orphan audit helper is deliberately not a renderer. It does not read resource file bodies, perform token replacement, call providers, inspect secret stores, alter signing state, change permissions, install files, or generate command/provider JSON. It is release-review evidence for manifest coverage and resource hygiene only.
+
+
+## Display/XML encoding audit helper
+
+`bin/queue-display-resource-encoding-audit.py` is a read-only Bob18 helper for release review and installed-resource diagnostics. It emits `queuebash.display_resource_encoding_audit.v1` JSON and inspects only manifest-listed display/XML resource bytes for encoding hygiene.
+
+The helper checks UTF-8 validity, NUL bytes, unsafe control bytes, CRLF or mixed line endings, bare carriage returns, and missing final newlines. It does not render templates, substitute token values, read secrets, call providers, install files, sign files, mutate permissions, or generate command/provider JSON. The file body read scope is intentionally limited to manifest-listed display/XML resource bytes for encoding evidence only.
+
+Typical use:
+
+```bash
+python3 bin/queue-display-resource-encoding-audit.py --root . --json
+```
+
+Warnings such as CRLF line endings or missing final newline are release hygiene findings. Invalid UTF-8, NUL bytes, unsafe control bytes, missing manifest-listed files, symlinks, and manifest contract violations are errors.
+
+
+## Display/XML line hygiene audit helper
+
+Bob18 wave 18 adds a read-only line hygiene audit helper:
+
+```bash
+python3 bin/queue-display-resource-line-audit.py --root . --json
+```
+
+The helper emits `queuebash.display_resource_line_audit.v1` evidence from manifest-listed display/XML resource text. It reports line counts, maximum line lengths, trailing whitespace, overlong lines, XML tab indentation, and missing final newline findings for release review and installed-resource diagnostics.
+
+This helper is deliberately not a renderer. It does not substitute token values, read or render secrets, call providers, sign files, install files, mutate permissions, generate command/provider JSON, or touch queue dispatch. Its file body read scope is limited to manifest-listed display/XML resource text for line hygiene evidence only.
+
+Findings are warnings unless the manifest contract is broken or a manifest-listed resource is missing, symlinked, non-regular, or not valid UTF-8.

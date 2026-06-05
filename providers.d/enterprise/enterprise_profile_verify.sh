@@ -21,7 +21,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$profile" ]] || { echo "enterprise_profile_verify: profile required" >&2; exit 2; }
 case "$profile" in
-  hospital-live-readonly-default|hospital-live-approved-maintenance-default) ;;
+  small-team-dev-default|government-project-test-default|hospital-live-readonly-default|hospital-live-approved-maintenance-default) ;;
   *) echo "enterprise_profile_verify: unsupported fixture profile: $profile" >&2; exit 2 ;;
 esac
 repo_root="${QUEUEBASH_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
@@ -53,45 +53,93 @@ contains_token(){ local key="$1" token="$2"; local got=",${kv[$key]:-},"; [[ "$g
 not_contains_token(){ local key="$1" token="$2"; local got=",${kv[$key]:-},"; [[ "$got" != *",$token,"* ]] || failures+=("${key} unexpectedly includes ${token}"); }
 
 check_eq QUEUEBASH_ENTERPRISE_PROFILE "$profile"
-check_eq QUEUEBASH_ENTERPRISE_PROFILE_SCHEMA "queuebash.enterprise_profile.v1"
-check_eq QUEUEBASH_POLICY_ROOT_MUST_BE_EXPLICIT "1"
-check_eq QUEUEBASH_POLICY_ROOT_COMPATIBILITY_REQUIRED "1"
-check_eq QUEUEBASH_SECRET_ENV_ALLOWED "0"
-check_eq QUEUEBASH_SECRET_VALUE_IN_JSON_ALLOWED "0"
-check_eq QUEUEBASH_AI_EXTERNAL_PROVIDER_ALLOWED "0"
-check_eq QUEUEBASH_AI_MODEL_OUTPUT_EXECUTION_ALLOWED "0"
+check_nonempty QUEUEBASH_ENTERPRISE_PROFILE_SCHEMA
 check_nonempty QUEUEBASH_ALLOWED_ACTIONS
 check_nonempty QUEUEBASH_BLOCKED_ACTIONS
-check_nonempty QUEUEBASH_LOG_ROOT
-check_nonempty QUEUEBASH_AUDIT_LOG
-check_nonempty QUEUEBASH_SECRET_ROOT
+check_nonempty QUEUEBASH_VERIFICATION_COMMAND
 contains_token QUEUEBASH_ALLOWED_ACTIONS status
 contains_token QUEUEBASH_ALLOWED_ACTIONS explain
-contains_token QUEUEBASH_ALLOWED_ACTIONS backup-verify
-contains_token QUEUEBASH_DEFAULT_RUNTIME_CAPS no-secret-env
 
-if [[ "$profile" == "hospital-live-readonly-default" ]]; then
-  check_eq QUEUEBASH_LIVE_CLEARANCE "readonly-only"
-  check_eq QUEUEBASH_APPROVAL_REQUIRED_ACTIONS ""
-  check_eq QUEUEBASH_SECRET_DELIVERY_ALLOWED "0"
-  check_eq QUEUEBASH_SECRET_BREAK_GLASS_ALLOWED "0"
-  contains_token QUEUEBASH_BLOCKED_ACTIONS submit
-  contains_token QUEUEBASH_BLOCKED_ACTIONS run
-  contains_token QUEUEBASH_BLOCKED_ACTIONS secret-deliver
-  not_contains_token QUEUEBASH_ALLOWED_ACTIONS submit
-else
-  check_eq QUEUEBASH_LIVE_CLEARANCE "approved-maintenance-only"
-  check_eq QUEUEBASH_REQUIRE_CHANGE_TICKET "1"
-  check_eq QUEUEBASH_REQUIRE_DUAL_CONTROL "1"
-  check_eq QUEUEBASH_REQUIRE_SIGNED_APPROVAL "1"
-  check_eq QUEUEBASH_REQUIRE_ROLLBACK_PLAN "1"
-  check_eq QUEUEBASH_REQUIRE_MAINTENANCE_WINDOW "1"
-  check_eq QUEUEBASH_SECRET_DELIVERY_ALLOWED "approved-only"
-  check_eq QUEUEBASH_SECRET_BREAK_GLASS_ALLOWED "authorised-only"
-  contains_token QUEUEBASH_APPROVAL_REQUIRED_ACTIONS maintenance-execute
-  contains_token QUEUEBASH_APPROVAL_REQUIRED_ACTIONS secret-deliver
-  contains_token QUEUEBASH_BLOCKED_ACTIONS remote-mutation
-fi
+case "$profile" in
+  small-team-dev-default)
+    check_eq QUEUEBASH_ENTERPRISE_PROFILE_SCHEMA "queuebash.enterprise_policy_profile.v1"
+    check_eq QUEUEBASH_PROFILE_ENVIRONMENT "dev"
+    check_eq QUEUEBASH_PROFILE_LIVE_SERVICE "0"
+    contains_token QUEUEBASH_ALLOWED_ACTIONS submit-dev
+    contains_token QUEUEBASH_ALLOWED_ACTIONS run-dev
+    contains_token QUEUEBASH_ALLOWED_ACTIONS dryrun
+    contains_token QUEUEBASH_BLOCKED_ACTIONS live-cloud-apply
+    contains_token QUEUEBASH_BLOCKED_ACTIONS prod-secret-deliver
+    check_nonempty QUEUEBASH_APPROVAL_REQUIRED_ACTIONS
+    contains_token QUEUEBASH_APPROVAL_REQUIRED_ACTIONS external-ai-provider
+    check_nonempty QUEUEBASH_LOG_LOCATION
+    check_nonempty QUEUEBASH_SECRET_LOCATION
+    check_nonempty QUEUEBASH_AI_PROVIDER_POLICY
+    ;;
+  government-project-test-default)
+    check_eq QUEUEBASH_ENTERPRISE_PROFILE_SCHEMA "queuebash.enterprise_policy_profile.v1"
+    check_eq QUEUEBASH_PROFILE_ENVIRONMENT "test"
+    check_eq QUEUEBASH_PROFILE_LIVE_SERVICE "0"
+    contains_token QUEUEBASH_ALLOWED_ACTIONS submit-test
+    contains_token QUEUEBASH_ALLOWED_ACTIONS run-test
+    contains_token QUEUEBASH_ALLOWED_ACTIONS deployment-preflight
+    contains_token QUEUEBASH_BLOCKED_ACTIONS live-citizen-data-export
+    contains_token QUEUEBASH_BLOCKED_ACTIONS destructive-cloud-apply
+    check_nonempty QUEUEBASH_APPROVAL_REQUIRED_ACTIONS
+    contains_token QUEUEBASH_APPROVAL_REQUIRED_ACTIONS network-egress-change
+    check_nonempty QUEUEBASH_LOG_LOCATION
+    check_nonempty QUEUEBASH_SECRET_LOCATION
+    check_nonempty QUEUEBASH_AI_PROVIDER_POLICY
+    ;;
+  hospital-live-readonly-default)
+    check_eq QUEUEBASH_ENTERPRISE_PROFILE_SCHEMA "queuebash.enterprise_profile.v1"
+    check_eq QUEUEBASH_LIVE_CLEARANCE "readonly-only"
+    check_eq QUEUEBASH_POLICY_ROOT_MUST_BE_EXPLICIT "1"
+    check_eq QUEUEBASH_POLICY_ROOT_COMPATIBILITY_REQUIRED "1"
+    check_eq QUEUEBASH_APPROVAL_REQUIRED_ACTIONS ""
+    check_eq QUEUEBASH_SECRET_ENV_ALLOWED "0"
+    check_eq QUEUEBASH_SECRET_VALUE_IN_JSON_ALLOWED "0"
+    check_eq QUEUEBASH_SECRET_DELIVERY_ALLOWED "0"
+    check_eq QUEUEBASH_SECRET_BREAK_GLASS_ALLOWED "0"
+    check_eq QUEUEBASH_AI_EXTERNAL_PROVIDER_ALLOWED "0"
+    check_eq QUEUEBASH_AI_MODEL_OUTPUT_EXECUTION_ALLOWED "0"
+    contains_token QUEUEBASH_ALLOWED_ACTIONS backup-verify
+    contains_token QUEUEBASH_BLOCKED_ACTIONS submit
+    contains_token QUEUEBASH_BLOCKED_ACTIONS run
+    contains_token QUEUEBASH_BLOCKED_ACTIONS secret-deliver
+    contains_token QUEUEBASH_DEFAULT_RUNTIME_CAPS no-secret-env
+    check_nonempty QUEUEBASH_LOG_ROOT
+    check_nonempty QUEUEBASH_AUDIT_LOG
+    check_nonempty QUEUEBASH_SECRET_ROOT
+    not_contains_token QUEUEBASH_ALLOWED_ACTIONS submit
+    ;;
+  hospital-live-approved-maintenance-default)
+    check_eq QUEUEBASH_ENTERPRISE_PROFILE_SCHEMA "queuebash.enterprise_profile.v1"
+    check_eq QUEUEBASH_LIVE_CLEARANCE "approved-maintenance-only"
+    check_eq QUEUEBASH_POLICY_ROOT_MUST_BE_EXPLICIT "1"
+    check_eq QUEUEBASH_POLICY_ROOT_COMPATIBILITY_REQUIRED "1"
+    check_eq QUEUEBASH_REQUIRE_CHANGE_TICKET "1"
+    check_eq QUEUEBASH_REQUIRE_DUAL_CONTROL "1"
+    check_eq QUEUEBASH_REQUIRE_SIGNED_APPROVAL "1"
+    check_eq QUEUEBASH_REQUIRE_ROLLBACK_PLAN "1"
+    check_eq QUEUEBASH_REQUIRE_MAINTENANCE_WINDOW "1"
+    check_eq QUEUEBASH_SECRET_ENV_ALLOWED "0"
+    check_eq QUEUEBASH_SECRET_VALUE_IN_JSON_ALLOWED "0"
+    check_eq QUEUEBASH_SECRET_DELIVERY_ALLOWED "approved-only"
+    check_eq QUEUEBASH_SECRET_BREAK_GLASS_ALLOWED "authorised-only"
+    check_eq QUEUEBASH_AI_EXTERNAL_PROVIDER_ALLOWED "0"
+    check_eq QUEUEBASH_AI_MODEL_OUTPUT_EXECUTION_ALLOWED "0"
+    contains_token QUEUEBASH_ALLOWED_ACTIONS backup-verify
+    check_nonempty QUEUEBASH_APPROVAL_REQUIRED_ACTIONS
+    contains_token QUEUEBASH_APPROVAL_REQUIRED_ACTIONS maintenance-execute
+    contains_token QUEUEBASH_APPROVAL_REQUIRED_ACTIONS secret-deliver
+    contains_token QUEUEBASH_BLOCKED_ACTIONS remote-mutation
+    contains_token QUEUEBASH_DEFAULT_RUNTIME_CAPS no-secret-env
+    check_nonempty QUEUEBASH_LOG_ROOT
+    check_nonempty QUEUEBASH_AUDIT_LOG
+    check_nonempty QUEUEBASH_SECRET_ROOT
+    ;;
+esac
 
 status=ok; [[ ${#failures[@]} -eq 0 ]] || status=blocked
 if [[ "$json" -eq 1 ]]; then

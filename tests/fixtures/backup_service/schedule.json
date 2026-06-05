@@ -1,0 +1,23 @@
+{
+  "check": "schedule",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "backup_service-schedule-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "next_run_is_advisory": true,
+  "provider": "fixture",
+  "provider_family": "backup_service",
+  "provider_output_is_shell": false,
+  "schedule_mutated": false,
+  "schedule_present": true,
+  "schema": "queuebash.backup_service.schedule.v1",
+  "source": "fixture"
+}

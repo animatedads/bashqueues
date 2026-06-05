@@ -1,0 +1,13 @@
+name: projects/example/locations/europe-west2/jobs/report
+allocationPolicy:
+  instances:
+    - policy:
+        machineType: e2-standard-4
+taskGroups:
+  - taskSpec:
+      runnables:
+        - container:
+            imageUri: example/report:latest
+      computeResource:
+        cpuMilli: 4000
+        memoryMib: 8192

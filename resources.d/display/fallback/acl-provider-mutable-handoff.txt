@@ -1,0 +1,2 @@
+Only the local file provider is mutable in this build.
+Provider modules must implement this as normalized data, never shell.

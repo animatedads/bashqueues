@@ -1,0 +1,13 @@
+Usage: queue cluster status [--json]
+       queue cluster init --name NAME [--profile PROFILE] [--materialize] [--dryrun] [--json]
+       queue cluster join [--json]
+       queue cluster pause [--json]
+       queue cluster node list [--json]
+       queue cluster node token create --node NODE --role worker|controller|observer [--json]
+       queue cluster vote status [--json]
+       queue cluster elect status [--json]
+       queue cluster elect lease [--materialize|--renew] [--ttl-seconds N] [--json]
+       queue cluster policy status|paths [--json]
+       queue cluster explain [SUBJECT] [--json]
+
+Bob25 cluster operations remain standalone-safe: status and explain commands are read-only, init writes only when --materialize is explicit, elect lease writes only when --materialize is explicit, and no cluster command touches the network.

@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-05T09:50:21Z",
+  "created_from_session": "AIS-20260605-095019-391976-7874-Bob27",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260605-095021-752558-8295",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "Bob27 merge lesson: when a later patchset lacks a queue-dev manifest but has an apply script and README/VALIDATION, use merge-plan for canonical inputs, inspect the noncanonical patch manually, and apply only after verifying the claimed base. Bob24 queue-plan ingestion was version-stale against 0.18.116, so carry forward additive helper/docs/tests and splice only the queue plan facade instead of copying an older queuebash.sh."
+}

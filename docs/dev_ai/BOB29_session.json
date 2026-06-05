@@ -1,0 +1,16 @@
+{
+  "agent": "Bob29",
+  "authority": "Architect",
+  "base": "0.18.117",
+  "lesson_count_at_start": 0,
+  "role": "provider-family-coverage",
+  "schema": "queuebash.dev_ai.session.v1",
+  "session_id": "AIS-20260605-102311-643256-3313-Bob29",
+  "started_at": "2026-06-05T10:23:11Z",
+  "status": "active",
+  "stopped_at": "",
+  "tags": [
+    "fixture-first"
+  ],
+  "task": "service_mesh_object_storage"
+}

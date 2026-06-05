@@ -1,0 +1,23 @@
+{
+  "approval_required": true,
+  "check": "policy",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "certificate_authority-policy-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "key_export_allowed": false,
+  "live_api_used": false,
+  "mutated": false,
+  "policy_is_advisory": true,
+  "provider": "fixture",
+  "provider_family": "certificate_authority",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.certificate_authority.policy.v1",
+  "source": "fixture"
+}

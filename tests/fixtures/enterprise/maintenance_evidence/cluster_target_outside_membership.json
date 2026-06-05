@@ -1,0 +1,91 @@
+{
+  "ai": {
+    "external_provider_allowed": false
+  },
+  "approval": {
+    "approvers": [
+      "ops-lead@example.invalid",
+      "clinical-owner@example.invalid"
+    ],
+    "dual_control": true,
+    "signed_approval": true
+  },
+  "audit": {
+    "audit_path": "/var/lib/queuebash/audit/CHG-12345"
+  },
+  "change_ticket": "CHG-12345",
+  "cluster": {
+    "cluster_enabled": true,
+    "cluster_wide_mutation_allowed": false,
+    "fencing": {
+      "enabled": true,
+      "token_hash": "sha256:930b31a20fd620932b3c8dfb2e8e2f2ad3cfb3ef1fdc1575b109d07f6f3f9a50"
+    },
+    "leader_lease": {
+      "expires_at": "2026-06-04T23:00:00Z",
+      "leader_id": "hospital-node-a",
+      "valid": true
+    },
+    "membership": {
+      "hash": "sha256:2a4f7b30b907d3b15998e1dc6e7f70f9b65b12b12a5930fc82d015f9a48c5b76",
+      "members": [
+        "hospital-node-a",
+        "hospital-node-b",
+        "hospital-node-c"
+      ]
+    },
+    "network_touched": false,
+    "node_targets": [
+      "hospital-node-a",
+      "unknown-node-z"
+    ],
+    "quorum": {
+      "observed_count": 3,
+      "required_count": 2
+    },
+    "quorum_met": true,
+    "schema": "queuebash.enterprise_maintenance_cluster_context.v1",
+    "scope": "cluster",
+    "split_brain_guard": true,
+    "timing": {
+      "skew_budget_seconds": 5
+    },
+    "voting": {
+      "approval_id": "vote-CHG-12345",
+      "approved": true,
+      "approver_nodes": [
+        "hospital-node-a",
+        "hospital-node-b"
+      ],
+      "required": true
+    }
+  },
+  "created_at": "2026-06-04T21:30:00Z",
+  "evidence_id": "maint-CHG-12345-cluster_target_outside_membership",
+  "expires_at": "2026-06-04T23:00:00Z",
+  "live_clearance_requested": false,
+  "maintenance_class": "approved-backup-repair",
+  "maintenance_window": {
+    "end": "2026-06-04T22:30:00Z",
+    "start": "2026-06-04T22:00:00Z"
+  },
+  "policy": {
+    "policy_root": "/etc/queuebash/policies.d"
+  },
+  "profile": "hospital-live-approved-maintenance-default",
+  "purpose": "repair verified backup metadata during approved maintenance window",
+  "requested_actions": [
+    "backup-verify",
+    "cluster-approved-maintenance-readwrite"
+  ],
+  "requester": "maintenance-requester@example.invalid",
+  "rollback": {
+    "procedure": "restore previous metadata snapshot and re-run backup verification"
+  },
+  "schema": "queuebash.enterprise_maintenance_evidence_request.v1",
+  "secrets": {
+    "break_glass_used": false,
+    "secret_env_allowed": false,
+    "secret_value_json_allowed": false
+  }
+}

@@ -103,3 +103,23 @@ Emergency break-glass is a separate procedure, not a normal maintenance shortcut
 5. tightly approved maintenance pilot
 6. broader live execution only after explicit production clearance
 ```
+
+## Enterprise profile verification command
+
+The enterprise profile examples must be verifiable through the public queue command surface as well as the provider helper. Use:
+
+```bash
+queue enterprise list-profiles --json
+queue enterprise validate-profile hospital-live-readonly-default --json
+queue enterprise validate-profile hospital-live-approved-maintenance-default --json
+queue enterprise validate-profile small-team-dev-default --json
+queue enterprise validate-profile government-project-test-default --json
+```
+
+These commands emit fixture/contract evidence only. They do not install policy, grant live clearance, deliver secrets, or modify system state.
+
+
+
+Enterprise validation command note:
+
+`queue enterprise list-profiles --json`, `queue enterprise validate-profile PROFILE --json`, and `queue enterprise verify-maintenance --request FILE --json` are validation/evidence commands only. Bundled `policies.d/enterprise/*.env.example` files remain inert until deliberately copied, edited, validated, and installed through an explicit site-controlled activation process. These commands do not activate policy, grant live clearance, deliver secrets, or modify system state.

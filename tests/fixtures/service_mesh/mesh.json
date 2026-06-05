@@ -1,0 +1,23 @@
+{
+  "check": "mesh",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "service_mesh-mesh-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mesh_mutated": false,
+  "mesh_present": true,
+  "mesh_state_is_advisory": true,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "service_mesh",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.service_mesh.mesh.v1",
+  "source": "fixture"
+}

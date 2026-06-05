@@ -1,0 +1,5 @@
+{
+  "displayName": "model-train",
+  "jobInfrastructureConfigurationDetails": {"shapeName": "VM.GPU.A10.1"},
+  "jobConfigurationDetails": {"jobType": "DEFAULT", "commandLineArguments": "train.py"}
+}

@@ -1,0 +1,23 @@
+{
+  "certificate_bytes_returned": false,
+  "certificate_id": "fixture-cert-001",
+  "check": "certificate",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "certificate_authority-certificate-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "private_key_returned": false,
+  "provider": "fixture",
+  "provider_family": "certificate_authority",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.certificate_authority.certificate.v1",
+  "source": "fixture"
+}

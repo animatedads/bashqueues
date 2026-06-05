@@ -1,0 +1,9 @@
+Usage: queue enterprise verify-profile PROFILE [--json]
+       queue enterprise profiles [--json]
+       queue enterprise list-profiles [--json]
+       queue enterprise validate-profile PROFILE [--json]
+       queue enterprise verify-maintenance --request FILE [--json]
+
+Compatibility aliases preserve verify-profile/profiles while validate-profile/list-profiles are the preferred command names.
+
+Enterprise commands are fixture/contract helpers and safe validation/explanation helpers for inert bundled .env.example policy templates and maintenance evidence fixtures. They emit evidence only; they do not install policy, activate hospital/live profiles, grant live clearance, deliver secrets, or modify system state.

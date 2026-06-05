@@ -1,0 +1,25 @@
+schema: queue.plan.v1
+name: hospital-test-rollout
+classes:
+  - name: DATABASE_MIGRATION
+    max_concurrent: 1
+    restrictions:
+      network:
+        egress: [database.internal:5432]
+      identity:
+        require: db-migration-runner
+    approval:
+      required: true
+      reason: database schema change
+  - name: APP_ROLLOUT
+    max_concurrent: 4
+    depends_on: [DATABASE_MIGRATION]
+jobs:
+  - name: migrate-db
+    class: DATABASE_MIGRATION
+    command: ./migrate.sh
+    timeout: 20m
+  - name: rollout-app
+    class: APP_ROLLOUT
+    command: ./deploy.sh
+    depends_on: [migrate-db]

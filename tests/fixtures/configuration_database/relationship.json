@@ -1,0 +1,23 @@
+{
+  "check": "relationship",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "dependency_graph_is_advisory": true,
+  "evidence": [
+    {
+      "id": "configuration_database-relationship-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "configuration_database",
+  "provider_output_is_shell": false,
+  "relationship_mutated": false,
+  "relationship_present": true,
+  "schema": "queuebash.configuration_database.relationship.v1",
+  "source": "fixture"
+}

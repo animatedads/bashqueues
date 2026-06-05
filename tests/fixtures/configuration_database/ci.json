@@ -1,0 +1,23 @@
+{
+  "check": "ci",
+  "ci_mutated": false,
+  "ci_present": true,
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "configuration_database-ci-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "configuration_database",
+  "provider_output_is_shell": false,
+  "raw_inventory_exported": false,
+  "schema": "queuebash.configuration_database.ci.v1",
+  "source": "fixture"
+}

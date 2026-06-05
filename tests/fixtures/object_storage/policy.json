@@ -1,0 +1,24 @@
+{
+  "check": "policy",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "encryption_required": true,
+  "evidence": [
+    {
+      "id": "object_storage-policy-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "policy_is_advisory": true,
+  "policy_mutated": false,
+  "provider": "fixture",
+  "provider_family": "object_storage",
+  "provider_output_is_shell": false,
+  "public_access_block_required": true,
+  "schema": "queuebash.object_storage.policy.v1",
+  "source": "fixture"
+}

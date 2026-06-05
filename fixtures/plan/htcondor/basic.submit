@@ -1,0 +1,8 @@
+executable = worker.sh
+arguments = input.dat
+request_cpus = 2
+request_memory = 4096
+output = worker.out
+error = worker.err
+log = worker.log
+queue 5

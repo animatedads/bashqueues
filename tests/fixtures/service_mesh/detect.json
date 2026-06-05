@@ -1,0 +1,26 @@
+{
+  "check": "detect",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "service_mesh-detect-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "service_mesh",
+  "provider_output_is_shell": false,
+  "regions": [
+    "fixture-region-1"
+  ],
+  "schema": "queuebash.service_mesh.detect.v1",
+  "services_seen": [
+    "fixture-service-mesh"
+  ],
+  "source": "fixture"
+}

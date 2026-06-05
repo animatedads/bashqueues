@@ -1,0 +1,5 @@
+[Unit]
+Description=Example queue plan service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/example-job

@@ -23,16 +23,23 @@ done
 [[ -n "$request" ]] || { echo "maintenance_evidence_verify: request file required" >&2; exit 2; }
 [[ -f "$request" ]] || { echo "maintenance_evidence_verify: request file missing: $request" >&2; exit 1; }
 python3 - "$request" "$json" <<'PY'
-import json, sys
+import datetime as _dt
+import hashlib
+import json
+import sys
 from pathlib import Path
+
 path = Path(sys.argv[1])
 as_json = sys.argv[2] == '1'
 try:
-    obj = json.loads(path.read_text())
+    raw = path.read_bytes()
+    obj = json.loads(raw.decode())
 except Exception as exc:
     print(f"maintenance_evidence_verify: invalid json: {exc}", file=sys.stderr)
     sys.exit(1)
+
 failures = []
+
 def get(d, *keys, default=None):
     cur = d
     for key in keys:
@@ -40,19 +47,57 @@ def get(d, *keys, default=None):
             return default
         cur = cur[key]
     return cur
+
+def parse_utc_z(value, failure_name):
+    if not isinstance(value, str) or not value.endswith('Z'):
+        failures.append(failure_name)
+        return None
+    try:
+        return _dt.datetime.fromisoformat(value[:-1] + '+00:00')
+    except ValueError:
+        failures.append(failure_name)
+        return None
+
+def hash_text(value):
+    if value is None:
+        value = ''
+    if not isinstance(value, str):
+        value = json.dumps(value, sort_keys=True)
+    return 'sha256:' + hashlib.sha256(value.encode('utf-8')).hexdigest()
+
 schema = obj.get('schema')
 profile = obj.get('profile', '')
+evidence_id = obj.get('evidence_id', '')
+requester = obj.get('requester', '')
+created_at = obj.get('created_at')
+expires_at = obj.get('expires_at')
+window_start = get(obj, 'maintenance_window', 'start')
+window_end = get(obj, 'maintenance_window', 'end')
+requested_actions = obj.get('requested_actions')
+if not isinstance(requested_actions, list):
+    requested_actions = []
+cluster = obj.get('cluster')
+cluster_required = bool(cluster) or any(isinstance(a, str) and 'cluster' in a.lower() for a in requested_actions)
+
 if schema != 'queuebash.enterprise_maintenance_evidence_request.v1':
     failures.append('schema_mismatch')
 if profile != 'hospital-live-approved-maintenance-default':
     failures.append('profile_not_approved_maintenance')
 if not obj.get('change_ticket'):
     failures.append('missing_change_ticket')
+if not evidence_id:
+    failures.append('missing_evidence_id')
+if not requester:
+    failures.append('missing_requester')
+if not created_at:
+    failures.append('missing_created_at')
+if not expires_at:
+    failures.append('missing_expires_at')
 if not obj.get('maintenance_class'):
     failures.append('missing_maintenance_class')
 if not obj.get('purpose'):
     failures.append('missing_purpose')
-if not get(obj, 'maintenance_window', 'start') or not get(obj, 'maintenance_window', 'end'):
+if not window_start or not window_end:
     failures.append('missing_maintenance_window')
 if not isinstance(obj.get('requested_actions'), list) or not obj.get('requested_actions'):
     failures.append('missing_requested_actions')
@@ -63,6 +108,8 @@ if get(obj, 'approval', 'signed_approval') is not True:
 approvers = get(obj, 'approval', 'approvers', default=[])
 if not isinstance(approvers, list) or len([a for a in approvers if a]) < 2:
     failures.append('two_approvers_required')
+if requester and isinstance(approvers, list) and requester in approvers:
+    failures.append('requester_must_not_approve_own_maintenance')
 rollback_ok = bool(get(obj, 'rollback', 'procedure')) or bool(get(obj, 'rollback', 'command'))
 if not rollback_ok:
     failures.append('rollback_evidence_required')
@@ -78,17 +125,140 @@ if get(obj, 'ai', 'external_provider_allowed') is not False:
     failures.append('external_ai_must_be_denied_by_default')
 if obj.get('live_clearance_requested') is not False:
     failures.append('broad_live_clearance_not_allowed')
+
+if cluster_required and not isinstance(cluster, dict):
+    failures.append('cluster_context_required')
+    cluster = {}
+if cluster_required:
+    if cluster.get('schema') != 'queuebash.enterprise_maintenance_cluster_context.v1':
+        failures.append('cluster_context_schema_required')
+    scope = cluster.get('scope')
+    if scope not in ('standalone', 'single-node', 'cluster'):
+        failures.append('cluster_scope_invalid')
+    node_targets = cluster.get('node_targets')
+    if not isinstance(node_targets, list) or not [n for n in node_targets if n]:
+        failures.append('cluster_node_targets_required')
+    elif any(n in ('*', 'all', 'ALL') for n in node_targets):
+        failures.append('cluster_node_targets_must_be_explicit')
+    if cluster.get('network_touched') is not False:
+        failures.append('cluster_fixture_must_not_touch_network')
+    if cluster.get('cluster_wide_mutation_allowed') is not False:
+        failures.append('cluster_wide_mutation_not_allowed')
+    timing_skew = get(cluster, 'timing', 'skew_budget_seconds')
+    if not isinstance(timing_skew, int) or timing_skew < 0 or timing_skew > 5:
+        failures.append('cluster_skew_budget_required')
+    if scope == 'cluster':
+        if cluster.get('cluster_enabled') is not True:
+            failures.append('cluster_enabled_required_for_cluster_scope')
+        if cluster.get('quorum_met') is not True:
+            failures.append('cluster_quorum_required')
+        if get(cluster, 'voting', 'required') is not True or get(cluster, 'voting', 'approved') is not True:
+            failures.append('cluster_vote_approval_required')
+        if get(cluster, 'leader_lease', 'valid') is not True:
+            failures.append('cluster_leader_lease_required')
+
+        membership = cluster.get('membership')
+        members = get(cluster, 'membership', 'members', default=[])
+        membership_hash = get(cluster, 'membership', 'hash')
+        if not isinstance(membership, dict):
+            failures.append('cluster_membership_required')
+            members = []
+        elif not isinstance(members, list) or not [m for m in members if m]:
+            failures.append('cluster_membership_members_required')
+            members = []
+        if not isinstance(membership_hash, str) or not membership_hash.startswith('sha256:'):
+            failures.append('cluster_membership_hash_required')
+        if isinstance(node_targets, list) and isinstance(members, list) and members:
+            unknown_targets = [n for n in node_targets if n not in members]
+            if unknown_targets:
+                failures.append('cluster_node_targets_must_be_in_membership')
+        leader_id = get(cluster, 'leader_lease', 'leader_id')
+        if leader_id and isinstance(members, list) and members and leader_id not in members:
+            failures.append('cluster_leader_must_be_in_membership')
+
+        quorum = cluster.get('quorum')
+        required_count = get(cluster, 'quorum', 'required_count')
+        approver_nodes = get(cluster, 'voting', 'approver_nodes', default=[])
+        if not isinstance(quorum, dict) or not isinstance(required_count, int) or required_count <= 0:
+            failures.append('cluster_quorum_count_required')
+        elif isinstance(members, list) and members and required_count > len(members):
+            failures.append('cluster_quorum_count_exceeds_membership')
+        if not isinstance(approver_nodes, list) or not approver_nodes:
+            failures.append('cluster_vote_nodes_required')
+        elif isinstance(required_count, int) and len(set(approver_nodes)) < required_count:
+            failures.append('cluster_vote_nodes_below_quorum')
+        if isinstance(approver_nodes, list) and isinstance(members, list) and members:
+            unknown_voters = [n for n in approver_nodes if n not in members]
+            if unknown_voters:
+                failures.append('cluster_vote_nodes_must_be_in_membership')
+
+        fencing = cluster.get('fencing')
+        fence_hash = get(cluster, 'fencing', 'token_hash')
+        if not isinstance(fencing, dict) or fencing.get('enabled') is not True:
+            failures.append('cluster_fencing_required')
+        if not isinstance(fence_hash, str) or not fence_hash.startswith('sha256:'):
+            failures.append('cluster_fence_token_hash_required')
+        if isinstance(fencing, dict) and ('token' in fencing or 'raw_token' in fencing):
+            failures.append('cluster_fence_token_must_be_redacted')
+        if cluster.get('split_brain_guard') is not True:
+            failures.append('cluster_split_brain_guard_required')
+
+created_dt = parse_utc_z(created_at, 'created_at_must_be_utc_iso8601') if created_at else None
+expires_dt = parse_utc_z(expires_at, 'expires_at_must_be_utc_iso8601') if expires_at else None
+start_dt = parse_utc_z(window_start, 'maintenance_window_start_must_be_utc_iso8601') if window_start else None
+end_dt = parse_utc_z(window_end, 'maintenance_window_end_must_be_after_start') if window_end else None
+leader_lease_until = get(cluster if isinstance(cluster, dict) else {}, 'leader_lease', 'expires_at') if cluster_required else None
+leader_lease_dt = parse_utc_z(leader_lease_until, 'cluster_leader_lease_expires_at_must_be_utc_iso8601') if leader_lease_until else None
+if cluster_required and isinstance(cluster, dict) and cluster.get('scope') == 'cluster' and not leader_lease_until:
+    failures.append('cluster_leader_lease_expiry_required')
+if created_dt and expires_dt and expires_dt <= created_dt:
+    failures.append('expires_at_must_be_after_created_at')
+if start_dt and end_dt and end_dt <= start_dt:
+    failures.append('maintenance_window_end_must_be_after_start')
+if expires_dt and end_dt and expires_dt < end_dt:
+    failures.append('evidence_must_not_expire_before_window_end')
+if cluster_required and isinstance(cluster, dict) and cluster.get('scope') == 'cluster' and leader_lease_dt and end_dt and leader_lease_dt < end_dt:
+    failures.append('cluster_leader_lease_must_cover_window')
+
+cluster_checks = {
+    'cluster_context_required': cluster_required,
+    'cluster_context_present': isinstance(cluster, dict) and bool(cluster),
+    'cluster_schema': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('schema') == 'queuebash.enterprise_maintenance_cluster_context.v1'),
+    'cluster_node_targets_explicit': (not cluster_required) or (isinstance(cluster, dict) and isinstance(cluster.get('node_targets'), list) and bool(cluster.get('node_targets')) and not any(n in ('*', 'all', 'ALL') for n in cluster.get('node_targets', []))),
+    'cluster_network_untouched': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('network_touched') is False),
+    'cluster_wide_mutation_denied': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('cluster_wide_mutation_allowed') is False),
+    'cluster_quorum': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (cluster.get('quorum_met') is True),
+    'cluster_vote_approval': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (get(cluster, 'voting', 'required') is True and get(cluster, 'voting', 'approved') is True),
+    'cluster_leader_lease': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (get(cluster, 'leader_lease', 'valid') is True and bool(leader_lease_until)),
+    'cluster_leader_lease_covers_window': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or bool(leader_lease_dt and end_dt and leader_lease_dt >= end_dt),
+    'cluster_membership_hash': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(get(cluster, 'membership', 'hash'), str) and get(cluster, 'membership', 'hash').startswith('sha256:')),
+    'cluster_node_targets_in_membership': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('node_targets'), list) and isinstance(get(cluster, 'membership', 'members', default=[]), list) and bool(get(cluster, 'membership', 'members', default=[])) and all(n in get(cluster, 'membership', 'members', default=[]) for n in cluster.get('node_targets', []))),
+    'cluster_quorum_count': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(get(cluster, 'quorum', 'required_count'), int) and get(cluster, 'quorum', 'required_count') > 0),
+    'cluster_vote_nodes_cover_quorum': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(get(cluster, 'quorum', 'required_count'), int) and isinstance(get(cluster, 'voting', 'approver_nodes', default=[]), list) and len(set(get(cluster, 'voting', 'approver_nodes', default=[]))) >= get(cluster, 'quorum', 'required_count')),
+    'cluster_fence_token_hash': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(get(cluster, 'fencing', 'token_hash'), str) and get(cluster, 'fencing', 'token_hash').startswith('sha256:')),
+    'cluster_fence_token_redacted': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (isinstance(cluster.get('fencing'), dict) and 'token' not in cluster.get('fencing', {}) and 'raw_token' not in cluster.get('fencing', {})),
+    'cluster_split_brain_guard': (not cluster_required) or (isinstance(cluster, dict) and cluster.get('scope') != 'cluster') or (cluster.get('split_brain_guard') is True),
+}
+
 checks = {
+    'evidence_id_present': bool(evidence_id),
+    'requester_present': bool(requester),
+    'created_at_present': bool(created_at),
+    'expires_at_present': bool(expires_at),
     'change_ticket': bool(obj.get('change_ticket')),
     'dual_control': get(obj, 'approval', 'dual_control') is True,
     'signed_approval': get(obj, 'approval', 'signed_approval') is True,
+    'approver_independence': not (requester and isinstance(approvers, list) and requester in approvers),
     'rollback_evidence': rollback_ok,
     'audit_path': bool(get(obj, 'audit', 'audit_path')),
     'canonical_policy_root': get(obj, 'policy', 'policy_root') == '/etc/queuebash/policies.d',
     'secret_env_denied': get(obj, 'secrets', 'secret_env_allowed') is False,
     'secret_json_denied': get(obj, 'secrets', 'secret_value_json_allowed') is False,
     'external_ai_denied': get(obj, 'ai', 'external_provider_allowed') is False,
+    'window_order_valid': bool(start_dt and end_dt and end_dt > start_dt),
+    'expiry_covers_window': bool(expires_dt and end_dt and expires_dt >= end_dt),
 }
+checks.update(cluster_checks)
 status = 'ok' if not failures else 'blocked'
 decision = {
     'schema': 'queuebash.enterprise_maintenance_evidence_decision.v1',
@@ -98,6 +268,11 @@ decision = {
     'mode': 'fixture-only',
     'live_clearance_granted': False,
     'system_modified': False,
+    'redacted': True,
+    'secret_value_included': False,
+    'evidence_id': evidence_id,
+    'evidence_hash': 'sha256:' + hashlib.sha256(raw).hexdigest(),
+    'requester_hash': hash_text(requester),
     'request_file': str(path),
     'checks': checks,
     'failures': failures,
@@ -107,6 +282,7 @@ if as_json:
 else:
     print(f"status\t{status}")
     print(f"profile\t{profile}")
+    print(f"evidence_id\t{evidence_id}")
     for failure in failures:
         print(f"failure\t{failure}")
 sys.exit(0 if status == 'ok' else 1)

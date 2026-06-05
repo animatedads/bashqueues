@@ -1,0 +1,19 @@
+{
+  "agent": "bob14",
+  "authority": "coding_agent",
+  "created_at": "2026-06-04T21:03:45Z",
+  "id": "AIL-BOB14-WAVE12-license_manager",
+  "kind": "warn",
+  "match": "*license_manager*",
+  "precheck": "review provider helper non-goals and JSON contract tests",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "status": "active",
+  "tags": [
+    "bob14",
+    "service-coverage",
+    "wave12",
+    "license_manager"
+  ],
+  "text": "License-manager service coverage is advisory only. Do not assign, revoke, purchase, export entitlement subjects, mutate billing, or provision licensing infrastructure from provider facts.",
+  "updated_at": "2026-06-04T21:03:45Z"
+}

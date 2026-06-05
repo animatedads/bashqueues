@@ -25,8 +25,28 @@ fail() {
 
 pass() { echo "[PASS] $1"; }
 
+run_queue_bounded() {
+    local out="$tmp/queue-run.out"
+    local err="$tmp/queue-run.err"
+    if ! timeout 30s bash -lc '
+        set -euo pipefail
+        export QUEUEBASH_ALLOW_NONINTERACTIVE=1
+        export QUEUEBASH_RUNNER=direct
+        export QUEUEBASH_GZIP_LOGS=0
+        export QUEUEBASH_ROOT="$1"
+        source "$2/queuebash.sh"
+        queue run --workers 1
+    ' _ "$QUEUEBASH_ROOT" "$repo_root" >"$out" 2>"$err"; then
+        echo "--- bounded queue run stdout ---" >&2
+        cat "$out" >&2 || true
+        echo "--- bounded queue run stderr ---" >&2
+        cat "$err" >&2 || true
+        fail "queue run --workers 1 timed out or failed"
+    fi
+}
+
 queue submit tailtest -- bash -c 'for i in $(seq 1 20); do echo line-$i; done' >/dev/null
-queue run >/dev/null || true
+run_queue_bounded
 
 qid="$(basename "$(grep -l '^JOB_NAME=tailtest$' "$QUEUEBASH_ROOT"/done/*.job | head -1)" .job)"
 [[ -n "$qid" ]] || fail "tailtest qid not found"

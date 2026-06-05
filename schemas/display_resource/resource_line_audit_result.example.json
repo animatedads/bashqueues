@@ -1,0 +1,68 @@
+{
+  "schema": "queuebash.display_resource_line_audit.v1",
+  "status": "ok",
+  "root": "/repo",
+  "redacted": true,
+  "owner_lane": "bob18-display-resources",
+  "renderer": "none-line-audit-only",
+  "source": "manifest-listed-resource-text-line-hygiene-only",
+  "read_only": true,
+  "installer": false,
+  "signing_mutation": false,
+  "permission_mutation": false,
+  "json_contract_source": false,
+  "secret_rendering_allowed": false,
+  "token_value_substitution": false,
+  "resource_rendering": false,
+  "file_content_read_scope": "manifest-listed-display-xml-resource-text-for-line-hygiene-only",
+  "line_policy": {
+    "max_line_length": 160,
+    "trailing_whitespace": "warning",
+    "missing_final_newline": "warning",
+    "xml_tab_indentation": "warning"
+  },
+  "stats": {
+    "manifest_entries": 2,
+    "resource_files_audited": 2,
+    "total_lines": 4,
+    "overlong_line_resources": 0,
+    "trailing_whitespace_resources": 0,
+    "xml_tab_indented_resources": 0,
+    "missing_final_newline_resources": 0,
+    "findings": 0
+  },
+  "resources": [
+    {
+      "resource_type": "display",
+      "language": "lang_eng",
+      "name": "status-panel.example.txt",
+      "path": "resources.d/display/lang_eng/status-panel.example.txt",
+      "manifest_path": "resources.d/display/manifest.example.tsv",
+      "manifest_line": 3,
+      "exists": true,
+      "is_regular_file": true,
+      "is_symlink": false,
+      "line_count": 2,
+      "max_line_length": 72,
+      "overlong_lines": [],
+      "trailing_whitespace_lines": [],
+      "blank_lines": 0,
+      "xml_tab_indented_lines": [],
+      "newline_terminated": true
+    }
+  ],
+  "forbidden": [
+    "resource_rendering",
+    "token_substitution",
+    "secret_values",
+    "provider_credentials",
+    "command_json_generation_from_templates",
+    "signing_mutation",
+    "install_mutation",
+    "permission_mutation",
+    "eval",
+    "source",
+    "shell_expansion"
+  ],
+  "findings": []
+}

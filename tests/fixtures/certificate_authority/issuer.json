@@ -1,0 +1,23 @@
+{
+  "check": "issuer",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "certificate_authority-issuer-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "issuer": "fixture-root-ca",
+  "issuer_is_advisory": true,
+  "key_material_returned": false,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "certificate_authority",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.certificate_authority.issuer.v1",
+  "source": "fixture"
+}

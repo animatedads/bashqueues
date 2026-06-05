@@ -1,0 +1,13 @@
+{
+  "jobDefinitionName": "image-transform",
+  "type": "container",
+  "containerProperties": {
+    "image": "example/transform:latest",
+    "vcpus": 2,
+    "memory": 4096,
+    "command": ["transform"],
+    "jobRoleArn": "arn:aws:iam::123456789012:role/transform-runner"
+  },
+  "retryStrategy": {"attempts": 2},
+  "timeout": {"attemptDurationSeconds": 3600}
+}

@@ -1,0 +1,23 @@
+{
+  "check": "identity",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "service_mesh-identity-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "identity_mutated": false,
+  "identity_policy_present": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "service_mesh",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.service_mesh.identity.v1",
+  "secret_material_exported": false,
+  "source": "fixture"
+}

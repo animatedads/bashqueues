@@ -1,0 +1,12 @@
+Usage: queue plan scan PATH [--json]
+       queue plan explain PATH [--json]
+       queue plan build PATH --output DIR [--json]
+       queue plan validate DIR|normalized.json [--json]
+
+queue plan treats native bashqueues plans, cloud manifests, HPC scheduler files,
+workflow YAML/HCL and legacy scheduler directives as operational intent. It
+normalizes supported sources into queue.control_plan.v1 and stages inert plan
+artifacts only. It does not submit jobs, apply cloud resources, read secrets,
+or create a parallel scheduler path. Cron-like input must bridge to existing
+bashqueues cron support. DGX/GPU cloud and workflow plans require explicit
+policy review before any future apply path.

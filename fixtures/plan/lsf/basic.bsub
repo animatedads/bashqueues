@@ -1,0 +1,6 @@
+#!/bin/sh
+#BSUB -J lsf-job
+#BSUB -q normal
+#BSUB -W 01:00
+#BSUB -n 4
+./lsf.sh

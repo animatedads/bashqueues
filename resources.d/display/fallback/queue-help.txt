@@ -77,6 +77,10 @@ Usage:
   queue remote-admin --actor ACTOR validate|config|client|acl|secret|audit ...
   queue acl help|check|explain|set|remove
   queue key-provider help|lookup|registry|register|revoke|rotate
+  queue cluster status [--json]
+  queue cluster policy status|paths [--json]
+  queue cluster elect status [--json]
+  queue cluster vote status [--json]
 
   queue limits
   queue version

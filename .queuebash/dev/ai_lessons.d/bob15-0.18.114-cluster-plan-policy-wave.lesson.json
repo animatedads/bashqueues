@@ -1,0 +1,9 @@
+{
+  "schema": "queuebash.dev_ai_lesson.v1",
+  "id": "bob15-0.18.114-cluster-plan-policy-wave",
+  "created_at": "2026-06-04T21:45:00Z",
+  "author": "Bob15 merger",
+  "severity": "info",
+  "tags": ["bob15", "0.18.114", "merge-plan", "cluster", "queue-plan", "command-json", "candidate-manifest"],
+  "lesson": "queue dev merge-plan supports repeated --patchset arguments for canonical patchsets, but a single unsupported candidate manifest can abort the whole combined plan. Run the repeated form, then isolate noncanonical candidates for manual file/diff inspection. Preserve real runtime hunks over version-only queuebash edits and keep cluster/plan work contract-first until runtime semantics are explicitly approved."
+}

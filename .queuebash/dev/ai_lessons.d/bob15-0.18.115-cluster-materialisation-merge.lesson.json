@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-04T21:48:57Z",
+  "created_from_session": "AIS-20260604-214841-875401-7902-Bob15",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260604-214857-191585-2665",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "0.18.115 merge lesson: reconcile cluster local materialisation, fail-closed mutation JSON, and node-token plan JSON by operation semantics, not by whole-file queuebash replacement. Display-help extraction wins, so help is rendered from resources while static usage strings can remain as comments for contract tests."
+}

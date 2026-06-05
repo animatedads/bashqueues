@@ -21,6 +21,10 @@ A maintenance evidence request uses schema `queuebash.enterprise_maintenance_evi
 ```text
 profile = hospital-live-approved-maintenance-default
 change_ticket
+evidence_id
+requester
+created_at
+expires_at
 maintenance_class
 purpose
 maintenance_window.start
@@ -29,6 +33,7 @@ requested_actions
 approval.dual_control = true
 approval.signed_approval = true
 approval.approvers with at least two entries
+approval.approvers must not include requester
 rollback.procedure or rollback.command
 audit.audit_path
 policy.policy_root = /etc/queuebash/policies.d
@@ -38,6 +43,34 @@ ai.external_provider_allowed = false
 live_clearance_requested = false
 ```
 
+## Retention and expiry hardening
+
+The verifier treats approved-maintenance evidence as a short-lived authorisation envelope. It must include stable, redacted metadata sufficient for audit correlation without disclosing regulated data or secret values:
+
+```text
+evidence_id
+requester
+created_at
+expires_at
+maintenance_window.start
+maintenance_window.end
+```
+
+The fixture verifier validates only deterministic evidence structure. It does not consult wall-clock time, contact an authority, or grant live runtime clearance. It does verify that:
+
+```text
+created_at, expires_at, maintenance_window.start, and maintenance_window.end are UTC ISO-8601 timestamps
+expires_at is after created_at
+maintenance_window.end is after maintenance_window.start
+expires_at is not before maintenance_window.end
+approval approvers are independent from requester
+requester is present but redacted from decision output through requester_hash
+evidence_id is present but secret-free
+decision output contains evidence_hash and redacted=true
+```
+
+The `evidence_hash` is a SHA-256 hash of the request fixture bytes. It is audit correlation evidence, not a signature and not a production authorisation token.
+
 ## Block conditions
 
 The fixture verifier must fail closed if the request:
@@ -46,8 +79,12 @@ The fixture verifier must fail closed if the request:
 claims broad live clearance
 uses the readonly profile for maintenance execution
 omits the change ticket
+omits evidence_id, requester, created_at, or expires_at
+uses malformed or inconsistent timestamps
+has evidence expiry before the maintenance window ends
 omits dual-control or signed approval
 has fewer than two approvers
+lists requester as an approver
 omits rollback evidence
 omits audit path
 uses /etc/bashqueues/policies.d as the active policy root
@@ -69,12 +106,97 @@ The verifier emits `queuebash.enterprise_maintenance_evidence_decision.v1`:
   "live_clearance_granted": false,
   "system_modified": false,
   "profile": "hospital-live-approved-maintenance-default",
+  "evidence_id": "maint-CHG-12345-001",
+  "evidence_hash": "sha256:...",
+  "requester_hash": "sha256:...",
+  "redacted": true,
+  "secret_value_included": false,
   "failures": []
 }
 ```
 
-Blocked decisions must include redacted failure reasons only. They must not include secret values, command output, provider tokens, or regulated payload data.
+Blocked decisions must include redacted failure reasons only. They must not include secret values, command output, provider tokens, regulated payload data, raw requester identity, raw approver identity, or raw purpose text.
 
 ## Relationship to the hospital runbook
 
 `docs/REGULATED_SERVICE_RUNBOOK.md` remains the operator-facing runbook. This contract supplies machine-checkable fixture evidence for the approved-maintenance part of that runbook. A future command surface may wrap the fixture provider, but passing this check alone must not be described as broad hospital live clearance.
+
+## Cluster-aware maintenance evidence
+
+When an approved-maintenance request includes cluster-affecting actions, such as an action whose name contains `cluster`, the request must carry explicit cluster governance evidence. This remains fixture-only evidence. Passing the check must not be treated as permission to contact a live cluster, mutate nodes, start an election, cast a vote, or extend a leader lease.
+
+Cluster context uses schema `queuebash.enterprise_maintenance_cluster_context.v1` and must include:
+
+```text
+cluster.scope = standalone | single-node | cluster
+cluster.node_targets as explicit node names, never `*` or `all`
+cluster.network_touched = false
+cluster.cluster_wide_mutation_allowed = false
+cluster.timing.skew_budget_seconds between 0 and 5
+```
+
+For `cluster.scope = cluster`, the verifier also requires:
+
+```text
+cluster.cluster_enabled = true
+cluster.quorum_met = true
+cluster.voting.required = true
+cluster.voting.approved = true
+cluster.leader_lease.valid = true
+cluster.leader_lease.expires_at is UTC ISO-8601
+cluster.leader_lease.expires_at covers the maintenance window end
+```
+
+Blocked cluster maintenance evidence includes redacted failure reasons such as:
+
+```text
+cluster_quorum_required
+cluster_vote_approval_required
+cluster_leader_lease_required
+cluster_leader_lease_must_cover_window
+cluster_node_targets_must_be_explicit
+cluster_fixture_must_not_touch_network
+cluster_wide_mutation_not_allowed
+cluster_skew_budget_required
+```
+
+The cluster checks are intentionally evidence checks only. The fixture verifier does not read local cluster state, touch the network, renew leases, evaluate real quorum, or write any cluster policy.
+
+
+## Cluster split-brain and fencing hardening
+
+Cluster-scoped approved maintenance must also prove that the request is bound to a stable, redacted cluster governance snapshot. The fixture verifier still does not contact a cluster or renew any lease. It only checks the supplied evidence envelope.
+
+For `cluster.scope = cluster`, the cluster context must include:
+
+```text
+cluster.membership.members as explicit node names
+cluster.membership.hash as sha256:... redacted membership evidence
+cluster.quorum.required_count as a positive integer not exceeding membership size
+cluster.voting.approver_nodes as explicit member node names meeting quorum
+cluster.fencing.enabled = true
+cluster.fencing.token_hash = sha256:...
+cluster.fencing.token and cluster.fencing.raw_token absent
+cluster.split_brain_guard = true
+cluster.node_targets must be a subset of cluster.membership.members
+cluster.leader_lease.leader_id must be a member when supplied
+```
+
+Additional blocked cluster maintenance evidence includes redacted failure reasons such as:
+
+```text
+cluster_membership_hash_required
+cluster_node_targets_must_be_in_membership
+cluster_quorum_count_required
+cluster_quorum_count_exceeds_membership
+cluster_vote_nodes_required
+cluster_vote_nodes_below_quorum
+cluster_vote_nodes_must_be_in_membership
+cluster_fencing_required
+cluster_fence_token_hash_required
+cluster_fence_token_must_be_redacted
+cluster_split_brain_guard_required
+cluster_leader_must_be_in_membership
+```
+
+This guards the fixture contract against split-brain style evidence where a request claims a quorum or leader lease but does not bind the vote to a redacted membership snapshot, explicit voter nodes, and a redacted fencing token hash.

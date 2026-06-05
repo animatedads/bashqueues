@@ -120,3 +120,20 @@ providers.d/enterprise/enterprise_profile_verify.sh --profile hospital-live-read
 ```
 
 It emits `queuebash.enterprise_profile_verify.v1` evidence for pilot-review checks only.
+
+## Public verification surface
+
+Hospital profiles should be checked through the same public command named in the profile examples:
+
+```bash
+queue enterprise validate-profile hospital-live-readonly-default --json
+queue enterprise validate-profile hospital-live-approved-maintenance-default --json
+```
+
+The command delegates to the bundled fixture verifier and returns `queuebash.enterprise_profile_verify.v1`. It is evidence-only and must not be treated as broad live clearance.
+
+
+
+Enterprise validation command note:
+
+`queue enterprise list-profiles --json`, `queue enterprise validate-profile PROFILE --json`, and `queue enterprise verify-maintenance --request FILE --json` are validation/evidence commands only. Bundled `policies.d/enterprise/*.env.example` files remain inert until deliberately copied, edited, validated, and installed through an explicit site-controlled activation process. These commands do not activate policy, grant live clearance, deliver secrets, or modify system state.

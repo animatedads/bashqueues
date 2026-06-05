@@ -1,0 +1,5 @@
+{
+  "pool": {"id": "cpu-pool", "vmSize": "standard_d4s_v5"},
+  "job": {"id": "report-job", "poolInfo": {"poolId": "cpu-pool"}},
+  "task": {"id": "report", "commandLine": "./report.sh", "resourceFiles": []}
+}

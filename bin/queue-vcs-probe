@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# Read-only VCS workspace probe for bashqueues class authoring and diagnostics.
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: queue-vcs-probe [--json] [--type auto|git|svn|cvs|hg|p4] [--timeout SECONDS] [PATH]
+
+Reports a normalised, read-only view of Git, Subversion, CVS, Mercurial, and
+Perforce workspaces. It never runs checkout, update, commit, merge, tag, submit,
+or revert operations.
+USAGE
+}
+
+json=0
+type=auto
+timeout_s=10
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json|-j) json=1; shift ;;
+    --type) type="${2:-}"; shift 2 ;;
+    --timeout) timeout_s="${2:-10}"; shift 2 ;;
+    --help|-h) usage; exit 0 ;;
+    --*) echo "queue-vcs-probe: unknown option: $1" >&2; usage; exit 2 ;;
+    *) break ;;
+  esac
+done
+path="${1:-.}"
+[[ -d "$path" ]] || { echo "queue-vcs-probe: not a directory: $path" >&2; exit 2; }
+abs="$(cd "$path" && pwd -P)"
+
+find_up() {
+  local dir="$1" marker="$2"
+  while [[ -n "$dir" && "$dir" != / ]]; do
+    [[ -e "$dir/$marker" ]] && { printf '%s\n' "$dir/$marker"; return 0; }
+    dir="${dir%/*}"; [[ -z "$dir" ]] && dir=/
+  done
+  return 1
+}
+
+normal_type() {
+  case "$1" in
+    ''|auto) echo auto ;;
+    subversion) echo svn ;;
+    mercurial) echo hg ;;
+    perforce) echo p4 ;;
+    git|svn|cvs|hg|p4) echo "$1" ;;
+    *) return 1 ;;
+  esac
+}
+
+client_for() {
+  case "$1" in
+    git) echo git ;;
+    svn) echo svn ;;
+    cvs) echo cvs ;;
+    hg) echo hg ;;
+    p4) echo p4 ;;
+    *) return 1 ;;
+  esac
+}
+
+detect_type() {
+  local dir="$1" found spec t m
+  for spec in git:.git svn:.svn cvs:CVS hg:.hg; do
+    t="${spec%%:*}"; m="${spec#*:}"
+    if found="$(find_up "$dir" "$m" 2>/dev/null)"; then
+      printf '%s:%s:%s\n' "$t" "${found%/$m}" "$m"
+      return 0
+    fi
+  done
+  if found="$(find_up "$dir" .p4config 2>/dev/null)"; then
+    printf 'p4:%s:.p4config\n' "${found%/.p4config}"
+    return 0
+  fi
+  if [[ -n "${P4CONFIG:-}" && -e "$dir/${P4CONFIG}" ]]; then
+    printf 'p4:%s:%s\n' "$dir" "$P4CONFIG"
+    return 0
+  fi
+  return 1
+}
+
+ntype="$(normal_type "$type" 2>/dev/null || true)"
+[[ -n "$ntype" ]] || { echo "queue-vcs-probe: unknown type: $type" >&2; exit 2; }
+root=""
+marker=""
+if [[ "$ntype" == auto ]]; then
+  detected="$(detect_type "$abs" 2>/dev/null || true)"
+  if [[ -n "$detected" ]]; then
+    ntype="${detected%%:*}"
+    rest="${detected#*:}"
+    root="${rest%%:*}"
+    marker="${rest#*:}"
+  else
+    ntype=unknown
+  fi
+else
+  case "$ntype" in
+    git) found="$(find_up "$abs" .git 2>/dev/null || true)"; marker=.git ;;
+    svn) found="$(find_up "$abs" .svn 2>/dev/null || true)"; marker=.svn ;;
+    cvs) found="$(find_up "$abs" CVS 2>/dev/null || true)"; marker=CVS ;;
+    hg) found="$(find_up "$abs" .hg 2>/dev/null || true)"; marker=.hg ;;
+    p4) found="$(find_up "$abs" .p4config 2>/dev/null || true)"; marker=.p4config ;;
+  esac
+  [[ -n "${found:-}" ]] && root="${found%/$marker}"
+  [[ -z "$root" ]] && root="$abs"
+fi
+
+client=""
+client_available=0
+if [[ "$ntype" != unknown ]]; then
+  client="$(client_for "$ntype" 2>/dev/null || true)"
+  [[ -n "$client" ]] && command -v "$client" >/dev/null 2>&1 && client_available=1
+fi
+
+identity=""
+revision=""
+clean="unknown"
+status_summary="not_checked"
+
+case "$ntype" in
+  git)
+    if [[ "$client_available" -eq 1 ]] && git -C "$abs" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      root="$(git -C "$abs" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$root")"
+      identity="$(git -C "$abs" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+      revision="$(git -C "$abs" rev-parse HEAD 2>/dev/null || true)"
+      if [[ -z "$(git -C "$abs" status --porcelain 2>/dev/null)" ]]; then clean=true; status_summary=clean; else clean=false; status_summary=pending_changes; fi
+    else
+      status_summary=client_missing_or_not_repo
+    fi
+    ;;
+  svn)
+    if [[ "$client_available" -eq 1 ]]; then
+      info="$(timeout "$timeout_s" svn info "$abs" 2>/dev/null || true)"
+      identity="$(printf '%s\n' "$info" | awk -F': ' '/^URL:/{print $2; exit}')"
+      revision="$(printf '%s\n' "$info" | awk -F': ' '/^Revision:/{print $2; exit}')"
+      [[ -n "$identity" ]] || status_summary=client_missing_or_not_repo
+      out="$(timeout "$timeout_s" svn status "$abs" 2>/dev/null || true)"
+      if [[ -n "$identity" && -z "$out" ]]; then clean=true; status_summary=clean; elif [[ -n "$identity" ]]; then clean=false; status_summary=pending_changes; fi
+    else
+      status_summary=client_missing
+    fi
+    ;;
+  cvs)
+    tag_file="$(find_up "$abs" CVS/Tag 2>/dev/null || true)"
+    root_file="$(find_up "$abs" CVS/Root 2>/dev/null || true)"
+    [[ -n "$tag_file" && -r "$tag_file" ]] && identity="$(sed -n '1s/^T//p' "$tag_file")"
+    [[ -z "$identity" ]] && identity=HEAD
+    [[ -n "$root_file" && -r "$root_file" ]] && revision="$(sed -n '1p' "$root_file")"
+    if [[ "$client_available" -eq 1 ]]; then
+      out="$(cd "$abs" 2>/dev/null && timeout "$timeout_s" cvs -n update -dP 2>/dev/null || true)"
+      out="$(printf '%s\n' "$out" | grep -E '^[?MARCDUP] ' || true)"
+      if [[ -z "$out" ]]; then clean=true; status_summary=clean; else clean=false; status_summary=pending_changes; fi
+    else
+      status_summary=client_missing_metadata_only
+    fi
+    ;;
+  hg)
+    if [[ "$client_available" -eq 1 ]] && hg --cwd "$abs" root >/dev/null 2>&1; then
+      root="$(hg --cwd "$abs" root 2>/dev/null || printf '%s' "$root")"
+      identity="$(hg --cwd "$abs" branch 2>/dev/null || true)"
+      revision="$(hg --cwd "$abs" id -i 2>/dev/null | tr -d '+ ' || true)"
+      if [[ -z "$(hg --cwd "$abs" status 2>/dev/null)" ]]; then clean=true; status_summary=clean; else clean=false; status_summary=pending_changes; fi
+    else
+      status_summary=client_missing_or_not_repo
+    fi
+    ;;
+  p4)
+    if [[ "$client_available" -eq 1 ]]; then
+      client_out="$(cd "$abs" 2>/dev/null && timeout "$timeout_s" p4 client -o 2>/dev/null || true)"
+      identity="$(printf '%s\n' "$client_out" | awk '/^Stream:[[:space:]]*/{print $2; found=1; exit} /^Client:[[:space:]]*/{client=$2} END{if(!found && client) print client}')"
+      revision="$(cd "$abs" 2>/dev/null && timeout "$timeout_s" p4 changes -m1 2>/dev/null | awk '{print $2; exit}' || true)"
+      out="$(cd "$abs" 2>/dev/null && timeout "$timeout_s" p4 opened 2>/dev/null || true)"
+      if [[ -n "$identity" && -z "$out" ]]; then clean=true; status_summary=clean; elif [[ -n "$identity" ]]; then clean=false; status_summary=pending_changes; else status_summary=client_missing_or_not_workspace; fi
+    else
+      status_summary=client_missing
+    fi
+    ;;
+  unknown)
+    status_summary=unknown_vcs
+    ;;
+esac
+
+if [[ "$json" -eq 1 ]]; then
+  python3 - "$ntype" "$abs" "$root" "$marker" "$client" "$client_available" "$identity" "$revision" "$clean" "$status_summary" <<'PY'
+import json, sys
+keys = ["type","path","root","marker","client","client_available","identity","revision","clean","status_summary"]
+data = dict(zip(keys, sys.argv[1:]))
+data["schema"] = "queuebash.vcs.probe.v1"
+data["client_available"] = data["client_available"] == "1"
+if data["clean"] == "true": data["clean"] = True
+elif data["clean"] == "false": data["clean"] = False
+print(json.dumps(data, sort_keys=True, separators=(",",":")))
+PY
+else
+  printf 'type=%s\npath=%s\nroot=%s\nmarker=%s\nclient=%s\nclient_available=%s\nidentity=%s\nrevision=%s\nclean=%s\nstatus_summary=%s\n' \
+    "$ntype" "$abs" "$root" "$marker" "$client" "$client_available" "$identity" "$revision" "$clean" "$status_summary"
+fi
+[[ "$ntype" != unknown ]]

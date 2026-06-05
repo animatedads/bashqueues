@@ -1,0 +1,21 @@
+{
+  "credentials_required_for_default_tests": false,
+  "live_api_allowed": false,
+  "mode": "fixture_first",
+  "mutation_allowed": false,
+  "non_goals": [
+    "bucket-create",
+    "bucket-delete",
+    "object-upload",
+    "object-download",
+    "object-delete",
+    "retention-mutation",
+    "acl-mutation",
+    "provisioning",
+    "queue-dispatch-refactor"
+  ],
+  "normalized_json_only": true,
+  "provider_family": "object_storage",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.object_storage.policy.example.v1"
+}

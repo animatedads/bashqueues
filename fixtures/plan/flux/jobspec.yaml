@@ -1,0 +1,13 @@
+version: 1
+resources:
+  - type: slot
+    count: 1
+    with:
+      - type: core
+        count: 4
+tasks:
+  - command: ["./simulate.sh"]
+    slot: per_slot
+attributes:
+  system:
+    duration: 3600

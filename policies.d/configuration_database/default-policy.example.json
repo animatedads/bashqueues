@@ -1,0 +1,20 @@
+{
+  "credentials_required_for_default_tests": false,
+  "live_api_allowed": false,
+  "mode": "fixture_first",
+  "mutation_allowed": false,
+  "non_goals": [
+    "ci-create",
+    "ci-update",
+    "ci-delete",
+    "relationship-mutation",
+    "change-window-mutation",
+    "cmdb-write",
+    "provisioning",
+    "queue-dispatch-refactor"
+  ],
+  "normalized_json_only": true,
+  "provider_family": "configuration_database",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.configuration_database.policy.example.v1"
+}

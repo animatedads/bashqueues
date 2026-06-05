@@ -1,0 +1,23 @@
+{
+  "check": "policy",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "backup_service-policy-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "immutable_required": true,
+  "live_api_used": false,
+  "mutated": false,
+  "policy_is_advisory": true,
+  "provider": "fixture",
+  "provider_family": "backup_service",
+  "provider_output_is_shell": false,
+  "retention_days": 30,
+  "schema": "queuebash.backup_service.policy.v1",
+  "source": "fixture"
+}

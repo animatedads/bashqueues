@@ -6,7 +6,7 @@ legacy='/etc/bashqueues/policies.d'
 
 [[ -f queuebash.sh ]] || fail 'run from repository root'
 
-grep -q 'QUEUEBASH_VERSION="0.18.113"' queuebash.sh || fail 'version not advanced to 0.18.113'
+grep -q 'QUEUEBASH_VERSION="0.18.114"' queuebash.sh || fail 'version not advanced to 0.18.114'
 grep -q "$canonical" docs/SYSTEM_INSTALL.md || fail 'system install docs missing canonical policy root'
 grep -q "$canonical" tests/policy_namespace_consistency_static.sh || fail 'namespace consistency test missing canonical root'
 

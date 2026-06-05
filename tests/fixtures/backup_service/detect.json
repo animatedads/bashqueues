@@ -1,0 +1,26 @@
+{
+  "check": "detect",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "backup_service-detect-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "backup_service",
+  "provider_output_is_shell": false,
+  "regions": [
+    "fixture-region-1"
+  ],
+  "schema": "queuebash.backup_service.detect.v1",
+  "services_seen": [
+    "example-backup-control-plane"
+  ],
+  "source": "fixture"
+}

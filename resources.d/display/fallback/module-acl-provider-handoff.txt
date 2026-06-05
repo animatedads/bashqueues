@@ -1,0 +1,4 @@
+This command surface is reserved for the ACL subsystem.
+It should be mediated by queue acl with the same action, module resource, operation, and subject.
+
+No ACL backend is active in this build, so no policy was changed.

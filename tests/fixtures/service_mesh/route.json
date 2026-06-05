@@ -1,0 +1,23 @@
+{
+  "check": "route",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "service_mesh-route-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "service_mesh",
+  "provider_output_is_shell": false,
+  "route_is_advisory": true,
+  "route_summary_present": true,
+  "schema": "queuebash.service_mesh.route.v1",
+  "source": "fixture",
+  "traffic_mutated": false
+}

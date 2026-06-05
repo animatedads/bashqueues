@@ -48,10 +48,12 @@ SCRIPT_TEXT_SUFFIXES = {
     ".sh", ".bash", ".zsh", ".ksh", ".sql", ".py", ".txt",
     ".ps1", ".psm1", ".js", ".mjs", ".cjs", ".ts", ".php", ".rb", ".pl", ".pm", ".go",
     ".java", ".cs", ".scala", ".kt", ".kts", ".rs", ".lua", ".r", ".R", ".psql",
-    ".yml", ".yaml", ".json", ".tf", ".tfvars", ".hcl", ".service", ".timer", ".socket", ".cron",
+    ".yml", ".yaml", ".json", ".tf", ".tfvars", ".hcl", ".service", ".timer", ".socket", ".cron", ".mk", ".make", ".toml",
+    ".ini", ".cfg", ".conf", ".in",
 }
 SCRIPT_TEXT_NAMES = {
-    "Dockerfile", "Containerfile", "dockerfile", "containerfile", "crontab",
+    "Dockerfile", "Containerfile", "dockerfile", "containerfile", "crontab", "Makefile", "makefile", "GNUmakefile", "package.json", "pyproject.toml", "Cargo.toml",
+    "requirements.txt", "constraints.txt", "requirements.in", "tox.ini", "setup.cfg", "Pipfile", "Gemfile", "go.mod", ".pre-commit-config.yaml",
 }
 SHELL_STARTUP_NAMES = (".bashrc", ".bash_profile", ".profile", ".bash_login")
 SCRIPT_READ_MAX_BYTES_DEFAULT = 32768
@@ -630,7 +632,7 @@ def read_static_payload_file(resolved: pathlib.Path, lang: str, source: str, max
         return None
     max_bytes = int(os.environ.get("QUEUEBASH_AI_POLICY_GATE_SCRIPT_MAX_BYTES", str(SCRIPT_READ_MAX_BYTES_DEFAULT)))
     suf = resolved.suffix.lower()
-    if resolved.name not in SHELL_STARTUP_NAMES and resolved.name not in SCRIPT_TEXT_NAMES and suf not in SCRIPT_TEXT_SUFFIXES and lang != "bash":
+    if resolved.name not in SHELL_STARTUP_NAMES and resolved.name not in SCRIPT_TEXT_NAMES and suf not in SCRIPT_TEXT_SUFFIXES and lang not in {"bash", "vcs_hook", "dependency_manifest", "ini_config"}:
         return None
     try:
         data = resolved.read_bytes()[:max_bytes]
@@ -672,6 +674,12 @@ def read_static_payload_file(resolved: pathlib.Path, lang: str, source: str, max
         detected = "dockerfile"
     elif suf in {".yml", ".yaml"}:
         detected = "yaml"
+    elif resolved.name == "package.json":
+        detected = "package_manifest"
+    elif resolved.name in {"requirements.txt", "constraints.txt", "requirements.in", "Pipfile", "Gemfile", "go.mod"}:
+        detected = "dependency_manifest"
+    elif resolved.name in {"tox.ini", "setup.cfg"} or suf in {".ini", ".cfg"}:
+        detected = "ini_config"
     elif suf in {".json"}:
         detected = "json_config"
     elif suf in {".tf", ".tfvars", ".hcl"}:
@@ -680,6 +688,10 @@ def read_static_payload_file(resolved: pathlib.Path, lang: str, source: str, max
         detected = "systemd"
     elif suf in {".cron"} or resolved.name == "crontab":
         detected = "cron"
+    elif resolved.name in {"Makefile", "makefile", "GNUmakefile"} or suf in {".mk", ".make"}:
+        detected = "makefile"
+    elif resolved.name in {"pyproject.toml", "Cargo.toml"} or suf == ".toml":
+        detected = "toml_manifest"
     return {
         "language": detected,
         "source": source,
@@ -893,7 +905,7 @@ def command_payloads(job: Dict[str, Any], max_chars: int) -> List[Dict[str, str]
                 add("python", lower0, raw)
             else:
                 add("python", lower0, raw)
-    elif lower0 in {"node", "nodejs", "deno", "bun", "npm", "npx"}:
+    elif lower0 in {"node", "nodejs", "deno", "bun", "npx"}:
         for i, w in enumerate(words[:-1]):
             if w in {"-e", "--eval"}:
                 add("javascript", f"{lower0} {w}", words[i + 1]); break
@@ -975,6 +987,81 @@ def command_payloads(job: Dict[str, Any], max_chars: int) -> List[Dict[str, str]
             if item:
                 items.append(item)
         add("terraform", lower0, raw)
+    elif lower0 in {"make", "gmake"}:
+        # Static-only Makefile inspection; never run make targets.
+        buildfiles: List[str] = []
+        for i, w in enumerate(words[:-1]):
+            if w in {"-f", "--file", "--makefile"}:
+                buildfiles.append(words[i + 1])
+        if not buildfiles:
+            buildfiles.extend(["Makefile", "makefile", "GNUmakefile"])
+        for mf in buildfiles[:3]:
+            resolved = resolve_local_payload_path(mf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "makefile", "makefile_build_file", max_chars)
+                if item:
+                    items.append(item)
+        add("makefile", lower0, raw)
+    elif lower0 in {"npm", "yarn", "pnpm"}:
+        # Static-only package manifest inspection for npm/yarn/pnpm script indirection.
+        resolved = resolve_local_payload_path("package.json", submit_dir)
+        if resolved:
+            item = read_static_payload_file(resolved, "package_manifest", "package_manifest_file", max_chars)
+            if item:
+                items.append(item)
+        add("package_manifest", lower0, raw)
+    elif lower0 in {"cargo"}:
+        resolved = resolve_local_payload_path("Cargo.toml", submit_dir)
+        if resolved:
+            item = read_static_payload_file(resolved, "toml_manifest", "cargo_manifest_file", max_chars)
+            if item:
+                items.append(item)
+        add("toml_manifest", lower0, raw)
+    elif lower0 in {"pip", "pip3", "pipx"}:
+        # Static-only Python dependency manifest inspection; never install packages.
+        manifest_names = ["requirements.txt", "requirements.in", "constraints.txt", "setup.cfg", "tox.ini", "pyproject.toml"]
+        for mf in manifest_names[:6]:
+            resolved = resolve_local_payload_path(mf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "dependency_manifest", "dependency_manifest_file", max_chars)
+                if item:
+                    items.append(item)
+        script_items = safe_script_payloads(words, "dependency_manifest", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+        add("dependency_manifest", lower0, raw)
+    elif lower0 in {"tox"}:
+        for mf in ["tox.ini", "setup.cfg", "pyproject.toml"]:
+            resolved = resolve_local_payload_path(mf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "ini_config", "tox_config_file", max_chars)
+                if item:
+                    items.append(item)
+        add("ini_config", lower0, raw)
+    elif lower0 in {"pre-commit"}:
+        for mf in [".pre-commit-config.yaml", ".pre-commit-config.yml"]:
+            resolved = resolve_local_payload_path(mf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "yaml", "pre_commit_config_file", max_chars)
+                if item:
+                    items.append(item)
+        add("yaml", lower0, raw)
+    elif lower0 in {"git"}:
+        # Static-only repository hook inspection; never invoke git hooks.
+        hook_names = ["pre-commit", "pre-push", "post-checkout", "post-merge", "prepare-commit-msg", "commit-msg"]
+        for hn in hook_names:
+            resolved = resolve_local_payload_path(f".git/hooks/{hn}", submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "vcs_hook", "git_hook_file", max_chars)
+                if item:
+                    items.append(item)
+        for mf in [".pre-commit-config.yaml", ".pre-commit-config.yml"]:
+            resolved = resolve_local_payload_path(mf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "yaml", "pre_commit_config_file", max_chars)
+                if item:
+                    items.append(item)
+        add("vcs_hook", lower0, raw)
     elif lower0 in {"systemctl"}:
         script_items = safe_script_payloads(words, "systemd", submit_dir, max_chars)
         if script_items:
@@ -1339,6 +1426,111 @@ def scan_cron(text: str, findings: List[Dict[str, Any]]) -> None:
     scan_bash(text, findings)
 
 
+
+def scan_makefile(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("makefile_remote_shell", "high", "dynamic_code_execution", r"(?im)^\s*[^#\n]*\b(?:curl|wget)\b[^\n|]{0,160}\|\s*(?:sh|bash)\b"),
+        ("makefile_transfer_tool", "medium", "data_transfer", r"(?im)^\s*[^#\n]*\b(?:scp|rsync|sftp|ftp|nc|ncat|curl|wget|rclone)\b[^\n]{0,160}"),
+        ("makefile_privileged_command", "medium", "privileged_runtime", r"(?im)^\s*[^#\n]*\b(?:sudo|su\s+-|systemctl|iptables|firewall-cmd|ufw)\b"),
+        ("makefile_base64_decode", "medium", "payload_decode_transform", r"(?im)^\s*[^#\n]*\bbase64\s+(?:-d|--decode)\b"),
+        ("makefile_destructive_root", "critical", "destructive_operation", r"(?im)\brm\s+-rf\s+/(?:\s|$)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+    scan_sql(text, findings)
+
+
+def scan_package_manifest(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("package_script_remote_shell", "high", "dynamic_code_execution", r"(?is)\"(?:preinstall|postinstall|install|build|deploy|start|test)[^\"]*\"\s*:\s*\"[^\"]{0,240}\b(?:curl|wget)\b[^\"]{0,160}\|\s*(?:sh|bash)\b"),
+        ("package_script_subprocess", "medium", "subprocess_execution", r"(?is)\"(?:scripts|bin)\"\s*:\s*\{[^}]*\b(?:node|bash|sh|python|powershell|pwsh|cmd\.exe)\b"),
+        ("package_script_transfer_tool", "medium", "data_transfer", r"(?is)\"(?:scripts|bin)\"\s*:\s*\{[^}]*\b(?:scp|rsync|sftp|ftp|nc|ncat|curl|wget|rclone)\b"),
+        ("package_script_base64_decode", "medium", "payload_decode_transform", r"(?is)\"(?:scripts|bin)\"\s*:\s*\{[^}]*\bbase64\s+(?:-d|--decode)\b"),
+        ("package_script_destructive_root", "critical", "destructive_operation", r"(?is)\"(?:scripts|bin)\"\s*:\s*\{[^}]*\brm\s+-rf\s+/(?:\s|\\\"|\")"),
+        ("package_lifecycle_script", "medium", "script_capability", r"(?is)\"(?:preinstall|postinstall|prepare)\"\s*:\s*\"[^\"]+\""),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_javascript(text, findings)
+    scan_bash(text, findings)
+
+
+def scan_toml_manifest(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("toml_build_script", "medium", "script_capability", r"(?im)^\s*build\s*=\s*[\"'][^\"']+[\"']"),
+        ("toml_remote_shell", "high", "dynamic_code_execution", r"(?is)\b(?:curl|wget)\b.{0,160}\|\s*(?:sh|bash)\b"),
+        ("toml_transfer_tool", "medium", "data_transfer", r"(?is)\b(?:scp|rsync|sftp|ftp|nc|ncat|curl|wget|rclone)\b.{0,160}"),
+        ("toml_base64_decode", "medium", "payload_decode_transform", r"(?is)\bbase64\s+(?:-d|--decode)\b|\bbase64decode\b"),
+        ("toml_secret_literal", "high", "secrets_handling", r"(?im)^\s*(?:password|token|secret|api[_-]?key)\s*=\s*[\"'][^\"']{4,}[\"']"),
+        ("toml_destructive_root", "critical", "destructive_operation", r"(?is)\brm\s+-rf\s+/(?:\s|$)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+
+
+def scan_ci_workflow(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("ci_privileged_docker_socket", "high", "host_filesystem_access", r"(?is)(?:/var/run/docker\.sock|docker\.sock)"),
+        ("ci_remote_shell", "high", "dynamic_code_execution", r"(?im)^\s*(?:run:|script:|command:)?[^#\n]*\b(?:curl|wget)\b[^\n|]{0,160}\|\s*(?:sh|bash)\b"),
+        ("ci_secret_echo", "high", "secrets_handling", r"(?is)\b(?:echo|printenv|env)\b.{0,80}\$\{?\{?\s*(?:secrets|SECRET|TOKEN|PASSWORD|API[_-]?KEY)[A-Za-z0-9_./-]*"),
+        ("ci_unpinned_third_party_action", "medium", "supply_chain_risk", r"(?im)^\s*(?:-\s*)?uses:\s*[^\s@]+/[^\s@]+@(?:main|master|latest)\b"),
+        ("ci_destructive_root", "critical", "destructive_operation", r"(?im)\brm\s+-rf\s+/(?:\s|$)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+
+
+
+def scan_dependency_manifest(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("dependency_git_url", "medium", "supply_chain_risk", r"(?im)^\s*(?:-e\s+)?git\+https?://\S+"),
+        ("dependency_direct_url", "medium", "external_payload_read", r"(?im)^\s*(?:https?|ftp)://\S+"),
+        ("dependency_index_url_with_secret", "high", "secrets_handling", r"(?im)^\s*(?:--extra-index-url|--index-url)\s+https?://[^\s/@]+:[^\s/@]+@"),
+        ("dependency_trusted_host", "medium", "supply_chain_risk", r"(?im)^\s*--trusted-host\s+\S+"),
+        ("dependency_shell_escape", "high", "dynamic_code_execution", r"(?is)\b(?:curl|wget)\b.{0,160}\|\s*(?:sh|bash)\b"),
+        ("dependency_destructive_root", "critical", "destructive_operation", r"(?is)\brm\s+-rf\s+/(?:\s|$)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+
+
+def scan_ini_config(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("ini_tox_command_remote_shell", "high", "dynamic_code_execution", r"(?is)^\s*commands\s*=.{0,300}\b(?:curl|wget)\b.{0,160}\|\s*(?:sh|bash)\b"),
+        ("ini_tox_allowlist_wildcard", "medium", "subprocess_execution", r"(?im)^\s*(?:allowlist_externals|whitelist_externals)\s*=\s*\*\s*$"),
+        ("ini_passenv_secret", "medium", "secrets_handling", r"(?im)^\s*passenv\s*=.*\b(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY)\b"),
+        ("ini_setenv_secret_literal", "high", "secrets_handling", r"(?im)^\s*(?:setenv|env)\s*=.*\b(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY)\s*=\s*[^\s#]{4,}"),
+        ("ini_deps_git_url", "medium", "supply_chain_risk", r"(?im)^\s*(?:deps\s*=)?\s*(?:-e\s+)?git\+https?://\S+"),
+        ("ini_destructive_root", "critical", "destructive_operation", r"(?is)\brm\s+-rf\s+/(?:\s|$)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+
+
+def scan_vcs_hook(text: str, findings: List[Dict[str, Any]]) -> None:
+    checks = [
+        ("vcs_hook_remote_shell", "high", "dynamic_code_execution", r"(?is)\b(?:curl|wget)\b.{0,160}\|\s*(?:sh|bash)\b"),
+        ("vcs_hook_credential_store", "high", "secrets_handling", r"(?is)\bgit\s+config\b.{0,120}\bcredential\.helper\b.{0,80}\bstore\b"),
+        ("vcs_hook_secret_exposure", "high", "secrets_handling", r"(?is)\b(?:printenv|env|echo|cat)\b.{0,120}\b(?:[A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD)|API[_-]?KEY|id_rsa|\.ssh)\b"),
+        ("vcs_hook_transfer_tool", "medium", "data_transfer", r"(?is)\b(?:scp|rsync|sftp|ftp|nc|ncat|curl|wget|rclone)\b.{0,160}"),
+        ("vcs_hook_destructive_root", "critical", "destructive_operation", r"(?is)\brm\s+-rf\s+/(?:\s|$)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.M | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_bash(text, findings)
+
 def command_data_usage_summary(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Return compact command/data-use evidence derived only from static findings."""
     categories = [str(f.get("category")) for f in findings]
@@ -1522,7 +1714,9 @@ def examine_job(job: Dict[str, Any], max_chars: int) -> Dict[str, Any]:
             scan_legal_case_hints(text, lang, findings)
         elif lang == "yaml":
             selected_checks.append("yaml_iac_manifest_patterns")
+            selected_checks.append("ci_workflow_patterns")
             scan_yaml_iac(text, findings)
+            scan_ci_workflow(text, findings)
             selected_checks.append("legal_case_restriction_hints")
             scan_legal_case_hints(text, lang, findings)
         elif lang == "terraform":
@@ -1533,6 +1727,36 @@ def examine_job(job: Dict[str, Any], max_chars: int) -> Dict[str, Any]:
         elif lang == "json_config":
             selected_checks.append("json_policy_config_patterns")
             scan_json_config(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "package_manifest":
+            selected_checks.append("package_manifest_script_patterns")
+            scan_package_manifest(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "makefile":
+            selected_checks.append("makefile_build_script_patterns")
+            scan_makefile(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "toml_manifest":
+            selected_checks.append("toml_manifest_script_patterns")
+            scan_toml_manifest(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "dependency_manifest":
+            selected_checks.append("dependency_manifest_patterns")
+            scan_dependency_manifest(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "ini_config":
+            selected_checks.append("ini_config_execution_patterns")
+            scan_ini_config(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "vcs_hook":
+            selected_checks.append("vcs_hook_execution_patterns")
+            scan_vcs_hook(text, findings)
             selected_checks.append("legal_case_restriction_hints")
             scan_legal_case_hints(text, lang, findings)
         elif lang == "systemd":

@@ -1,0 +1,17 @@
+{
+  "authority": "Bob15 merger",
+  "created_at": "2026-06-04T22:05:00Z",
+  "id": "bob15-0.18.116-vcs-ai-broker-granular-health",
+  "lesson": "When a patchset carries an older whole-file queuebash payload, compare it against the current base before copying. For 0.18.116, Bob19 granular AI broker health-event staging was useful, but its queuebash.sh would have downgraded 0.18.115 cluster materialisation; merge only the contract harness delta and preserve newer runtime work. Bob26 VCS tenant coverage applies cleanly as additive VCS contract/classes/tests.",
+  "schema": "queuebash.dev_ai_lesson.v1",
+  "tags": [
+    "bob15",
+    "0.18.116",
+    "bob26",
+    "bob19",
+    "vcs",
+    "ai-broker",
+    "health-events",
+    "merge-plan"
+  ]
+}

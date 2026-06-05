@@ -1,0 +1,23 @@
+{
+  "check": "entitlement",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "entitlement_mutated": false,
+  "entitlement_present": true,
+  "evidence": [
+    {
+      "id": "license_manager-entitlement-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "license_manager",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.license_manager.entitlement.v1",
+  "source": "fixture",
+  "subject_exported": false
+}

@@ -1,0 +1,6 @@
+#!/bin/bash
+#PBS -N render
+#PBS -q batch
+#PBS -l select=1:ncpus=8:mem=16gb
+#PBS -l walltime=02:00:00
+./render.sh

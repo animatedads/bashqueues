@@ -1,5 +1,5 @@
 {
-  "created_for": "0.18.109_BOB14_service_coverage_access_review_compliance_evidence_rebased",
+  "created_for": "0.18.114_BOB14_service_coverage_backup_service_certificate_authority",
   "default_safety_contract": {
     "credentials_required_for_default_tests": false,
     "fixture_first": true,
@@ -57,6 +57,54 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "backup_service": {
+      "doc_prefix": "BACKUP_SERVICE",
+      "fixture_dir": "backup_service",
+      "non_goals": [
+        "backup-start",
+        "restore-start",
+        "snapshot-create",
+        "repository-delete",
+        "policy-mutation",
+        "provisioning",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "backup_service",
+      "priority": 21,
+      "provider_dir": "backup_service",
+      "schemas": [
+        "queuebash.backup_service.detect.v1",
+        "queuebash.backup_service.policy.v1",
+        "queuebash.backup_service.repository.v1",
+        "queuebash.backup_service.schedule.v1",
+        "queuebash.backup_service.recovery_point.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "certificate_authority": {
+      "doc_prefix": "CERTIFICATE_AUTHORITY",
+      "fixture_dir": "certificate_authority",
+      "non_goals": [
+        "certificate-issue",
+        "certificate-renew",
+        "certificate-revoke",
+        "key-export",
+        "trust-store-mutation",
+        "provisioning",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "certificate_authority",
+      "priority": 22,
+      "provider_dir": "certificate_authority",
+      "schemas": [
+        "queuebash.certificate_authority.detect.v1",
+        "queuebash.certificate_authority.issuer.v1",
+        "queuebash.certificate_authority.certificate.v1",
+        "queuebash.certificate_authority.policy.v1",
+        "queuebash.certificate_authority.revocation.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "compliance_evidence": {
       "doc_prefix": "COMPLIANCE_EVIDENCE",
       "fixture_dir": "compliance_evidence",
@@ -77,6 +125,31 @@
         "queuebash.compliance_evidence.evidence_pack.v1",
         "queuebash.compliance_evidence.attestation.v1",
         "queuebash.compliance_evidence.retention.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "configuration_database": {
+      "doc_prefix": "CONFIGURATION_DATABASE",
+      "fixture_dir": "configuration_database",
+      "non_goals": [
+        "ci-create",
+        "ci-update",
+        "ci-delete",
+        "relationship-mutation",
+        "change-window-mutation",
+        "cmdb-write",
+        "provisioning",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "configuration_database",
+      "priority": 24,
+      "provider_dir": "configuration_database",
+      "schemas": [
+        "queuebash.configuration_database.detect.v1",
+        "queuebash.configuration_database.ci.v1",
+        "queuebash.configuration_database.relationship.v1",
+        "queuebash.configuration_database.change_window.v1",
+        "queuebash.configuration_database.policy.v1"
       ],
       "status": "fixture_first_provider_family"
     },
@@ -262,6 +335,30 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "license_manager": {
+      "doc_prefix": "LICENSE_MANAGER",
+      "fixture_dir": "license_manager",
+      "non_goals": [
+        "license-assign",
+        "license-revoke",
+        "license-purchase",
+        "entitlement-mutation",
+        "billing-change",
+        "provisioning",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "license_manager",
+      "priority": 23,
+      "provider_dir": "license_manager",
+      "schemas": [
+        "queuebash.license_manager.detect.v1",
+        "queuebash.license_manager.entitlement.v1",
+        "queuebash.license_manager.pool.v1",
+        "queuebash.license_manager.usage.v1",
+        "queuebash.license_manager.policy.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "metadata_catalog": {
       "doc_prefix": "METADATA_CATALOG",
       "fixture_dir": "metadata_catalog",
@@ -327,6 +424,32 @@
         "queuebash.notification_service.route.v1",
         "queuebash.notification_service.template.v1",
         "queuebash.notification_service.delivery.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
+    "object_storage": {
+      "doc_prefix": "OBJECT_STORAGE",
+      "fixture_dir": "object_storage",
+      "non_goals": [
+        "bucket-create",
+        "bucket-delete",
+        "object-upload",
+        "object-download",
+        "object-delete",
+        "retention-mutation",
+        "acl-mutation",
+        "provisioning",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "object_storage",
+      "priority": 26,
+      "provider_dir": "object_storage",
+      "schemas": [
+        "queuebash.object_storage.detect.v1",
+        "queuebash.object_storage.bucket.v1",
+        "queuebash.object_storage.object.v1",
+        "queuebash.object_storage.retention.v1",
+        "queuebash.object_storage.policy.v1"
       ],
       "status": "fixture_first_provider_family"
     },
@@ -420,6 +543,31 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "service_mesh": {
+      "doc_prefix": "SERVICE_MESH",
+      "fixture_dir": "service_mesh",
+      "non_goals": [
+        "mesh-create",
+        "mesh-delete",
+        "route-mutate",
+        "traffic-shift",
+        "certificate-issue",
+        "sidecar-inject",
+        "provisioning",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "service_mesh",
+      "priority": 25,
+      "provider_dir": "service_mesh",
+      "schemas": [
+        "queuebash.service_mesh.detect.v1",
+        "queuebash.service_mesh.mesh.v1",
+        "queuebash.service_mesh.route.v1",
+        "queuebash.service_mesh.identity.v1",
+        "queuebash.service_mesh.policy.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "vector_database": {
       "doc_prefix": "VECTOR_DATABASE",
       "fixture_dir": "vector_database",
@@ -466,8 +614,8 @@
     }
   },
   "next_candidates": [
-    "backup_service",
-    "certificate_authority"
+    "service_mesh",
+    "object_storage"
   ],
   "schema": "queuebash.provider_service_coverage.v1"
 }

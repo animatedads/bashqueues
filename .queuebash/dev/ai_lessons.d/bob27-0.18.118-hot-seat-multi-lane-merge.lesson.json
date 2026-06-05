@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-06-05T10:50:33Z",
+  "created_from_session": "AIS-20260605-105032-294879-1619-Bob27",
+  "created_from_try": "",
+  "kind": "ok_lesson",
+  "lesson_id": "AIL-20260605-105033-942250-4084",
+  "match": {
+    "command_glob": "",
+    "command_regex": "",
+    "intent_contains": ""
+  },
+  "precheck": "",
+  "schema": "queuebash.dev_ai.lesson.v1",
+  "severity": "info",
+  "status": "active",
+  "text": "0.18.118 merge lesson: many 0.18.118 patchsets are noncanonical or patch-only. Preserve the 0.18.117 runtime by copying additive files and manually reconciling queuebash command surfaces: global JSON/direct-source advice, policy paths/status JSON, cluster join plan JSON, local lease witness, restore/resubmit lifecycle JSON, VCS command JSON/probe, queue plan policy requirements, and display resource help extraction."
+}

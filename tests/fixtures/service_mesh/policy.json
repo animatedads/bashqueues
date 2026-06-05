@@ -1,0 +1,23 @@
+{
+  "check": "policy",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "service_mesh-policy-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mTLS_required": true,
+  "mutated": false,
+  "policy_is_advisory": true,
+  "policy_mutated": false,
+  "provider": "fixture",
+  "provider_family": "service_mesh",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.service_mesh.policy.v1",
+  "source": "fixture"
+}

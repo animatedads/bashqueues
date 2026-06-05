@@ -1,0 +1,7 @@
+stages: [build, test]
+build-job:
+  stage: build
+  script: ["make build"]
+test-job:
+  stage: test
+  script: ["make test"]

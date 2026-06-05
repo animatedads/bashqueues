@@ -1,0 +1,20 @@
+{
+  "credentials_required_for_default_tests": false,
+  "live_api_allowed": false,
+  "mode": "fixture_first",
+  "mutation_allowed": false,
+  "non_goals": [
+    "mesh-create",
+    "mesh-delete",
+    "route-mutate",
+    "traffic-shift",
+    "certificate-issue",
+    "sidecar-inject",
+    "provisioning",
+    "queue-dispatch-refactor"
+  ],
+  "normalized_json_only": true,
+  "provider_family": "service_mesh",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.service_mesh.policy.example.v1"
+}

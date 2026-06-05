@@ -1,0 +1,2 @@
+# Existing cron support is authoritative; queue plan must delegate semantics.
+0 2 * * * /usr/local/bin/nightly-report

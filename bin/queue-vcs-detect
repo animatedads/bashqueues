@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Detect the likely VCS type for a working directory without mutating it.
+set -euo pipefail
+usage() { echo "Usage: queue-vcs-detect [--json] [PATH]" >&2; }
+json=0
+case "${1:-}" in
+  --json|-j) json=1; shift ;;
+  --help|-h) usage; exit 0 ;;
+esac
+path="${1:-.}"
+[[ -d "$path" ]] || { echo "queue-vcs-detect: not a directory: $path" >&2; exit 2; }
+abs="$(cd "$path" && pwd -P)"
+find_up() {
+  local dir="$1" marker="$2"
+  while [[ -n "$dir" && "$dir" != / ]]; do
+    [[ -e "$dir/$marker" ]] && { printf '%s\n' "$dir/$marker"; return 0; }
+    dir="${dir%/*}"; [[ -z "$dir" ]] && dir=/
+  done
+  return 1
+}
+type=unknown
+root=""
+marker=""
+for spec in git:.git svn:.svn cvs:CVS hg:.hg; do
+  t="${spec%%:*}"; m="${spec#*:}"
+  if found="$(find_up "$abs" "$m" 2>/dev/null)"; then
+    type="$t"; marker="$m"; root="${found%/$m}"; break
+  fi
+done
+if [[ "$type" == unknown ]]; then
+  if found="$(find_up "$abs" .p4config 2>/dev/null)"; then type=p4; marker=.p4config; root="${found%/.p4config}"; fi
+  if [[ "$type" == unknown && -n "${P4CONFIG:-}" && -e "$abs/${P4CONFIG}" ]]; then type=p4; marker="$P4CONFIG"; root="$abs"; fi
+fi
+if [[ "$json" -eq 1 ]]; then
+  python3 - "$type" "$abs" "$root" "$marker" <<'PY'
+import json, sys
+print(json.dumps({"schema":"queuebash.vcs.detect.v1","type":sys.argv[1],"path":sys.argv[2],"root":sys.argv[3],"marker":sys.argv[4]}, sort_keys=True, separators=(",",":")))
+PY
+else
+  printf 'type=%s\npath=%s\nroot=%s\nmarker=%s\n' "$type" "$abs" "$root" "$marker"
+fi
+[[ "$type" != unknown ]]

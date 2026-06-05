@@ -1,0 +1,23 @@
+{
+  "check": "object",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "object_storage-object-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "object_body_exported": false,
+  "object_metadata_present": true,
+  "object_mutated": false,
+  "provider": "fixture",
+  "provider_family": "object_storage",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.object_storage.object.v1",
+  "source": "fixture"
+}

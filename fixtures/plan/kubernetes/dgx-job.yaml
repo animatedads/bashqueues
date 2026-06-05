@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dgx-train
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: trainer
+          image: registry.example.invalid/ml/train:latest
+          resources:
+            limits:
+              nvidia.com/gpu: "8"
+              cpu: "64"
+              memory: 512Gi
+          env:
+            - name: DGX_PROFILE
+              value: cloud-workflow-review

@@ -1,0 +1,23 @@
+{
+  "bucket_mutated": false,
+  "bucket_policy_is_advisory": true,
+  "bucket_present": true,
+  "check": "bucket",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "object_storage-bucket-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "object_storage",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.object_storage.bucket.v1",
+  "source": "fixture"
+}

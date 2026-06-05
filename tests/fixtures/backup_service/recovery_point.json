@@ -1,0 +1,23 @@
+{
+  "backup_bytes_returned": false,
+  "check": "recovery_point",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "backup_service-recovery_point-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "backup_service",
+  "provider_output_is_shell": false,
+  "recovery_point_present": true,
+  "restore_started": false,
+  "schema": "queuebash.backup_service.recovery_point.v1",
+  "source": "fixture"
+}

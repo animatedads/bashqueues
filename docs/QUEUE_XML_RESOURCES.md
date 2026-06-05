@@ -185,3 +185,31 @@ Fail-closed findings include symlink resources, non-regular resources, executabl
 
 XML resources participate in the same Bob18 hash inventory contract as display resources. `bin/queue-display-resource-hash-inventory.py --json` emits `queuebash.display_resource_hash_inventory.v1` with SHA-256 hashes for XML manifest rows and XML resource bodies without parsing, rendering, substituting tokens, signing, installing, or mutating files. XML parsing and XXE/DTD checks remain the lint helper's job; hash inventory is digest evidence only.
 
+
+## XML resource orphan audit helper
+
+`bin/queue-display-resource-orphan-audit.py --root . --json` includes XML resources in the same read-only `queuebash.display_resource_orphan_audit.v1` evidence contract used for display resources.
+
+For XML resources, the helper compares `resources.d/xml/manifest.example.tsv` rows with files found below `resources.d/xml/<language>/`. It reports unmanifested XML files as warnings, missing manifest-listed XML files as errors, and duplicate XML manifest rows as errors.
+
+The helper does not parse or render XML bodies; XML parseability remains the responsibility of the lint helper. It does not substitute token values, evaluate templates, read secrets, mutate signing state, install resources, or generate command/provider JSON.
+
+
+## XML resource encoding audit
+
+XML display resources participate in the same `queue-display-resource-encoding-audit.py` contract as text display resources. The helper validates the bytes referenced by `resources.d/xml/manifest.example.tsv` as UTF-8 fixture content and reports line-ending/control-byte hygiene through `queuebash.display_resource_encoding_audit.v1`. This is an audit helper only; XML rendering, XML signature verification, provider calls, command JSON generation, and file mutation remain out of scope.
+
+
+## Display/XML line hygiene audit helper
+
+Bob18 wave 18 adds a read-only line hygiene audit helper:
+
+```bash
+python3 bin/queue-display-resource-line-audit.py --root . --json
+```
+
+The helper emits `queuebash.display_resource_line_audit.v1` evidence from manifest-listed display/XML resource text. It reports line counts, maximum line lengths, trailing whitespace, overlong lines, XML tab indentation, and missing final newline findings for release review and installed-resource diagnostics.
+
+This helper is deliberately not a renderer. It does not substitute token values, read or render secrets, call providers, sign files, install files, mutate permissions, generate command/provider JSON, or touch queue dispatch. Its file body read scope is limited to manifest-listed display/XML resource text for line hygiene evidence only.
+
+Findings are warnings unless the manifest contract is broken or a manifest-listed resource is missing, symlinked, non-regular, or not valid UTF-8.

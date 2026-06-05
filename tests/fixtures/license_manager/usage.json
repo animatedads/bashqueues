@@ -1,0 +1,23 @@
+{
+  "check": "usage",
+  "confidence": "fixture",
+  "credentials_required": false,
+  "decision": "allow",
+  "evidence": [
+    {
+      "id": "license_manager-usage-fixture",
+      "type": "fixture"
+    }
+  ],
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "license_manager",
+  "provider_output_is_shell": false,
+  "raw_usage_exported": false,
+  "schema": "queuebash.license_manager.usage.v1",
+  "source": "fixture",
+  "usage_is_advisory": true,
+  "usage_summary_present": true
+}
