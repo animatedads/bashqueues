@@ -195,7 +195,7 @@ def job_root_from_path(path: pathlib.Path) -> pathlib.Path:
     """Best-effort queue root resolver for a job path under state/priority dirs."""
     try:
         parts = list(path.resolve().parts)
-        for state in ("pending", "running", "done", "failed", "pol_blocked", "cancelled", "blocked"):
+        for state in ("pending", "waiting", "running", "done", "failed", "pol_blocked", "cancelled", "blocked"):
             if state in parts:
                 idx = parts.index(state)
                 if idx > 0:
@@ -2335,6 +2335,34 @@ def append_job_metadata(job_path: pathlib.Path, fields: Dict[str, str]) -> None:
             fh.write(f"{key}={qescape(str(val))}\n")
 
 
+
+
+def pending_bucket_key(priority: str) -> str:
+    try:
+        pri = int(str(priority or "10"))
+    except Exception:
+        pri = 10
+    return f"p{1000000000 - pri:010d}"
+
+
+def move_job_to_waiting(job_path: pathlib.Path, root: pathlib.Path, job: Dict[str, Any], reason: str, detail: str) -> pathlib.Path:
+    """Park an advised-delay job in waiting using the same priority bucket layout as pending."""
+    job_id = str(job.get("job_id") or job_path.stem)
+    pri = str(job.get("priority") or "10")
+    target = root / "waiting" / pending_bucket_key(pri) / f"{job_id}.job"
+    if job_path.resolve() == target.resolve():
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    job_path.rename(target)
+    try:
+        parent = job_path.parent
+        if parent.name.startswith("p") and parent.parent.name in {"pending", "waiting"}:
+            parent.rmdir()
+    except Exception:
+        pass
+    return target
+
+
 def write_job_log(root: pathlib.Path, job_id: str, decision: Dict[str, Any], action: str) -> None:
     log = root / "logs" / f"{job_id}.ai-policy-gate.log"
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -2549,7 +2577,16 @@ def apply_decision(root: pathlib.Path, job_path: pathlib.Path, req: Dict[str, An
                 "AI_POLICY_GATE_CONFIDENCE": str(dec.get("confidence", 0)),
                 "AI_POLICY_GATE_REASON": dec.get("rationale", "AI policy gate advisory delay"),
             })
+            metadata.update({
+                "WAIT_REASON": "ai_classifier_delay",
+                "WAIT_DETAIL": "AI policy gate advised a bounded delay before dispatch",
+                "WAIT_LAST_PREFLIGHT": now_iso(),
+                "WAIT_NEXT_CHECK": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(effective_not_before)),
+                "WAIT_OPERATOR_ACTION": "wait_for_ai_delay_or_authorise_override",
+            })
             append_job_metadata(job_path, metadata)
+            target_path = move_job_to_waiting(job_path, root, req["job"], "ai_classifier_delay", "AI policy gate advised a bounded delay before dispatch")
+            target = str(target_path)
     else:
         if not dry_run:
             log_path = write_job_log(root, job_id, dec, action)

@@ -35,19 +35,41 @@ queue_asset_param() {
 
 queue_asset_check_sys_memory_available() {
     local token="$1"
-    local min_gb="$2"
+    local positional_min_gb="${2:-}"
     shift 2 || true
 
-    local available_kb available_gb
+    local min_gb="" min_mb="" required_mb="" required_label=""
+    local available_kb available_mb available_gb
 
-    min_gb="$(queue_asset_param min_gb "$@" || echo "$min_gb")"
+    min_gb="$(queue_asset_param min_gb "$@" || true)"
+    min_mb="$(queue_asset_param min_mb "$@" || true)"
 
-    if [[ -z "$min_gb" || ! "$min_gb" =~ ^[0-9]+$ ]]; then
-        echo "asset_check_blocked: sys:memory_available requires min_gb parameter (numeric)"
+    # Backward compatibility: the second positional argument was historically
+    # interpreted as a GiB threshold.  Named parameters are preferred.
+    if [[ -z "$min_gb" && -z "$min_mb" && -n "$positional_min_gb" ]]; then
+        min_gb="$positional_min_gb"
+    fi
+
+    if [[ -n "$min_mb" ]]; then
+        if [[ ! "$min_mb" =~ ^[0-9]+$ ]]; then
+            echo "asset_check_blocked: sys:memory_available requires min_mb parameter (numeric)"
+            return 1
+        fi
+        required_mb="$min_mb"
+        required_label="required_mb=$min_mb"
+    elif [[ -n "$min_gb" ]]; then
+        if [[ ! "$min_gb" =~ ^[0-9]+$ ]]; then
+            echo "asset_check_blocked: sys:memory_available requires min_gb parameter (numeric)"
+            return 1
+        fi
+        required_mb=$(( min_gb * 1024 ))
+        required_label="required_gb=$min_gb"
+    else
+        echo "asset_check_blocked: sys:memory_available requires min_gb or min_mb parameter (numeric)"
         return 1
     fi
 
-    # Read from /proc/meminfo, MemAvailable accounts for reclaimable caches
+    # Read from /proc/meminfo, MemAvailable accounts for reclaimable caches.
     available_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo 2>/dev/null)
 
     if [[ -z "$available_kb" || ! "$available_kb" =~ ^[0-9]+$ ]]; then
@@ -55,14 +77,15 @@ queue_asset_check_sys_memory_available() {
         return 1
     fi
 
-    available_gb=$(( available_kb / 1024 / 1024 ))
+    available_mb=$(( available_kb / 1024 ))
+    available_gb=$(( available_mb / 1024 ))
 
-    if (( available_gb >= min_gb )); then
-        echo "asset_check_ok: sys:memory_available available_gb=$available_gb required_gb=$min_gb"
+    if (( available_mb >= required_mb )); then
+        echo "asset_check_ok: sys:memory_available available_mb=$available_mb available_gb=$available_gb $required_label"
         return 0
     fi
 
-    echo "asset_check_blocked: sys:memory_available available_gb=$available_gb below required_gb=$min_gb"
+    echo "asset_check_blocked: sys:memory_available available_mb=$available_mb available_gb=$available_gb below $required_label"
     return 1
 }
 
