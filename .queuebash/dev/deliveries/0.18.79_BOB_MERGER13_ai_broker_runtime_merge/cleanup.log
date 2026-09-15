@@ -1,2 +1,0 @@
-Removed transient __pycache__ and .pyc files before packaging.
-No assets.d/net_usage.sh restored.

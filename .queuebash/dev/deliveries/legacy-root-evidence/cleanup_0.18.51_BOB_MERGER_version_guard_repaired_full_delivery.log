@@ -1,3 +1,0 @@
-0.18.51 cleanup check
-PASS assets.d/net_usage.sh absent
-PASS caps.d/net_usage.sh present
