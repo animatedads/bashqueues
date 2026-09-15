@@ -1,0 +1,16 @@
+{
+  "check": "backup",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "point_in_time_recovery": "enabled",
+  "provider": "fixture",
+  "provider_family": "key_value_store",
+  "provider_output_is_shell": false,
+  "restore_mutation_allowed": false,
+  "retention_days": 35,
+  "schema": "queuebash.key_value_store.backup.v1",
+  "source": "fixture"
+}

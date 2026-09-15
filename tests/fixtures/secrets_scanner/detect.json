@@ -1,25 +1,30 @@
 {
   "check": "detect",
-  "coverage_note": "Secrets scanner services are represented as inert fixture facts for rule, finding, scope, and policy review.",
   "credentials_required": false,
   "decision": "allow",
+  "evidence": [
+    "secrets_scanner:detect:fixture"
+  ],
+  "facts": {
+    "advisory_only": true,
+    "coverage": "sample",
+    "live_repository_scanned": false,
+    "mode": "offline-fixture",
+    "raw_secret_values_present": false,
+    "redaction_written": false
+  },
   "fail_closed": true,
   "live_api_used": false,
   "mutated": false,
+  "non_goals": [
+    "live-repository-scan",
+    "secret-export",
+    "raw-secret-output",
+    "redaction-write"
+  ],
   "provider": "fixture",
   "provider_family": "secrets_scanner",
   "provider_output_is_shell": false,
-  "providers_observed": [
-    "github_secret_scanning",
-    "gitlab_secret_detection",
-    "gitleaks",
-    "trufflehog",
-    "detect_secrets",
-    "azure_devops_credential_scanner",
-    "custom_legacy_regex"
-  ],
-  "provisioning_performed": false,
-  "queue_dispatch_refactor": false,
   "schema": "queuebash.secrets_scanner.detect.v1",
   "source": "fixture"
 }

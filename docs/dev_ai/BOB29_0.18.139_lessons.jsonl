@@ -1,0 +1,1 @@
+{"agent": "Bob29", "base": "0.18.138", "lesson": "After a big merge, verify every previous provider family in providers.d, fixtures, tests, and provider-service-coverage registry before continuing; do not assume carry-forward from version numbers alone.", "release": "0.18.139", "status": "ok"}

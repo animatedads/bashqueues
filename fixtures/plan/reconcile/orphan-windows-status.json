@@ -1,0 +1,6 @@
+{
+  "export_tool": "Get-ScheduledTask",
+  "tasks": [
+    {"TaskName": "NightlyExport", "TaskPath": "\\Custom\\", "State": "Ready", "LastRun": "2026-06-09T01:00:00"}
+  ]
+}

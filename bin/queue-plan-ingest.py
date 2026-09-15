@@ -25,7 +25,8 @@ POLICY_SCHEMA = "queue.plan.policy.v1"
 STATUS_SCHEMA = "queue.plan.status.v1"
 SOURCES_SCHEMA = "queue.plan.sources.v1"
 EVIDENCE_SCHEMA = "queue.plan.evidence.v1"
-COLLECTORS_SCHEMA = "queue.plan.collectors.v1"
+RECONCILE_SCHEMA = "queue.plan.reconcile.v1"
+HANDOFF_SCHEMA = "queue.plan.handoff.v1"
 SCRIPT_BEHAVIOUR_SCHEMA = "queue.plan.script_behaviour.v1"
 CLOUD_RUNTIME_SCHEMA = "queue.plan.runtime_status.v1"
 DGX_REVIEW = "DGX_CLOUD_WORKFLOW_POLICY_REVIEW"
@@ -376,142 +377,6 @@ def runtime_status_observation(adapter: str, objects: List[str], path: Path) -> 
         "boundary": "no live SDK/API/CLI/WinRM/SMB/RPC/REST calls, no credential loading, no log retrieval, no job submission, no provider mutation",
         "plan_use": "normalise exported job, workflow, schedule, queue, task or run facts into queue.control_plan.v1 reviewable status sources",
         "extraction_contract": source_contract_for_adapter(adapter),
-    }
-
-
-
-def collector_contract_for_adapter(adapter: str) -> Dict[str, Any]:
-    """Return the future live-collector contract for an adapter.
-
-    This is descriptive only. queue plan collectors must not import SDKs,
-    open network connections, read credentials, run CLIs, or collect logs.
-    The contract records what a separate, policy-gated exporter would have to do
-    to produce inert files for queue plan evidence/status/sources.
-    """
-    src = source_contract_for_adapter(adapter)
-    provider = src.get("provider", "unknown")
-    family = src.get("family", "unknown")
-    packages: List[str] = []
-    protocols: List[str] = []
-    credential_refs: List[str] = []
-    collector_kind = src.get("extractor", "external_exporter_required")
-
-    if adapter.startswith("azure-"):
-        protocols = ["Azure ARM/data-plane SDK export"]
-        credential_refs = ["AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "managed identity"]
-        packages = {
-            "azure-logic-apps": ["azure-mgmt-logic"],
-            "azure-functions": ["azure-mgmt-web"],
-            "azure-webjobs": ["azure-mgmt-web"],
-            "azure-automation": ["azure-mgmt-automation"],
-            "azure-container-apps-jobs": ["azure-mgmt-appcontainers"],
-            "azure-sql-elastic-jobs": ["azure-mgmt-sql"],
-            "azure-devops-pipelines": ["azure-devops", "PAT required outside queue plan"],
-        }.get(adapter, ["azure-identity"])
-    elif adapter.startswith("aws-"):
-        protocols = ["AWS SDK/CLI export"]
-        credential_refs = ["AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "IAM role"]
-        packages = ["boto3"]
-    elif adapter.startswith("gcp-"):
-        protocols = ["Google Cloud client library export", "Application Default Credentials outside queue plan"]
-        credential_refs = ["GOOGLE_APPLICATION_CREDENTIALS", "ADC", "workload identity"]
-        packages = {
-            "gcp-workflows": ["google-cloud-workflows"],
-            "gcp-cloud-tasks": ["google-cloud-tasks"],
-            "gcp-cloud-run-jobs": ["google-cloud-run"],
-            "gcp-batch": ["google-cloud-batch"],
-        }.get(adapter, ["google-cloud-*"])
-    elif adapter.startswith("oci-") or adapter == "oci":
-        protocols = ["OCI SDK/CLI export"]
-        credential_refs = ["~/.oci/config", "OCI_CONFIG_FILE", "instance principal"]
-        packages = ["oci"]
-    elif adapter.startswith("ibm-watsonx"):
-        protocols = ["IBM watsonx SDK/API export"]
-        credential_refs = ["IBM_CLOUD_API_KEY", "watsonx service credentials", "CPD credentials"]
-        packages = {
-            "ibm-watsonx-ai": ["ibm-watsonx-ai"],
-            "ibm-watsonx-data": ["ibm-watsonx-data-integration"],
-            "ibm-watsonx-governance": ["ibm-watsonopenscale"],
-        }.get(adapter, ["ibm-watsonx-ai"])
-    elif adapter.startswith("alibaba-"):
-        protocols = ["Alibaba Cloud SDK export"]
-        credential_refs = ["ALIBABA_CLOUD_ACCESS_KEY_ID", "ALIBABA_CLOUD_ACCESS_KEY_SECRET"]
-        packages = {
-            "alibaba-ehpc": ["alibabacloud_ehpc20180412"],
-            "alibaba-batch-compute": ["alibabacloud_batchcompute"],
-            "alibaba-serverless-workflow": ["alibabacloud_fnf"],
-        }.get(adapter, ["alibabacloud-*"])
-    elif adapter.startswith("huawei-"):
-        protocols = ["Huawei Cloud SDK export"]
-        credential_refs = ["HUAWEI_SDK_AK", "HUAWEI_SDK_SK"]
-        packages = {"huawei-batch": ["huaweicloudsdkbatch"], "huawei-functiongraph": ["huaweicloudsdkfunctiongraph"]}.get(adapter, ["huaweicloudsdk*"])
-    elif adapter.startswith("tencent-"):
-        protocols = ["Tencent Cloud SDK export"]
-        credential_refs = ["TENCENTCLOUD_SECRET_ID", "TENCENTCLOUD_SECRET_KEY"]
-        packages = ["tencentcloud-sdk-python"]
-    elif adapter == "windows-task-scheduler":
-        protocols = ["WinRM PowerShell JSON export", "SMB/RPC schtasks CSV/XML export"]
-        credential_refs = ["Windows domain/local credentials", "Kerberos/NTLM credential material"]
-        packages = ["pywinrm", "impacket optional"]
-    elif adapter in {"celery-runtime", "rq-runtime", "apscheduler-runtime"}:
-        protocols = ["application-owned Python exporter"]
-        credential_refs = ["broker/application credentials outside queue plan"]
-        packages = {"celery-runtime": ["celery"], "rq-runtime": ["rq", "redis"], "apscheduler-runtime": ["apscheduler"]}.get(adapter, [])
-    elif adapter in {"slurm-runtime", "htcondor-runtime", "slurm", "htcondor", "pbs", "torque", "sge", "lsf", "flux"}:
-        protocols = ["scheduler command/daemon export performed outside queue plan"]
-        credential_refs = ["scheduler account/session outside queue plan"]
-        packages = {"htcondor-runtime": ["htcondor"], "htcondor": ["htcondor"]}.get(adapter, [])
-    elif adapter in {"kubernetes-runtime", "volcano-runtime", "kubernetes", "argo", "tekton"}:
-        protocols = ["kubectl/API exported manifests and status files"]
-        credential_refs = ["KUBECONFIG", "service account token outside queue plan"]
-        packages = ["kubernetes"]
-    elif adapter in {"airflow-runtime", "prefect-runtime", "dagster-runtime", "airflow"}:
-        protocols = ["workflow REST/GraphQL/API export outside queue plan"]
-        credential_refs = ["workflow API token/basic auth outside queue plan"]
-        packages = {"airflow-runtime": ["requests"], "prefect-runtime": ["prefect"], "dagster-runtime": ["requests"]}.get(adapter, [])
-    elif adapter in {"local-cron-status", "cron"}:
-        protocols = ["existing bashqueues cron bridge", "crontab/log export outside queue plan"]
-        credential_refs = ["local account only; no credential loading in queue plan"]
-        collector_kind = "existing_cron_bridge_or_external_local_exporter"
-    elif adapter in {"local-systemd-timer-status", "systemd"}:
-        protocols = ["systemctl/journal export outside queue plan"]
-        credential_refs = ["local account/polkit outside queue plan"]
-
-    review_gates = ["QUEUE_PLAN_COLLECTOR_REVIEW"]
-    if provider in {"azure", "azure-devops", "aws", "gcp", "oci", "ibm", "alibaba", "huawei", "tencent"}:
-        review_gates.append(CLOUD_WORKFLOW_REVIEW)
-    if adapter.startswith("ibm-watsonx"):
-        review_gates.append("AI_GOVERNANCE_POLICY_REVIEW")
-    if adapter == "cron" or adapter == "local-cron-status":
-        review_gates.append("EXISTING_CRON_BRIDGE_REQUIRED")
-
-    return {
-        "adapter": adapter,
-        "provider": provider,
-        "family": family,
-        "collector_kind": collector_kind,
-        "plan_sources": src.get("plan_sources", []),
-        "job_sources": src.get("job_sources", []),
-        "python_packages": packages,
-        "protocols": protocols,
-        "credential_refs": credential_refs,
-        "review_gates": sorted(set(review_gates)),
-        "output_contract": "write inert JSON/CSV/YAML evidence files, then run queue plan status/sources/evidence on those files",
-        "safe_to_run_inside_queue_plan": False,
-        "boundary": "collector contracts are documentation/facts only; queue plan does not execute collectors, load credentials, call APIs, run CLIs, tail logs, or mutate providers",
-    }
-
-
-def build_collectors_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
-    adapters = sorted(set(plan.get("source", {}).get("adapters", [])))
-    collectors = [collector_contract_for_adapter(a) for a in adapters]
-    return {
-        "schema": COLLECTORS_SCHEMA,
-        "status": "ok",
-        "source": plan.get("source", {}),
-        "collectors": collectors,
-        "safe_to_collect_here": False,
-        "execution_boundary": "contracts only; no SDK/API/CLI/WinRM/SMB/RPC/REST/GraphQL/Kubernetes API calls, no credentials, no logs, no mutations",
     }
 
 def detect_json_adapter(path: Path, text: str) -> Optional[Tuple[str, List[str]]]:
@@ -1015,6 +880,196 @@ def emit_json(obj: Dict[str, Any]) -> None:
 
 
 
+
+
+def evidence_role_for_adapter_path(adapter: str, path_value: Any) -> str:
+    """Classify supplied evidence as plan definition or runtime/job status.
+
+    Some service families (Step Functions, Logic Apps, Cloud Run Jobs, etc.) can
+    supply both definitions and run-status exports through the same adapter.  The
+    role is therefore based on conservative filename hints first, then adapter
+    family.  Ambiguous cloud/runtime surfaces default to runtime review rather
+    than executable plan confidence.
+    """
+    path_l = str(path_value or "").lower()
+    plan_hints = ["plan", "definition", "definitions", "config", "workflow", "template", "manifest", "schedule"]
+    job_hints = ["runtime", "status", "run", "runs", "execution", "executions", "history", "active", "jobs"]
+    if any(h in path_l for h in plan_hints) and not any(h in path_l for h in job_hints):
+        return "plan_definition"
+    if any(h in path_l for h in job_hints):
+        return "runtime_job_status"
+    if adapter in CLOUD_RUNTIME_ADAPTERS or str(ADAPTERS.get(adapter, {}).get("family", "")).endswith("runtime_status"):
+        return "runtime_job_status"
+    return "plan_definition"
+
+def _normalise_reconcile_token(value: str) -> str:
+    token = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    for suffix in ["-runtime", "-status", "-job", "-jobs", "-workflow", "-workflows", "-task", "-tasks"]:
+        if token.endswith(suffix) and len(token) > len(suffix) + 3:
+            token = token[: -len(suffix)]
+    return token or "unknown"
+
+
+def _reconcile_provider(adapter: str) -> str:
+    if adapter in PROVIDER_BY_ADAPTER:
+        return PROVIDER_BY_ADAPTER[adapter]
+    if adapter.startswith("aws-") or adapter == "aws-batch":
+        return "aws"
+    if adapter.startswith("azure-"):
+        return "azure"
+    if adapter.startswith("gcp-"):
+        return "gcp"
+    if adapter.startswith("oci"):
+        return "oci"
+    if adapter.startswith("ibm-"):
+        return "ibm"
+    if adapter.startswith("alibaba-"):
+        return "alibaba"
+    if adapter.startswith("huawei-"):
+        return "huawei"
+    if adapter.startswith("tencent-"):
+        return "tencent"
+    if adapter in {"kubernetes", "argo", "tekton", "volcano-runtime", "kubernetes-runtime"}:
+        return "kubernetes"
+    if adapter in {"slurm", "pbs", "torque", "sge", "lsf", "htcondor", "slurm-runtime", "htcondor-runtime", "flux"}:
+        return "hpc"
+    if adapter in {"cron", "systemd", "local-cron-status", "local-systemd-timer-status"}:
+        return "local"
+    if adapter in {"airflow", "airflow-runtime", "prefect-runtime", "dagster-runtime", "github-actions", "gitlab-ci", "jenkinsfile", "nomad"}:
+        return "workflow"
+    return "unknown"
+
+
+def _reconcile_family(adapter: str) -> str:
+    fam = str(ADAPTERS.get(adapter, {}).get("family", "unknown"))
+    fam = fam.replace("_runtime_status", "").replace("_status", "")
+    if fam.startswith("cloud_"):
+        fam = fam[6:]
+    return fam or "unknown"
+
+
+def _object_tokens(obj: Dict[str, Any]) -> List[str]:
+    tokens = {_normalise_reconcile_token(str(obj.get("adapter", ""))), _normalise_reconcile_token(str(obj.get("path", "")))}
+    for key in ["objects", "class_candidate"]:
+        value = obj.get(key)
+        if isinstance(value, list):
+            for item in value:
+                tokens.add(_normalise_reconcile_token(str(item)))
+        elif value:
+            tokens.add(_normalise_reconcile_token(str(value)))
+    tokens.discard("unknown")
+    tokens.discard("")
+    return sorted(tokens)
+
+
+def build_reconcile_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Build a static Plan-vs-Job reconciliation bundle.
+
+    Reconciliation consumes only supplied files.  It does not query providers,
+    tail logs, resolve identities, or claim that runtime state is current.  The
+    purpose is to make evidence reviewable: which plan definitions appear to
+    have related job/status facts, which runtime facts are orphaned, and which
+    plan definitions still have no supplied runtime evidence.
+    """
+    objects = plan.get("analysis", {}).get("objects", [])
+    plan_objects: List[Dict[str, Any]] = []
+    job_objects: List[Dict[str, Any]] = []
+    for obj in objects:
+        adapter = str(obj.get("adapter", "unknown"))
+        item = {
+            "path": obj.get("path"),
+            "adapter": adapter,
+            "provider": _reconcile_provider(adapter),
+            "family": _reconcile_family(adapter),
+            "objects": obj.get("objects", []),
+            "class_candidate": obj.get("class_candidate"),
+            "tokens": _object_tokens(obj),
+            "digest": obj.get("digest"),
+            "confidence": obj.get("confidence", "low"),
+        }
+        role = evidence_role_for_adapter_path(adapter, item.get("path"))
+        item["evidence_role"] = role
+        if role == "runtime_job_status":
+            job_objects.append(item)
+        else:
+            plan_objects.append(item)
+
+    correlations: List[Dict[str, Any]] = []
+    matched_plans = set()
+    matched_jobs = set()
+    for j_idx, job in enumerate(job_objects):
+        best_idx = None
+        best_score = 0
+        best_reasons: List[str] = []
+        for p_idx, plan_obj in enumerate(plan_objects):
+            reasons: List[str] = []
+            score = 0
+            if plan_obj["provider"] != "unknown" and plan_obj["provider"] == job["provider"]:
+                score += 3
+                reasons.append("provider_match")
+            if plan_obj["family"] != "unknown" and plan_obj["family"] == job["family"]:
+                score += 2
+                reasons.append("family_match")
+            shared = sorted(set(plan_obj.get("tokens", [])) & set(job.get("tokens", [])))
+            if shared:
+                score += min(3, len(shared))
+                reasons.append("token_overlap:" + ",".join(shared[:5]))
+            if score > best_score:
+                best_score = score
+                best_idx = p_idx
+                best_reasons = reasons
+        if best_idx is not None and best_score >= 3:
+            plan_obj = plan_objects[best_idx]
+            matched_plans.add(best_idx)
+            matched_jobs.add(j_idx)
+            correlations.append({
+                "plan_ref": plan_obj.get("path"),
+                "job_ref": job.get("path"),
+                "provider": job.get("provider"),
+                "plan_adapter": plan_obj.get("adapter"),
+                "job_adapter": job.get("adapter"),
+                "score": best_score,
+                "confidence": "medium" if best_score < 6 else "high",
+                "reasons": best_reasons,
+                "review_required": True,
+            })
+
+    unmatched_plans = [p for idx, p in enumerate(plan_objects) if idx not in matched_plans]
+    orphan_jobs = [j for idx, j in enumerate(job_objects) if idx not in matched_jobs]
+    return {
+        "schema": RECONCILE_SCHEMA,
+        "status": "ok",
+        "source": plan.get("source", {}),
+        "summary": {
+            "plan_definitions": len(plan_objects),
+            "runtime_job_status": len(job_objects),
+            "correlations": len(correlations),
+            "unmatched_plan_definitions": len(unmatched_plans),
+            "orphan_runtime_job_status": len(orphan_jobs),
+            "needs_review": len(plan.get("analysis", {}).get("needs_review", [])),
+            "unsafe_refused": len(plan.get("analysis", {}).get("unsafe_refused", [])),
+        },
+        "correlations": correlations,
+        "unmatched_plan_definitions": unmatched_plans,
+        "orphan_runtime_job_status": orphan_jobs,
+        "policy_requirements": plan.get("plan", {}).get("policy_requirements", []),
+        "review": {
+            "safe_to_stage": bool(plan.get("analysis", {}).get("safe_to_stage")),
+            "safe_to_apply": False,
+            "correlation_is_advisory": True,
+            "reason": "supplied evidence may be stale, partial or exported from different scopes; reviewer or future policy-gated collector must confirm identity before apply",
+        },
+        "attestations": [
+            "queue plan reconcile consumes supplied files only",
+            "no SDK/API/CLI calls",
+            "no WinRM/SMB/RPC/REST/GraphQL/Kubernetes API calls",
+            "no credential loading or secret reads",
+            "no log tailing or provider mutation",
+            "no job submission and no source execution",
+            "no parallel cron scheduler; cron evidence bridges to existing bashqueues cron support",
+        ],
+    }
+
 def build_evidence_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
     """Return a compact review bundle for plan/job evidence handoff.
 
@@ -1035,7 +1090,9 @@ def build_evidence_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
             "confidence": obj.get("confidence", "low"),
             "digest": obj.get("digest"),
         }
-        if adapter in CLOUD_RUNTIME_ADAPTERS or str(ADAPTERS.get(adapter, {}).get("family", "")).endswith("runtime_status"):
+        role = evidence_role_for_adapter_path(adapter, item.get("path"))
+        item["evidence_role"] = role
+        if role == "runtime_job_status":
             job_objects.append(item)
         else:
             plan_objects.append(item)
@@ -1073,6 +1130,81 @@ def build_evidence_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
             "no log tailing or provider mutation",
             "no job submission and no source execution",
             "no parallel cron scheduler; cron evidence bridges to existing bashqueues cron support",
+        ],
+    }
+
+def build_handoff_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Build an operator handoff packet from supplied plan/job evidence only.
+
+    The handoff view is deliberately not a collector, reconciler executor, or
+    apply engine.  It packages the existing Bob24 source, evidence, reconcile,
+    and policy facts so another policy-gated surface can decide what to do.
+    """
+    evidence = build_evidence_summary(plan)
+    reconcile = build_reconcile_summary(plan)
+    source_contracts = plan["plan"].get("source_contracts", [])
+    status_sources = plan["plan"].get("status_sources", [])
+    policy_requirements = plan["plan"].get("policy_requirements", [])
+    approval_gates = plan["plan"].get("approval_gates", [])
+    blockers = []
+    for item in plan["analysis"].get("unsafe_refused", []):
+        blockers.append({"kind": "unsafe_refused", "id": item.get("id"), "reason": item.get("reason")})
+    for item in plan["analysis"].get("unsupported", []):
+        blockers.append({"kind": "unsupported", "id": item.get("id"), "reason": item.get("reason")})
+    review_required = bool(
+        policy_requirements
+        or approval_gates
+        or plan["analysis"].get("needs_review")
+        or plan["analysis"].get("unsafe_refused")
+        or reconcile.get("summary", {}).get("orphan_runtime_job_status")
+        or reconcile.get("summary", {}).get("unmatched_plan_definitions")
+    )
+    next_actions = [
+        "review policy_requirements before any future apply path",
+        "hand collectors off to separate policy-gated tooling; do not collect inside queue plan",
+        "preserve existing bashqueues cron support for cron-like schedules",
+        "treat reconcile correlations as advisory until an operator approves them",
+    ]
+    if status_sources:
+        next_actions.append("refresh runtime/job evidence outside queue plan if the supplied export is stale")
+    if blockers:
+        next_actions.append("resolve unsafe_refused/unsupported blockers before staging towards execution")
+    return {
+        "schema": HANDOFF_SCHEMA,
+        "status": "review_required" if review_required else "ready_for_review",
+        "source": plan["source"],
+        "handoff": {
+            "packet_kind": "supplied_evidence_policy_handoff",
+            "plan_schema": plan.get("schema"),
+            "evidence_counts": evidence["evidence"]["counts"],
+            "reconcile_summary": reconcile["summary"],
+            "source_contract_count": len(source_contracts),
+            "status_source_count": len(status_sources),
+            "policy_requirement_count": len(policy_requirements),
+            "approval_gate_count": len(approval_gates),
+            "blocker_count": len(blockers),
+            "safe_to_stage": bool(plan["analysis"].get("safe_to_stage")),
+            "safe_to_apply": False,
+        },
+        "policy_requirements": policy_requirements,
+        "approval_gates": approval_gates,
+        "blockers": blockers,
+        "source_contracts": source_contracts,
+        "status_sources": status_sources,
+        "correlations": reconcile.get("correlations", []),
+        "unmatched_plan_definitions": reconcile.get("unmatched_plan_definitions", []),
+        "orphan_runtime_job_status": reconcile.get("orphan_runtime_job_status", []),
+        "next_actions": next_actions,
+        "attestations": [
+            "queue plan handoff consumes supplied files only",
+            "no SDK/API/CLI calls",
+            "no WinRM/SMB/RPC/REST/GraphQL/Kubernetes API calls",
+            "no credential loading or secret reads",
+            "no log tailing or live status polling",
+            "no provider mutation or job submission",
+            "no source execution",
+            "no parallel cron scheduler",
+            "handoff is advisory and policy-gated; it is not apply",
         ],
     }
 
@@ -1181,7 +1313,7 @@ def validate_plan(path: Path, json_mode: bool) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="queue-plan-ingest.py")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ["scan", "explain", "policy", "status", "sources", "evidence", "collectors"]:
+    for name in ["scan", "explain", "policy", "status", "sources", "evidence", "reconcile", "handoff"]:
         p = sub.add_parser(name)
         p.add_argument("path")
         p.add_argument("--json", "-j", action="store_true")
@@ -1196,20 +1328,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     if a.command == "validate":
         return validate_plan(Path(a.path), a.json)
     plan = build_control_plan(Path(a.path))
-    if a.command == "collectors":
-        out = build_collectors_summary(plan)
-        if a.json:
-            emit_json(out)
-        else:
-            print("queue plan collectors")
-            if not out["collectors"]:
-                print("collectors: none")
-            for c in out["collectors"]:
-                pkgs = ",".join(c.get("python_packages", [])[:3]) or "none"
-                gates = ",".join(c.get("review_gates", [])) or "none"
-                print(f"  {c.get('provider')}: {c.get('adapter')} packages={pkgs} gates={gates}")
-            print("boundary: contracts only; queue plan does not run collectors, load credentials, call APIs/CLIs or mutate providers")
-        return 0
     if a.command == "status":
         out = {"schema": STATUS_SCHEMA, "status": "ok", "source": plan["source"], "status_sources": plan["plan"].get("status_sources", []), "policy_requirements": plan["plan"].get("policy_requirements", []), "safe_to_apply": False, "execution_boundary": "static exported status only; no SDK/API/CLI/WinRM/SMB/RPC/REST polling"}
         if a.json:
@@ -1248,6 +1366,37 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"needs_review: {counts['needs_review']}")
             print(f"unsafe_refused: {counts['unsafe_refused']}")
             print("boundary: supplied-file evidence only; no collection, credentials, network/API calls, logs, mutations or submissions")
+        return 0
+    if a.command == "reconcile":
+        out = build_reconcile_summary(plan)
+        if a.json:
+            emit_json(out)
+        else:
+            print("queue plan reconcile")
+            summary = out["summary"]
+            print(f"plan_definitions: {summary['plan_definitions']}")
+            print(f"runtime_job_status: {summary['runtime_job_status']}")
+            print(f"correlations: {summary['correlations']}")
+            print(f"unmatched_plan_definitions: {summary['unmatched_plan_definitions']}")
+            print(f"orphan_runtime_job_status: {summary['orphan_runtime_job_status']}")
+            for item in out.get("correlations", [])[:12]:
+                print(f"  {item.get('provider')}: {item.get('plan_ref')} -> {item.get('job_ref')} score={item.get('score')}")
+            print("boundary: advisory supplied-file correlation only; no collection, credentials, network/API calls, logs, mutations or submissions")
+        return 0
+    if a.command == "handoff":
+        out = build_handoff_summary(plan)
+        if a.json:
+            emit_json(out)
+        else:
+            print("queue plan handoff")
+            h = out["handoff"]
+            print(f"status: {out['status']}")
+            print(f"plan_definitions: {h['evidence_counts']['plan_definitions']}")
+            print(f"runtime_job_status: {h['evidence_counts']['runtime_job_status']}")
+            print(f"correlations: {h['reconcile_summary']['correlations']}")
+            print(f"policy_requirements: {h['policy_requirement_count']}")
+            print(f"blockers: {h['blocker_count']}")
+            print("boundary: advisory supplied-file handoff only; no collection, credentials, network/API calls, logs, mutations, submissions or cron replacement")
         return 0
     if a.command == "policy":
         out = {"schema": POLICY_SCHEMA, "status": "ok", "source": plan["source"], "policy_requirements": plan["plan"].get("policy_requirements", []), "approval_gates": plan["plan"].get("approval_gates", []), "safe_to_apply": False}

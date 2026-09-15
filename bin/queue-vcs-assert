@@ -23,15 +23,15 @@ require_fingerprint=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --json|-j) json=1; shift ;;
-    --type) type="${2:-}"; shift 2 ;;
+    --type) [[ $# -ge 2 ]] || { echo "queue-vcs-assert: --type requires a value" >&2; exit 2; }; type="$2"; shift 2 ;;
     --type=*) type="${1#*=}"; shift ;;
-    --timeout) timeout_s="${2:-10}"; shift 2 ;;
+    --timeout) [[ $# -ge 2 ]] || { echo "queue-vcs-assert: --timeout requires a value" >&2; exit 2; }; timeout_s="$2"; shift 2 ;;
     --timeout=*) timeout_s="${1#*=}"; shift ;;
-    --require-identity|--identity) require_identity="${2:-}"; shift 2 ;;
+    --require-identity|--identity) [[ $# -ge 2 ]] || { echo "queue-vcs-assert: --require-identity requires a value" >&2; exit 2; }; require_identity="$2"; shift 2 ;;
     --require-identity=*|--identity=*) require_identity="${1#*=}"; shift ;;
-    --require-revision|--revision|--require-changelist|--changelist) require_revision="${2:-}"; shift 2 ;;
+    --require-revision|--revision|--require-changelist|--changelist) [[ $# -ge 2 ]] || { echo "queue-vcs-assert: --require-revision requires a value" >&2; exit 2; }; require_revision="$2"; shift 2 ;;
     --require-revision=*|--revision=*|--require-changelist=*|--changelist=*) require_revision="${1#*=}"; shift ;;
-    --require-fingerprint|--fingerprint) require_fingerprint="${2:-}"; shift 2 ;;
+    --require-fingerprint|--fingerprint) [[ $# -ge 2 ]] || { echo "queue-vcs-assert: --require-fingerprint requires a value" >&2; exit 2; }; require_fingerprint="$2"; shift 2 ;;
     --require-fingerprint=*|--fingerprint=*) require_fingerprint="${1#*=}"; shift ;;
     --help|-h) usage; exit 0 ;;
     --*) echo "queue-vcs-assert: unknown option: $1" >&2; usage; exit 2 ;;
@@ -67,7 +67,7 @@ failures = []
 for field, required in requirements.items():
     if not required:
         continue
-    observed = probe.get(field, "")
+    observed = str(probe.get(field, ""))
     matched = observed == required
     item = {"field": field, "required": required, "observed": observed, "matched": matched}
     checks.append(item)

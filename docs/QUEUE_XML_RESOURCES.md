@@ -247,9 +247,13 @@ Namespace audit is stricter than orphan audit: orphan audit answers whether extr
 
 XML display resources participate in the same `queue-display-resource-surface-audit.py` contract as text display resources. The helper validates `resources.d/xml/manifest.example.tsv` surface metadata and emits `queuebash.display_resource_surface_audit.v1` without parsing XML bodies, rendering templates, substituting tokens, reading secrets, signing, installing, mutating files, or generating command/provider JSON. XML parseability remains the lint helper's job; surface audit is manifest metadata evidence only.
 
-## Bob18 note-audit helper
+## XML reviewer-note audit helper
 
-`bin/queue-display-resource-note-audit.py` is a read-only release-review helper for manifest reviewer notes. It emits `queuebash.display_resource_note_audit.v1` evidence from manifest rows only. It checks that notes are bounded human metadata rather than an accidental control surface, secret renderer, JSON contract source, provider instruction, or shell-expansion carrier.
+XML display resources participate in the same `queue-display-resource-note-audit.py` contract as text display resources. The helper validates `resources.d/xml/manifest.example.tsv` reviewer-note metadata and emits `queuebash.display_resource_note_audit.v1` without parsing XML bodies, rendering templates, substituting tokens, reading secrets, signing, installing, mutating files, or generating command/provider JSON. XML parseability remains the lint helper's job; note audit is manifest metadata evidence only.
 
-The helper does not render resources, substitute tokens, read resource bodies, read or render secrets, call providers, sign, install, chmod/chown, or mutate queue dispatch. Findings are intended for packaging and review gates before human-facing display/XML resource bundles are installed or signed.
 
+## Bob18 XML manifest-field audit helper
+
+`bin/queue-display-resource-manifest-field-audit.py` includes XML resources in the same manifest-field contract check as display resources. XML manifest rows must live under `resources.d/xml/manifest.example.tsv`, declare resource type `xml`, use safe relative names, and use `.xml` file names. The helper validates manifest metadata and manifest-listed file presence only; it does not parse or render XML and does not replace tokens.
+
+This complements the XML parse/lint helpers by proving the manifest metadata itself stays presentation-only and cannot become a JSON, provider, secret, signing, install, or dispatch authority.

@@ -1,0 +1,324 @@
+#!/usr/bin/env python3
+"""Oracle OCI Generative AI advisory provider for bashqueues queue ask.
+
+Optional live provider. It reads the normalized bashqueues ask request JSON,
+builds a bounded prompt, calls OCI Generative AI Inference using the local OCI
+SDK/config, and returns the normalized bashqueues provider response schema.
+
+No credentials are accepted on the command line and no OCI config contents are
+written to the response/audit JSON.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import re
+import sys
+import time
+from typing import Dict, Iterable, List, Tuple
+
+SCHEMA_RESPONSE = "queuebash.ai_advisory.response.v1"
+DEFAULT_MODEL = os.environ.get("QUEUEBASH_AI_OCI_MODEL", "cohere.command-a-03-2025")
+MAX_TOKENS = int(os.environ.get("QUEUEBASH_AI_OCI_MAX_TOKENS", "1500"))
+TIMEOUT = int(os.environ.get("QUEUEBASH_AI_OCI_TIMEOUT", "120"))
+ROOT = pathlib.Path(os.environ.get("QUEUEBASH_AI_CONTEXT_ROOT", os.getcwd())).resolve()
+MAX_FILE_BYTES = int(os.environ.get("QUEUEBASH_AI_CONTEXT_FILE_BYTES", "16000"))
+MAX_TOTAL_BYTES = int(os.environ.get("QUEUEBASH_AI_CONTEXT_TOTAL_BYTES", "120000"))
+
+CONTEXT_MAP = {
+    "docs": ["docs", "README.md", "CHANGELOG.md"],
+    "manuals": ["docs", "README.md"],
+    "tests": ["tests"],
+    "implementation_tests": ["tests"],
+    "policies": ["policies.d"],
+    "policy_definitions": ["policies.d"],
+    "classes": ["classes"],
+    "assets": ["assets.d", ".queuebash/assets.d"],
+    "providers": ["docs", "providers.d"],
+    "commands": ["README.md", "docs"],
+    "rto": ["docs", "RTO/catalog", "RTO/model", "RTO/operations"],
+}
+TEXT_SUFFIXES = {".md", ".txt", ".env", ".sh", ".py", ".json", ".yml", ".yaml", ".service", ".timer"}
+SECRET_PATTERNS = (
+    "-----begin private key-----",
+    "fingerprint=",
+    "key_file=",
+    "client_secret",
+    "password=",
+    "api_key=",
+    "apikey=",
+    "token=",
+    "bearer ",
+)
+
+
+def die(msg: str, code: int = 1) -> None:
+    print(msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def redact(text: str) -> str:
+    text = re.sub(r"ocid1\.[A-Za-z0-9._:-]+", "<redacted-ocid>", text)
+    text = re.sub(r"(?i)(fingerprint|key_file|pass_phrase|security_token_file)=\S+", r"\1=<redacted>", text)
+    text = re.sub(r"(?i)(authorization|opc-request-id):\s*\S+", r"\1: <redacted>", text)
+    return text[:800]
+
+
+def safe_under_root(path: pathlib.Path) -> bool:
+    try:
+        path.resolve().relative_to(ROOT)
+        return True
+    except Exception:
+        return False
+
+
+def iter_files_for_contexts(contexts: Iterable[str]) -> Iterable[pathlib.Path]:
+    seen = set()
+    ordered: List[str] = []
+    for preferred in ("tests", "implementation_tests", "docs", "manuals", "rto", "policies", "policy_definitions"):
+        if preferred in contexts and preferred not in ordered:
+            ordered.append(preferred)
+    for ctx in contexts:
+        if ctx not in ordered:
+            ordered.append(ctx)
+    for ctx in ordered:
+        for rel in CONTEXT_MAP.get(ctx, []):
+            p = (ROOT / rel).resolve()
+            if not p.exists() or not safe_under_root(p):
+                continue
+            candidates = [p] if p.is_file() else sorted(x for x in p.rglob("*") if x.is_file())
+            for f in candidates:
+                if f in seen:
+                    continue
+                seen.add(f)
+                if not safe_under_root(f):
+                    continue
+                if f.name.startswith(".") or f.suffix.lower() not in TEXT_SUFFIXES:
+                    continue
+                yield f
+
+
+def read_context(contexts: List[str]) -> Tuple[str, List[Dict[str, object]]]:
+    parts: List[str] = []
+    manifest: List[Dict[str, object]] = []
+    total = 0
+    for f in iter_files_for_contexts(contexts):
+        if total >= MAX_TOTAL_BYTES:
+            break
+        try:
+            data = f.read_bytes()[:MAX_FILE_BYTES]
+            text = data.decode("utf-8", errors="replace")
+        except Exception:
+            continue
+        lowered = text[:4096].lower()
+        if any(pattern in lowered for pattern in SECRET_PATTERNS):
+            continue
+        rel = str(f.relative_to(ROOT))
+        chunk = f"\n--- FILE: {rel} ---\n{text}\n"
+        remaining = MAX_TOTAL_BYTES - total
+        if len(chunk.encode("utf-8")) > remaining:
+            chunk = chunk.encode("utf-8")[:remaining].decode("utf-8", errors="replace")
+        parts.append(chunk)
+        total += len(chunk.encode("utf-8"))
+        manifest.append({"path": rel, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+    return "".join(parts), manifest
+
+
+def write_json(path: str, obj: Dict[str, object]) -> None:
+    pathlib.Path(path).write_text(json.dumps(obj, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def load_oci_modules():
+    try:
+        import oci  # type: ignore
+    except Exception as exc:  # pragma: no cover - exercised on hosts without SDK
+        raise RuntimeError("oci_python_sdk_missing; install the oci package and configure ~/.oci/config") from exc
+    return oci
+
+
+def build_oci_client():
+    oci = load_oci_modules()
+    config_file = os.environ.get("QUEUEBASH_AI_OCI_CONFIG_FILE") or os.environ.get("OCI_CONFIG_FILE")
+    profile = os.environ.get("QUEUEBASH_AI_OCI_PROFILE") or os.environ.get("OCI_CLI_PROFILE") or "DEFAULT"
+    kwargs: Dict[str, object] = {"profile_name": profile}
+    if config_file:
+        kwargs["file_location"] = config_file
+    try:
+        config = oci.config.from_file(**kwargs)
+    except Exception as exc:
+        raise RuntimeError(f"oci_config_unreadable_or_invalid: {exc.__class__.__name__}") from exc
+    compartment_id = os.environ.get("QUEUEBASH_AI_OCI_COMPARTMENT_ID") or config.get("tenancy")
+    if not compartment_id:
+        raise RuntimeError("oci_compartment_id_missing")
+    client_kwargs: Dict[str, object] = {}
+    endpoint = os.environ.get("QUEUEBASH_AI_OCI_ENDPOINT") or os.environ.get("OCI_GENAI_INFERENCE_ENDPOINT")
+    if endpoint:
+        client_kwargs["service_endpoint"] = endpoint
+    try:
+        client = oci.generative_ai_inference.GenerativeAiInferenceClient(config, timeout=TIMEOUT, **client_kwargs)
+    except TypeError:
+        client = oci.generative_ai_inference.GenerativeAiInferenceClient(config, **client_kwargs)
+    except Exception as exc:
+        raise RuntimeError(f"oci_client_create_failed: {exc.__class__.__name__}") from exc
+    return oci, client, str(compartment_id)
+
+
+def call_oci_chat(model_id: str, prompt: str) -> str:
+    oci, client, compartment_id = build_oci_client()
+    models = oci.generative_ai_inference.models
+    try:
+        chat_request = models.CohereChatRequest(message=prompt, max_tokens=MAX_TOKENS)
+        chat_detail = models.ChatDetails(
+            compartment_id=compartment_id,
+            serving_mode=models.OnDemandServingMode(model_id=model_id),
+            chat_request=chat_request,
+        )
+        response = client.chat(chat_detail)
+    except Exception as exc:
+        raise RuntimeError(f"oci_chat_failed: {redact(str(exc) or exc.__class__.__name__)}") from exc
+
+    try:
+        chat_response = response.data.chat_response
+        text = getattr(chat_response, "text", None)
+    except Exception as exc:
+        raise RuntimeError(f"oci_response_structure_error: {exc.__class__.__name__}") from exc
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("oci_empty_response")
+    return text
+
+
+def self_test() -> Dict[str, object]:
+    helper = pathlib.Path(__file__).name
+    sdk_present = False
+    try:
+        load_oci_modules()
+        sdk_present = True
+    except Exception:
+        sdk_present = False
+    return {
+        "schema": "queuebash.ai_advisory.oci_selftest.v1",
+        "provider": "oci",
+        "helper": helper,
+        "default_model": DEFAULT_MODEL,
+        "sdk_present": sdk_present,
+        "config_hint_present": bool(os.environ.get("QUEUEBASH_AI_OCI_CONFIG_FILE") or os.environ.get("OCI_CONFIG_FILE") or (pathlib.Path.home() / ".oci" / "config").exists()),
+        "live_call_performed": False,
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--request-json")
+    ap.add_argument("--output-json")
+    ap.add_argument("--model", default=None)
+    ap.add_argument("--self-test", action="store_true")
+    args = ap.parse_args()
+
+    if args.self_test:
+        print(json.dumps(self_test(), indent=2, sort_keys=True))
+        return 0
+
+    if not args.request_json or not args.output_json:
+        die("request_json_and_output_json_required")
+    try:
+        req = json.loads(pathlib.Path(args.request_json).read_text(encoding="utf-8"))
+    except Exception:
+        die("invalid_request_json")
+    if req.get("schema") != "queuebash.ai_advisory.request.v1":
+        die("invalid_request_schema")
+    if req.get("operation") != "ai.ask":
+        die("invalid_operation")
+    if req.get("advisory_only") is not True:
+        die("advisory_only_required")
+
+    model = str(args.model or req.get("model") or DEFAULT_MODEL)
+    contexts = [x for x in str(req.get("context_allowed", "")).split() if x]
+    question = str(req.get("question") or req.get("question_redacted") or "")
+    if not question:
+        die("missing_question")
+
+    dynamic_context_text = str(req.get("dynamic_context_text", "") or "")
+    context_text, manifest = read_context(contexts)
+    combined_context = dynamic_context_text + ("\n" if dynamic_context_text and context_text else "") + context_text
+    context_hash = hashlib.sha256(combined_context.encode("utf-8")).hexdigest()
+    if dynamic_context_text:
+        manifest.insert(0, {
+            "path": "<dynamic-shell-context>",
+            "bytes": len(dynamic_context_text.encode("utf-8")),
+            "sha256": hashlib.sha256(dynamic_context_text.encode("utf-8")).hexdigest(),
+            "redacted": True,
+        })
+
+    prompt = f"""You are an Oracle OCI Generative AI provider for bashqueues queue ask.
+
+Rules:
+- You are advisory only. Do not claim to have executed commands.
+- Do not suggest bypassing bashqueues policy, signatures, ACLs, trust providers, seccomp, caps, legal, FinOps, integrity gates, approvals, or audit logging.
+- Treat tests and installed command inventories as high-authority evidence when docs differ.
+- Suggest queue commands only as suggestions. Never output shell intended for automatic execution.
+- If policy-restricted context is absent, say what is missing rather than guessing.
+- Keep the answer practical and focused on bashqueues.
+- For RTO questions: RTO is an operation catalog/provider/authority system, not a generic shell runner. Use check/posture paths for read-only checks and plan paths only for desired-state changes.
+
+Dynamic and static allowed context follows. It may be partial and redacted.
+Use installed command inventory and asset/facility inventory from the dynamic shell context as authoritative. Do not invent queue commands.
+If current status context is denied, say it is denied. If it is allowed but unavailable, say which collector failed.
+{combined_context}
+
+Question:
+{question}
+
+Answer with practical, concise guidance for a bashqueues user or administrator.
+"""
+    started = time.time()
+    try:
+        answer = call_oci_chat(model, prompt)
+    except Exception as exc:
+        elapsed_ms = int((time.time() - started) * 1000)
+        reason = redact(str(exc) or exc.__class__.__name__)
+        out = {
+            "schema": SCHEMA_RESPONSE,
+            "provider": "oci",
+            "model": model,
+            "decision": "error",
+            "reason": reason,
+            "answer_markdown": "",
+            "advisory_only": True,
+            "actions_suggested_authority": "none",
+            "context_manifest": manifest,
+            "context_bundle_sha256": context_hash,
+            "response_sha256": "",
+            "response_length": 0,
+            "elapsed_ms": elapsed_ms,
+            "redactions_observed": True,
+        }
+        write_json(args.output_json, out)
+        print(f"oci_provider_error: {reason}", file=sys.stderr)
+        return 1
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    answer_hash = hashlib.sha256(answer.encode("utf-8")).hexdigest()
+    out = {
+        "schema": SCHEMA_RESPONSE,
+        "provider": "oci",
+        "model": model,
+        "decision": "answered",
+        "answer_markdown": answer,
+        "advisory_only": True,
+        "actions_suggested_authority": "suggestion_only",
+        "context_manifest": manifest,
+        "context_bundle_sha256": context_hash,
+        "response_sha256": answer_hash,
+        "response_length": len(answer),
+        "elapsed_ms": elapsed_ms,
+        "redactions_observed": True,
+    }
+    write_json(args.output_json, out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

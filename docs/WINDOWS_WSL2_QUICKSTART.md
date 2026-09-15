@@ -29,6 +29,8 @@ Recommended administrator posture:
    cd ~/bashqueues
    source ./queuebash.sh
    queue version --json
+queue platform doctor --json
+
    queue platform --json
    ```
 
@@ -86,17 +88,3 @@ not yet a support claim.
 expect `support_tier` to be `W1` and `worker_runtime_supported` to be true. In
 Git Bash, MSYS2, Cygwin, or native Windows roadmap contexts, worker runtime
 support must remain false until adapter gates exist.
-
-## Readiness check
-
-After sourcing bashqueues inside the WSL2 distribution, run:
-
-```bash
-queue platform doctor --json
-```
-
-The expected schema is `queuebash.platform_doctor.v1`. For a WSL2 deployment,
-the important checks are that the platform is detected as WSL2, worker support is
-true for the Linux guest runtime, and the queue root is not under `/mnt/...`.
-If the queue root is under `/mnt/c/...`, move it into the WSL home filesystem
-before relying on worker or lock-sensitive queue behaviour.

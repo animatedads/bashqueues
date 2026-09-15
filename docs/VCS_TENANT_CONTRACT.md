@@ -74,3 +74,11 @@ The `vcs:fingerprint` asset gates on that value with `require_fingerprint=...`. 
 `queue-vcs-assert` and `queue vcs assert` provide a read-only assertion layer over the normal probe. They compare the observed identity, revision/changelist, and/or fingerprint with required values and emit `queuebash.vcs.assert.v1` JSON for automation. This gives release scripts and sysadmin runbooks one stable command for Git, SVN, CVS, Mercurial, and Perforce estates rather than hand-parsing each vendor client.
 
 `VCS_CHANGESET_AUDIT` can also gate directly on `QUEUEBASH_VCS_AUDIT_FINGERPRINT`, which is useful when a brittle legacy checkout is best represented by one compact reproducibility token.
+
+## Baseline capture
+
+`queue-vcs-baseline` and `queue vcs baseline` provide a read-only bridge from a real checkout to a `VCS_CHANGESET_AUDIT` policy/class stanza. The default output is shell-safe `export QUEUEBASH_VCS_AUDIT_*=` lines for operator review; `--json` emits `queuebash.vcs.baseline.v1` with the same values under an `env` object. The helper does not write files, checkout, update, tag, submit, or revert anything.
+
+This is intentionally useful for legacy estates: a sysadmin can stand in a CVS, SVN, or Perforce workspace, run one command, and obtain the identity/revision/fingerprint values needed for future queued jobs.
+
+For CVS, `queue-vcs-probe`, `queue-vcs-assert`, and `queue-vcs-baseline` remain metadata-only. CVS cleanliness checks stay behind the explicit `vcs:clean_tree` asset because `cvs -n update` can still contact brittle or slow servers.

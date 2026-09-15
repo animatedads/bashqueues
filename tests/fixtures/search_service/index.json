@@ -1,0 +1,17 @@
+{
+  "check": "index",
+  "credentials_required": false,
+  "decision": "allow",
+  "document_payload_included": false,
+  "fail_closed": true,
+  "index": "products-v1",
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "search_service",
+  "provider_output_is_shell": false,
+  "replicas": 1,
+  "schema": "queuebash.search_service.index.v1",
+  "shards": 3,
+  "source": "fixture"
+}

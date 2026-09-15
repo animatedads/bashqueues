@@ -1,0 +1,21 @@
+{
+  "check": "detect",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "search_service",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.search_service.detect.v1",
+  "services": [
+    "aws_opensearch",
+    "azure_ai_search",
+    "gcp_elasticsearch_compatible",
+    "elastic_cloud",
+    "solr_managed"
+  ],
+  "source": "fixture",
+  "summary": "Fixture estate contains managed search/index service signals only."
+}

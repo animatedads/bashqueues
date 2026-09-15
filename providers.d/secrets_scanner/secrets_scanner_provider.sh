@@ -38,9 +38,9 @@ case "${1:-help} ${2:-}" in
     cat <<'USAGE'
 Usage:
   providers.d/secrets_scanner/secrets_scanner_provider.sh detect
-  providers.d/secrets_scanner/secrets_scanner_provider.sh rule explain
-  providers.d/secrets_scanner/secrets_scanner_provider.sh finding explain
-  providers.d/secrets_scanner/secrets_scanner_provider.sh scope explain
+  providers.d/secrets_scanner/secrets_scanner_provider.sh source explain
+  providers.d/secrets_scanner/secrets_scanner_provider.sh signal explain
+  providers.d/secrets_scanner/secrets_scanner_provider.sh redaction explain
   providers.d/secrets_scanner/secrets_scanner_provider.sh policy explain
 
 Default mode is fixture-only via QUEUEBASH_SECRETS_SCANNER_FIXTURE_DIR.
@@ -50,9 +50,9 @@ commands for execution, or alter queue scheduling/execution.
 USAGE
     ;;
   "detect ") _json_file detect.json || _fail_json queuebash.secrets_scanner.detect.v1 detect missing_fixture_detect_json ;;
-  "rule explain") _json_file rule.json || _fail_json queuebash.secrets_scanner.rule.v1 rule missing_fixture_rule_json ;;
-  "finding explain") _json_file finding.json || _fail_json queuebash.secrets_scanner.finding.v1 finding missing_fixture_finding_json ;;
-  "scope explain") _json_file scope.json || _fail_json queuebash.secrets_scanner.scope.v1 scope missing_fixture_scope_json ;;
+  "source explain") _json_file source.json || _fail_json queuebash.secrets_scanner.source.v1 source missing_fixture_source_json ;;
+  "signal explain") _json_file signal.json || _fail_json queuebash.secrets_scanner.signal.v1 signal missing_fixture_signal_json ;;
+  "redaction explain") _json_file redaction.json || _fail_json queuebash.secrets_scanner.redaction.v1 redaction missing_fixture_redaction_json ;;
   "policy explain") _json_file policy.json || _fail_json queuebash.secrets_scanner.policy.v1 policy missing_fixture_policy_json ;;
   *) echo "ERROR: unsupported secrets scanner provider command: $*" >&2; exit 2 ;;
 esac

@@ -33,5 +33,3 @@ fi
 [[ ! -e assets.d/net_usage.sh ]]
 [[ -e caps.d/net_usage.sh ]]
 echo 'PASS edge_cloud_provider_contracts_static'
-
-# three-digit 0.18 minor compatibility guard: [1-9][0-9][0-9]

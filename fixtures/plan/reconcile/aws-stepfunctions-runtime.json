@@ -1,0 +1,6 @@
+{
+  "stateMachineArn": "arn:aws:states:us-east-1:123456789012:stateMachine:image-transform",
+  "executions": [
+    {"name": "image-transform-20260609", "status": "RUNNING", "startDate": "2026-06-09T09:00:00Z"}
+  ]
+}

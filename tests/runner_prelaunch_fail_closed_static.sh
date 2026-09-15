@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")/.."
-
-grep -q 'RUNNER_PRELAUNCH_BLOCKED:' queuebash.sh || { echo "missing RUNNER_PRELAUNCH_BLOCKED log marker" >&2; exit 1; }
-grep -q 'runner_unavailable_or_unsafe' queuebash.sh || { echo "missing runner_unavailable_or_unsafe reason" >&2; exit 1; }
-grep -q 'case "$runner_used" in' queuebash.sh || { echo "missing runner_used validation case" >&2; exit 1; }
-grep -q 'direct|systemd' queuebash.sh || { echo "missing direct/systemd allow-list" >&2; exit 1; }
-
-echo "PASS runner_prelaunch_fail_closed_static"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+fail(){ echo "runner_prelaunch_fail_closed_static: $*" >&2; exit 1; }
+grep -q '_queue_runner_launchable_token' queuebash.sh || fail 'launchable token helper missing'
+grep -q 'runner_resolution_rc=0' queuebash.sh || fail 'runner resolution rc capture missing'
+grep -q 'RUNNER_PRELAUNCH_BLOCKED' queuebash.sh || fail 'prelaunch blocked marker missing'
+grep -q 'reason=runner_unavailable_or_unsafe' queuebash.sh || fail 'clear prelaunch reason missing'
+grep -q 'printf '\''RUNNER_PRELAUNCH_REQUESTED=%q' queuebash.sh || fail 'requested runner evidence missing'
+grep -q 'printf '\''RUNNER_PRELAUNCH_RC=%q' queuebash.sh || fail 'runner rc evidence missing'
+echo "runner_prelaunch_fail_closed_static: ok"

@@ -2,4 +2,7 @@ Usage: queue platform [--json]
 
 Emits local runtime/platform facts.
 
-Windows support claim is WSL2-first. Native Windows and POSIX-on-Windows shells are reported as constrained or future adapter tiers unless an explicit supported runtime path exists.
+Notes:
+- Windows support claim is WSL2-first.
+- Native Windows shells are detected as future adapter/runtime tiers, not as worker-supported execution environments.
+- Use --json for the queuebash.platform_facts.v1 contract.

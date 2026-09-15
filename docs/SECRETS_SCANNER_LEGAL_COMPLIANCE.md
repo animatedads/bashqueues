@@ -1,5 +1,5 @@
-# Secrets Scanner legal and compliance boundary
+# Secrets Scanner legal and compliance posture
 
-This provider family is fixture-first and read-only. It is suitable for documentation, compliance evidence mapping, and UI/fronting contract tests.
+This package is advisory-only. It avoids live access, credential capture, secret export, payload export, mailbox reads, mail sending, scanner writes, credential rotation, policy mutation, provisioning, or destructive operations.
 
-It must not be used to perform live provider changes, access protected payloads, disclose secrets, alter customer traffic/data, or infer authority to provision resources. Legal/compliance controls are represented as normalized JSON facts only.
+The default policy example blocks lifecycle and mutation verbs and requires normalized JSON facts for any future extension.

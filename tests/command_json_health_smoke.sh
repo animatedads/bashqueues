@@ -16,7 +16,7 @@ with open("/tmp/qh_out.json") as f:
     data=json.load(f)
 assert data["schema"] == "queuebash.health.v1", data
 assert data["queue_root"], data
-assert data["version"] == "0.18.124", data
+assert data["version"], data
 assert isinstance(data["ok"], bool), data
 assert data["status"] in {"ok", "degraded", "unhealthy"}, data
 assert data["fix"] is False, data

@@ -2,19 +2,29 @@
   "check": "domain",
   "credentials_required": false,
   "decision": "allow",
-  "dkim_state": "reference_only",
-  "dmarc_policy": "p=quarantine reference",
-  "domain_name": "example.invalid",
+  "evidence": [
+    "mail_service:domain:fixture"
+  ],
+  "facts": {
+    "advisory_only": true,
+    "coverage": "sample",
+    "mail_sent": false,
+    "mailbox_read": false,
+    "mode": "offline-fixture",
+    "raw_message_exported": false
+  },
   "fail_closed": true,
   "live_api_used": false,
   "mutated": false,
-  "mx_posture": "reference_only",
+  "non_goals": [
+    "mail-send",
+    "mailbox-read",
+    "message-export",
+    "suppression-list-write"
+  ],
   "provider": "fixture",
   "provider_family": "mail_service",
   "provider_output_is_shell": false,
-  "provisioning_performed": false,
-  "queue_dispatch_refactor": false,
   "schema": "queuebash.mail_service.domain.v1",
-  "source": "fixture",
-  "verification_state": "described_not_changed"
+  "source": "fixture"
 }

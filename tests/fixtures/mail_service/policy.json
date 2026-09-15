@@ -1,19 +1,30 @@
 {
   "check": "policy",
-  "content_policy": "described_not_enforced",
   "credentials_required": false,
   "decision": "allow",
+  "evidence": [
+    "mail_service:policy:fixture"
+  ],
+  "facts": {
+    "advisory_only": true,
+    "coverage": "sample",
+    "mail_sent": false,
+    "mailbox_read": false,
+    "mode": "offline-fixture",
+    "raw_message_exported": false
+  },
   "fail_closed": true,
-  "legal_hold": "not_applicable_fixture",
   "live_api_used": false,
   "mutated": false,
-  "pii_payload_accessed": false,
+  "non_goals": [
+    "mail-send",
+    "mailbox-read",
+    "message-export",
+    "suppression-list-write"
+  ],
   "provider": "fixture",
   "provider_family": "mail_service",
   "provider_output_is_shell": false,
-  "provisioning_performed": false,
-  "queue_dispatch_refactor": false,
-  "rate_limit_policy": "advisory_only",
   "schema": "queuebash.mail_service.policy.v1",
   "source": "fixture"
 }

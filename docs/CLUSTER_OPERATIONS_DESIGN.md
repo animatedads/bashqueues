@@ -119,6 +119,8 @@ Bob25 now adds `queue cluster vote tally` as the read-only evidence view over lo
 This is the next provider contract shape after proposal and ballot witnesses: future Kubernetes, Consul, etcd or signed-peer providers must be able to produce the same JSON facts while preserving fail-closed mutation behaviour.
 
 
-## 0.18.125 vote evaluation witness
+## 0.18.136 Bob25 local vote evaluation and apply preflight
 
-Bob25 now adds `queue cluster vote evaluate` as the read-only bridge between local ballot tallying and future production quorum providers. The command intentionally reports a fail-closed decision for file-dev because local evidence alone cannot prove voter eligibility, timing window, policy authorization, legal scope, or egress compliance. This keeps the admin surface simple while preventing accidental treatment of local test ballots as corporate approval.
+Bob25 restores the local vote evaluation witness on the 0.18.135 base and adds `queue cluster vote apply` as the first explicit mutation preflight gate. The gate is intentionally fail-closed for file-dev: an admin can see the proposed operation, local ballot counts, policy/timing/legal/egress placeholders and next action, but no cluster mutation is applied.
+
+This advances the cluster contract from evidence collection to governance gating without pretending that local files are production consensus. Future Kubernetes, Consul, etcd or signed-peer providers must satisfy the same JSON contract before any real mutation can be unlocked.

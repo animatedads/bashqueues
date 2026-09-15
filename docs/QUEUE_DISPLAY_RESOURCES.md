@@ -415,9 +415,21 @@ The helper emits `queuebash.display_resource_surface_audit.v1` evidence from dis
 
 This helper is deliberately not a renderer and not a localisation engine. It does not render templates, substitute token values, read resource bodies, read or render secrets, call providers, sign resources, install files, change permissions, generate command/provider JSON, or touch queue dispatch. It only gives reviewers deterministic surface-label metadata evidence to compare with lint, catalog, coverage, lookup, token, fallback, install, permission, hash, orphan, encoding, line, locale, and namespace audit evidence.
 
-## Bob18 note-audit helper
+## Display/XML reviewer-note audit helper
 
-`bin/queue-display-resource-note-audit.py` is a read-only release-review helper for manifest reviewer notes. It emits `queuebash.display_resource_note_audit.v1` evidence from manifest rows only. It checks that notes are bounded human metadata rather than an accidental control surface, secret renderer, JSON contract source, provider instruction, or shell-expansion carrier.
+Bob18 backfill wave adds a read-only reviewer-note metadata audit helper:
 
-The helper does not render resources, substitute tokens, read resource bodies, read or render secrets, call providers, sign, install, chmod/chown, or mutate queue dispatch. Findings are intended for packaging and review gates before human-facing display/XML resource bundles are installed or signed.
+```bash
+python3 bin/queue-display-resource-note-audit.py --root . --json
+```
 
+The helper emits `queuebash.display_resource_note_audit.v1` evidence from display/XML manifest `notes` metadata only. It checks reviewer notes for empty values, excessive length, shell-looking expansion, concrete secret-looking material, display-boundary-sensitive wording, unusual characters, and duplicate manifest rows.
+
+This helper is deliberately not a renderer and not a policy engine. It does not render templates, substitute token values, read resource bodies, read or render secrets, call providers, sign resources, install files, change permissions, generate command/provider JSON, or touch queue dispatch. It only gives reviewers deterministic metadata evidence to compare with lint, catalog, coverage, lookup, token, fallback, install, permission, hash, orphan, encoding, line, locale, namespace, and surface audit evidence.
+
+
+## Bob18 manifest-field audit helper
+
+`bin/queue-display-resource-manifest-field-audit.py` is a read-only helper that checks the TSV field contract for display and XML resource manifests. It emits `queuebash.display_resource_manifest_field_audit.v1` JSON evidence and validates field shape only: resource type/path consistency, relative resource names, language identifiers, fallback flags, token allow-list syntax, surface labels, JSON-source flags, secret-rendering flags, notes metadata, duplicate manifest rows, and manifest-listed file presence.
+
+The helper does not render display resources, substitute token values, read resource bodies, read or render secrets, call providers, sign resources, install resources, change permissions, generate command/provider JSON, or touch queue dispatch. It is intended as release-review evidence and as a cheap operator check before packaging or installing display resources.

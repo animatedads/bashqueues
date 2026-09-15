@@ -59,3 +59,10 @@ PASS package_registry_provider_fixture_smoke
 PASS package_registry_provider_json_contract_static
 PASS registry spot-check for api_gateway/package_registry/service_mesh/object_storage/license_manager/configuration_database
 ```
+
+## 0.18.139 Bob29 continuation - key_value_store + search_service
+
+- Verified 0.18.138 big merge first; previous Bob29 work through mail_service/secrets_scanner is present.
+- Added fixture-first key_value_store and search_service coverage.
+- Preserved no-live/no-provisioning/no-mutation boundary and normalized JSON facts only.
+- Next candidates: time_series_database and message_queue_service.

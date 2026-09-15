@@ -6,10 +6,10 @@ QUEUEBASH_MAIL_SERVICE_FIXTURE_DIR="$PWD/tests/fixtures/mail_service" bash "$hel
 python3 -m json.tool /tmp/mail_service_detect.json >/dev/null
 QUEUEBASH_MAIL_SERVICE_FIXTURE_DIR="$PWD/tests/fixtures/mail_service" bash "$helper" domain explain > /tmp/mail_service_domain.json
 python3 -m json.tool /tmp/mail_service_domain.json >/dev/null
-QUEUEBASH_MAIL_SERVICE_FIXTURE_DIR="$PWD/tests/fixtures/mail_service" bash "$helper" sender explain > /tmp/mail_service_sender.json
-python3 -m json.tool /tmp/mail_service_sender.json >/dev/null
 QUEUEBASH_MAIL_SERVICE_FIXTURE_DIR="$PWD/tests/fixtures/mail_service" bash "$helper" delivery explain > /tmp/mail_service_delivery.json
 python3 -m json.tool /tmp/mail_service_delivery.json >/dev/null
+QUEUEBASH_MAIL_SERVICE_FIXTURE_DIR="$PWD/tests/fixtures/mail_service" bash "$helper" reputation explain > /tmp/mail_service_reputation.json
+python3 -m json.tool /tmp/mail_service_reputation.json >/dev/null
 QUEUEBASH_MAIL_SERVICE_FIXTURE_DIR="$PWD/tests/fixtures/mail_service" bash "$helper" policy explain > /tmp/mail_service_policy.json
 python3 -m json.tool /tmp/mail_service_policy.json >/dev/null
 printf 'PASS mail_service_provider_fixture_smoke

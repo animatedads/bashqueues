@@ -1,0 +1,37 @@
+{
+  "schema": "queuebash.governance.framework.v1",
+  "framework_id": "nist_sp_800_53_rev5",
+  "name": "NIST SP 800-53 Rev. 5",
+  "source_posture": "local_queue_reference_registry",
+  "authority": "reference_only_not_authority_grant",
+  "families": [
+    {"id":"AC","title":"Access Control","queue_relevance":["privilege gates","remote access","information flow enforcement"]},
+    {"id":"AU","title":"Audit and Accountability","queue_relevance":["queue/RTO receipts","audit review","evidence chain"]},
+    {"id":"CM","title":"Configuration Management","queue_relevance":["baseline/configuration changes","least functionality","change restrictions"]},
+    {"id":"CP","title":"Contingency Planning","queue_relevance":["backup and recovery","DR promotion evidence"]},
+    {"id":"IA","title":"Identification and Authentication","queue_relevance":["identity proofing","authenticator management","admin trust"]},
+    {"id":"MP","title":"Media Protection","queue_relevance":["backup repository/media storage protection"]},
+    {"id":"PL","title":"Planning","queue_relevance":["system security plan and governance documentation"]},
+    {"id":"RA","title":"Risk Assessment","queue_relevance":["vulnerability monitoring","operation risk classification"]},
+    {"id":"SA","title":"System and Services Acquisition","queue_relevance":["VM/image provenance and developer configuration management"]},
+    {"id":"SC","title":"System and Communications Protection","queue_relevance":["boundary protection","crypto protection","data at rest/in transit"]},
+    {"id":"SI","title":"System and Information Integrity","queue_relevance":["malware defenses","flaw remediation","monitoring"]}
+  ],
+  "controls_referenced_by_windows_registry": [
+    "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-17",
+    "AU-2", "AU-6",
+    "CM-2", "CM-3", "CM-4", "CM-5", "CM-6", "CM-7", "CM-8",
+    "CP-9", "CP-10",
+    "IA-2", "IA-4", "IA-5",
+    "MP-4",
+    "PL-2",
+    "RA-3", "RA-5",
+    "SA-10",
+    "SC-3", "SC-7", "SC-8", "SC-12", "SC-13", "SC-18", "SC-28",
+    "SI-2", "SI-3", "SI-4"
+  ],
+  "queue_policy_use": {
+    "check_or_posture": "audit and explain mapped families/controls",
+    "change_or_destructive": "require governance evidence before execution and include NIST mappings in receipts"
+  }
+}

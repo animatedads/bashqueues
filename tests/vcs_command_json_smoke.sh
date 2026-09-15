@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 
 export QUEUEBASH_ALLOW_NONINTERACTIVE=1
+tmp=""
 export QUEUEBASH_ROOT="$(mktemp -d)"
 trap 'rm -rf "$QUEUEBASH_ROOT" "$tmp"' EXIT
 source ./queuebash.sh

@@ -1,14 +1,71 @@
-# 0.18.125 BOB28 user selector JSON hardening
+# 0.18.144 BOB27 queue lock ownership hotfix
 
-Adds top-level `queue --json user USER` and `queue --json --queue-user USER` selector JSON/error hardening so queue-root selection failures are machine readable.
+- Repair mixed root system-daemon/user-worker lock-tree ownership.
+- Ensure queue initialization includes `locks/state` and reconciliation archive paths.
+- Make state-lock acquisition fail fast with `state_lock_permission_denied` when the lock directory is not writable.
 
-# 0.18.125 BOB27 urgent Rupert Karen Jimbob hot-seat merge
+# 0.18.143 BOB27 queue core atomicity fleet hotfix
 
-Consolidates BOB32 urgent Rupert/Karen/Jimbob fixes plus the 0.18.125 edge wave. Includes BOB30 Windows platform doctor surface, BOB24 queue plan collector contracts, BOB25 cluster vote evaluation witness, BOB20 runner prelaunch fail-closed guard, BOB19 command catalog JSON discoverability, BOB23 install-system executable guard and stale version cleanup, BOB16 platform help resource extraction wave15, BOB17 evidence bundle retention hardening, BOB18 display note audit, BOB26 VCS assert helper/audit fingerprint, BOB28 user selector JSON hardening, and BOB29 mail_service/secrets_scanner service coverage.
+- Exclusive pending job allocation with noclobber/O_EXCL-style creation and retry.
+- Per-QID state-transition locking for worker claim, health stale moves, sentinel policy blocks, and system-daemon single-flight.
+- Fresh running records without RUN_PID/RUN_PGID are deferred, not interrupted.
+- Duplicate stale health/sentinel/policy-not-found records are archived under logs/queue-state-reconcile.
+- `queue cancel --force <QID>` and `queue cancel <QID> --force` are both accepted.
 
-# 0.18.125 BOB30 Windows platform doctor surface
+# 0.18.142 BOB27 direct/systemd stale duplicate-state reconciliation hotfix
 
-Adds `queue platform doctor --json` with `queuebash.platform_doctor.v1` for Windows/WSL runtime readiness checks without enabling unsupported workers.
+Repairs the ed209e split-state regression where one QID could exist in both `running` and `interrupted` after stale-running health/sentinel handling lost process ownership. Direct-run stale checks now treat a live `RUN_PID` or live `RUN_PGID` member as authoritative running evidence. `queue health --fix` detects duplicate `running`/`interrupted` records for the same QID and, only when the `running` record has a live payload and the interrupted reason is stale-running health/sentinel, archives the interrupted duplicate under `logs/queue-state-reconcile/` instead of leaving the queue ambiguous. Worker terminal handling also archives stale interrupted duplicates when the owned running record reaches `done` or `failed`, so completed jobs no longer remain visible as interrupted.
+
+# 0.18.141 BOB27 systemd stale-running defer and interrupted reconciliation hotfix
+
+Repairs the remaining systemd stale-running regression observed on ed209b. For `RUNNER_USED=systemd` records with a recorded `SYSTEMD_UNIT`, health and sentinel now defer rather than falling back to dead `RUN_PID` when the unit state is unknown/unqueryable. This prevents installed queue-manager/sentinel contexts that cannot query the user unit bus from immediately interrupting a live transient payload. Also adds narrow worker-side reconciliation: if a systemd job was moved to `interrupted` only for `stale-running-detected-by-health` or `stale-running-detected-by-sentinel`, and the worker later observes real payload completion, the record is reconciled to `done` or `failed` with `RECONCILED_*` metadata. Operator cancellations/deletions are not auto-reconciled.
+
+# 0.18.140 BOB27 systemd stale-running MainPID authority hotfix
+
+Fixes a health/sentinel stale-running regression for `RUNNER_USED=systemd`: BashQueues now treats the recorded `SYSTEMD_UNIT` and systemd `ActiveState`/`SubState`/`MainPID` as authoritative before considering `RUN_PID`. This prevents `queue health --fix` and `queue sentinel --once` from moving a job to `interrupted` when the `systemd-run` client PID has exited but the transient service payload is still active. `RUN_PID` remains a fallback only when no authoritative live unit can be resolved.
+
+# 0.18.139 BOB27 legacy automation AI policy coverage follow-up
+
+Adds Bob21 legacy/admin automation language coverage to the optional static AI policy gate on top of the 0.18.139 governance/OCI/VCS baseline delivery. This recognizes Rexx/ooRexx/Regina, Windows batch/CMD, and Tcl/Tk text surfaces as static-only evidence inputs. It does not execute Rexx, cmd.exe, Tcl/Tk, shells, databases, network tools, or model output.
+
+# 0.18.139 BOB27 governance cron catalog VCS baseline OCI carry-forward merge
+
+Consolidates the 0.18.139 edge set onto the 0.18.138 special OCI build. Restores cron JSON helper bodies, carries forward OCI provider registry, adds queue governance CIS/NIST registries, hardens ooRexx lookup/static checks, preserves command catalog JSON discoverability, adds queue plan handoff, restores VCS CVS metadata-only baseline command surface, carries forward runner fail-closed guard evidence, Windows support matrix, key_value/search service coverage, and cluster/maintenance evidence manifest contracts. Live/network surfaces remain gated; governance registries are local reference evidence only.
+
+# 0.18.139 BOB30 Windows platform support matrix
+
+- Confirmed Bob30 `queue platform doctor [--json]` survived the 0.18.138 corrected Bob32/RTO/ooRexx merge.
+- Added `queue platform matrix [--json]` with schema `queuebash.platform_matrix.v1`.
+- Added docs and static/smoke tests for the Windows support matrix.
+- Preserved fail-closed posture: WSL2 is the first viable Windows-hosted route; Git Bash/MSYS2/Cygwin and native Windows remain non-worker-supported.
+
+# 0.18.138 BOB27 corrected Bob32-base RTO ooRexx full-set merge
+
+Corrects the previous hot-seat 0.18.137 delivery by rebuilding on the now-supplied `bashqueues_0.18.135_BOB32_full_release_no_rto.zip` base and carrying forward the full uploaded 0.18.136/0.18.137 set, including both Bob31 ooRexx API deliveries and the Bob32 RTO live services patch.
+
+# 0.18.136 BOB31 ooRexx API JSON frontage
+
+- Added `api/oorexx/BashQueues.cls`, a JSON-fronted Open Object Rexx wrapper for the queue command surface.
+- Added ooRexx examples for JSON frontage, status panel display, snapshot export, list-by-state, submit-and-watch, and cancel-blocked usage.
+- Added ooRexx API docs and static/runtime test scripts.
+- Kept JSON support as a platform/site ooRexx dependency; no vendored `json.cls` is included.
+- Preserved the noninteractive environment fix: export `QUEUEBASH_ALLOW_NONINTERACTIVE=1` before sourcing `queuebash.sh`.
+- Updated `install-system.sh` so `api/` is included in system shared-tree installs.
+
+## 0.18.127 BOB32 postclaim preflight waiting state correction
+
+## 0.18.136 BOB20 runner prelaunch fail-closed guard
+
+- Carry forward the explicit runner prelaunch safety guard onto the 0.18.135 BOB32 base.
+- Worker launch now captures runner-resolution rc and refuses to build/launch payloads when runner resolution returns non-launchable tokens such as `systemd-unavailable` or `systemd-foreign-user-not-used`.
+- Failure is recorded as `RUNNER_PRELAUNCH_BLOCKED` with requested/resolved runner evidence; no payload is launched under an unintended fallback runner.
+
+
+Corrects the Bob32 preflight state model: a job that fails retryable postclaim class/resource preflight before runner start now moves to `waiting`, not `pending` or `interrupted`. `pending` remains the ready-to-claim queue; sentinel promotes `waiting -> pending` when class/resource conditions pass. Adds focused waiting-state and sentinel-promotion smoke coverage.
+
+## 0.18.126 BOB32 postclaim preflight pending correction
+
+Corrects the Bob32 urgent preflight-state fix: a class/resource postclaim preflight refusal before runner start is retryable policy gating, so the job is returned to pending with block evidence instead of being moved to interrupted.
 
 ## 0.18.125 BOB32 urgent Rupert Karen Jimbob fixes
 
@@ -2986,7 +3043,3 @@ Initial public queuebash release:
 - 2026-05-27 16:07:28 BST — AI-PATCH _queue_ai_ask_command in `queuebash.sh`: 0.18.1: add opt-in local Ollama advisory provider path with live policy gate and audit-preserving handoff
 
 - 2026-05-27 17:45:21 BST — AI-PATCH _queue_module_command in `queuebash.sh`: 0.18.5: centralise module/provider command surface.
-
-## 0.18.125 BOB29 mail service + secrets scanner provider coverage
-
-Adds fixture-first `mail_service` and `secrets_scanner` provider-family coverage with docs, policy examples, fixtures, registry entries, and static/smoke/JSON tests. Helpers are advisory/read-only and return normalized JSON facts only; they do not send mail, read mailboxes, scan live repositories, disclose secret values, mutate provider state, provision services, or change queue dispatch.

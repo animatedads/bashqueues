@@ -1,0 +1,16 @@
+{
+  "check": "policy",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "least_privilege_required": true,
+  "live_api_used": false,
+  "mutated": false,
+  "mutation_allowed": false,
+  "pii_classification": "metadata_only_fixture",
+  "provider": "fixture",
+  "provider_family": "key_value_store",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.key_value_store.policy.v1",
+  "source": "fixture"
+}

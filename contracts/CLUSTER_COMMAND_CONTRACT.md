@@ -12,6 +12,7 @@ queue cluster vote propose --operation OPERATION --reason REASON [--materialize]
 queue cluster vote cast --proposal-id ID --decision approve|reject|abstain --reason REASON [--materialize] [--json]
 queue cluster vote tally --proposal-id ID [--json]
 queue cluster vote evaluate --proposal-id ID [--json]
+queue cluster vote apply --proposal-id ID [--json]
 queue cluster node list [--json]
 queue cluster explain [SUBJECT] [--json]
 ```
@@ -58,6 +59,7 @@ This is a plan-only command in this release. It validates node and role argument
 - `queuebash.cluster.vote_cast.v1`
 - `queuebash.cluster.vote_tally.v1`
 - `queuebash.cluster.vote_evaluation.v1`
+- `queuebash.cluster.vote_apply_preflight.v1`
 - `queuebash.cluster.node_list.v1`
 - `queuebash.cluster.explain.v1`
 - `queuebash.cluster.init_plan.v1`
@@ -116,10 +118,10 @@ This command gives production providers a concrete tally/evaluation output shape
 
 JSON schema: `queuebash.cluster.vote_tally.v1`. Required safety fields: `writes_performed`, `network_touched`, `quorum_granted`, `cluster_mutation_unlocked`, `provider`, `scope`, `quorum_policy`, and `requires_policy`.
 
-## 0.18.125 local vote evaluation witness contract
+## 0.18.136 local vote evaluation and apply preflight contract
 
 `queue cluster vote evaluate --proposal-id ID [--json]` reads one local file-dev proposal and its local ballots, then emits a provider-required evaluation result. It is deliberately read-only: it writes no files, touches no network, grants no quorum, and unlocks no cluster mutation.
 
-The command exists to keep quorum evaluation separate from tallying. Local file-dev evidence may show approvals and rejections, but production providers must still prove voter eligibility, quorum rule, timing window, policy authorization, legal scope, and egress status before any approval can exist.
+`queue cluster vote apply --proposal-id ID [--json]` is the fail-closed mutation preflight. On the local file-dev provider it must always return blocked/non-zero for existing proposals because local evidence is not production quorum. It reports the operation, counts, policy/timing/legal/egress placeholders, and explicit `mutation_applied:false`.
 
-JSON schema: `queuebash.cluster.vote_evaluation.v1`. Required safety fields: `writes_performed`, `network_touched`, `quorum_granted`, `cluster_mutation_unlocked`, `provider`, `scope`, `quorum_policy`, `eligible_voters_source`, `timing_window_status`, `policy_authorization`, `legal_scope_status`, `egress_status`, and `requires_policy`.
+JSON schemas: `queuebash.cluster.vote_evaluation.v1` and `queuebash.cluster.vote_apply_preflight.v1`. Required safety fields: `writes_performed`, `network_touched`, `quorum_granted`, `cluster_mutation_unlocked`, `mutation_applied`, `provider`, `scope`, `quorum_policy`, and `requires_policy`.

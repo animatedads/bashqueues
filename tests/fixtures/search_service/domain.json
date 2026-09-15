@@ -1,0 +1,17 @@
+{
+  "check": "domain",
+  "credentials_required": false,
+  "decision": "allow",
+  "domain": "catalog-search",
+  "engine": "opensearch-compatible",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "search_service",
+  "provider_output_is_shell": false,
+  "region": "fixture-eu",
+  "schema": "queuebash.search_service.domain.v1",
+  "source": "fixture",
+  "tls_required": true
+}

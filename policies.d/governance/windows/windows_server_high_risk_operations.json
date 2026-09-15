@@ -1,0 +1,121 @@
+{
+  "schema": "queuebash.governance.windows_risk_registry.v1",
+  "platform": "windows-server",
+  "frameworks": ["cis_controls_v8", "nist_sp_800_53_rev5"],
+  "default_queue_behaviour": {
+    "read_check_posture": "audit/preflight; do not require rto plan solely because the operation is a check",
+    "change_deploy_destructive": "waiting until approval, maintenance window, rollback/restore evidence, and receipt target are available"
+  },
+  "operations": [
+    {
+      "operation_id":"windows.privilege_escalation_surface",
+      "category":"privilege_escalation_surfaces",
+      "summary":"Modify Administrators/Domain Admins, grant debug-style privileges, or alter privileged service accounts.",
+      "operation_type":"change",
+      "risk":"critical",
+      "keywords":["administrator","domain admin","sedebugprivilege","privilege","service account","group membership"],
+      "nist_sp_800_53_rev5":["AC-2","AC-3","AC-5","AC-6","IA-2","IA-4","CM-5"],
+      "cis_controls_v8":["4","5","6"],
+      "queue_gate":{"default_state":"waiting","requires":["trusted_admin","approval","audit_receipt","rollback_or_reversal_plan"]}
+    },
+    {
+      "operation_id":"windows.credential_material_exposure",
+      "category":"credential_material_exposure",
+      "summary":"LSASS access, Credential Guard disablement, NTDS.dit extraction, WDigest enablement, or credential store exposure.",
+      "operation_type":"destructive_or_sensitive_change",
+      "risk":"critical",
+      "keywords":["lsass","credential guard","ntds.dit","wdigest","credential","password hash"],
+      "nist_sp_800_53_rev5":["IA-5","SC-12","SC-13","SC-28","SI-4"],
+      "cis_controls_v8":["5","4","8","3"],
+      "queue_gate":{"default_state":"waiting","requires":["break_glass_or_explicit_approval","audit_receipt","security_exception_record"]}
+    },
+    {
+      "operation_id":"windows.vulnerability_and_patch_risk",
+      "category":"unpatched_or_vulnerable_system_operations",
+      "summary":"Disable updates, run unsupported OS paths, install unsigned drivers, or defer flaw remediation.",
+      "operation_type":"change",
+      "risk":"high",
+      "keywords":["disable updates","unsupported os","unsigned driver","patch","vulnerability"],
+      "nist_sp_800_53_rev5":["SI-2","CM-3","CM-4","CM-6","RA-5"],
+      "cis_controls_v8":["7","4"],
+      "queue_gate":{"default_state":"waiting","requires":["approval","maintenance_window","vulnerability_exception_or_patch_plan"]}
+    },
+    {
+      "operation_id":"windows.remote_execution_surface",
+      "category":"remote_execution_and_automation_surfaces",
+      "summary":"PowerShell remoting, WMI, PsExec, WinRM, and legacy remote execution paths.",
+      "operation_type":"check_or_change",
+      "risk":"high",
+      "keywords":["powershell","wmi","psexec","winrm","remote execution","remoting"],
+      "nist_sp_800_53_rev5":["AC-17","SC-7","SI-4","CM-7"],
+      "cis_controls_v8":["12","13","9"],
+      "queue_gate":{"default_state":"waiting_for_change_or_audit_for_check","requires":["authority_check","network_boundary_evidence","audit_receipt"]}
+    },
+    {
+      "operation_id":"windows.active_directory_structural_change",
+      "category":"active_directory_structural_changes",
+      "summary":"Domain trusts, KRBTGT reset, GPO changes, DC promotion/demotion, and structural AD work.",
+      "operation_type":"change",
+      "risk":"critical",
+      "keywords":["domain trust","krbtgt","gpo","domain controller","dc promotion","dc demotion","active directory"],
+      "nist_sp_800_53_rev5":["AC-2","PL-2","CM-2","CM-8","IA-2"],
+      "cis_controls_v8":["4","5","6"],
+      "queue_gate":{"default_state":"waiting","requires":["dual_control_approval","maintenance_window","replication_health_preflight","rollback_or_recovery_plan"]}
+    },
+    {
+      "operation_id":"windows.network_exposure_misconfiguration",
+      "category":"network_exposure_and_misconfiguration",
+      "summary":"Expose RDP, SMB, LDAP, weak firewall rules, or anonymous access.",
+      "operation_type":"change_or_posture",
+      "risk":"high",
+      "keywords":["rdp","smb","ldap","firewall","anonymous access","port exposure"],
+      "nist_sp_800_53_rev5":["SC-7","AC-4","CM-7","RA-3"],
+      "cis_controls_v8":["12","13","4"],
+      "queue_gate":{"default_state":"waiting_for_change_or_audit_for_check","requires":["boundary_preflight","approval_for_exposure_change","audit_receipt"]}
+    },
+    {
+      "operation_id":"windows.disable_security_controls",
+      "category":"disabling_security_controls",
+      "summary":"Disable Defender, WDAC, AppLocker, ASR, audit logging, or EDR.",
+      "operation_type":"change",
+      "risk":"critical",
+      "keywords":["defender","wdac","applocker","asr","audit logging","edr","disable security"],
+      "nist_sp_800_53_rev5":["SI-3","SI-4","AU-2","AU-6","SC-18","CM-6"],
+      "cis_controls_v8":["8","10","4"],
+      "queue_gate":{"default_state":"waiting","requires":["break_glass_or_approved_exception","time_boxed_window","audit_receipt","restore_security_control_step"]}
+    },
+    {
+      "operation_id":"windows.filesystem_backup_compromise",
+      "category":"filesystem_and_backup_compromise",
+      "summary":"Delete VSS snapshots, modify backup repositories, or tamper with system directories.",
+      "operation_type":"destructive_or_sensitive_change",
+      "risk":"critical",
+      "keywords":["vss","snapshot","backup repository","delete backup","system directory","tamper backup"],
+      "nist_sp_800_53_rev5":["CP-9","CP-10","MP-4","SC-28"],
+      "cis_controls_v8":["11","3","4"],
+      "queue_gate":{"default_state":"waiting","requires":["backup_integrity_preflight","dual_control_approval","immutable_receipt"]}
+    },
+    {
+      "operation_id":"windows.hyperv_virtualization_boundary_change",
+      "category":"hyperv_virtualization_boundary_changes",
+      "summary":"Disable Secure Boot/VBS, modify Guarded Fabric, or use untrusted VM images.",
+      "operation_type":"change",
+      "risk":"high",
+      "keywords":["hyper-v","secure boot","vbs","guarded fabric","vm image","virtualization"],
+      "nist_sp_800_53_rev5":["SC-3","SC-7","CM-6","SA-10"],
+      "cis_controls_v8":["4","12","14"],
+      "queue_gate":{"default_state":"waiting","requires":["image_provenance_evidence","approval","rollback_or_rebuild_plan"]}
+    },
+    {
+      "operation_id":"windows.legacy_protocol_feature",
+      "category":"dangerous_legacy_protocols_and_features",
+      "summary":"Enable or depend on SMBv1, NTLMv1, LM, unsigned LDAP binds, Telnet, or FTP.",
+      "operation_type":"change_or_posture",
+      "risk":"high",
+      "keywords":["smbv1","ntlmv1","lm","unsigned ldap","telnet","ftp","legacy protocol"],
+      "nist_sp_800_53_rev5":["SC-8","SC-13","CM-7","AC-4"],
+      "cis_controls_v8":["12","4","3"],
+      "queue_gate":{"default_state":"waiting_for_change_or_audit_for_check","requires":["legacy_exception_record","compensating_control_evidence","audit_receipt"]}
+    }
+  ]
+}

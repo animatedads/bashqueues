@@ -76,3 +76,9 @@ Queuebash removes stream temp files such as:
 ```
 
 when jobs complete, are cancelled, or are moved to `interrupted/` by health repair.
+
+## 0.18.140 stale-running authority rule
+
+For `RUNNER_USED=systemd`, stale-running detection must inspect `SYSTEMD_UNIT` before `RUN_PID`. If `systemctl --user show "$SYSTEMD_UNIT"` reports an active/running transient unit with a non-zero `MainPID`, that MainPID is the payload and the job must remain in `running`, even if the recorded `RUN_PID` for the original `systemd-run` client has exited.
+
+`RUN_PID` is only a fallback for stale-running detection when no authoritative live unit state can be resolved. A dead/inactive/failed unit remains stale evidence for the job record.

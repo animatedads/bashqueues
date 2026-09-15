@@ -1,14 +1,32 @@
 {
-  "live_api_used": false,
-  "mode": "fixture_first",
-  "mutation_allowed": false,
+  "allowed_checks": [
+    "detect",
+    "source",
+    "signal",
+    "redaction",
+    "policy"
+  ],
+  "blocked_operations": [
+    "live-repository-scan",
+    "secret-export",
+    "raw-secret-output",
+    "redaction-write",
+    "credential-rotation",
+    "credential-revocation",
+    "policy-mutation",
+    "queue-dispatch-refactor"
+  ],
+  "credentials_required_for_default_tests": false,
+  "default_mode": "fixture_first",
+  "live_api_default": false,
+  "mutation_default": false,
   "normalized_json_only": true,
   "notes": [
-    "Secrets Scanner coverage is advisory/read-only.",
-    "Live reads require a later explicit gate and are not enabled by this provider helper."
+    "Advisory facts only. No provider calls are made by default.",
+    "Future live-read support must be separately gated and must remain read-only."
   ],
   "provider_family": "secrets_scanner",
   "provider_output_is_shell": false,
-  "provisioning_allowed": false,
+  "provisioning_default": false,
   "schema": "queuebash.secrets_scanner.policy.example.v1"
 }

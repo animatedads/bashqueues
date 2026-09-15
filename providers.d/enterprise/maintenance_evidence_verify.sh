@@ -27,7 +27,7 @@ export OPENBLAS_NUM_THREADS=1
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
-python3 - "$request" "$json" <<'PY'
+python3 -S - "$request" "$json" <<'PY'
 import datetime as _dt
 import hashlib
 import json

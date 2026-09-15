@@ -1,8 +1,16 @@
 Usage: queue vcs detect [PATH] [--json]
        queue vcs probe [PATH] [--json] [--type TYPE] [--timeout SECONDS]
+       queue vcs baseline [PATH] [--json] [--type TYPE] [--timeout SECONDS] [--name NAME]
+       queue vcs assert [PATH] [--json] [--type TYPE] [--timeout SECONDS] [--require-identity VALUE] [--require-revision VALUE] [--require-fingerprint VALUE]
        queue vcs types [--json]
 
 Read-only VCS tenant diagnostics for Git, Subversion, CVS, Mercurial, and
 Perforce. Existing git:* assets remain first-class; queue vcs is a neutral
-operator surface for mixed and legacy estates. Probe is also read-only and reports
+operator surface for mixed and legacy estates. Probe is read-only and reports
 normalised identity/revision/clean-tree facts plus a stable fingerprint for audit gates.
+
+Baseline emits copy/paste-safe VCS_CHANGESET_AUDIT environment settings from the
+current workspace. It emits queuebash.vcs.baseline.v1 JSON when --json is supplied.
+
+Assert compares observed VCS metadata against required values. It emits
+queuebash.vcs.assert.v1 JSON with matched/checks/failures fields when --json is supplied.

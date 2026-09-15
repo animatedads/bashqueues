@@ -321,6 +321,32 @@ cluster.incident_response.raw_contact
 
 Fail-closed cases include missing abort criteria, missing incident response, manual override allowed, raw abort policy/script, missing policy hash, missing required triggers, raw comms channel/contact, pager not ready, rollback owner not acknowledged, or incident freeze not enabled.
 
-## 0.18.125 evidence bundle retention hardening carry-forward
 
-Required redacted evidence paths include `cluster.evidence_bundle.bundle_hash`, `cluster.evidence_bundle.retention_days >= 90`, and `cluster.observation.evidence_hash`. These requirements preserve the cluster evidence bundle hash contract while avoiding raw secret or raw bundle material in queued maintenance evidence.
+## Cluster evidence bundle sealing and retention hardening
+
+Cluster-scoped approved maintenance must include a redacted, tamper-evident evidence bundle attestation before a future runtime gate can consider the request complete enough for controlled pilot workflows. This remains fixture evidence only. The verifier does not collect evidence, sign bundles, write audit storage, contact providers, or modify live systems.
+
+Required fixture fields:
+
+```text
+cluster.evidence_bundle.sealed = true
+cluster.evidence_bundle.tamper_evident = true
+cluster.evidence_bundle.bundle_hash = sha256:...
+cluster.evidence_bundle.signature_hash = sha256:...
+cluster.evidence_bundle.signer_hash = sha256:...
+cluster.evidence_bundle.signature_status = verified
+cluster.evidence_bundle.retention_days >= 90
+cluster.evidence_bundle.immutable_storage = true
+```
+
+Forbidden fixture fields:
+
+```text
+cluster.evidence_bundle.raw_bundle
+cluster.evidence_bundle.signature
+cluster.evidence_bundle.signer
+```
+
+Fail-closed cases include missing evidence bundle, unsealed bundle, missing tamper-evidence marker, missing bundle hash, missing signature hash, missing signer hash, unverified signature status, retention under 90 days, mutable storage, and raw bundle/signature/signer material in fixture JSON.
+
+The evidence bundle is redacted chain-of-custody metadata only. It is not the audit payload, not a signature key, not a live write to immutable storage, and not proof that bashqueues touched any hospital system.

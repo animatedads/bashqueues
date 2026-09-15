@@ -1,0 +1,21 @@
+{
+  "check": "detect",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "key_value_store",
+  "provider_output_is_shell": false,
+  "schema": "queuebash.key_value_store.detect.v1",
+  "services": [
+    "aws_dynamodb",
+    "azure_cosmos_table",
+    "gcp_bigtable",
+    "oci_nosql",
+    "ibm_cloudant"
+  ],
+  "source": "fixture",
+  "summary": "Fixture estate contains managed key/value database signals only."
+}

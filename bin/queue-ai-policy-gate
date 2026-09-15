@@ -49,12 +49,13 @@ SCRIPT_TEXT_SUFFIXES = {
     ".ps1", ".psm1", ".js", ".mjs", ".cjs", ".ts", ".php", ".rb", ".pl", ".pm", ".go",
     ".java", ".cs", ".scala", ".kt", ".kts", ".rs", ".lua", ".r", ".R", ".psql",
     ".yml", ".yaml", ".json", ".tf", ".tfvars", ".hcl", ".service", ".timer", ".socket", ".cron", ".mk", ".make", ".toml",
-    ".ini", ".cfg", ".conf", ".in", ".ipynb", ".xml", ".bas", ".vba", ".vbs", ".wsf", ".gs", ".csv", ".tsv",
+    ".ini", ".cfg", ".conf", ".in", ".ipynb", ".xml", ".bas", ".vba", ".vbs", ".wsf", ".gs", ".csv", ".tsv", ".groovy", ".gradle",
+    ".rex", ".rexx", ".rx", ".cls", ".cmd", ".bat", ".btm", ".tcl", ".tk",
 }
 SCRIPT_TEXT_NAMES = {
     "Dockerfile", "Containerfile", "dockerfile", "containerfile", "crontab", "Makefile", "makefile", "GNUmakefile", "package.json", "pyproject.toml", "Cargo.toml",
     "requirements.txt", "constraints.txt", "requirements.in", "tox.ini", "setup.cfg", "Pipfile", "Gemfile", "go.mod", ".pre-commit-config.yaml",
-    ".pre-commit-config.yml", "dbt_project.yml", "dbt_project.yaml", "profiles.yml", "profiles.yaml", "schema.yml", "schema.yaml", "alembic.ini", "flyway.conf", "liquibase.properties", "appsscript.json",
+    ".pre-commit-config.yml", "Jenkinsfile", "jenkinsfile", ".gitlab-ci.yml", ".gitlab-ci.yaml", "azure-pipelines.yml", "azure-pipelines.yaml", "bitbucket-pipelines.yml", "bitbucket-pipelines.yaml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "Rexxfile", "rexxfile", "dbt_project.yml", "dbt_project.yaml", "profiles.yml", "profiles.yaml", "schema.yml", "schema.yaml", "alembic.ini", "flyway.conf", "liquibase.properties", "appsscript.json",
 }
 SHELL_STARTUP_NAMES = (".bashrc", ".bash_profile", ".profile", ".bash_login")
 SCRIPT_READ_MAX_BYTES_DEFAULT = 32768
@@ -633,7 +634,7 @@ def read_static_payload_file(resolved: pathlib.Path, lang: str, source: str, max
         return None
     max_bytes = int(os.environ.get("QUEUEBASH_AI_POLICY_GATE_SCRIPT_MAX_BYTES", str(SCRIPT_READ_MAX_BYTES_DEFAULT)))
     suf = resolved.suffix.lower()
-    if resolved.name not in SHELL_STARTUP_NAMES and resolved.name not in SCRIPT_TEXT_NAMES and suf not in SCRIPT_TEXT_SUFFIXES and lang not in {"bash", "vcs_hook", "dependency_manifest", "ini_config", "notebook_json", "data_migration_manifest", "db_migration_config"}:
+    if resolved.name not in SHELL_STARTUP_NAMES and resolved.name not in SCRIPT_TEXT_NAMES and suf not in SCRIPT_TEXT_SUFFIXES and lang not in {"bash", "vcs_hook", "dependency_manifest", "ini_config", "notebook_json", "data_migration_manifest", "db_migration_config", "jenkins_pipeline", "pipeline_config", "gradle_build", "rexx", "windows_batch", "tcl"}:
         return None
     try:
         data = resolved.read_bytes()[:max_bytes]
@@ -673,6 +674,8 @@ def read_static_payload_file(resolved: pathlib.Path, lang: str, source: str, max
         detected = "r"
     elif resolved.name in {"Dockerfile", "Containerfile", "dockerfile", "containerfile"}:
         detected = "dockerfile"
+    elif resolved.name in {".gitlab-ci.yml", ".gitlab-ci.yaml", "azure-pipelines.yml", "azure-pipelines.yaml", "bitbucket-pipelines.yml", "bitbucket-pipelines.yaml"} or ".github/workflows" in str(resolved) or ".circleci" in str(resolved) or ".buildkite" in str(resolved):
+        detected = "pipeline_config"
     elif suf in {".yml", ".yaml"}:
         detected = "yaml"
     elif resolved.name == "package.json":
@@ -693,6 +696,16 @@ def read_static_payload_file(resolved: pathlib.Path, lang: str, source: str, max
         detected = "apps_script"
     elif suf in {".csv", ".tsv"}:
         detected = "spreadsheet_text"
+    elif resolved.name in {"Jenkinsfile", "jenkinsfile"} or suf in {".groovy"}:
+        detected = "jenkins_pipeline"
+    elif resolved.name in {"build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"} or suf == ".gradle":
+        detected = "gradle_build"
+    elif resolved.name in {"Rexxfile", "rexxfile"} or suf in {".rex", ".rexx", ".rx"}:
+        detected = "rexx"
+    elif suf in {".cmd", ".bat", ".btm"}:
+        detected = "windows_batch"
+    elif suf in {".tcl", ".tk"}:
+        detected = "tcl"
     elif resolved.name in {"tox.ini", "setup.cfg"} or suf in {".ini", ".cfg"}:
         detected = "ini_config"
     elif suf in {".json"}:
@@ -1113,6 +1126,71 @@ def command_payloads(job: Dict[str, Any], max_chars: int) -> List[Dict[str, str]
         if script_items:
             items.extend(script_items)
         add("spreadsheet_text", lower0, raw)
+    elif lower0 in {"jenkins", "jenkinsfile-runner"}:
+        # Static-only Jenkins pipeline inspection; never run a controller/agent/build.
+        for mf in ["Jenkinsfile", "jenkinsfile"]:
+            resolved = resolve_local_payload_path(mf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "jenkins_pipeline", "jenkins_pipeline_file", max_chars)
+                if item:
+                    items.append(item)
+        script_items = safe_script_payloads(words, "jenkins_pipeline", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+        add("jenkins_pipeline", lower0, raw)
+    elif lower0 in {"gradle", "gradlew"}:
+        # Static-only Gradle build inspection; never run tasks or plugins.
+        for mf in ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"]:
+            resolved = resolve_local_payload_path(mf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "gradle_build", "gradle_build_file", max_chars)
+                if item:
+                    items.append(item)
+        add("gradle_build", lower0, raw)
+    elif lower0 in {"rexx", "regina", "oorexx", "rxrexx", "rexxj"}:
+        # Static-only Rexx/ooRexx/Regina inspection; never run an interpreter.
+        for mf in ["Rexxfile", "rexxfile"]:
+            resolved = resolve_local_payload_path(mf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "rexx", "rexx_script_file", max_chars)
+                if item:
+                    items.append(item)
+        script_items = safe_script_payloads(words, "rexx", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+        add("rexx", lower0, raw)
+    elif lower0 in {"cmd", "cmd.exe", "command.com", "bat", "batch"}:
+        # Static-only Windows batch/CMD inspection; never invoke cmd.exe.
+        script_items = safe_script_payloads(words, "windows_batch", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+        add("windows_batch", lower0, raw)
+    elif lower0 in {"tclsh", "wish", "tcl"}:
+        # Static-only Tcl/Tk inspection; never invoke tclsh/wish.
+        script_items = safe_script_payloads(words, "tcl", submit_dir, max_chars)
+        if script_items:
+            items.extend(script_items)
+        add("tcl", lower0, raw)
+    elif lower0 in {"gitlab-runner", "circleci", "buildkite-agent", "act"} or (lower0 == "az" and len(words) > 1 and str(words[1]).lower() == "pipelines"):
+        # Static-only CI/CD pipeline config inspection; never run a pipeline locally.
+        candidate_files = [
+            ".gitlab-ci.yml", ".gitlab-ci.yaml", "azure-pipelines.yml", "azure-pipelines.yaml",
+            "bitbucket-pipelines.yml", "bitbucket-pipelines.yaml", ".circleci/config.yml", ".circleci/config.yaml",
+            ".buildkite/pipeline.yml", ".buildkite/pipeline.yaml",
+        ]
+        for mf in candidate_files:
+            resolved = resolve_local_payload_path(mf, submit_dir)
+            if resolved:
+                item = read_static_payload_file(resolved, "pipeline_config", "pipeline_config_file", max_chars)
+                if item:
+                    items.append(item)
+        github_dir = submit_dir / ".github" / "workflows"
+        if github_dir.is_dir():
+            for wf in sorted(list(github_dir.glob("*.yml")) + list(github_dir.glob("*.yaml")))[:5]:
+                item = read_static_payload_file(wf.resolve(), "pipeline_config", "pipeline_config_file", max_chars)
+                if item:
+                    items.append(item)
+        add("pipeline_config", lower0, raw)
     elif lower0 in {"pre-commit"}:
         for mf in [".pre-commit-config.yaml", ".pre-commit-config.yml"]:
             resolved = resolve_local_payload_path(mf, submit_dir)
@@ -1309,7 +1387,7 @@ def scan_javascript(text: str, findings: List[Dict[str, Any]]) -> None:
 
 def scan_powershell(text: str, findings: List[Dict[str, Any]]) -> None:
     checks = [
-        ("powershell_encoded_command", "high", "encoded_payload", r"\b(?:-EncodedCommand|-Enc)\b"),
+        ("powershell_encoded_command", "high", "encoded_payload", r"(?:-EncodedCommand|-Enc)\b"),
         ("powershell_base64_decode", "medium", "payload_decode_transform", r"\bFromBase64String\s*\("),
         ("powershell_dynamic_execution", "high", "dynamic_code_execution", r"\b(?:Invoke-Expression|IEX)\b"),
         ("powershell_process_start", "high", "subprocess_execution", r"\b(?:Start-Process|Invoke-Item|&\s*\$|cmd\.exe|powershell\.exe|pwsh)\b"),
@@ -1471,6 +1549,104 @@ def scan_json_config(text: str, findings: List[Dict[str, Any]]) -> None:
     for fid, sev, cat, pat in checks:
         for m in re.finditer(pat, text, re.I | re.S):
             finding(findings, fid, sev, cat, m.group(0), position=m.start())
+
+
+def scan_jenkins_pipeline(text: str, findings: List[Dict[str, Any]]) -> None:
+    """Scan Jenkinsfile/Groovy pipeline text statically; never run Jenkins/Groovy."""
+    checks = [
+        ("jenkins_sh_remote_shell", "high", "subprocess_execution", r"\bsh\s*[\( ]\s*['\"][^'\"]{0,240}(?:curl|wget)[^'\"]{0,160}\|\s*(?:bash|sh)"),
+        ("jenkins_powershell_encoded", "high", "encoded_payload", r"\b(?:powershell|pwsh)\b[^\n]{0,160}(?:-EncodedCommand|-Enc)\b"),
+        ("jenkins_credentials_binding", "medium", "sensitive_reference", r"\b(?:withCredentials|credentialsId|usernamePassword|string\s*\()\b"),
+        ("jenkins_docker_sock", "high", "privileged_container", r"/var/run/docker\.sock|docker\.inside\s*\([^\)]{0,160}privileged"),
+        ("jenkins_destructive_root", "critical", "destructive_operation", r"rm\s+-rf\s+/"),
+        ("jenkins_secret_echo", "medium", "secret_exposure", r"\b(?:echo|print(?:ln)?)\b[^\n]{0,160}\b(?:TOKEN|SECRET|PASSWORD|API_KEY)\b"),
+        ("jenkins_unpinned_library", "medium", "supply_chain_risk", r"@Library\s*\([^\)]{0,120}(?:master|main|HEAD|latest)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+
+
+def scan_pipeline_config(text: str, findings: List[Dict[str, Any]]) -> None:
+    """Scan GitLab/CircleCI/Azure/Buildkite/GitHub-style CI YAML as static text only."""
+    checks = [
+        ("pipeline_remote_shell", "high", "subprocess_execution", r"(?im)^\s*(?:script|run|command|before_script|after_script)\s*[:|>-].{0,260}(?:curl|wget).{0,180}\|\s*(?:bash|sh)"),
+        ("pipeline_powershell_encoded", "high", "encoded_payload", r"\b(?:powershell|pwsh)\b[^\n]{0,180}(?:-EncodedCommand|-Enc)\b"),
+        ("pipeline_docker_sock", "high", "privileged_container", r"/var/run/docker\.sock"),
+        ("pipeline_privileged_service", "high", "privileged_container", r"(?im)^\s*privileged\s*:\s*true\b"),
+        ("pipeline_secret_echo", "medium", "secret_exposure", r"(?im)^\s*-?\s*(?:script|run|command)\s*[:|>-].{0,240}\b(?:echo|printenv|env)\b.{0,160}\b(?:TOKEN|SECRET|PASSWORD|API_KEY)\b"),
+        ("pipeline_unpinned_third_party_action", "medium", "supply_chain_risk", r"(?im)^\s*-?\s*uses\s*:\s*[^\s@]+/(?:[^\s@]+)@(?:master|main|HEAD|latest)\b"),
+        ("pipeline_destructive_root", "critical", "destructive_operation", r"rm\s+-rf\s+/"),
+        ("pipeline_cloud_credential_export", "high", "secret_exposure", r"(?im)^\s*(?:export\s+)?(?:AWS_SECRET_ACCESS_KEY|GOOGLE_APPLICATION_CREDENTIALS|AZURE_CLIENT_SECRET|GITHUB_TOKEN)\s*[:=]"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+
+
+def scan_gradle_build(text: str, findings: List[Dict[str, Any]]) -> None:
+    """Scan Gradle/Groovy/Kotlin build text statically; never run Gradle tasks/plugins."""
+    checks = [
+        ("gradle_exec_task", "high", "subprocess_execution", r"\b(?:exec\s*\{|project\.exec\s*\{|commandLine\s+['\"]|ProcessBuilder\s*\()"),
+        ("gradle_remote_script", "high", "subprocess_execution", r"\b(?:new\s+URL\s*\(|uri\s*\(['\"]https?://)[^\n]{0,240}\.(?:text|openStream)\b|\b(?:curl|wget)\b.{0,160}\|\s*(?:bash|sh)"),
+        ("gradle_secret_literal", "medium", "secret_exposure", r"(?i)\b(?:password|token|apiKey|secret)\s*[=:]\s*['\"][^'\"]{6,}['\"]"),
+        ("gradle_http_repository", "medium", "supply_chain_risk", r"\bmaven\s*\{[^\}]{0,240}url\s*[= ]\s*['\"]http://"),
+        ("gradle_destructive_root", "critical", "destructive_operation", r"rm\s+-rf\s+/"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+
+
+def scan_rexx(text: str, findings: List[Dict[str, Any]]) -> None:
+    """Scan Rexx/ooRexx/Regina script text statically; never invoke a Rexx interpreter."""
+    checks = [
+        ("rexx_address_command", "high", "subprocess_execution", r"(?im)^\s*address\s+(?:command|system|cmd)\b[^\n]{0,220}"),
+        ("rexx_shell_escape", "high", "subprocess_execution", r"(?im)^\s*['\"]?(?:cmd|sh|bash|powershell|pwsh)\b[^\n]{0,220}"),
+        ("rexx_external_payload_read", "medium", "external_payload_read", r"(?i)\b(?:charin|linein|stream)\s*\([^\n]{0,180}\)"),
+        ("rexx_database_execute", "high", "database_command_execution", r"(?i)\b(?:SQLExecute|SQLExecDirect|rxsql|odbc|db2|sqlite3|psql|mysql)\b[^\n]{0,220}"),
+        ("rexx_base64_decode", "medium", "payload_decode_transform", r"(?i)\b(?:base64|base64decode|decode64|frombase64)\b[^\n]{0,160}"),
+        ("rexx_secret_literal", "medium", "secret_exposure", r"(?i)\b(?:password|token|secret|api[_-]?key)\s*=\s*['\"][^'\"]{6,}['\"]"),
+        ("rexx_destructive_root", "critical", "destructive_operation", r"(?i)\b(?:del|erase|rm)\b[^\n]{0,80}(?:/s|/q|-rf|/f)\b[^\n]{0,120}"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S | re.M):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_sql(text, findings)
+
+
+def scan_windows_batch(text: str, findings: List[Dict[str, Any]]) -> None:
+    """Scan Windows batch/CMD text statically; never invoke cmd.exe or PowerShell."""
+    checks = [
+        ("batch_remote_shell", "high", "subprocess_execution", r"(?im)\b(?:curl|wget|bitsadmin|certutil)\b[^\n]{0,240}(?:\|\s*(?:cmd|powershell|pwsh|bash|sh)|-urlcache|-decode)"),
+        ("batch_powershell_encoded", "high", "encoded_payload", r"(?im)\b(?:powershell|pwsh)\b[^\n]{0,200}(?:-EncodedCommand|-Enc)\b"),
+        ("batch_registry_persistence", "high", "persistence", r"(?im)\breg\s+add\b[^\n]{0,220}\b(?:Run|RunOnce|Services|Winlogon)\b"),
+        ("batch_service_control", "medium", "privileged_runtime", r"(?im)\b(?:sc\s+(?:create|config|start|stop|delete)|net\s+(?:user|localgroup|share))\b[^\n]{0,220}"),
+        ("batch_secret_echo", "medium", "secret_exposure", r"(?im)\b(?:echo|set)\b[^\n]{0,160}\b(?:TOKEN|SECRET|PASSWORD|API_KEY)\b"),
+        ("batch_database_execute", "high", "database_command_execution", r"(?im)\b(?:sqlcmd|osql|psql|mysql|sqlite3)\b[^\n]{0,220}"),
+        ("batch_destructive_root", "critical", "destructive_operation", r"(?im)\b(?:del|erase|rmdir|rd)\b[^\n]{0,160}(?:/s|/q|/f)\b"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S | re.M):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_sql(text, findings)
+
+
+def scan_tcl(text: str, findings: List[Dict[str, Any]]) -> None:
+    """Scan Tcl/Tk automation text statically; never invoke tclsh/wish."""
+    checks = [
+        ("tcl_exec_remote_shell", "high", "subprocess_execution", r"(?im)\bexec\b[^\n]{0,240}(?:curl|wget)[^\n|]{0,160}\|\s*(?:sh|bash)"),
+        ("tcl_exec_shell", "medium", "subprocess_execution", r"(?im)\bexec\b[^\n]{0,220}\b(?:sh|bash|cmd|powershell|pwsh)\b"),
+        ("tcl_external_payload_read", "medium", "external_payload_read", r"(?im)\b(?:open|read)\b[^\n]{0,180}"),
+        ("tcl_database_execute", "high", "database_command_execution", r"(?im)\b(?:sqlite3|tdbc|odbc|mysql|psql)\b[^\n]{0,220}\b(?:eval|exec|query|execute)\b"),
+        ("tcl_base64_decode", "medium", "payload_decode_transform", r"(?im)\bbinary\s+decode\s+base64\b|\bbase64::decode\b"),
+        ("tcl_secret_literal", "medium", "secret_exposure", r"(?im)\b(?:set|variable)\s+(?:password|token|secret|api[_-]?key)\s+[^\n]{6,}"),
+        ("tcl_destructive_root", "critical", "destructive_operation", r"(?im)\bfile\s+delete\b[^\n]{0,80}(?:-force|/)"),
+    ]
+    for fid, sev, cat, pat in checks:
+        for m in re.finditer(pat, text, re.I | re.S | re.M):
+            finding(findings, fid, sev, cat, m.group(0), position=m.start())
+    scan_sql(text, findings)
 
 
 def scan_systemd_unit(text: str, findings: List[Dict[str, Any]]) -> None:
@@ -1968,6 +2144,36 @@ def examine_job(job: Dict[str, Any], max_chars: int) -> Dict[str, Any]:
         elif lang == "spreadsheet_text":
             selected_checks.append("spreadsheet_text_patterns")
             scan_spreadsheet_text(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "jenkins_pipeline":
+            selected_checks.append("jenkins_pipeline_patterns")
+            scan_jenkins_pipeline(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "pipeline_config":
+            selected_checks.append("ci_cd_pipeline_config_patterns")
+            scan_pipeline_config(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "gradle_build":
+            selected_checks.append("gradle_build_script_patterns")
+            scan_gradle_build(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "rexx":
+            selected_checks.append("rexx_legacy_automation_patterns")
+            scan_rexx(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "windows_batch":
+            selected_checks.append("windows_batch_cmd_patterns")
+            scan_windows_batch(text, findings)
+            selected_checks.append("legal_case_restriction_hints")
+            scan_legal_case_hints(text, lang, findings)
+        elif lang == "tcl":
+            selected_checks.append("tcl_automation_patterns")
+            scan_tcl(text, findings)
             selected_checks.append("legal_case_restriction_hints")
             scan_legal_case_hints(text, lang, findings)
         elif lang == "systemd":

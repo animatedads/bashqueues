@@ -1,0 +1,39 @@
+{
+  "schema": "queuebash.display_resource_manifest_field_audit.v1",
+  "status": "ok",
+  "renderer": "none-manifest-field-audit-only",
+  "root": "/path/to/bashqueues",
+  "manifest_only": true,
+  "resource_body_read": false,
+  "resource_rendering": false,
+  "token_substitution": false,
+  "secret_rendering": false,
+  "provider_calls": false,
+  "signing_mutation": false,
+  "install_mutation": false,
+  "permission_mutation": false,
+  "json_contract_source": false,
+  "summary": {
+    "entries": 6,
+    "audited_entries": 6,
+    "field_contract_ok": 6,
+    "errors": 0,
+    "warnings": 0
+  },
+  "entries": [
+    {
+      "resource_type": "display",
+      "manifest_type": "display",
+      "name": "status-panel.example.txt",
+      "language": "lang_eng",
+      "fallback_required": "yes",
+      "token_count": 5,
+      "field_contract_ok": true,
+      "resource_path": "resources.d/display/lang_eng/status-panel.example.txt",
+      "resource_exists": true,
+      "manifest_path": "resources.d/display/manifest.example.tsv",
+      "manifest_line": 4
+    }
+  ],
+  "findings": []
+}

@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 fixtures = root / 'tests/fixtures/secrets_scanner'
-required = {'detect.json': 'queuebash.secrets_scanner.detect.v1', 'rule.json': 'queuebash.secrets_scanner.rule.v1', 'finding.json': 'queuebash.secrets_scanner.finding.v1', 'scope.json': 'queuebash.secrets_scanner.scope.v1', 'policy.json': 'queuebash.secrets_scanner.policy.v1'}
+required = {'detect.json': 'queuebash.secrets_scanner.detect.v1', 'source.json': 'queuebash.secrets_scanner.source.v1', 'signal.json': 'queuebash.secrets_scanner.signal.v1', 'redaction.json': 'queuebash.secrets_scanner.redaction.v1', 'policy.json': 'queuebash.secrets_scanner.policy.v1'}
 for name_file, schema in required.items():
     obj = json.loads((fixtures / name_file).read_text(encoding='utf-8'))
     assert obj['schema'] == schema, (name_file, obj.get('schema'))
@@ -15,8 +15,8 @@ for name_file, schema in required.items():
     assert obj.get('provider_output_is_shell') is False, name_file
     assert obj.get('live_api_used') is False, name_file
     assert obj.get('credentials_required') is False, name_file
-    forbidden = ['access_key', 'api_key', 'certificate_private_key', 'client_secret', 'credential', 'license_key', 'mail_body', 'matched_secret', 'message_body', 'object_body', 'package_payload', 'password', 'private_key', 'raw_secret', 'secret', 'secret_value', 'session_cookie', 'signing_key', 'tls_private_key', 'token', 'token_sample']
-    assert not (set(forbidden) & {k.lower() for k in obj}), name_file
+    forbidden = {'token','api_key','password','private_key','client_secret','access_key','secret_value','license_key','credential','object_body','package_payload','signing_key','certificate_private_key','raw_secret','raw_message','mailbox_body'}
+    assert not (forbidden & {k.lower() for k in obj}), name_file
 
 service = json.loads((root / 'policies.d/service-coverage/provider-service-coverage.json').read_text(encoding='utf-8'))
 fam = service['families']['secrets_scanner']

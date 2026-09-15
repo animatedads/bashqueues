@@ -142,17 +142,20 @@ case "$ntype" in
     fi
     ;;
   cvs)
+    # CVS is deliberately metadata-only here. Even `cvs update`-style checks can touch
+    # elderly or unreachable servers, so live cleanliness remains the explicit
+    # vcs:clean_tree asset rather than part of the normal probe/assert/baseline
+    # path. This keeps mixed legacy estates safe for diagnostics.
     tag_file="$(find_up "$abs" CVS/Tag 2>/dev/null || true)"
     root_file="$(find_up "$abs" CVS/Root 2>/dev/null || true)"
+    entries_file="$(find_up "$abs" CVS/Entries 2>/dev/null || true)"
     [[ -n "$tag_file" && -r "$tag_file" ]] && identity="$(sed -n '1s/^T//p' "$tag_file")"
     [[ -z "$identity" ]] && identity=HEAD
     [[ -n "$root_file" && -r "$root_file" ]] && revision="$(sed -n '1p' "$root_file")"
-    if [[ "$client_available" -eq 1 ]]; then
-      out="$(cd "$abs" 2>/dev/null && timeout "$timeout_s" cvs -n update -dP 2>/dev/null || true)"
-      out="$(printf '%s\n' "$out" | grep -E '^[?MARCDUP] ' || true)"
-      if [[ -z "$out" ]]; then clean=true; status_summary=clean; else clean=false; status_summary=pending_changes; fi
+    if [[ -n "$entries_file" && -r "$entries_file" ]]; then
+      status_summary=cvs_metadata_only
     else
-      status_summary=client_missing_metadata_only
+      status_summary=cvs_metadata_incomplete
     fi
     ;;
   hg)
@@ -181,10 +184,24 @@ case "$ntype" in
     ;;
 esac
 
-fingerprint="$(python3 -c 'import hashlib,sys; print(hashlib.sha256("\0".join(sys.argv[1:]).encode("utf-8","surrogateescape")).hexdigest())' "$ntype" "$marker" "$identity" "$revision" "$clean" "$status_summary")"
+fingerprint="$(python3 - "$ntype" "$marker" "$identity" "$revision" "$clean" "$status_summary" <<'PY'
+import hashlib, sys
+parts = sys.argv[1:]
+print(hashlib.sha256("\0".join(parts).encode("utf-8", "surrogateescape")).hexdigest())
+PY
+)"
 
 if [[ "$json" -eq 1 ]]; then
-  python3 -c 'import json,sys; keys=["type","path","root","marker","client","client_available","identity","revision","clean","status_summary","fingerprint"]; data=dict(zip(keys,sys.argv[1:])); data["schema"]="queuebash.vcs.probe.v1"; data["client_available"]=(data["client_available"]=="1"); data["clean"] = True if data["clean"] == "true" else False if data["clean"] == "false" else data["clean"]; print(json.dumps(data,sort_keys=True,separators=(",",":")))' "$ntype" "$abs" "$root" "$marker" "$client" "$client_available" "$identity" "$revision" "$clean" "$status_summary" "$fingerprint"
+  python3 - "$ntype" "$abs" "$root" "$marker" "$client" "$client_available" "$identity" "$revision" "$clean" "$status_summary" "$fingerprint" <<'PY'
+import json, sys
+keys = ["type","path","root","marker","client","client_available","identity","revision","clean","status_summary","fingerprint"]
+data = dict(zip(keys, sys.argv[1:]))
+data["schema"] = "queuebash.vcs.probe.v1"
+data["client_available"] = data["client_available"] == "1"
+if data["clean"] == "true": data["clean"] = True
+elif data["clean"] == "false": data["clean"] = False
+print(json.dumps(data, sort_keys=True, separators=(",",":")))
+PY
 else
   printf 'type=%s\npath=%s\nroot=%s\nmarker=%s\nclient=%s\nclient_available=%s\nidentity=%s\nrevision=%s\nclean=%s\nstatus_summary=%s\nfingerprint=%s\n' \
     "$ntype" "$abs" "$root" "$marker" "$client" "$client_available" "$identity" "$revision" "$clean" "$status_summary" "$fingerprint"

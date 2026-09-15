@@ -10,6 +10,28 @@ source "$repo_root/queuebash.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+mockbin="$tmp/mockbin"
+mkdir -p "$mockbin"
+cat > "$mockbin/systemctl" <<'MOCK'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--user" && "${2:-}" == "show" ]]; then
+  prop=""
+  prev=""
+  for arg in "$@"; do
+    if [[ "$prev" == "-p" ]]; then prop="$arg"; prev=""; continue; fi
+    [[ "$arg" == "-p" ]] && { prev="-p"; continue; }
+  done
+  case "$prop" in
+    ActiveState) echo inactive ;;
+    SubState) echo dead ;;
+    MainPID) echo 0 ;;
+  esac
+  exit 0
+fi
+exit 1
+MOCK
+chmod +x "$mockbin/systemctl"
+export PATH="$mockbin:$PATH"
 
 export QUEUEBASH_ROOT="$tmp/q"
 mkdir -p "$QUEUEBASH_ROOT"/{pending,running,paused,done,failed,interrupted,cancelled,deleted,logs,workers}

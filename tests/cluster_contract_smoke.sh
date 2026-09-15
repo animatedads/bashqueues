@@ -20,6 +20,7 @@ queue cluster vote propose --operation policy_change --reason smoke --json >/dev
 queue cluster vote cast --proposal-id vote-dryrun --decision approve --reason smoke --json >/dev/null
 queue cluster vote tally --proposal-id vote-dryrun --json >/dev/null || true
 queue cluster vote evaluate --proposal-id vote-dryrun --json >/dev/null || true
+queue cluster vote apply --proposal-id vote-dryrun --json >/dev/null || true
 queue cluster node list --json >/dev/null
 queue cluster explain --json >/dev/null
 queue cluster init --name smoke --json >/dev/null

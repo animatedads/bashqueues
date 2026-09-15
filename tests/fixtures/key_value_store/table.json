@@ -1,0 +1,18 @@
+{
+  "check": "table",
+  "credentials_required": false,
+  "decision": "allow",
+  "encryption": "provider_managed",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "partition_key": "tenant_id",
+  "provider": "fixture",
+  "provider_family": "key_value_store",
+  "provider_output_is_shell": false,
+  "region": "fixture-eu",
+  "schema": "queuebash.key_value_store.table.v1",
+  "sort_key": "order_id",
+  "source": "fixture",
+  "table": "orders-state"
+}

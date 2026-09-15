@@ -1,0 +1,16 @@
+{
+  "check": "query",
+  "credentials_required": false,
+  "decision": "allow",
+  "example_query_redacted": true,
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "search_service",
+  "provider_output_is_shell": false,
+  "query_execution_allowed": false,
+  "query_shape_only": true,
+  "schema": "queuebash.search_service.query.v1",
+  "source": "fixture"
+}

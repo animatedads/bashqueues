@@ -436,6 +436,31 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "key_value_store": {
+      "doc_prefix": "KEY_VALUE_STORE",
+      "fixture_dir": "key_value_store",
+      "non_goals": [
+        "table-create",
+        "table-delete",
+        "item-put",
+        "item-delete",
+        "capacity-mutation",
+        "backup-restore",
+        "stream-enable",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "key_value_store",
+      "priority": 35,
+      "provider_dir": "key_value_store",
+      "schemas": [
+        "queuebash.key_value_store.detect.v1",
+        "queuebash.key_value_store.table.v1",
+        "queuebash.key_value_store.capacity.v1",
+        "queuebash.key_value_store.policy.v1",
+        "queuebash.key_value_store.backup.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "license_manager": {
       "doc_prefix": "LICENSE_MANAGER",
       "fixture_dir": "license_manager",
@@ -489,23 +514,24 @@
       "doc_prefix": "MAIL_SERVICE",
       "fixture_dir": "mail_service",
       "non_goals": [
-        "send-mail",
+        "mail-send",
         "mailbox-read",
+        "message-export",
+        "suppression-list-write",
         "domain-create",
-        "identity-mutate",
-        "suppression-list-mutate",
-        "dns-record-mutate",
-        "provisioning",
+        "domain-delete",
+        "dkim-key-export",
+        "policy-mutation",
         "queue-dispatch-refactor"
       ],
       "policy_dir": "mail_service",
-      "priority": 31,
+      "priority": 13,
       "provider_dir": "mail_service",
       "schemas": [
         "queuebash.mail_service.detect.v1",
         "queuebash.mail_service.domain.v1",
-        "queuebash.mail_service.sender.v1",
         "queuebash.mail_service.delivery.v1",
+        "queuebash.mail_service.reputation.v1",
         "queuebash.mail_service.policy.v1"
       ],
       "status": "fixture_first_provider_family"
@@ -697,6 +723,32 @@
       ],
       "status": "fixture_first_provider_family"
     },
+    "search_service": {
+      "doc_prefix": "SEARCH_SERVICE",
+      "fixture_dir": "search_service",
+      "non_goals": [
+        "domain-create",
+        "domain-delete",
+        "index-create",
+        "index-delete",
+        "document-index",
+        "document-delete",
+        "query-execute",
+        "snapshot-restore",
+        "queue-dispatch-refactor"
+      ],
+      "policy_dir": "search_service",
+      "priority": 36,
+      "provider_dir": "search_service",
+      "schemas": [
+        "queuebash.search_service.detect.v1",
+        "queuebash.search_service.domain.v1",
+        "queuebash.search_service.index.v1",
+        "queuebash.search_service.policy.v1",
+        "queuebash.search_service.query.v1"
+      ],
+      "status": "fixture_first_provider_family"
+    },
     "secret_manager": {
       "doc_prefix": "SECRET_MANAGER",
       "fixture_dir": "secret_manager",
@@ -725,22 +777,22 @@
       "fixture_dir": "secrets_scanner",
       "non_goals": [
         "live-repository-scan",
-        "secret-value-disclosure",
+        "secret-export",
+        "raw-secret-output",
         "redaction-write",
         "credential-rotation",
-        "finding-write",
+        "credential-revocation",
         "policy-mutation",
-        "provisioning",
         "queue-dispatch-refactor"
       ],
       "policy_dir": "secrets_scanner",
-      "priority": 32,
+      "priority": 14,
       "provider_dir": "secrets_scanner",
       "schemas": [
         "queuebash.secrets_scanner.detect.v1",
-        "queuebash.secrets_scanner.rule.v1",
-        "queuebash.secrets_scanner.finding.v1",
-        "queuebash.secrets_scanner.scope.v1",
+        "queuebash.secrets_scanner.source.v1",
+        "queuebash.secrets_scanner.signal.v1",
+        "queuebash.secrets_scanner.redaction.v1",
         "queuebash.secrets_scanner.policy.v1"
       ],
       "status": "fixture_first_provider_family"
@@ -816,8 +868,8 @@
     }
   },
   "next_candidates": [
-    "payment_gateway",
-    "search_service"
+    "key_management",
+    "endpoint_security"
   ],
   "schema": "queuebash.provider_service_coverage.v1"
 }

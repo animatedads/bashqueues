@@ -1,0 +1,24 @@
+{
+  "schema": "queuebash.governance.framework.v1",
+  "framework_id": "cis_controls_v8",
+  "name": "CIS Controls v8",
+  "source_posture": "local_queue_reference_registry",
+  "authority": "reference_only_not_authority_grant",
+  "controls": [
+    {"id":"3","title":"Data Protection","queue_relevance":["backup integrity","data at rest/in transit","credential exposure"]},
+    {"id":"4","title":"Secure Configuration of Enterprise Assets and Software","queue_relevance":["baseline configuration","Windows hardening","security control changes"]},
+    {"id":"5","title":"Account Management","queue_relevance":["local/domain account changes","service accounts","identity lifecycle"]},
+    {"id":"6","title":"Access Control Management","queue_relevance":["privilege grants","authorisation gates","role checks"]},
+    {"id":"7","title":"Continuous Vulnerability Management","queue_relevance":["patching","unsupported OS checks","driver/software risk"]},
+    {"id":"8","title":"Audit Log Management","queue_relevance":["receipts","operator evidence","tamper detection"]},
+    {"id":"10","title":"Malware Defenses","queue_relevance":["Defender/EDR posture","disable-security-control gating"]},
+    {"id":"11","title":"Data Recovery","queue_relevance":["backup and restore evidence","VSS/snapshot protection"]},
+    {"id":"12","title":"Network Infrastructure Management","queue_relevance":["firewall/RDP/SMB exposure","remote admin channels"]},
+    {"id":"13","title":"Network Monitoring and Defense","queue_relevance":["network exposure evidence","remote execution monitoring"]},
+    {"id":"14","title":"Security Awareness and Skills Training","queue_relevance":["operator warnings for risky VM/image provenance operations"]}
+  ],
+  "queue_policy_use": {
+    "check_or_posture": "audit and explain controls; do not force desired-state plan path",
+    "change_or_destructive": "park in waiting until approvals, maintenance window, and rollback/receipt evidence satisfy policy"
+  }
+}

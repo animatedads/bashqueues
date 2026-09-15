@@ -1,5 +1,5 @@
 # Secrets Scanner explainability
 
-`secrets_scanner` facts are deliberately advisory. They describe provider-family posture using fixture JSON so frontends and automated tools can explain what would be inspected without reaching live systems.
+The `secrets_scanner` family records explicit `schema`, `provider_family`, `check`, `decision`, `evidence`, `fail_closed`, `live_api_used`, `mutated`, and `provider_output_is_shell` fields so operators can understand why a fixture-backed provider fact was accepted or denied.
 
-The family records observed provider types, representative safe identifiers, policy posture, and explicit non-goals. Every fixture carries `live_api_used=false`, `mutated=false`, `provisioning_performed=false`, and `provider_output_is_shell=false`.
+Missing fixtures fail closed with a JSON denial and a remediation hint instead of attempting network discovery.

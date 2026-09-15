@@ -1,0 +1,18 @@
+{
+  "autoscaling": "provider_managed",
+  "check": "capacity",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "hot_partition_risk": "low",
+  "live_api_used": false,
+  "mode": "on_demand",
+  "mutated": false,
+  "provider": "fixture",
+  "provider_family": "key_value_store",
+  "provider_output_is_shell": false,
+  "read_capacity_units": null,
+  "schema": "queuebash.key_value_store.capacity.v1",
+  "source": "fixture",
+  "write_capacity_units": null
+}

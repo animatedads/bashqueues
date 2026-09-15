@@ -1,61 +1,4 @@
 {
-  "schema": "queuebash.windows_runtime_parity.v1",
-  "owner": "BOB30",
-  "status": "planning",
-  "support_claim": "wsl2_first_native_windows_not_yet_supported",
-  "tiers": [
-    {
-      "id": "W1",
-      "name": "WSL2 Linux distribution runtime",
-      "status": "first_viable_target",
-      "claim": "run bashqueues inside the WSL2 Linux guest using the existing Linux/POSIX runtime",
-      "blocked_features": []
-    },
-    {
-      "id": "W2",
-      "name": "Git Bash/MSYS2/Cygwin constrained compatibility shell",
-      "status": "constrained_client_candidate",
-      "claim": "light developer/static/client operations only until process, lock, permission, scheduler, and service semantics are proven",
-      "blocked_features": [
-        "worker_lifecycle",
-        "process_tree_cancellation",
-        "cron_or_systemd_equivalent",
-        "chmod_chown_policy_enforcement",
-        "service_installation",
-        "lock_sensitive_concurrent_runs"
-      ]
-    },
-    {
-      "id": "W3",
-      "name": "Native Windows PowerShell and Windows Service runtime",
-      "status": "future_adapter_required",
-      "claim": "not supported until platform adapters and Windows smoke tests exist",
-      "blocked_features": [
-        "powershell_launcher",
-        "windows_service_worker",
-        "task_scheduler_bridge",
-        "ntfs_acl_policy_mapping",
-        "event_log_audit_adapter",
-        "windows_process_tree_cancellation",
-        "path_normalisation",
-        "crlf_guard",
-        "case_collision_guard"
-      ]
-    }
-  ],
-  "required_adapters": [
-    "launcher",
-    "path",
-    "process",
-    "runner",
-    "lock",
-    "permission_acl",
-    "time",
-    "scheduler_service",
-    "identity",
-    "audit",
-    "remote_transport"
-  ],
   "existing_windows_adjacent_assets": [
     "assets.d/winrm.sh",
     "assets.d/msad.sh",
@@ -69,10 +12,9 @@
     "no_secrets_runtime_ownership",
     "no_native_windows_support_claim"
   ],
+  "owner": "BOB30",
   "platform_fact_surface": {
     "command": "queue platform [--json]",
-    "schema": "queuebash.platform_facts.v1",
-    "status": "observational_fail_closed",
     "must_not_enable_worker_runtime_for": [
       "git-bash",
       "msys2",
@@ -80,31 +22,90 @@
       "native-windows-powershell",
       "unknown"
     ],
+    "schema": "queuebash.platform_facts.v1",
+    "status": "observational_fail_closed",
     "wsl2_worker_claim": "supported as Linux guest runtime, not native Windows runtime"
   },
-  "platform_doctor_surface": {
-    "command": "queue platform doctor [--json]",
-    "schema": "queuebash.platform_doctor.v1",
-    "status": "read_only_readiness_fail_closed",
-    "must_not_mutate": [
-      "workers",
-      "services",
-      "policies",
-      "queue_records",
-      "secrets",
-      "remote_resources"
-    ],
-    "warns_for": [
-      "wsl_queue_root_under_mnt",
-      "crlf_sensitive_line_endings",
-      "legacy_wsl"
-    ],
-    "blocks_worker_claim_for": [
-      "git-bash",
-      "msys2",
-      "cygwin",
-      "native-windows-powershell",
-      "unknown"
-    ]
-  }
+  "platform_matrix_surface": {
+    "command": "queue platform matrix [--json]",
+    "must_report_native_windows_worker_supported": false,
+    "must_report_w2_worker_supported": false,
+    "schema": "queuebash.platform_matrix.v1",
+    "status": "observational_fail_closed",
+    "wsl2_worker_claim": "supported as Linux guest runtime, not native Windows runtime"
+  },
+  "required_adapters": [
+    "launcher",
+    "path",
+    "process",
+    "runner",
+    "lock",
+    "permission_acl",
+    "time",
+    "scheduler_service",
+    "identity",
+    "audit",
+    "remote_transport"
+  ],
+  "schema": "queuebash.windows_runtime_parity.v1",
+  "status": "planning",
+  "support_claim": "wsl2_first_native_windows_not_yet_supported",
+  "surfaces": [
+    {
+      "command": "queue platform doctor [--json]",
+      "enables_worker_support": false,
+      "mode": "read_only_readiness",
+      "mutates_host": false,
+      "notes": "Reports platform/root/line-ending/support-tier findings without changing Windows support posture.",
+      "schema": "queuebash.platform_doctor.v1"
+    },
+    {
+      "command": "queue platform matrix [--json]",
+      "enables_worker_support": false,
+      "mode": "read_only_support_matrix",
+      "mutates_host": false,
+      "notes": "Script-readable support posture matrix for Linux, WSL2, compatibility shells, native Windows, and unknown runtimes.",
+      "schema": "queuebash.platform_matrix.v1"
+    }
+  ],
+  "tiers": [
+    {
+      "blocked_features": [],
+      "claim": "run bashqueues inside the WSL2 Linux guest using the existing Linux/POSIX runtime",
+      "id": "W1",
+      "name": "WSL2 Linux distribution runtime",
+      "status": "first_viable_target"
+    },
+    {
+      "blocked_features": [
+        "worker_lifecycle",
+        "process_tree_cancellation",
+        "cron_or_systemd_equivalent",
+        "chmod_chown_policy_enforcement",
+        "service_installation",
+        "lock_sensitive_concurrent_runs"
+      ],
+      "claim": "light developer/static/client operations only until process, lock, permission, scheduler, and service semantics are proven",
+      "id": "W2",
+      "name": "Git Bash/MSYS2/Cygwin constrained compatibility shell",
+      "status": "constrained_client_candidate"
+    },
+    {
+      "blocked_features": [
+        "powershell_launcher",
+        "windows_service_worker",
+        "task_scheduler_bridge",
+        "ntfs_acl_policy_mapping",
+        "event_log_audit_adapter",
+        "windows_process_tree_cancellation",
+        "path_normalisation",
+        "crlf_guard",
+        "case_collision_guard"
+      ],
+      "claim": "not supported until platform adapters and Windows smoke tests exist",
+      "id": "W3",
+      "name": "Native Windows PowerShell and Windows Service runtime",
+      "status": "future_adapter_required"
+    }
+  ]
 }

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
-fail(){ echo "[FAIL] $*" >&2; exit 1; }
+cd "$(dirname "$0")/.."
+fail() { echo "[FAIL] $*" >&2; exit 1; }
 
-[[ -f install-system.sh ]] || fail 'install-system.sh missing'
-[[ -x install-system.sh ]] || fail 'install-system.sh must be executable so ./install-system.sh --dryrun works for operators'
-bash -n install-system.sh || fail 'install-system.sh syntax failed'
+[[ -f install-system.sh ]] || fail "install-system.sh missing"
+[[ -x install-system.sh ]] || fail "install-system.sh is not executable"
+bash -n install-system.sh || fail "install-system.sh syntax check failed"
 
-out="$(./install-system.sh --dryrun 2>&1 || true)"
-printf '%s\n' "$out" | grep -q 'bashqueues system install plan' || fail 'dry-run did not print install plan header'
-printf '%s\n' "$out" | grep -q 'policy dir:    /etc/queuebash/policies.d' || fail 'dry-run did not report canonical policy dir'
-! printf '%s\n' "$out" | grep -q 'policy dir:    /etc/bashqueues/policies.d' || fail 'dry-run reported legacy policy dir as active'
+out="$(./install-system.sh --dryrun 2>&1)" || fail "install-system.sh --dryrun failed"
+printf '%s\n' "$out" | grep -q '/etc/queuebash/policies.d' || fail "installer dryrun does not report canonical policy root /etc/queuebash/policies.d"
+if printf '%s\n' "$out" | grep -q '/etc/bashqueues/policies.d'; then
+    fail "installer dryrun reports legacy /etc/bashqueues/policies.d as active policy root"
+fi
 
-echo '[PASS] install-system executable dry-run contract'
+echo "[PASS] install-system executable and policy namespace guard passed"

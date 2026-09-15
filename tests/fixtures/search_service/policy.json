@@ -1,0 +1,16 @@
+{
+  "check": "policy",
+  "credentials_required": false,
+  "decision": "allow",
+  "fail_closed": true,
+  "live_api_used": false,
+  "mutated": false,
+  "mutation_allowed": false,
+  "network_restricted": true,
+  "provider": "fixture",
+  "provider_family": "search_service",
+  "provider_output_is_shell": false,
+  "raw_query_logging_allowed": false,
+  "schema": "queuebash.search_service.policy.v1",
+  "source": "fixture"
+}
